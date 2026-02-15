@@ -1,0 +1,40 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^uv run python -c \"from crewai\\.flow\\.flow import Flow, listen, start, router; print\\('Flow imports OK'\\)\" 2>&1 \\| tail -5$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uv run python -c \"\nfrom crewai\\.flow\\.flow import Flow, listen, start, router\nfrom pydantic import BaseModel\n\nclass TestState\\(BaseModel\\):\n    val: str = 'hello'\n\nclass TestFlow\\(Flow\\[TestState\\]\\):\n    pass\n\nf = TestFlow\\(\\)\nprint\\('state type:', type\\(f\\.state\\)\\)\nprint\\('state val:', f\\.state\\.val\\)\nf\\.state\\.val = 'world'\nprint\\('updated val:', f\\.state\\.val\\)\nprint\\('Flow generic state works!'\\)\n\" 2>&1 \\| tail -10$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uv run pytest tests/ -v 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uv run pytest tests/ -v 2>&1 \\| tail -50$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uv run pytest tests/ -v 2>&1 \\| tail -40$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^crewai run 2>&1 \\| tail -30$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uv run pytest tests/ -v 2>&1 \\| tail -60$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uv run pytest tests/ -v 2>&1 \\| tail -70$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uv run pytest tests/ -v 2>&1 \\| tail -30$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

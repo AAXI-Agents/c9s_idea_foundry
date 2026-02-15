@@ -1,0 +1,239 @@
+import json
+import os
+import ssl
+import sys
+import urllib.error
+import urllib.request
+
+import certifi
+from pymongo import MongoClient
+
+ENV_FILE = ".env"
+
+API_KEYS = {
+    "SERPER_API_KEY": "Serper",
+    "OPENAI_API_KEY": "OpenAI",
+    "SONNET_API_KEY": "Sonnet",
+    "GEOAPIFY_API_KEY": "Geoapify",
+    "GROK_API_KEY": "Grok",
+    "GOOGLE_API_KEY": "Gemini",
+    "HUNTER_API_KEY": "Hunter",
+    "FIRECRAWL_API_KEY": "Firecrawl",
+}
+
+
+def load_env_file(path: str) -> None:
+    if not os.path.exists(path):
+        return
+
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def mask_value(value: str) -> str:
+    if not value:
+        return "(empty)"
+    if len(value) <= 6:
+        return "***"
+    return f"***{value[-4:]}"
+
+
+def http_request(
+    url: str,
+    method: str = "GET",
+    headers: dict | None = None,
+    body: dict | None = None,
+    timeout: int = 15,
+) -> tuple[int, str]:
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(url, data=data, method=method)
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
+
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+    with urllib.request.urlopen(request, timeout=timeout, context=ssl_context) as response:
+        payload = response.read().decode("utf-8", errors="replace")
+        return response.status, payload
+
+
+def check_openai() -> tuple[bool, str]:
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        return False, "OPENAI_API_KEY is empty"
+    url = "https://api.openai.com/v1/models"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    status, _ = http_request(url, headers=headers)
+    return status == 200, f"HTTP {status}"
+
+
+def check_serper() -> tuple[bool, str]:
+    api_key = os.environ.get("SERPER_API_KEY", "")
+    if not api_key:
+        return False, "SERPER_API_KEY is empty"
+    url = "https://google.serper.dev/search"
+    headers = {"X-API-KEY": api_key}
+    body = {"q": "product feature research"}
+    status, _ = http_request(url, method="POST", headers=headers, body=body)
+    return status == 200, f"HTTP {status}"
+
+
+def check_sonnet() -> tuple[bool, str]:
+    api_key = os.environ.get("SONNET_API_KEY", "")
+    if not api_key:
+        return False, "SONNET_API_KEY is empty"
+    model = os.environ.get("SONNET_MODEL_NAME", "sonnet-default")
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    body = {
+        "model": model,
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "ping"}],
+    }
+    status, _ = http_request(url, method="POST", headers=headers, body=body)
+    return status == 200, f"HTTP {status}"
+
+
+def check_gemini() -> tuple[bool, str]:
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
+    if not api_key:
+        return False, "GOOGLE_API_KEY is empty"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    status, _ = http_request(url)
+    return status == 200, f"HTTP {status}"
+
+
+def check_geoapify() -> tuple[bool, str]:
+    api_key = os.environ.get("GEOAPIFY_API_KEY", "")
+    if not api_key:
+        return False, "GEOAPIFY_API_KEY is empty"
+    url = (
+        "https://api.geoapify.com/v1/geocode/search"
+        f"?text=1600+Amphitheatre+Parkway&apiKey={api_key}&limit=1"
+    )
+    status, _ = http_request(url)
+    return status == 200, f"HTTP {status}"
+
+
+def check_grok() -> tuple[bool, str]:
+    api_key = os.environ.get("GROK_API_KEY", "")
+    if not api_key:
+        return False, "GROK_API_KEY is empty"
+    url = "https://api.x.ai/v1/models"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    status, _ = http_request(url, headers=headers)
+    return status == 200, f"HTTP {status}"
+
+
+def check_hunter() -> tuple[bool, str]:
+    api_key = os.environ.get("HUNTER_API_KEY", "")
+    if not api_key:
+        return False, "HUNTER_API_KEY is empty"
+    url = f"https://api.hunter.io/v2/account?api_key={api_key}"
+    status, _ = http_request(url)
+    return status == 200, f"HTTP {status}"
+
+
+def check_firecrawl() -> tuple[bool, str]:
+    api_key = os.environ.get("FIRECRAWL_API_KEY", "")
+    if not api_key:
+        return False, "FIRECRAWL_API_KEY is empty"
+    url = "https://api.firecrawl.dev/v1/usage"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    status, _ = http_request(url, headers=headers)
+    return status == 200, f"HTTP {status}"
+
+
+CHECKS = {
+    "SERPER_API_KEY": check_serper,
+    "OPENAI_API_KEY": check_openai,
+    "SONNET_API_KEY": check_sonnet,
+    "GEOAPIFY_API_KEY": check_geoapify,
+    "GROK_API_KEY": check_grok,
+    "GOOGLE_API_KEY": check_gemini,
+    "HUNTER_API_KEY": check_hunter,
+    "FIRECRAWL_API_KEY": check_firecrawl,
+}
+
+
+def check_mongodb() -> tuple[bool, str]:
+    mongo_uri = os.environ.get("MONGODB_URI", "").strip()
+    mongo_db = os.environ.get("MONGODB_DB", "").strip() or "ideas"
+    if not mongo_uri:
+        return False, "MONGODB_URI is empty"
+
+    try:
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        client.admin.command("ping")
+    except Exception as exc:  # noqa: BLE001
+        return False, f"MongoDB connection error: {exc}"
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    return True, "MongoDB ping ok"
+
+
+def run_checks() -> int:
+    load_env_file(ENV_FILE)
+    failures = []
+
+    print("Preflight: validating API keys")
+    for key, label in API_KEYS.items():
+        value = os.environ.get(key, "")
+        print(f"- {label}: {mask_value(value)}")
+
+    for key, check in CHECKS.items():
+        label = API_KEYS[key]
+        try:
+            ok, detail = check()
+        except urllib.error.HTTPError as exc:
+            ok = False
+            detail = f"HTTP {exc.code}"
+        except urllib.error.URLError as exc:
+            ok = False
+            detail = f"Network error: {exc.reason}"
+        except Exception as exc:  # noqa: BLE001
+            ok = False
+            detail = f"Unexpected error: {exc}"
+
+        status = "OK" if ok else "FAIL"
+        print(f"{status}: {label} ({detail})")
+        if not ok:
+            failures.append(label)
+
+    if failures:
+        print("\nPreflight failed for:")
+        for label in failures:
+            print(f"- {label}")
+        return 1
+
+    ok, detail = check_mongodb()
+    status = "OK" if ok else "FAIL"
+    print(f"{status}: MongoDB ({detail})")
+    if not ok:
+        return 1
+
+    print("\nPreflight passed. All API keys responded successfully.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run_checks())

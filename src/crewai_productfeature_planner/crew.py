@@ -2,6 +2,10 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
+
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
 # https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
@@ -21,6 +25,7 @@ class CrewaiProductfeaturePlanner():
     # https://docs.crewai.com/concepts/agents#agent-tools
     @agent
     def researcher(self) -> Agent:
+        logger.debug("Creating researcher agent")
         return Agent(
             config=self.agents_config['researcher'], # type: ignore[index]
             verbose=True
@@ -28,6 +33,7 @@ class CrewaiProductfeaturePlanner():
 
     @agent
     def reporting_analyst(self) -> Agent:
+        logger.debug("Creating reporting_analyst agent")
         return Agent(
             config=self.agents_config['reporting_analyst'], # type: ignore[index]
             verbose=True
@@ -52,9 +58,8 @@ class CrewaiProductfeaturePlanner():
     @crew
     def crew(self) -> Crew:
         """Creates the CrewaiProductfeaturePlanner crew"""
-        # To learn how to add knowledge sources to your crew, check out the documentation:
-        # https://docs.crewai.com/concepts/knowledge#what-is-knowledge
-
+        logger.info("Building crew with %d agents and %d tasks",
+                    len(self.agents), len(self.tasks))
         return Crew(
             agents=self.agents, # Automatically created by the @agent decorator
             tasks=self.tasks, # Automatically created by the @task decorator

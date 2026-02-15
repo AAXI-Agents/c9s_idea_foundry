@@ -1,0 +1,165 @@
+draft_prd_task:
+  description: >
+    Create a comprehensive Product Requirements Document (PRD) for the
+    following feature idea:
+
+    {idea}
+
+    The PRD must include the following sections:
+    - Executive Summary
+    - Problem Statement
+    - User Personas (with pain points and goals)
+    - Functional Requirements
+    - Non-Functional Requirements (performance, scalability, security)
+    - User Stories with Acceptance Criteria
+    - Edge Cases and Error Handling
+    - Analytics and Success Metrics
+    - Dependencies and Assumptions
+    - Out of Scope items
+
+    Research competitors and technical standards to ensure the PRD is
+    grounded in industry best practices.
+  expected_output: >
+    A well-structured PRD document in markdown format covering all the
+    required sections with specific, actionable requirements.
+  agent: product_manager
+
+critique_prd_task:
+  description: >
+    Critically review the following PRD draft and identify gaps,
+    weaknesses, and missing elements:
+
+    --- START OF PRD DRAFT ---
+    {draft}
+    --- END OF PRD DRAFT ---
+
+    Evaluate against the Definition of Done (DoD) checklist:
+    1. Are all user personas clearly defined with pain points and goals?
+    2. Are functional requirements specific and testable?
+    3. Are non-functional requirements quantified (performance targets, scale limits)?
+    4. Does every user story have clear acceptance criteria?
+    5. Are edge cases and error scenarios addressed comprehensively?
+    6. Are analytics/tracking requirements specified with concrete metrics?
+    7. Are dependencies and risks documented with mitigations?
+    8. Is the scope boundary (in/out) clearly defined?
+
+    For each gap found, provide a specific, actionable recommendation.
+    Rate the PRD readiness on a scale of 1-10.
+    If the PRD scores 8 or higher on ALL criteria, mark it as "READY_FOR_DEV".
+    Otherwise mark it as "NEEDS_REFINEMENT".
+  expected_output: >
+    A structured critique containing:
+    - Readiness score (1-10) for each DoD criterion
+    - Overall status: "READY_FOR_DEV" or "NEEDS_REFINEMENT"
+    - List of identified gaps with severity (Critical / Major / Minor)
+    - Specific recommendations for each gap
+  agent: product_manager
+
+refine_prd_task:
+  description: >
+    Refine the following PRD based on the critique feedback provided.
+
+    --- CURRENT PRD DRAFT ---
+    {draft}
+    --- END OF DRAFT ---
+
+    --- CRITIQUE FEEDBACK ---
+    {critique}
+    --- END OF CRITIQUE ---
+
+    Address every gap and recommendation identified in the critique.
+    Focus especially on Critical and Major issues first.
+    Ensure the refined PRD is comprehensive, technically feasible,
+    and ready for development handoff to a Jira Specialist.
+  expected_output: >
+    An improved PRD document in markdown format that addresses all
+    identified gaps and incorporates the critique feedback. The document
+    should be Jira-ready with clearly defined stories and acceptance criteria.
+  agent: product_manager
+
+# ── Section-level tasks ──────────────────────────────────────
+
+draft_section_task:
+  description: >
+    You are drafting the **{section_title}** section of a Product Requirements
+    Document (PRD) for the following feature idea:
+
+    {idea}
+
+    --- CONTEXT FROM OTHER APPROVED SECTIONS ---
+    {context_sections}
+    --- END OF CONTEXT ---
+
+    Write a comprehensive, detailed **{section_title}** section that:
+    - Is consistent with the other sections provided as context above.
+    - Contains specific, actionable content appropriate for this section type.
+    - Follows industry best practices for PRD documentation.
+    - Is written in clear, professional markdown format.
+
+    Output ONLY the content for the **{section_title}** section.
+    Do NOT include the section heading — just the body content.
+  expected_output: >
+    A well-written {section_title} section in markdown format with specific,
+    actionable content appropriate for this section type.
+  agent: product_manager
+
+critique_section_task:
+  description: >
+    Critically review the **{section_title}** section of a PRD:
+
+    --- SECTION CONTENT ---
+    {section_content}
+    --- END OF SECTION ---
+
+    --- OTHER SECTIONS FOR CONTEXT ---
+    {context_sections}
+    --- END OF CONTEXT ---
+
+    Evaluate the section for:
+    1. Completeness — does it cover everything expected for this section type?
+    2. Specificity — are requirements concrete and testable?
+    3. Consistency — does it align with the other sections?
+    4. Clarity — is it well-organized and unambiguous?
+    5. Actionability — can a development team act on this?
+
+    For each gap, provide a specific, actionable recommendation.
+    Rate readiness on a scale of 1-10.
+    If the section scores 8 or higher on ALL criteria, mark it as "SECTION_READY".
+    Otherwise mark it as "NEEDS_REFINEMENT".
+  expected_output: >
+    A structured critique containing:
+    - Readiness score (1-10) for each criterion
+    - Overall status: "SECTION_READY" or "NEEDS_REFINEMENT"
+    - List of identified gaps with severity (Critical / Major / Minor)
+    - Specific recommendations for each gap
+  agent: product_manager
+
+refine_section_task:
+  description: >
+    Refine the **{section_title}** section of a PRD based on critique feedback.
+
+    --- CURRENT SECTION CONTENT ---
+    {section_content}
+    --- END OF SECTION ---
+
+    --- CRITIQUE FEEDBACK ---
+    {critique}
+    --- END OF CRITIQUE ---
+
+    --- OTHER SECTIONS FOR CONTEXT ---
+    {context_sections}
+    --- END OF CONTEXT ---
+
+    Address every gap and recommendation identified in the critique.
+    Focus especially on Critical and Major issues first.
+    Ensure the refined section is:
+    - Consistent with the other sections
+    - Comprehensive and ready for development handoff
+    - Specific and actionable
+
+    Output ONLY the refined content for the **{section_title}** section.
+    Do NOT include the section heading — just the body content.
+  expected_output: >
+    An improved {section_title} section in markdown format that addresses all
+    identified gaps and incorporates the critique feedback.
+  agent: product_manager
