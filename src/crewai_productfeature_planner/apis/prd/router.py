@@ -32,6 +32,7 @@ from crewai_productfeature_planner.apis.shared import (
     approval_decisions,
     approval_events,
     approval_feedback,
+    approval_selected,
     pause_requested,
     runs,
 )
@@ -234,6 +235,8 @@ async def approve_prd(request: PRDApproveRequest):
     approval_decisions[request.run_id] = request.approve
     if request.feedback and not request.approve:
         approval_feedback[request.run_id] = request.feedback
+    if request.selected_agent:
+        approval_selected[request.run_id] = request.selected_agent
 
     event = approval_events.get(request.run_id)
     if event is not None:

@@ -20,7 +20,7 @@ crewai install
 ```
 ### Customizing
 
-**Add your `OPENAI_API_KEY` into the `.env` file**
+**Add your `OPENAI_API_KEY` into the `.env` file.** Optionally set `GOOGLE_API_KEY` (or `GOOGLE_CLOUD_PROJECT` for Vertex AI) to enable multi-agent parallel analysis with Google Gemini.
 
 - Modify `src/crewai_productfeature_planner/config/agents.yaml` to define your agents
 - Modify `src/crewai_productfeature_planner/config/tasks.yaml` to define your tasks
@@ -71,13 +71,28 @@ The script calls `uv run start_api --ngrok` and prints the public URL.
 
 ## Environment Variables
 
-Ensure you set the required variables in `.env`:
+Copy `.env.example` to `.env` and fill in real values. Required and optional variables:
 
-- `OPENAI_API_KEY`
-- `MODEL` and optional `PM_MODEL`
-- `MONGODB_URI` (default `mongodb://localhost:27017`)
-- `MONGODB_USERNAME` / `MONGODB_PASSWORD` (optional)
-- `NGROK_AUTHTOKEN` (required for ngrok)
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `OPENAI_API_KEY` | **Yes**\* | — | OpenAI API key (required when `DEFAULT_AGENT=openai_pm`) |
+| `MODEL` | No | `o3` | Default CrewAI model selector |
+| `PM_MODEL` | No | `MODEL` | Override the PM reasoning model |
+| `DEFAULT_AGENT` | No | `openai_pm` | Primary agent for all LLM tasks (`openai_pm` or `gemini_pm`). The default agent is always required; additional agents run the same task in parallel so you can compare results. |
+| `GOOGLE_API_KEY` | **Yes**\* | — | Google API key ([get one here](https://aistudio.google.com/apikey)). Required when using Gemini API mode. Either this or `GOOGLE_CLOUD_PROJECT` must be set when `DEFAULT_AGENT=gemini_pm`; optional otherwise. |
+| `GOOGLE_CLOUD_PROJECT` | **Yes**\* | — | Google Cloud project ID with Vertex AI API enabled. Alternative to `GOOGLE_API_KEY`. Authenticate via `gcloud auth application-default login`. |
+| `GOOGLE_CLOUD_LOCATION` | No | `asia-southeast1` | Google Cloud region for Vertex AI ([available regions](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations)) |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash-preview-05-20` | Gemini model to use ([available models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models)) |
+| `SERPER_API_KEY` | **Yes** | — | Google search via SerperDev for market research |
+| `MONGODB_URI` | No | `localhost` | MongoDB host |
+| `MONGODB_PORT` | No | `27017` | MongoDB port |
+| `MONGODB_DB` | No | `ideas` | MongoDB database name |
+| `MONGODB_USERNAME` | No | — | MongoDB auth username |
+| `MONGODB_PASSWORD` | No | — | MongoDB auth password |
+| `NGROK_AUTHTOKEN` | No | — | Required for ngrok remote access |
+| `LLM_TIMEOUT` | No | `300` | LLM request timeout in seconds |
+| `LLM_MAX_RETRIES` | No | `3` | Retries on transient LLM errors |
+| `LLM_RETRY_BASE_DELAY` | No | `5` | Base delay (seconds) for exponential back-off |
 
 ## Understanding Your Crew
 

@@ -52,3 +52,6 @@ approval_feedback: dict[str, str] = {}
 
 # Per-run pause flag: set to True to pause at the next approval point.
 pause_requested: dict[str, bool] = {}
+
+# Per-run selected agent: which agent's result the caller chose.
+approval_selected: dict[str, str] = {}

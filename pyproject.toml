@@ -5,7 +5,7 @@ description = "crewai_productfeature_planner using crewAI"
 authors = [{ name = "Your Name", email = "you@example.com" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "crewai[tools]==1.9.3",
+    "crewai[google-genai,tools]==1.9.3",
     "certifi>=2023.7.22",
     "pymongo==4.7.2",
     "pyngrok>=7.0",
@@ -23,7 +23,7 @@ test = "crewai_productfeature_planner.main:test"
 run_with_trigger = "crewai_productfeature_planner.main:run_with_trigger"
 run_prd_flow = "crewai_productfeature_planner.main:run_prd_flow"
 start_api = "crewai_productfeature_planner.main:start_api"
-preflight = "crewai_productfeature_planner.preflight:run_checks"
+preflight = "crewai_productfeature_planner.scripts.preflight:run_checks"
 
 [dependency-groups]
 dev = [

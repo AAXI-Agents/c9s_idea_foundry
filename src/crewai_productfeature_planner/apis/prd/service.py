@@ -14,6 +14,7 @@ from crewai_productfeature_planner.apis.shared import (
     approval_decisions,
     approval_events,
     approval_feedback,
+    approval_selected,
     pause_requested,
     runs,
 )
@@ -39,13 +40,19 @@ def make_approval_callback(run_id: str):
 
     The callback:
       1. Checks if a pause has been requested (returns ``PAUSE_SENTINEL`` immediately).
-      2. Updates the run with the latest section draft and marks ``awaiting_approval``.
+      2. Updates the run with the latest agent results and marks ``awaiting_approval``.
       3. Waits on a threading.Event for the user to call the approve/pause endpoint.
-      4. Returns ``True`` (approve section), ``False`` (agent critique), a ``str``
-         (user-provided critique feedback), or ``PAUSE_SENTINEL`` to pause.
+      4. Returns ``(selected_agent, True)`` (approve), ``(selected_agent, False)``
+         (agent critique), ``(selected_agent, feedback_str)`` (user critique),
+         or ``PAUSE_SENTINEL`` to pause.
     """
 
-    def _callback(iteration: int, section_key: str, section_content: str, draft: PRDDraft) -> Union[bool, str]:
+    def _callback(
+        iteration: int,
+        section_key: str,
+        agent_results: dict[str, str],
+        draft: PRDDraft,
+    ) -> Union[bool, str, tuple[str, Union[bool, str]]]:
         from crewai_productfeature_planner.flows.prd_flow import PAUSE_SENTINEL
 
         # Check if pause was requested while the flow was running
@@ -63,8 +70,8 @@ def make_approval_callback(run_id: str):
         update_job_status(run_id, "awaiting_approval")
 
         logger.info(
-            "[API] Awaiting user approval (run_id=%s, section=%s, iteration=%d)",
-            run_id, section_key, iteration,
+            "[API] Awaiting user approval (run_id=%s, section=%s, iteration=%d, agents=%s)",
+            run_id, section_key, iteration, list(agent_results.keys()),
         )
 
         event = approval_events.setdefault(run_id, threading.Event())
@@ -78,26 +85,31 @@ def make_approval_callback(run_id: str):
 
         approved = approval_decisions.pop(run_id, False)
         fb = approval_feedback.pop(run_id, "")
+        selected = approval_selected.pop(run_id, "")
 
         if run is not None:
             run.status = FlowStatus.RUNNING
 
         update_job_status(run_id, "running")
 
-        # If user provided critique feedback, return it as a string
+        # Determine the agent to use (fallback to first available)
+        default_agent = next(iter(agent_results)) if agent_results else ""
+        agent_name = selected or default_agent
+
+        # If user provided critique feedback, return it as a tuple
         if not approved and fb:
             logger.info(
-                "[API] User provided critique feedback for run_id=%s section=%s (%d chars)",
-                run_id, section_key, len(fb),
+                "[API] User provided critique feedback for run_id=%s section=%s agent=%s (%d chars)",
+                run_id, section_key, agent_name, len(fb),
             )
-            return fb
+            return (agent_name, fb)
 
         logger.info(
-            "[API] User decision for run_id=%s section=%s: %s",
-            run_id, section_key,
+            "[API] User decision for run_id=%s section=%s agent=%s: %s",
+            run_id, section_key, agent_name,
             "APPROVED" if approved else "CONTINUE",
         )
-        return approved
+        return (agent_name, approved)
 
     return _callback
 
@@ -176,6 +188,7 @@ def run_prd_flow(run_id: str, idea: str) -> None:
         approval_events.pop(run_id, None)
         approval_decisions.pop(run_id, None)
         approval_feedback.pop(run_id, None)
+        approval_selected.pop(run_id, None)
         pause_requested.pop(run_id, None)
 
 

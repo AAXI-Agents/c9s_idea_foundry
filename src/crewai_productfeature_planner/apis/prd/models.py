@@ -27,6 +27,30 @@ SECTION_ORDER: list[tuple[str, str]] = [
 SECTION_KEYS: list[str] = [key for key, _ in SECTION_ORDER]
 
 
+# Well-known agent identifiers used across the codebase.
+AGENT_OPENAI = "openai_pm"
+AGENT_GEMINI = "gemini_pm"
+
+# All recognised agent identifiers (order = display preference).
+VALID_AGENTS: list[str] = [AGENT_OPENAI, AGENT_GEMINI]
+
+# Fallback when DEFAULT_AGENT env var is not set.
+DEFAULT_AGENT_FALLBACK = AGENT_OPENAI
+
+
+def get_default_agent() -> str:
+    """Return the configured default agent identifier.
+
+    Reads ``DEFAULT_AGENT`` from the environment.  Falls back to
+    ``openai_pm`` when unset or invalid.
+    """
+    import os
+    agent = os.environ.get("DEFAULT_AGENT", DEFAULT_AGENT_FALLBACK)
+    if agent not in VALID_AGENTS:
+        return DEFAULT_AGENT_FALLBACK
+    return agent
+
+
 class PRDSection(BaseModel):
     """A single section of a PRD with its own iteration tracking."""
 
@@ -43,6 +67,21 @@ class PRDSection(BaseModel):
     )
     is_approved: bool = Field(
         default=False, description="Whether the user has approved this section."
+    )
+    agent_results: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Per-agent draft results for this section. Keys are agent "
+            "identifiers (e.g. 'openai_pm', 'gemini_pm'), values are "
+            "the markdown content each agent produced."
+        ),
+    )
+    selected_agent: str = Field(
+        default="",
+        description=(
+            "Which agent's result was selected by the user. Empty string "
+            "means no selection has been made yet."
+        ),
     )
 
 
@@ -132,6 +171,15 @@ class PRDApproveRequest(BaseModel):
         ),
         examples=["Add more detail to the security section and include OAuth2 flow."],
     )
+    selected_agent: str | None = Field(
+        default=None,
+        description=(
+            "Which agent's result to use (e.g. 'openai_pm' or 'gemini_pm'). "
+            "Required when multiple agents produced results for the current "
+            "section. Defaults to the first available agent when omitted."
+        ),
+        examples=["openai_pm"],
+    )
 
 
 class PRDPauseRequest(BaseModel):
@@ -210,6 +258,18 @@ class PRDSectionDetail(BaseModel):
     critique: str = Field(default="", description="Latest critique text.")
     iteration: int = Field(default=0, description="Section iteration count.")
     is_approved: bool = Field(default=False, description="Whether this section is approved.")
+    agent_results: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Per-agent draft results. Keys are agent identifiers "
+            "(e.g. 'openai_pm', 'gemini_pm'), values are the markdown "
+            "content each agent produced for this section."
+        ),
+    )
+    selected_agent: str = Field(
+        default="",
+        description="Which agent's result was selected by the user.",
+    )
 
 
 class PRDDraftDetail(BaseModel):

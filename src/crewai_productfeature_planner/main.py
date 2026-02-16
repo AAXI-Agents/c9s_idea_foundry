@@ -4,7 +4,7 @@ import warnings
 
 from datetime import datetime
 
-from crewai_productfeature_planner.apis.prd.models import PRDDraft, SECTION_ORDER
+from crewai_productfeature_planner.apis.prd.models import AGENT_OPENAI, AGENT_GEMINI, PRDDraft, SECTION_ORDER, get_default_agent
 from crewai_productfeature_planner.crew import CrewaiProductfeaturePlanner
 from crewai_productfeature_planner.flows.prd_flow import PAUSE_SENTINEL, PauseRequested, PRDFlow
 from crewai_productfeature_planner.mongodb import find_unfinalized, get_run_documents, mark_completed, save_finalized
@@ -157,25 +157,47 @@ def _get_idea() -> str:
     return input("Enter your product feature idea: ").strip()
 
 
-def _cli_approval_callback(iteration: int, section_key: str, section_content: str, draft) -> bool | str:
-    """Interactive CLI callback — show the current section and ask user to approve.
+def _cli_approval_callback(iteration: int, section_key: str, agent_results: dict[str, str], draft) -> "tuple[str, bool | str] | str":
+    """Interactive CLI callback — show agent results and let user pick & approve.
+
+    When multiple agents produced results, the user first chooses which
+    agent's output to keep, then decides whether to approve or refine.
 
     Returns:
-        ``True`` to approve the section, ``False`` to continue with agent self-critique,
-        a ``str`` with user-provided critique feedback, or ``PAUSE_SENTINEL`` to
-        save progress and exit.
+        ``(agent_name, True)`` to approve using *agent_name*'s result,
+        ``(agent_name, False)`` to refine, ``(agent_name, feedback)`` for
+        user-provided critique, or ``PAUSE_SENTINEL`` to pause.
     """
     section = draft.get_section(section_key)
     step = section.step if section else "?"
     total = len(draft.sections)
+
+    agent_names = list(agent_results.keys())
+    multi = len(agent_names) > 1
+
+    # --- Display agent results ------------------------------------------
     print(f"\n{'=' * 60}")
     print(f"  Step {step}/{total}: {section_key} — Iteration {iteration}")
+    if multi:
+        print(f"  {len(agent_names)} agent(s) produced results")
     print(f"{'=' * 60}")
-    print(section_content[:2000])
-    if len(section_content) > 2000:
-        print(f"\n... ({len(section_content) - 2000} more chars) ...")
-    print(f"{'=' * 60}\n")
 
+    for idx, (agent_name, content) in enumerate(agent_results.items(), 1):
+        label = _agent_display_name(agent_name)
+        print(f"\n--- [{idx}] {label} ---")
+        print(content[:2000])
+        if len(content) > 2000:
+            print(f"\n... ({len(content) - 2000} more chars) ...")
+    print(f"\n{'=' * 60}")
+
+    # --- Agent selection ------------------------------------------------
+    if multi:
+        selected = _select_agent(agent_names)
+    else:
+        selected = agent_names[0]
+
+    # --- Action selection -----------------------------------------------
+    print()
     while True:
         answer = (
             input(
@@ -186,9 +208,9 @@ def _cli_approval_callback(iteration: int, section_key: str, section_content: st
             .lower()
         )
         if answer in ("y", "yes"):
-            return True
+            return (selected, True)
         if answer in ("n", "no"):
-            return False
+            return (selected, False)
         if answer in ("p", "pause"):
             return PAUSE_SENTINEL
         if answer in ("f", "feedback"):
@@ -201,10 +223,41 @@ def _cli_approval_callback(iteration: int, section_key: str, section_content: st
                 lines.append(line)
             feedback = "\n".join(lines).strip()
             if feedback:
-                return feedback
+                return (selected, feedback)
             print("Empty feedback — please try again.")
         else:
             print("Please enter 'y', 'n', 'f', or 'p'.")
+
+
+def _agent_display_name(agent_name: str) -> str:
+    """Human-readable label for an agent key."""
+    default = get_default_agent()
+    names = {
+        AGENT_OPENAI: "OpenAI PM",
+        AGENT_GEMINI: "Gemini PM",
+    }
+    label = names.get(agent_name, agent_name)
+    if agent_name == default:
+        label += " (default)"
+    return label
+
+
+def _select_agent(agent_names: list[str]) -> str:
+    """Prompt user to pick one of the available agents."""
+    print("\nSelect which agent's result to use:")
+    for idx, name in enumerate(agent_names, 1):
+        print(f"  [{idx}] {_agent_display_name(name)}")
+    while True:
+        choice = input(f"Enter 1-{len(agent_names)}: ").strip()
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(agent_names):
+                selected = agent_names[idx]
+                print(f"  → Selected: {_agent_display_name(selected)}")
+                return selected
+        except ValueError:
+            pass
+        print(f"Please enter 1-{len(agent_names)}.")
 
 
 def _prompt_next_action() -> str | None:

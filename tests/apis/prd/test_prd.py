@@ -13,6 +13,7 @@ from crewai_productfeature_planner.apis.shared import (
     approval_decisions,
     approval_events,
     approval_feedback,
+    approval_selected,
     pause_requested,
     runs,
 )
@@ -43,6 +44,7 @@ def client():
     approval_events.clear()
     approval_decisions.clear()
     approval_feedback.clear()
+    approval_selected.clear()
     pause_requested.clear()
     with TestClient(app) as c:
         yield c
@@ -50,6 +52,7 @@ def client():
     approval_events.clear()
     approval_decisions.clear()
     approval_feedback.clear()
+    approval_selected.clear()
     pause_requested.clear()
 
 
@@ -365,6 +368,46 @@ def test_approve_true_ignores_feedback(client):
     assert body["section"] == "user_personas"
     # Feedback should NOT be stored when approving
     assert "r5" not in approval_feedback
+
+
+def test_approve_with_selected_agent(client):
+    """selected_agent should be stored in approval_selected."""
+    run = FlowRun(
+        run_id="r6", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
+    )
+    run.current_section_key = "executive_summary"
+    runs["r6"] = run
+    event = threading.Event()
+    approval_events["r6"] = event
+
+    resp = client.post(
+        "/flow/prd/approve",
+        json={
+            "run_id": "r6",
+            "approve": True,
+            "selected_agent": "gemini_pm",
+        },
+    )
+    assert resp.status_code == 200
+    assert approval_selected.get("r6") == "gemini_pm"
+
+
+def test_approve_without_selected_agent(client):
+    """When selected_agent is omitted, approval_selected should not be set."""
+    run = FlowRun(
+        run_id="r7", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
+    )
+    run.current_section_key = "executive_summary"
+    runs["r7"] = run
+    event = threading.Event()
+    approval_events["r7"] = event
+
+    resp = client.post(
+        "/flow/prd/approve",
+        json={"run_id": "r7", "approve": True},
+    )
+    assert resp.status_code == 200
+    assert "r7" not in approval_selected
 
 
 # ── API naming convention ────────────────────────────────────
