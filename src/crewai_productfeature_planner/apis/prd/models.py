@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 
 SECTION_ORDER: list[tuple[str, str]] = [
     ("executive_summary", "Executive Summary"),
+    ("why_now", "Why Now / Market Timing"),
+    ("objectives_okrs", "Objectives (OKRs)"),
+    ("target_market", "Target Market / Audience"),
+    ("competitive_landscape", "Competitive Landscape"),
+    ("scope_solution_overview", "Scope / Solution Overview"),
+    ("change_log", "Change Log / Version History"),
     ("problem_statement", "Problem Statement"),
     ("user_personas", "User Personas"),
     ("functional_requirements", "Functional Requirements"),
@@ -26,6 +32,10 @@ class PRDSection(BaseModel):
 
     key: str = Field(..., description="Section identifier slug.")
     title: str = Field(..., description="Human-readable section title.")
+    step: int = Field(
+        default=0,
+        description="1-based step number indicating order in the PRD workflow.",
+    )
     content: str = Field(default="", description="Markdown content of this section.")
     critique: str = Field(default="", description="Latest critique for this section.")
     iteration: int = Field(
@@ -46,7 +56,8 @@ class PRDDraft(BaseModel):
         """Create a new PRDDraft with all sections initialized empty."""
         return cls(
             sections=[
-                PRDSection(key=key, title=title) for key, title in SECTION_ORDER
+                PRDSection(key=key, title=title, step=idx)
+                for idx, (key, title) in enumerate(SECTION_ORDER, 1)
             ]
         )
 
@@ -170,6 +181,22 @@ class PRDActionResponse(BaseModel):
         default="",
         description="The section key the action was applied to.",
     )
+    current_step: int | None = Field(
+        default=None,
+        description="1-based step number of the current section.",
+    )
+    sections_approved: int | None = Field(
+        default=None,
+        description="Number of sections approved so far (including this one if approved).",
+    )
+    sections_total: int | None = Field(
+        default=None,
+        description="Total number of sections in the PRD.",
+    )
+    is_final_section: bool = Field(
+        default=False,
+        description="True when this approval completed the last section — the flow will finalize.",
+    )
     message: str = Field(..., description="Human-readable result message.")
 
 
@@ -178,6 +205,7 @@ class PRDSectionDetail(BaseModel):
 
     key: str = Field(..., description="Section identifier slug.")
     title: str = Field(..., description="Human-readable section title.")
+    step: int = Field(default=0, description="1-based step number in the PRD workflow.")
     content: str = Field(default="", description="Current markdown content.")
     critique: str = Field(default="", description="Latest critique text.")
     iteration: int = Field(default=0, description="Section iteration count.")
@@ -206,10 +234,28 @@ class PRDRunStatusResponse(BaseModel):
     iteration: int = Field(default=0, description="Total iteration count across all sections.")
     created_at: str = Field(..., description="ISO-8601 creation timestamp.")
     result: str | None = Field(default=None, description="Final result when completed.")
-    error: str | None = Field(default=None, description="Error message if failed.")
+    error: str | None = Field(
+        default=None,
+        description=(
+            "Error message if the run failed or paused due to an error. "
+            "Prefixed with an error code: BILLING_ERROR, LLM_ERROR, or INTERNAL_ERROR."
+        ),
+    )
     current_section_key: str = Field(
         default="",
         description="Key of the section currently being iterated.",
+    )
+    current_step: int = Field(
+        default=0,
+        description="1-based step number of the current section.",
+    )
+    sections_approved: int = Field(
+        default=0,
+        description="Number of approved sections (convenience, derivable from current_draft).",
+    )
+    sections_total: int = Field(
+        default=0,
+        description="Total number of PRD sections.",
     )
     current_draft: PRDDraftDetail = Field(
         default_factory=PRDDraftDetail,
@@ -256,4 +302,96 @@ class PRDResumeResponse(BaseModel):
     next_section: str | None = Field(
         default=None, description="Key of the next section to iterate."
     )
+    next_step: int | None = Field(
+        default=None, description="1-based step number of the next section."
+    )
     message: str = Field(..., description="Human-readable status message.")
+
+
+# ── Job tracking models ──────────────────────────────────────
+
+
+class JobDetail(BaseModel):
+    """A persistent job record from the ``crewJobs`` collection."""
+
+    job_id: str = Field(..., description="Unique job identifier (same as run_id).")
+    flow_name: str = Field(..., description="Name of the flow (e.g. 'prd').")
+    idea: str = Field(default="", description="The feature idea / input text.")
+    status: str = Field(
+        ...,
+        description=(
+            "Job lifecycle status: queued, running, awaiting_approval, "
+            "paused, completed, or failed."
+        ),
+    )
+    error: str | None = Field(default=None, description="Error message when status is 'failed'.")
+
+    queued_at: str | None = Field(default=None, description="ISO-8601 timestamp when the job was created.")
+    started_at: str | None = Field(default=None, description="ISO-8601 timestamp when execution began.")
+    completed_at: str | None = Field(
+        default=None, description="ISO-8601 timestamp when the job reached a terminal state."
+    )
+
+    queue_time_ms: int | None = Field(
+        default=None, description="Time spent in queue (started_at - queued_at) in milliseconds."
+    )
+    queue_time_human: str | None = Field(
+        default=None, description="Queue duration in human-readable form (e.g. '0h 1m 30s')."
+    )
+    running_time_ms: int | None = Field(
+        default=None, description="Time spent running (completed_at - started_at) in milliseconds."
+    )
+    running_time_human: str | None = Field(
+        default=None, description="Running duration in human-readable form (e.g. '1h 23m 45s')."
+    )
+    updated_at: str | None = Field(default=None, description="ISO-8601 timestamp of last update.")
+
+
+class JobListResponse(BaseModel):
+    """Response for GET /flow/jobs."""
+
+    count: int = Field(..., description="Number of jobs returned.")
+    jobs: list[JobDetail] = Field(default_factory=list, description="List of job records.")
+
+
+# ── Error response model ─────────────────────────────────────
+
+
+class ErrorResponse(BaseModel):
+    """Standard error envelope returned by all API endpoints.
+
+    Returned for any unexpected server-side error (HTTP 500) or when
+    the upstream LLM / OpenAI service is unavailable (HTTP 503).
+
+    Error codes:
+        ``LLM_ERROR``      — The LLM backend returned an unrecoverable
+                             error after exhausting all retry attempts
+                             (e.g. timeouts, model overload).
+        ``BILLING_ERROR``  — OpenAI billing / quota issue detected
+                             (e.g. ``insufficient_quota``,
+                             ``billing_hard_limit_reached``).
+        ``INTERNAL_ERROR`` — Any other unexpected server-side failure.
+    """
+
+    error_code: str = Field(
+        ...,
+        description=(
+            "Machine-readable error code. One of: "
+            "LLM_ERROR, BILLING_ERROR, INTERNAL_ERROR."
+        ),
+        examples=["LLM_ERROR"],
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable description of the error.",
+        examples=["LLM timeout after 4 attempts"],
+    )
+    run_id: str | None = Field(
+        default=None,
+        description="The run_id affected by this error, if applicable.",
+        examples=["a1b2c3d4e5f6"],
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Additional diagnostic detail (e.g. the original exception message).",
+    )

@@ -8,6 +8,8 @@ import pytest
 from crewai_productfeature_planner.scripts.retry import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BASE_DELAY,
+    BillingError,
+    LLMError,
     crew_kickoff_with_retry,
 )
 
@@ -50,12 +52,12 @@ def test_succeeds_on_retry(monkeypatch):
 
 
 def test_raises_after_exhausting_retries(monkeypatch):
-    """Should raise the last exception after all retries are exhausted."""
+    """Should raise LLMError wrapping the last exception after all retries are exhausted."""
     monkeypatch.setenv("LLM_MAX_RETRIES", "1")
     crew = _make_crew(side_effect=RuntimeError("LLM timeout"))
 
     with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
-        with pytest.raises(RuntimeError, match="LLM timeout"):
+        with pytest.raises(LLMError, match="LLM timeout"):
             crew_kickoff_with_retry(crew, step_label="test", base_delay=0)
 
     # 1 initial + 1 retry = 2 attempts
@@ -63,9 +65,9 @@ def test_raises_after_exhausting_retries(monkeypatch):
 
 
 def test_zero_retries_raises_immediately():
-    """With max_retries=0, should fail on first error without retrying."""
+    """With max_retries=0, should fail on first error with LLMError."""
     crew = _make_crew(side_effect=RuntimeError("boom"))
-    with pytest.raises(RuntimeError, match="boom"):
+    with pytest.raises(LLMError, match="boom"):
         crew_kickoff_with_retry(crew, step_label="test", max_retries=0)
     assert crew.kickoff.call_count == 1
 
@@ -115,6 +117,92 @@ def test_env_var_base_delay(monkeypatch):
         crew_kickoff_with_retry(crew, step_label="test", max_retries=1)
 
     mock_sleep.assert_called_once_with(10.0)
+
+
+# ── Non-retryable errors ──────────────────────────────────────
+
+
+def test_insufficient_quota_not_retried():
+    """insufficient_quota errors should raise BillingError immediately without retrying."""
+    crew = _make_crew(
+        side_effect=RuntimeError(
+            "Error code: 429 - {'error': {'type': 'insufficient_quota', "
+            "'code': 'insufficient_quota'}}"
+        ),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(BillingError, match="insufficient_quota"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_invalid_api_key_not_retried():
+    """invalid_api_key errors should raise BillingError immediately without retrying."""
+    crew = _make_crew(
+        side_effect=RuntimeError("invalid_api_key: bad key"),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(BillingError, match="invalid_api_key"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_billing_hard_limit_not_retried():
+    """billing_hard_limit_reached errors should raise BillingError immediately."""
+    crew = _make_crew(
+        side_effect=RuntimeError("billing_hard_limit_reached"),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(BillingError, match="billing_hard_limit_reached"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_exceeded_quota_not_retried():
+    """'exceeded your current quota' should raise BillingError immediately."""
+    crew = _make_crew(
+        side_effect=RuntimeError("You exceeded your current quota, check your plan and billing details."),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(BillingError, match="exceeded your current quota"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_billing_error_is_runtime_error():
+    """BillingError should be a subclass of RuntimeError for backward compat."""
+    assert issubclass(BillingError, RuntimeError)
+
+
+def test_llm_error_is_runtime_error():
+    """LLMError should be a subclass of RuntimeError."""
+    assert issubclass(LLMError, RuntimeError)
+
+
+def test_billing_error_is_llm_error():
+    """BillingError should be a subclass of LLMError."""
+    assert issubclass(BillingError, LLMError)
+
+
+def test_exhausted_retries_wraps_original():
+    """LLMError raised after retry exhaustion should chain the original exception."""
+    original = RuntimeError("model overloaded")
+    crew = _make_crew(side_effect=original)
+    with pytest.raises(LLMError, match="model overloaded") as exc_info:
+        crew_kickoff_with_retry(crew, step_label="test", max_retries=0)
+    assert exc_info.value.__cause__ is original
 
 
 # ── Defaults ──────────────────────────────────────────────────

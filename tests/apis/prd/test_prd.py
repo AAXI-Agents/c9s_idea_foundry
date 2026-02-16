@@ -23,6 +23,19 @@ def _set_dummy_keys(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
 
 
+@pytest.fixture(autouse=True)
+def _mock_crew_jobs():
+    """Prevent API tests from writing to real MongoDB crewJobs collection."""
+    with (
+        patch("crewai_productfeature_planner.apis.prd.router.create_job"),
+        patch(
+            "crewai_productfeature_planner.apis.prd.router.find_active_job",
+            return_value=None,
+        ),
+    ):
+        yield
+
+
 @pytest.fixture()
 def client():
     """Provide a fresh TestClient and clear stores between tests."""
@@ -97,6 +110,8 @@ def test_get_run_status_found(client):
     body = status_resp.json()
     assert body["run_id"] == run_id
     assert body["flow_name"] == "prd"
+    assert body["sections_approved"] == 0
+    assert body["sections_total"] == 16
 
 
 def test_get_run_status_not_found(client):
@@ -130,7 +145,7 @@ def test_run_prd_flow_success():
 
 
 def test_run_prd_flow_failure():
-    """Failed flow should set status to FAILED with error message."""
+    """Failed flow should set status to FAILED with INTERNAL_ERROR code."""
     from crewai_productfeature_planner.apis.prd.service import run_prd_flow
 
     runs.clear()
@@ -147,6 +162,7 @@ def test_run_prd_flow_failure():
 
     assert run.status == FlowStatus.FAILED
     assert "LLM timeout" in run.error
+    assert run.error.startswith("INTERNAL_ERROR:")
 
 
 def test_run_prd_flow_pause():
@@ -168,6 +184,71 @@ def test_run_prd_flow_pause():
 
     assert run.status == FlowStatus.PAUSED
     assert run.error is None
+
+
+def test_run_prd_flow_billing_error():
+    """BillingError should set status to PAUSED with BILLING_ERROR code."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+    from crewai_productfeature_planner.scripts.retry import BillingError
+
+    runs.clear()
+    run = FlowRun(run_id="test-billing", flow_name="prd")
+    runs["test-billing"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.kickoff.side_effect = BillingError("insufficient_quota")
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("test-billing", "Billing idea")
+
+    assert run.status == FlowStatus.PAUSED
+    assert run.error.startswith("BILLING_ERROR:")
+    assert "insufficient_quota" in run.error
+
+
+def test_run_prd_flow_llm_error():
+    """LLMError should set status to PAUSED with LLM_ERROR code."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+    from crewai_productfeature_planner.scripts.retry import LLMError
+
+    runs.clear()
+    run = FlowRun(run_id="test-llm", flow_name="prd")
+    runs["test-llm"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.kickoff.side_effect = LLMError("model overloaded")
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("test-llm", "LLM idea")
+
+    assert run.status == FlowStatus.PAUSED
+    assert run.error.startswith("LLM_ERROR:")
+    assert "model overloaded" in run.error
+
+
+# ── Global error handler ─────────────────────────────────────
+
+
+def test_global_error_handler_returns_500():
+    """Unhandled exceptions should return 500 with ErrorResponse envelope."""
+    runs.clear()
+    mock_runs = MagicMock()
+    mock_runs.get.side_effect = RuntimeError("db down")
+    with patch(
+        "crewai_productfeature_planner.apis.prd.router.runs",
+        mock_runs,
+    ):
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/flow/runs/test-crash")
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["error_code"] == "INTERNAL_ERROR"
+    assert "db down" in body["message"]
+    runs.clear()
 
 
 # ── POST /flow/prd/approve ───────────────────────────────────
@@ -335,6 +416,9 @@ def test_pause_awaiting_approval(client):
     body = resp.json()
     assert body["action"] == "paused"
     assert body["section"] == "executive_summary"
+    assert body["sections_approved"] == 0
+    assert body["sections_total"] == 16
+    assert body["is_final_section"] is False
     assert event.is_set()
     assert pause_requested.get("r-pause") is True
 
@@ -353,7 +437,7 @@ def test_pause_running(client):
 # ── GET /flow/prd/resumable ──────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.apis.prd.router.find_unfinalized")
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
 def test_list_resumable_runs(mock_find, client):
     """Should return unfinalized runs from MongoDB."""
     mock_find.return_value = [
@@ -374,7 +458,7 @@ def test_list_resumable_runs(mock_find, client):
     assert len(body["runs"][0]["sections"]) == 2
 
 
-@patch("crewai_productfeature_planner.apis.prd.router.find_unfinalized")
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
 def test_list_resumable_empty(mock_find, client):
     """Should return empty list when no resumable runs."""
     mock_find.return_value = []
@@ -388,7 +472,7 @@ def test_list_resumable_empty(mock_find, client):
 # ── POST /flow/prd/resume ────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.apis.prd.router.find_unfinalized")
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
 def test_resume_not_found(mock_find, client):
     """Resuming a non-resumable run_id should 404."""
     mock_find.return_value = []
@@ -397,7 +481,7 @@ def test_resume_not_found(mock_find, client):
 
 
 @patch("crewai_productfeature_planner.apis.prd.router.resume_prd_flow")
-@patch("crewai_productfeature_planner.apis.prd.router.find_unfinalized")
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
 def test_resume_success(mock_find, mock_resume, client):
     """Resuming a valid run should return 202."""
     mock_find.return_value = [
@@ -414,6 +498,8 @@ def test_resume_success(mock_find, mock_resume, client):
     assert body["run_id"] == "abc123"
     assert body["status"] == "running"
     assert body["sections_approved"] == 1
+    assert body["sections_total"] == 16
+    assert body["next_section"] == "why_now"
     assert "abc123" in runs
 
 
@@ -447,3 +533,76 @@ def test_list_runs_with_data(client):
     assert body["count"] == 2
     run_ids = {r["run_id"] for r in body["runs"]}
     assert run_ids == {"r1", "r2"}
+
+
+# ── ErrorResponse model ──────────────────────────────────────
+
+
+def test_error_response_model():
+    """ErrorResponse should serialize with required and optional fields."""
+    from crewai_productfeature_planner.apis.prd.models import ErrorResponse
+
+    err = ErrorResponse(
+        error_code="LLM_ERROR",
+        message="model overloaded",
+        run_id="abc123",
+        detail="LLMError: model overloaded",
+    )
+    data = err.model_dump()
+    assert data["error_code"] == "LLM_ERROR"
+    assert data["message"] == "model overloaded"
+    assert data["run_id"] == "abc123"
+    assert data["detail"] == "LLMError: model overloaded"
+
+
+def test_error_response_minimal():
+    """ErrorResponse should work with only required fields."""
+    from crewai_productfeature_planner.apis.prd.models import ErrorResponse
+
+    err = ErrorResponse(error_code="INTERNAL_ERROR", message="boom")
+    data = err.model_dump()
+    assert data["error_code"] == "INTERNAL_ERROR"
+    assert data["run_id"] is None
+    assert data["detail"] is None
+
+
+def test_openapi_schema_includes_error_response(client):
+    """The generated OpenAPI schema should include the ErrorResponse schema."""
+    resp = client.get("/openapi.json")
+    schema = resp.json()
+    assert "ErrorResponse" in schema["components"]["schemas"]
+    err_schema = schema["components"]["schemas"]["ErrorResponse"]
+    assert "error_code" in err_schema["properties"]
+    assert "message" in err_schema["properties"]
+
+
+# ── Single active job guard ──────────────────────────────────
+
+
+def test_kickoff_rejects_when_active_job_exists(client):
+    """Kickoff should return 409 when an active job already exists."""
+    active_job = {"job_id": "existing-123", "status": "running"}
+    with patch(
+        "crewai_productfeature_planner.apis.prd.router.find_active_job",
+        return_value=active_job,
+    ):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Another idea"},
+        )
+    assert resp.status_code == 409
+    assert "existing-123" in resp.json()["detail"]
+    assert "already active" in resp.json()["detail"]
+
+
+def test_endpoints_document_500_503(client):
+    """All flow endpoints should document 500 and 503 error responses."""
+    resp = client.get("/openapi.json")
+    schema = resp.json()
+    flow_paths = [p for p in schema["paths"] if p.startswith("/flow/")]
+    for path in flow_paths:
+        for method, spec in schema["paths"][path].items():
+            if method in ("get", "post", "put", "patch", "delete"):
+                responses = spec.get("responses", {})
+                assert "500" in responses, f"{method.upper()} {path} missing 500"
+                assert "503" in responses, f"{method.upper()} {path} missing 503"

@@ -1,0 +1,63 @@
+{
+  "get": {
+    "summary": "Get Run Status",
+    "description": "Check the status of a flow run.",
+    "operationId": "get_run_status_flow_runs__run_id__get",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/PRDRunStatusResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error (INTERNAL_ERROR).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

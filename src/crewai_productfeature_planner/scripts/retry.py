@@ -29,6 +29,32 @@ logger = get_logger(__name__)
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_DELAY = 5  # seconds
 
+# Patterns that indicate a billing / account issue (not transient).
+_BILLING_PATTERNS: list[str] = [
+    "insufficient_quota",
+    "invalid_api_key",
+    "billing_hard_limit_reached",
+    "billing_not_active",
+    "exceeded your current quota",
+    "account_deactivated",
+]
+
+
+class LLMError(RuntimeError):
+    """Raised when an OpenAI / LLM error causes all retries to be exhausted.
+
+    Callers should treat this as a recoverable pause — the user can fix the
+    issue and resume the flow.
+    """
+
+
+class BillingError(LLMError):
+    """Raised when an OpenAI billing / quota error is detected.
+
+    Callers should treat this as non-retryable and pause the flow so the
+    user can fix their billing before running again.
+    """
+
 
 def _get_max_retries() -> int:
     return int(os.environ.get("LLM_MAX_RETRIES", str(DEFAULT_MAX_RETRIES)))
@@ -76,6 +102,14 @@ def crew_kickoff_with_retry(
             return result
         except Exception as exc:
             last_exc = exc
+            # Don't retry on non-transient billing / account errors
+            exc_str = str(exc).lower()
+            if any(pat in exc_str for pat in _BILLING_PATTERNS):
+                logger.error(
+                    "[Retry] %s hit a non-retryable billing error: %s",
+                    step_label, exc,
+                )
+                raise BillingError(str(exc)) from exc
             if attempt <= retries:
                 wait = delay * (2 ** (attempt - 1))
                 logger.warning(
@@ -95,4 +129,4 @@ def crew_kickoff_with_retry(
                     exc,
                 )
 
-    raise last_exc  # type: ignore[misc]
+    raise LLMError(str(last_exc)) from last_exc  # type: ignore[misc]

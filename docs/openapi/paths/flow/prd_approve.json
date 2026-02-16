@@ -1,0 +1,65 @@
+{
+  "post": {
+    "summary": "Approve Prd",
+    "description": "Approve or continue refining a PRD run.",
+    "operationId": "approve_prd_flow_prd_approve_post",
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "../openapi.json#/components/schemas/PRDApproveRequest"
+          }
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/PRDActionResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found."
+      },
+      "409": {
+        "description": "Run is not awaiting approval."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error (INTERNAL_ERROR).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

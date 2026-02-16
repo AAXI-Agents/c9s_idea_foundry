@@ -90,7 +90,30 @@ draft_section_task:
     {context_sections}
     --- END OF CONTEXT ---
 
+    The full PRD has these sections (each drafted and approved individually):
+      1. Executive Summary — a concise 1-2 paragraph overview of the feature.
+         Do NOT include sub-topics like "Why Now", "Objectives",
+         "Target Market", "Competitive Landscape", "Scope", or
+         "Change Log" here — those have their own dedicated sections.
+      2. Why Now / Market Timing
+      3. Objectives (OKRs)
+      4. Target Market / Audience
+      5. Competitive Landscape
+      6. Scope / Solution Overview
+      7. Change Log / Version History
+      8. Problem Statement
+      9. User Personas
+      10. Functional Requirements
+      11. Non-Functional Requirements
+      12. User Stories with Acceptance Criteria
+      13. Edge Cases and Error Handling
+      14. Analytics and Success Metrics
+      15. Dependencies and Assumptions
+      16. Out of Scope
+
     Write a comprehensive, detailed **{section_title}** section that:
+    - Stays strictly within the scope of this section type — do NOT
+      duplicate content that belongs in another section listed above.
     - Is consistent with the other sections provided as context above.
     - Contains specific, actionable content appropriate for this section type.
     - Follows industry best practices for PRD documentation.

@@ -1,0 +1,59 @@
+{
+  "post": {
+    "summary": "Kickoff Prd Flow",
+    "description": "Trigger the iterative PRD generation flow.\n\nReturns immediately with a ``run_id``. The flow runs until the user\napproves. Poll ``GET /flow/runs/{run_id}`` for status, then call\n``POST /flow/prd/approve`` to finalise.",
+    "operationId": "kickoff_prd_flow_flow_prd_kickoff_post",
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "../openapi.json#/components/schemas/PRDKickoffRequest"
+          }
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "202": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/PRDKickoffResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error (INTERNAL_ERROR).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

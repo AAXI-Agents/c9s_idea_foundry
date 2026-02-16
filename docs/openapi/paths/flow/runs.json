@@ -1,0 +1,50 @@
+{
+  "get": {
+    "summary": "List All Flow Runs",
+    "description": "Returns all in-memory flow runs.",
+    "operationId": "list_runs_flow_runs_get",
+    "responses": {
+      "200": {
+        "description": "List of all runs.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer"
+                },
+                "runs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error (INTERNAL_ERROR).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

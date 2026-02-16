@@ -1,0 +1,63 @@
+{
+  "get": {
+    "summary": "Get a Single Job",
+    "description": "Returns a single job record by job_id.",
+    "operationId": "get_job_flow_jobs__job_id__get",
+    "parameters": [
+      {
+        "name": "job_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Job Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Job details returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/JobDetail"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Job not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error (INTERNAL_ERROR).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

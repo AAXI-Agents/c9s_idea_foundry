@@ -1,0 +1,641 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CrewAI Product Feature Planner API",
+    "description": "HTTP interface for triggering CrewAI flows.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "$ref": "./paths/health.json"
+    },
+    "/flow/runs": {
+      "$ref": "./paths/flow/runs.json"
+    },
+    "/flow/runs/{run_id}": {
+      "$ref": "./paths/flow/runs_{run_id}.json"
+    },
+    "/flow/prd/kickoff": {
+      "$ref": "./paths/flow/prd_kickoff.json"
+    },
+    "/flow/prd/approve": {
+      "$ref": "./paths/flow/prd_approve.json"
+    },
+    "/flow/prd/pause": {
+      "$ref": "./paths/flow/prd_pause.json"
+    },
+    "/flow/prd/resumable": {
+      "$ref": "./paths/flow/prd_resumable.json"
+    },
+    "/flow/prd/resume": {
+      "$ref": "./paths/flow/prd_resume.json"
+    },
+    "/flow/jobs": {
+      "$ref": "./paths/flow/jobs.json"
+    },
+    "/flow/jobs/{job_id}": {
+      "$ref": "./paths/flow/jobs_{job_id}.json"
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PRDKickoffRequest": {
+        "properties": {
+          "idea": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Idea",
+            "description": "The product feature idea to build a PRD for."
+          }
+        },
+        "type": "object",
+        "required": [
+          "idea"
+        ],
+        "title": "PRDKickoffRequest",
+        "description": "Request body for POST /flow/prd/kickoff."
+      },
+      "PRDKickoffResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Unique identifier for this flow run."
+          },
+          "flow_name": {
+            "type": "string",
+            "title": "Flow Name",
+            "description": "Name of the flow."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Current status of the run."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable status message."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "message"
+        ],
+        "title": "PRDKickoffResponse",
+        "description": "Response for POST /flow/prd/kickoff."
+      },
+      "PRDApproveRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The run to approve or continue."
+          },
+          "approve": {
+            "type": "boolean",
+            "title": "Approve",
+            "description": "True to approve the current section, False to keep refining."
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Feedback",
+            "description": "Optional critique feedback from the user."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "approve"
+        ],
+        "title": "PRDApproveRequest",
+        "description": "Request body for POST /flow/prd/approve."
+      },
+      "PRDActionResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The run this action was applied to."
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "The action that was taken."
+          },
+          "section": {
+            "type": "string",
+            "title": "Section",
+            "description": "The section key the action was applied to."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable result message."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "action",
+          "message"
+        ],
+        "title": "PRDActionResponse",
+        "description": "Response for approval, pause, and feedback actions."
+      },
+      "PRDPauseRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The run to pause."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "PRDPauseRequest",
+        "description": "Request body for POST /flow/prd/pause."
+      },
+      "PRDResumeRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The run_id of an unfinalized working idea to resume."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "PRDResumeRequest",
+        "description": "Request body for POST /flow/prd/resume."
+      },
+      "PRDResumeResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The resumed run identifier."
+          },
+          "flow_name": {
+            "type": "string",
+            "title": "Flow Name",
+            "description": "Name of the flow."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Current status after resuming."
+          },
+          "sections_approved": {
+            "type": "integer",
+            "title": "Sections Approved",
+            "description": "Number of sections already approved."
+          },
+          "sections_total": {
+            "type": "integer",
+            "title": "Sections Total",
+            "description": "Total number of PRD sections."
+          },
+          "next_section": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Next Section",
+            "description": "Key of the next section to iterate."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable status message."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "message"
+        ],
+        "title": "PRDResumeResponse",
+        "description": "Response for POST /flow/prd/resume."
+      },
+      "PRDSectionDetail": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "Section identifier slug."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Human-readable section title."
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Current markdown content."
+          },
+          "critique": {
+            "type": "string",
+            "title": "Critique",
+            "description": "Latest critique text."
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "description": "Section iteration count."
+          },
+          "is_approved": {
+            "type": "boolean",
+            "title": "Is Approved",
+            "description": "Whether this section is approved."
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "content",
+          "critique",
+          "iteration",
+          "is_approved"
+        ],
+        "title": "PRDSectionDetail"
+      },
+      "PRDDraftDetail": {
+        "properties": {
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PRDSectionDetail"
+            },
+            "type": "array",
+            "title": "Sections",
+            "description": "Ordered list of PRD sections with their current state."
+          },
+          "all_approved": {
+            "type": "boolean",
+            "title": "All Approved",
+            "description": "True when every section has been approved."
+          }
+        },
+        "type": "object",
+        "required": [
+          "sections",
+          "all_approved"
+        ],
+        "title": "PRDDraftDetail"
+      },
+      "PRDRunStatusResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Unique run identifier."
+          },
+          "flow_name": {
+            "type": "string",
+            "title": "Flow Name",
+            "description": "Name of the flow."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Current lifecycle status."
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "description": "Total iteration count across all sections."
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO-8601 creation timestamp."
+          },
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Result",
+            "description": "Final result when completed."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Error",
+            "description": "Error message if failed."
+          },
+          "current_section_key": {
+            "type": "string",
+            "title": "Current Section Key",
+            "description": "Key of the section currently being iterated."
+          },
+          "current_draft": {
+            "$ref": "#/components/schemas/PRDDraftDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "flow_name",
+          "status",
+          "iteration",
+          "created_at",
+          "current_section_key",
+          "current_draft"
+        ],
+        "title": "PRDRunStatusResponse"
+      },
+      "PRDResumableRun": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Unique run identifier."
+          },
+          "idea": {
+            "type": "string",
+            "title": "Idea",
+            "description": "The feature idea text."
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "description": "Last iteration number."
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Created At",
+            "description": "ISO-8601 timestamp of the last activity."
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sections",
+            "description": "Section keys that have draft content."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "idea",
+          "iteration",
+          "sections"
+        ],
+        "title": "PRDResumableRun"
+      },
+      "PRDResumableListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of resumable runs."
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/PRDResumableRun"
+            },
+            "type": "array",
+            "title": "Runs",
+            "description": "List of resumable runs."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "runs"
+        ],
+        "title": "PRDResumableListResponse"
+      },
+      "JobDetail": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Unique job identifier (same as run_id)."
+          },
+          "flow_name": {
+            "type": "string",
+            "title": "Flow Name",
+            "description": "Name of the flow (e.g. 'prd')."
+          },
+          "idea": {
+            "type": "string",
+            "title": "Idea",
+            "description": "The feature idea / input text."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Job lifecycle status."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Error",
+            "description": "Error message when status is 'failed'."
+          },
+          "queued_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Queued At",
+            "description": "ISO-8601 timestamp when the job was created."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Started At",
+            "description": "ISO-8601 timestamp when execution began."
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Completed At",
+            "description": "ISO-8601 timestamp when the job reached a terminal state."
+          },
+          "queue_time_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "title": "Queue Time Ms",
+            "description": "Time spent in queue in milliseconds."
+          },
+          "queue_time_human": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Queue Time Human",
+            "description": "Queue duration in human-readable form."
+          },
+          "running_time_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "title": "Running Time Ms",
+            "description": "Time spent running in milliseconds."
+          },
+          "running_time_human": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Running Time Human",
+            "description": "Running duration in human-readable form."
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Updated At",
+            "description": "ISO-8601 timestamp of last update."
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "flow_name",
+          "status"
+        ],
+        "title": "JobDetail"
+      },
+      "JobListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of jobs returned."
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobDetail"
+            },
+            "type": "array",
+            "title": "Jobs",
+            "description": "List of job records."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "jobs"
+        ],
+        "title": "JobListResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "ErrorResponse": {
+        "description": "Standard error envelope returned by all API endpoints for server-side or LLM errors.",
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "title": "Error Code",
+            "description": "Machine-readable error code. One of: LLM_ERROR, BILLING_ERROR, INTERNAL_ERROR.",
+            "enum": ["LLM_ERROR", "BILLING_ERROR", "INTERNAL_ERROR"],
+            "examples": ["LLM_ERROR"]
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable description of the error.",
+            "examples": ["LLM timeout after 4 attempts"]
+          },
+          "run_id": {
+            "type": ["string", "null"],
+            "title": "Run Id",
+            "description": "The run_id affected by this error, if applicable.",
+            "examples": ["a1b2c3d4e5f6"]
+          },
+          "detail": {
+            "type": ["string", "null"],
+            "title": "Detail",
+            "description": "Additional diagnostic detail (e.g. the original exception message)."
+          }
+        },
+        "type": "object",
+        "required": ["error_code", "message"],
+        "title": "ErrorResponse"
+      }
+    }
+  }
+}

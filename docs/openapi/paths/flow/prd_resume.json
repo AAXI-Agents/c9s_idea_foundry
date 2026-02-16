@@ -1,0 +1,65 @@
+{
+  "post": {
+    "summary": "Resume a Paused or Unfinalized Run",
+    "description": "Resumes a previously paused or unfinalized PRD flow.",
+    "operationId": "resume_prd_flow_prd_resume_post",
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "../openapi.json#/components/schemas/PRDResumeRequest"
+          }
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "202": {
+        "description": "Flow resumed and running.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/PRDResumeResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found in resumable runs."
+      },
+      "409": {
+        "description": "Run is already active."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error (INTERNAL_ERROR).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

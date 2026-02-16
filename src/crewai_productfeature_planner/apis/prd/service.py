@@ -17,6 +17,15 @@ from crewai_productfeature_planner.apis.shared import (
     pause_requested,
     runs,
 )
+from crewai_productfeature_planner.mongodb.crew_jobs import (
+    create_job,
+    reactivate_job,
+    update_job_completed,
+    update_job_failed,
+    update_job_started,
+    update_job_status,
+)
+from crewai_productfeature_planner.mongodb.working_ideas.repository import mark_completed
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -51,6 +60,8 @@ def make_approval_callback(run_id: str):
             run.current_section_key = section_key
             run.status = FlowStatus.AWAITING_APPROVAL
 
+        update_job_status(run_id, "awaiting_approval")
+
         logger.info(
             "[API] Awaiting user approval (run_id=%s, section=%s, iteration=%d)",
             run_id, section_key, iteration,
@@ -70,6 +81,8 @@ def make_approval_callback(run_id: str):
 
         if run is not None:
             run.status = FlowStatus.RUNNING
+
+        update_job_status(run_id, "running")
 
         # If user provided critique feedback, return it as a string
         if not approved and fb:
@@ -92,10 +105,14 @@ def make_approval_callback(run_id: str):
 def run_prd_flow(run_id: str, idea: str) -> None:
     """Execute the PRD flow in background and update the run record."""
     from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
+    from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
     logger.info("[API] PRD flow started (run_id=%s)", run_id)
+
+    # Track job lifecycle in crewJobs
+    update_job_started(run_id)
 
     try:
         flow = PRDFlow()
@@ -105,13 +122,54 @@ def run_prd_flow(run_id: str, idea: str) -> None:
         result = flow.kickoff()
         run.result = result
         run.status = FlowStatus.COMPLETED
+
+        # Safety net: if finalize() failed or was skipped, persist now
+        if not flow.state.is_ready:
+            logger.warning(
+                "[API] finalize() incomplete for run_id=%s — "
+                "persisting finalized PRD from service",
+                run_id,
+            )
+            from crewai_productfeature_planner.mongodb.finalized_ideas.repository import save_finalized
+            from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
+
+            final_prd = flow.state.final_prd or flow.state.draft.assemble()
+            confluence_xhtml = md_to_confluence_xhtml(final_prd)
+            save_finalized(
+                run_id=run_id,
+                idea=idea,
+                iteration=flow.state.iteration,
+                final_prd=final_prd,
+                confluence_xhtml=confluence_xhtml,
+            )
+            mark_completed(run_id)
+
+        update_job_completed(run_id, status="completed")
         logger.info("[API] PRD flow completed (run_id=%s)", run_id)
     except PauseRequested:
         run.status = FlowStatus.PAUSED
+        update_job_completed(run_id, status="paused")
         logger.info("[API] PRD flow paused by user (run_id=%s)", run_id)
+    except BillingError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"BILLING_ERROR: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.error(
+            "[API] PRD flow paused due to billing error (run_id=%s): %s",
+            run_id, exc,
+        )
+    except LLMError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"LLM_ERROR: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.error(
+            "[API] PRD flow paused due to LLM error (run_id=%s): %s",
+            run_id, exc,
+        )
     except Exception as exc:
         run.status = FlowStatus.FAILED
-        run.error = str(exc)
+        run.error = f"INTERNAL_ERROR: {exc}"
+        update_job_failed(run_id, error=str(exc))
         logger.error("[API] PRD flow failed (run_id=%s): %s", run_id, exc)
     finally:
         # Cleanup approval resources
@@ -147,8 +205,15 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft"]:
 
     for doc in docs:
         section_key = doc.get("section_key", "")
-        content = doc.get("draft", "")
+        draft_obj = doc.get("draft", {})
         critique = doc.get("critique", "")
+
+        # Extract section content from the draft dict
+        if isinstance(draft_obj, dict):
+            content = draft_obj.get(section_key, "")
+        else:
+            # Backward-compat: legacy docs stored draft as a plain string
+            content = draft_obj or ""
 
         if section_key and section_key in section_keys_set:
             section = draft.get_section(section_key)
@@ -175,10 +240,15 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft"]:
 def resume_prd_flow(run_id: str) -> None:
     """Resume a previously paused/unfinalized PRD flow from MongoDB state."""
     from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
+    from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
     logger.info("[API] Resuming PRD flow (run_id=%s)", run_id)
+
+    # Reactivate the existing job record (don't create a duplicate)
+    reactivate_job(run_id)
+    update_job_started(run_id)
 
     try:
         idea, draft = restore_prd_state(run_id)
@@ -192,19 +262,61 @@ def resume_prd_flow(run_id: str) -> None:
         next_section = draft.next_section()
         if next_section:
             flow.state.current_section_key = next_section.key
+            run.current_section_key = next_section.key
 
         run.current_draft = draft
         flow.approval_callback = make_approval_callback(run_id)
         result = flow.kickoff()
         run.result = result
         run.status = FlowStatus.COMPLETED
+
+        # Safety net: if finalize() failed or was skipped, persist now
+        if not flow.state.is_ready:
+            logger.warning(
+                "[API] finalize() incomplete for resumed run_id=%s — "
+                "persisting finalized PRD from service",
+                run_id,
+            )
+            from crewai_productfeature_planner.mongodb.finalized_ideas.repository import save_finalized
+            from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
+
+            final_prd = flow.state.final_prd or flow.state.draft.assemble()
+            confluence_xhtml = md_to_confluence_xhtml(final_prd)
+            save_finalized(
+                run_id=run_id,
+                idea=idea,
+                iteration=flow.state.iteration,
+                final_prd=final_prd,
+                confluence_xhtml=confluence_xhtml,
+            )
+            mark_completed(run_id)
+
+        update_job_completed(run_id, status="completed")
         logger.info("[API] Resumed PRD flow completed (run_id=%s)", run_id)
     except PauseRequested:
         run.status = FlowStatus.PAUSED
+        update_job_completed(run_id, status="paused")
         logger.info("[API] Resumed PRD flow paused again (run_id=%s)", run_id)
+    except BillingError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"BILLING_ERROR: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.error(
+            "[API] Resumed PRD flow paused due to billing error (run_id=%s): %s",
+            run_id, exc,
+        )
+    except LLMError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"LLM_ERROR: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.error(
+            "[API] Resumed PRD flow paused due to LLM error (run_id=%s): %s",
+            run_id, exc,
+        )
     except Exception as exc:
         run.status = FlowStatus.FAILED
-        run.error = str(exc)
+        run.error = f"INTERNAL_ERROR: {exc}"
+        update_job_failed(run_id, error=str(exc))
         logger.error("[API] Resumed PRD flow failed (run_id=%s): %s", run_id, exc)
     finally:
         approval_events.pop(run_id, None)

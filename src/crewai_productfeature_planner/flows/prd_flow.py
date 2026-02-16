@@ -16,7 +16,7 @@ import uuid
 from typing import Callable, Union
 
 from crewai import Crew, Process, Task
-from crewai.flow.flow import Flow, listen, start
+from crewai.flow.flow import Flow, start
 from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.agents.product_manager import (
@@ -26,7 +26,7 @@ from crewai_productfeature_planner.agents.product_manager import (
 from crewai_productfeature_planner.apis.prd.models import PRDDraft
 from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
 from crewai_productfeature_planner.scripts.logging_config import get_logger
-from crewai_productfeature_planner.mongodb import save_failed, save_finalized, save_iteration
+from crewai_productfeature_planner.mongodb import mark_completed, save_failed, save_finalized, save_iteration
 from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 
@@ -88,9 +88,11 @@ class PRDFlow(Flow[PRDState]):
 
         for section in self.state.draft.sections:
             self.state.current_section_key = section.key
+            total_steps = len(self.state.draft.sections)
             context = self.state.draft.all_sections_context(exclude_key=section.key)
 
-            logger.info("[Draft] Generating section '%s'", section.title)
+            logger.info("[Draft] Step %d/%d — Generating section '%s'",
+                        section.step, total_steps, section.title)
             draft_task = Task(
                 description=task_configs["draft_section_task"]["description"].format(
                     section_title=section.title,
@@ -119,6 +121,8 @@ class PRDFlow(Flow[PRDState]):
                     iteration=section.iteration,
                     error=str(exc),
                     step=f"draft_{section.key}",
+                    section_key=section.key,
+                    section_title=section.title,
                 )
                 raise
 
@@ -131,21 +135,21 @@ class PRDFlow(Flow[PRDState]):
                 run_id=self.state.run_id,
                 idea=self.state.idea,
                 iteration=self.state.iteration,
-                draft=section.content,
+                draft={section.key: section.content},
                 step=f"draft_{section.key}",
                 section_key=section.key,
                 section_title=section.title,
             )
 
-            logger.info("[Draft] Section '%s' generated (%d chars)",
-                        section.title, len(section.content))
+            logger.info("[Draft] Step %d/%d — Section '%s' generated (%d chars)",
+                        section.step, total_steps, section.title, len(section.content))
 
             # --- Section approval loop ---
             self._section_approval_loop(section, pm, task_configs)
 
         logger.info("[Steps 1-3] All sections completed, total iterations=%d",
                     self.state.iteration)
-        return self.state.draft.assemble()
+        return self.finalize()
 
     def _section_approval_loop(self, section, pm, task_configs) -> None:
         """Critique/refine a single section until user approves it."""
@@ -162,11 +166,13 @@ class PRDFlow(Flow[PRDState]):
                 )
                 if decision is True:
                     section.is_approved = True
-                    logger.info("[Approval] Section '%s' approved at iteration %d",
+                    logger.info("[Approval] Step %d/%d — Section '%s' approved at iteration %d",
+                                section.step, len(self.state.draft.sections),
                                 section.title, section.iteration)
                     break
                 if decision == PAUSE_SENTINEL:
-                    logger.info("[Pause] User requested pause at section '%s' iteration %d",
+                    logger.info("[Pause] User requested pause at step %d/%d section '%s' iteration %d",
+                                section.step, len(self.state.draft.sections),
                                 section.title, section.iteration)
                     raise PauseRequested()
                 if isinstance(decision, str) and decision.strip():
@@ -185,14 +191,15 @@ class PRDFlow(Flow[PRDState]):
                     run_id=self.state.run_id,
                     idea=self.state.idea,
                     iteration=self.state.iteration,
-                    draft=section.content,
+                    draft={section.key: section.content},
                     critique=self.state.critique,
                     step=f"user_critique_{section.key}",
                     section_key=section.key,
                     section_title=section.title,
                 )
             else:
-                logger.info("[Critique] Section '%s' — iteration %d",
+                logger.info("[Critique] Step %d/%d — Section '%s' — iteration %d",
+                            section.step, len(self.state.draft.sections),
                             section.title, section.iteration)
                 critique_task = Task(
                     description=task_configs["critique_section_task"]["description"].format(
@@ -221,8 +228,10 @@ class PRDFlow(Flow[PRDState]):
                         idea=self.state.idea,
                         iteration=self.state.iteration,
                         error=str(exc),
-                        draft=section.content,
+                        draft={section.key: section.content},
                         step=f"critique_{section.key}",
+                        section_key=section.key,
+                        section_title=section.title,
                     )
                     raise
                 self.state.critique = critique_result.raw
@@ -232,7 +241,7 @@ class PRDFlow(Flow[PRDState]):
                     run_id=self.state.run_id,
                     idea=self.state.idea,
                     iteration=self.state.iteration,
-                    draft=section.content,
+                    draft={section.key: section.content},
                     critique=self.state.critique,
                     step=f"critique_{section.key}",
                     section_key=section.key,
@@ -247,7 +256,8 @@ class PRDFlow(Flow[PRDState]):
                     break
 
             # --- Refinement ---
-            logger.info("[Refine] Section '%s' — iteration %d",
+            logger.info("[Refine] Step %d/%d — Section '%s' — iteration %d",
+                        section.step, len(self.state.draft.sections),
                         section.title, section.iteration)
             refine_task = Task(
                 description=task_configs["refine_section_task"]["description"].format(
@@ -279,8 +289,10 @@ class PRDFlow(Flow[PRDState]):
                     idea=self.state.idea,
                     iteration=self.state.iteration,
                     error=str(exc),
-                    draft=section.content,
+                    draft={section.key: section.content},
                     step=f"refine_{section.key}",
+                    section_key=section.key,
+                    section_title=section.title,
                 )
                 raise
             section.content = refine_result.raw
@@ -291,7 +303,7 @@ class PRDFlow(Flow[PRDState]):
                 run_id=self.state.run_id,
                 idea=self.state.idea,
                 iteration=self.state.iteration,
-                draft=section.content,
+                draft={section.key: section.content},
                 critique=self.state.critique,
                 step=f"refine_{section.key}",
                 section_key=section.key,
@@ -304,7 +316,6 @@ class PRDFlow(Flow[PRDState]):
     # ------------------------------------------------------------------
     # Step 4 — Final Assembly & Persist
     # ------------------------------------------------------------------
-    @listen(generate_sections)
     def finalize(self) -> str:
         """Assemble the final PRD from all approved sections and persist."""
         logger.info("[Step 4] Finalising PRD (total iterations=%d)", self.state.iteration)
@@ -325,13 +336,23 @@ class PRDFlow(Flow[PRDState]):
         )
 
         # Save to MongoDB finalizeIdeas (Markdown + XHTML)
-        save_finalized(
+        doc_id = save_finalized(
             run_id=self.state.run_id,
             idea=self.state.idea,
             iteration=self.state.iteration,
             final_prd=self.state.final_prd,
             confluence_xhtml=confluence_xhtml,
         )
+        if doc_id is None:
+            logger.error(
+                "[Step 4] save_finalized returned None for run_id=%s — "
+                "the PRD may not be persisted in finalizeIdeas",
+                self.state.run_id,
+            )
 
+        # Mark working-idea documents as completed
+        mark_completed(self.state.run_id)
+
+        self.state.is_ready = True
         logger.info("[Step 4] %s", save_result)
         return save_result

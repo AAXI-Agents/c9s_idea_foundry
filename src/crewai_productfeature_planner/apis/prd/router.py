@@ -5,6 +5,9 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from crewai_productfeature_planner.apis.prd.models import (
+    ErrorResponse,
+    JobDetail,
+    JobListResponse,
     PRDActionResponse,
     PRDApproveRequest,
     PRDDraftDetail,
@@ -32,11 +35,38 @@ from crewai_productfeature_planner.apis.shared import (
     pause_requested,
     runs,
 )
+from crewai_productfeature_planner.mongodb.crew_jobs import (
+    create_job,
+    find_active_job,
+    find_job,
+    list_jobs,
+)
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+# Standard error responses documented on every endpoint.
+_ERROR_RESPONSES = {
+    500: {
+        "description": (
+            "Internal server error. The `error_code` field will be "
+            "`INTERNAL_ERROR`. Check the `message` and `detail` fields "
+            "for diagnostics."
+        ),
+        "model": ErrorResponse,
+    },
+    503: {
+        "description": (
+            "LLM / OpenAI service unavailable. The `error_code` field "
+            "will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` "
+            "(billing / quota issue). The affected flow run is "
+            "automatically paused — resume it after resolving the issue."
+        ),
+        "model": ErrorResponse,
+    },
+}
 
 
 @router.get(
@@ -53,6 +83,7 @@ router = APIRouter()
     responses={
         200: {"description": "Run details returned successfully."},
         404: {"description": "Run not found."},
+        **_ERROR_RESPONSES,
     },
 )
 async def get_run_status(run_id: str):
@@ -60,13 +91,22 @@ async def get_run_status(run_id: str):
     run = runs.get(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    draft = run.current_draft
+    approved_count = sum(1 for s in draft.sections if s.is_approved)
+    total_sections = len(draft.sections)
+    # Resolve current step number from draft
+    current_section = draft.get_section(run.current_section_key) if run.current_section_key else None
+    current_step = current_section.step if current_section else 0
     data = run.model_dump()
     data["current_draft"] = PRDDraftDetail(
         sections=[
-            PRDSectionDetail(**s.model_dump()) for s in run.current_draft.sections
+            PRDSectionDetail(**s.model_dump()) for s in draft.sections
         ],
-        all_approved=run.current_draft.all_approved(),
+        all_approved=draft.all_approved(),
     ).model_dump()
+    data["sections_approved"] = approved_count
+    data["sections_total"] = total_sections
+    data["current_step"] = current_step
     return data
 
 
@@ -80,6 +120,7 @@ async def get_run_status(run_id: str):
     ),
     responses={
         200: {"description": "List of all runs."},
+        **_ERROR_RESPONSES,
     },
 )
 async def list_runs():
@@ -113,15 +154,30 @@ async def list_runs():
     responses={
         202: {"description": "Flow accepted and queued."},
         422: {"description": "Validation error."},
+        **_ERROR_RESPONSES,
     },
 )
 async def kickoff_prd_flow(
     request: PRDKickoffRequest, background_tasks: BackgroundTasks
 ):
     """Trigger the iterative PRD generation flow."""
+    # Enforce single active job — reject if one is already running
+    active = find_active_job()
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A job is already active (job_id={active['job_id']}, "
+                f"status={active['status']}). Only one job can run at a time."
+            ),
+        )
+
     run_id = uuid.uuid4().hex[:12]
     run = FlowRun(run_id=run_id, flow_name="prd")
     runs[run_id] = run
+
+    # Persist job to crewJobs collection (queued status)
+    create_job(job_id=run_id, flow_name="prd", idea=request.idea)
 
     logger.info(
         "[API] Queueing PRD flow (run_id=%s, idea='%s')",
@@ -161,6 +217,7 @@ async def kickoff_prd_flow(
         200: {"description": "Decision accepted."},
         404: {"description": "Run not found."},
         409: {"description": "Run is not awaiting approval."},
+        **_ERROR_RESPONSES,
     },
 )
 async def approve_prd(request: PRDApproveRequest):
@@ -184,6 +241,20 @@ async def approve_prd(request: PRDApproveRequest):
 
     section_key = run.current_section_key
 
+    # Compute approval progress
+    draft = run.current_draft
+    # Count the section being approved now + already approved ones
+    approved_count = sum(1 for s in draft.sections if s.is_approved)
+    if request.approve:
+        # This section will be marked approved by the flow momentarily
+        approved_count += 1
+    total_sections = len(draft.sections)
+    is_final = request.approve and approved_count >= total_sections
+
+    # Resolve step number for the current section
+    current_section = draft.get_section(section_key) if section_key else None
+    current_step = current_section.step if current_section else 0
+
     if request.approve:
         action = "approved"
     elif request.feedback:
@@ -191,12 +262,24 @@ async def approve_prd(request: PRDApproveRequest):
     else:
         action = "continuing refinement"
 
-    logger.info("[API] User %s section '%s' run_id=%s", action, section_key, request.run_id)
+    logger.info("[API] User %s section '%s' run_id=%s (%d/%d)",
+                action, section_key, request.run_id, approved_count, total_sections)
+
+    msg = f"Step {current_step}/{total_sections}: Section '{section_key}' {action}."
+    if is_final:
+        msg += " All sections approved — the flow will finalize the PRD."
+    else:
+        msg += f" Poll GET /flow/runs/{request.run_id} for updates."
+
     return PRDActionResponse(
         run_id=request.run_id,
         action=action,
         section=section_key,
-        message=f"Section '{section_key}' {action}. Poll GET /flow/runs/{request.run_id} for updates.",
+        current_step=current_step,
+        sections_approved=approved_count,
+        sections_total=total_sections,
+        is_final_section=is_final,
+        message=msg,
     )
 
 
@@ -217,6 +300,7 @@ async def approve_prd(request: PRDApproveRequest):
         200: {"description": "Pause requested successfully."},
         404: {"description": "Run not found."},
         409: {"description": "Run cannot be paused in its current state."},
+        **_ERROR_RESPONSES,
     },
 )
 async def pause_prd(request: PRDPauseRequest):
@@ -244,13 +328,25 @@ async def pause_prd(request: PRDPauseRequest):
     else:
         logger.info("[API] Pause flag set for run_id=%s (will pause at next checkpoint)", request.run_id)
 
+    # Compute progress to match CLI output
+    draft = run.current_draft
+    approved_count = sum(1 for s in draft.sections if s.is_approved)
+    total_sections = len(draft.sections)
+    current_section = draft.get_section(section_key) if section_key else None
+    current_step = current_section.step if current_section else 0
+
     return PRDActionResponse(
         run_id=request.run_id,
         action="paused",
         section=section_key,
+        current_step=current_step,
+        sections_approved=approved_count,
+        sections_total=total_sections,
+        is_final_section=False,
         message=(
             f"Pause requested for run {request.run_id}. "
-            f"Progress will be saved. Use POST /flow/prd/resume to continue later."
+            f"Progress saved ({approved_count}/{total_sections} sections approved). "
+            f"Use POST /flow/prd/resume to continue later."
         ),
     )
 
@@ -268,6 +364,7 @@ async def pause_prd(request: PRDPauseRequest):
     ),
     responses={
         200: {"description": "Resumable runs listed successfully."},
+        **_ERROR_RESPONSES,
     },
 )
 async def list_resumable_runs():
@@ -308,6 +405,7 @@ async def list_resumable_runs():
         202: {"description": "Flow resumed and running."},
         404: {"description": "Run not found in resumable runs."},
         409: {"description": "Run is already active."},
+        **_ERROR_RESPONSES,
     },
 )
 async def resume_prd(
@@ -338,15 +436,107 @@ async def resume_prd(
     background_tasks.add_task(resume_prd_flow, request.run_id)
 
     sections_done = len(run_info.get("sections", []))
+    total_sections = len(SECTION_KEYS)
+    # Determine next section: first SECTION_KEY not yet in the completed list
+    done_set = set(run_info.get("sections", []))
+    next_section_key = next(
+        (k for k in SECTION_KEYS if k not in done_set), None
+    )
+    # Resolve step number for the next section
+    next_step = (SECTION_KEYS.index(next_section_key) + 1) if next_section_key else None
     return PRDResumeResponse(
         run_id=request.run_id,
         flow_name="prd",
         status="running",
         sections_approved=sections_done,
-        sections_total=len(SECTION_KEYS),
-        next_section=None,
+        sections_total=total_sections,
+        next_section=next_section_key,
+        next_step=next_step,
         message=(
-            f"Resuming run {request.run_id} from saved state. "
+            f"Resuming run {request.run_id} from saved state "
+            f"(step {next_step or '?'}/{total_sections}, "
+            f"{sections_done}/{total_sections} sections approved). "
             f"Poll GET /flow/runs/{request.run_id} for status."
         ),
     )
+
+
+# ── Job tracking endpoints ───────────────────────────────────
+
+
+def _job_doc_to_detail(doc: dict) -> JobDetail:
+    """Convert a raw MongoDB job document to a ``JobDetail`` response model."""
+
+    def _iso(val):
+        if val is None:
+            return None
+        if hasattr(val, "isoformat"):
+            return val.isoformat()
+        return str(val)
+
+    return JobDetail(
+        job_id=doc.get("job_id", ""),
+        flow_name=doc.get("flow_name", ""),
+        idea=doc.get("idea", ""),
+        status=doc.get("status", "unknown"),
+        error=doc.get("error"),
+        queued_at=_iso(doc.get("queued_at")),
+        started_at=_iso(doc.get("started_at")),
+        completed_at=_iso(doc.get("completed_at")),
+        queue_time_ms=doc.get("queue_time_ms"),
+        queue_time_human=doc.get("queue_time_human"),
+        running_time_ms=doc.get("running_time_ms"),
+        running_time_human=doc.get("running_time_human"),
+        updated_at=_iso(doc.get("updated_at")),
+    )
+
+
+@router.get(
+    "/flow/jobs",
+    tags=["Jobs"],
+    summary="List all persistent job records",
+    response_model=JobListResponse,
+    description=(
+        "Returns job records from the ``crewJobs`` MongoDB collection. "
+        "Each job tracks the full lifecycle of a flow run including "
+        "queue time, running time, and terminal status.\n\n"
+        "Optional query parameters ``status`` and ``flow_name`` can be "
+        "used to filter results."
+    ),
+    responses={
+        200: {"description": "Job list returned successfully."},
+        **_ERROR_RESPONSES,
+    },
+)
+async def list_all_jobs(
+    status: str | None = None,
+    flow_name: str | None = None,
+    limit: int = 50,
+):
+    """List persistent job records, optionally filtered."""
+    docs = list_jobs(status=status, flow_name=flow_name, limit=limit)
+    items = [_job_doc_to_detail(d) for d in docs]
+    return JobListResponse(count=len(items), jobs=items)
+
+
+@router.get(
+    "/flow/jobs/{job_id}",
+    tags=["Jobs"],
+    summary="Get a single job record",
+    response_model=JobDetail,
+    description=(
+        "Returns a single job record by ``job_id`` from the ``crewJobs`` "
+        "collection. Includes lifecycle timestamps and computed durations."
+    ),
+    responses={
+        200: {"description": "Job details returned successfully."},
+        404: {"description": "Job not found."},
+        **_ERROR_RESPONSES,
+    },
+)
+async def get_job(job_id: str):
+    """Fetch a single persistent job record."""
+    doc = find_job(job_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return _job_doc_to_detail(doc)

@@ -26,6 +26,8 @@ def test_prd_draft_sections_initialised():
     assert len(draft.sections) == len(SECTION_KEYS)
     assert draft.sections[0].key == "executive_summary"
     assert draft.sections[0].title == "Executive Summary"
+    assert draft.sections[1].key == "why_now"
+    assert draft.sections[1].title == "Why Now / Market Timing"
     assert all(s.content == "" for s in draft.sections)
     assert all(s.iteration == 0 for s in draft.sections)
     assert all(not s.is_approved for s in draft.sections)
@@ -86,7 +88,7 @@ def test_prd_draft_next_section():
     draft = PRDDraft.create_empty()
     assert draft.next_section().key == "executive_summary"
     draft.sections[0].is_approved = True
-    assert draft.next_section().key == "problem_statement"
+    assert draft.next_section().key == "why_now"
 
 
 def test_prd_draft_assemble():
@@ -181,13 +183,15 @@ def test_section_approval_loop_raises_pause(monkeypatch):
         flow._section_approval_loop(section, MagicMock(), {})
 
 
+@patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
 @patch("crewai_productfeature_planner.flows.prd_flow.save_finalized")
 @patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-def test_finalize_saves_prd(mock_writer_cls, mock_save_finalized):
+def test_finalize_saves_prd(mock_writer_cls, mock_save_finalized, mock_mark_completed):
     """finalize() should persist the assembled PRD via file and MongoDB with XHTML."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/prd_v1.md"
     mock_writer_cls.return_value = mock_writer
+    mock_save_finalized.return_value = "inserted_id_123"
 
     flow = PRDFlow()
     # Fill in sections with content
@@ -213,3 +217,9 @@ def test_finalize_saves_prd(mock_writer_cls, mock_save_finalized):
     xhtml = call_kwargs["confluence_xhtml"]
     assert "<h1" in xhtml or "<h2" in xhtml
     assert "saved" in result.lower()
+
+    # Working ideas should be marked completed
+    mock_mark_completed.assert_called_once_with("test-run-123")
+
+    # State should be flagged as ready
+    assert flow.state.is_ready is True

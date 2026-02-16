@@ -17,12 +17,41 @@ logger = get_logger(__name__)
 WORKING_COLLECTION = "workingIdeas"
 
 
+def mark_completed(run_id: str) -> int:
+    """Mark every working-idea document for *run_id* as ``completed``.
+
+    Called after the final PRD has been persisted to ``finalizeIdeas`` so
+    that ``find_unfinalized`` can exclude the run even if the
+    ``finalizeIdeas`` insert failed.
+
+    Returns:
+        The number of documents updated, or ``0`` on failure.
+    """
+    try:
+        result = get_db()[WORKING_COLLECTION].update_many(
+            {"run_id": run_id},
+            {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)}},
+        )
+        logger.info(
+            "[MongoDB] Marked %d working-idea doc(s) completed for run_id=%s",
+            result.modified_count, run_id,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to mark working ideas completed for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
 def find_unfinalized() -> list[dict[str, Any]]:
     """Find working ideas that have not been finalized.
 
     Queries ``workingIdeas`` for distinct ``run_id`` values that do NOT
-    appear in ``finalizeIdeas``, then returns the latest document per
-    run_id with the idea text and section progress.
+    appear in ``finalizeIdeas`` and are not already marked ``completed``,
+    then returns the latest document per run_id with the idea text and
+    section progress.
 
     Returns:
         A list of dicts, each containing:
@@ -34,8 +63,14 @@ def find_unfinalized() -> list[dict[str, Any]]:
         db = get_db()
         finalized_run_ids = db["finalizeIdeas"].distinct("run_id")
 
+        # Also exclude run_ids where documents have been marked completed
+        completed_run_ids = db[WORKING_COLLECTION].distinct(
+            "run_id", {"status": "completed"}
+        )
+        excluded_run_ids = list(set(finalized_run_ids) | set(completed_run_ids))
+
         pipeline = [
-            {"$match": {"run_id": {"$nin": finalized_run_ids}, "status": {"$ne": "failed"}}},
+            {"$match": {"run_id": {"$nin": excluded_run_ids}, "status": {"$nin": ["failed", "completed"]}}},
             {"$sort": {"created_at": -1}},
             {"$group": {
                 "_id": "$run_id",
@@ -89,12 +124,18 @@ def save_iteration(
     run_id: str,
     idea: str,
     iteration: int,
-    draft: str,
+    draft: dict[str, str],
     critique: str = "",
     step: str = "",
     **extra: Any,
 ) -> str | None:
     """Persist a single iteration to ``workingIdeas``.
+
+    Args:
+        draft: A dict mapping section keys to their content,
+            e.g. ``{"executive_summary": "# Summary ..."}``.  Each
+            document typically contains a single key for the section
+            that was just drafted/refined.
 
     Returns:
         The inserted document ``_id`` as a string, or ``None`` on failure.
@@ -138,13 +179,18 @@ def save_failed(
     idea: str,
     iteration: int,
     error: str,
-    draft: str = "",
+    draft: dict[str, str] | None = None,
     step: str = "",
+    **extra: Any,
 ) -> str | None:
     """Mark a run as failed in ``workingIdeas``.
 
     Persists a failure record so orphaned working documents can be
     identified and the error is auditable.
+
+    Args:
+        draft: Optional dict mapping section keys to their content at
+            the point of failure.
 
     Returns:
         The inserted document ``_id`` as a string, or ``None`` on failure.
@@ -156,8 +202,9 @@ def save_failed(
         "step": step,
         "status": "failed",
         "error": error,
-        "draft": draft,
+        "draft": draft or {},
         "created_at": datetime.now(timezone.utc),
+        **extra,
     }
     try:
         result = get_db()[WORKING_COLLECTION].insert_one(doc)

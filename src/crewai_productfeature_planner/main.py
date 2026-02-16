@@ -7,7 +7,16 @@ from datetime import datetime
 from crewai_productfeature_planner.apis.prd.models import PRDDraft, SECTION_ORDER
 from crewai_productfeature_planner.crew import CrewaiProductfeaturePlanner
 from crewai_productfeature_planner.flows.prd_flow import PAUSE_SENTINEL, PauseRequested, PRDFlow
-from crewai_productfeature_planner.mongodb import find_unfinalized, get_run_documents
+from crewai_productfeature_planner.mongodb import find_unfinalized, get_run_documents, mark_completed, save_finalized
+from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
+from crewai_productfeature_planner.mongodb.crew_jobs import (
+    create_job,
+    fail_incomplete_jobs_on_startup,
+    reactivate_job,
+    update_job_completed,
+    update_job_failed,
+    update_job_started,
+)
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
@@ -79,8 +88,15 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
     for doc in docs:
         section_key = doc.get("section_key", "")
         step = doc.get("step", "")
-        content = doc.get("draft", "")
+        draft_obj = doc.get("draft", {})
         critique = doc.get("critique", "")
+
+        # Extract section content from the draft dict
+        if isinstance(draft_obj, dict):
+            content = draft_obj.get(section_key, "")
+        else:
+            # Backward-compat: legacy docs stored draft as a plain string
+            content = draft_obj or ""
 
         if section_key and section_key in section_keys_set:
             section = draft.get_section(section_key)
@@ -149,8 +165,11 @@ def _cli_approval_callback(iteration: int, section_key: str, section_content: st
         a ``str`` with user-provided critique feedback, or ``PAUSE_SENTINEL`` to
         save progress and exit.
     """
+    section = draft.get_section(section_key)
+    step = section.step if section else "?"
+    total = len(draft.sections)
     print(f"\n{'=' * 60}")
-    print(f"  Section: {section_key} — Iteration {iteration}")
+    print(f"  Step {step}/{total}: {section_key} — Iteration {iteration}")
     print(f"{'=' * 60}")
     print(section_content[:2000])
     if len(section_content) > 2000:
@@ -188,6 +207,32 @@ def _cli_approval_callback(iteration: int, section_key: str, section_content: st
             print("Please enter 'y', 'n', 'f', or 'p'.")
 
 
+def _prompt_next_action() -> str | None:
+    """Ask the user whether to start a new idea or exit.
+
+    Returns:
+        The new idea string, or ``None`` to exit.
+    """
+    print(f"\n{'=' * 60}")
+    print("  What would you like to do next?")
+    print(f"{'=' * 60}")
+    print("  [n] Start a new idea")
+    print("  [q] Exit")
+    print(f"{'=' * 60}\n")
+
+    while True:
+        choice = input("Choose an option: ").strip().lower()
+        if choice in ("q", "quit", "exit", "e"):
+            return None
+        if choice in ("n", "new"):
+            new_idea = input("Enter your product feature idea: ").strip()
+            if new_idea:
+                return new_idea
+            print("Empty idea — please try again.")
+        else:
+            print("Please enter 'n' for a new idea or 'q' to exit.")
+
+
 def run():
     """
     Run the PRD generation flow with interactive approval.
@@ -199,22 +244,57 @@ def run():
         crewai run                              # interactive prompt
         crewai run "Add dark mode to dashboard" # idea as argument
     """
+    # Startup recovery: mark any incomplete jobs as failed
+    try:
+        recovered = fail_incomplete_jobs_on_startup()
+        if recovered:
+            print(f"  Recovered {recovered} incomplete job(s) from previous run.")
+    except Exception as exc:
+        logger.debug("Startup recovery failed: %s", exc)
+
+    # If idea was passed as CLI arg, run once and exit
+    if len(sys.argv) >= 2:
+        _run_single_flow(idea=sys.argv[1])
+        return
+
+    # Interactive loop — keeps offering new ideas after each run
+    idea = None
+    while True:
+        _run_single_flow(idea=idea)
+        next_idea = _prompt_next_action()
+        if next_idea is None:
+            print("\nGoodbye!")
+            return
+        idea = next_idea
+
+
+def _run_single_flow(idea: str | None = None) -> None:
+    """Execute one PRD flow cycle (new or resumed).
+
+    Args:
+        idea: When supplied, skip the resume check and use this idea directly.
+    """
     # Check for resumable runs (skip if idea passed via CLI arg)
     resumed_flow = None
-    if len(sys.argv) < 2:
+
+    if idea is None:
         run_info = _check_resumable_runs()
         if run_info is not None:
             resumed_flow = _restore_prd_state(run_info)
             print(f"\nResuming run_id={resumed_flow.state.run_id}")
             next_section = resumed_flow.state.draft.next_section()
             if next_section:
-                print(f"Next section: {next_section.title}")
+                total = len(resumed_flow.state.draft.sections)
+                print(f"Next: Step {next_section.step}/{total} — {next_section.title}")
             approved = sum(1 for s in resumed_flow.state.draft.sections if s.is_approved)
             print(f"Progress: {approved}/{len(resumed_flow.state.draft.sections)} sections approved\n")
 
     if resumed_flow is not None:
         flow = resumed_flow
         idea = flow.state.idea
+    elif idea is not None:
+        flow = PRDFlow()
+        flow.state.idea = idea
     else:
         idea = _get_idea()
         if not idea:
@@ -222,22 +302,82 @@ def run():
         flow = PRDFlow()
         flow.state.idea = idea
 
+    # Track job in crewJobs — reactivate for resumes, create for new runs
+    if resumed_flow is not None:
+        reactivate_job(flow.state.run_id)
+    else:
+        create_job(job_id=flow.state.run_id, flow_name="prd", idea=idea)
+    update_job_started(flow.state.run_id)
+
     logger.info("Starting PRD flow (idea='%s')", idea)
     try:
         flow.approval_callback = _cli_approval_callback
         result = flow.kickoff()
+
+        # Safety net: if finalize() failed or was skipped, persist here
+        if not flow.state.is_ready:
+            logger.warning(
+                "[CLI] finalize() incomplete for run_id=%s — "
+                "persisting finalized PRD from main",
+                flow.state.run_id,
+            )
+            from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
+
+            final_prd = flow.state.final_prd or flow.state.draft.assemble()
+            confluence_xhtml = md_to_confluence_xhtml(final_prd)
+            save_finalized(
+                run_id=flow.state.run_id,
+                idea=flow.state.idea,
+                iteration=flow.state.iteration,
+                final_prd=final_prd,
+                confluence_xhtml=confluence_xhtml,
+            )
+            mark_completed(flow.state.run_id)
+
+        update_job_completed(flow.state.run_id, status="completed")
         logger.info("PRD flow completed successfully")
         print(f"\nPRD Flow completed. Result:\n{result}")
     except PauseRequested:
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
+        update_job_completed(flow.state.run_id, status="paused")
         print(f"\nProgress saved ({approved}/{total} sections approved).")
         print(f"Run 'crewai run' again to resume from where you left off.")
         logger.info("PRD flow paused by user (run_id=%s, %d/%d approved)",
                     flow.state.run_id, approved, total)
+    except BillingError as e:
+        approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
+        total = len(flow.state.draft.sections)
+        update_job_completed(flow.state.run_id, status="paused")
+        logger.error("PRD flow paused due to billing error (run_id=%s): %s",
+                     flow.state.run_id, e)
+        print(f"\n{'=' * 60}")
+        print(f"  BILLING / QUOTA ERROR")
+        print(f"{'=' * 60}")
+        print(f"  {e}")
+        print(f"\n  Your progress has been saved ({approved}/{total} sections approved).")
+        print(f"  Please fix your OpenAI billing or quota and then run")
+        print(f"  'crewai run' to resume from where you left off.")
+        print(f"{'=' * 60}")
+    except LLMError as e:
+        approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
+        total = len(flow.state.draft.sections)
+        update_job_completed(flow.state.run_id, status="paused")
+        logger.error("PRD flow paused due to LLM error (run_id=%s): %s",
+                     flow.state.run_id, e)
+        print(f"\n{'=' * 60}")
+        print(f"  LLM ERROR")
+        print(f"{'=' * 60}")
+        print(f"  {e}")
+        print(f"\n  Your progress has been saved ({approved}/{total} sections approved).")
+        print(f"  Please check your OpenAI API configuration and then run")
+        print(f"  'crewai run' to resume from where you left off.")
+        print(f"{'=' * 60}")
     except Exception as e:
+        update_job_failed(flow.state.run_id, error=str(e))
         logger.error("PRD flow failed: %s", e)
-        raise Exception(f"An error occurred while running the PRD flow: {e}")
+        print(f"\nPRD flow failed: {e}")
+        print(f"Your progress has been saved. Run 'crewai run' to resume.")
 
 
 def train():
