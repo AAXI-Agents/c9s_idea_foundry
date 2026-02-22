@@ -52,6 +52,7 @@ def make_approval_callback(run_id: str):
         section_key: str,
         agent_results: dict[str, str],
         draft: PRDDraft,
+        **kwargs,
     ) -> Union[bool, str, tuple[str, Union[bool, str]]]:
         from crewai_productfeature_planner.flows.prd_flow import PAUSE_SENTINEL
 
@@ -66,6 +67,12 @@ def make_approval_callback(run_id: str):
             run.current_draft = draft
             run.current_section_key = section_key
             run.status = FlowStatus.AWAITING_APPROVAL
+            # Sync agent tracking from flow state
+            run.active_agents = kwargs.get("active_agents", list(agent_results.keys()))
+            run.dropped_agents = kwargs.get("dropped_agents", [])
+            run.agent_errors = kwargs.get("agent_errors", {})
+            run.original_idea = kwargs.get("original_idea", "")
+            run.idea_refined = kwargs.get("idea_refined", False)
 
         update_job_status(run_id, "awaiting_approval")
 

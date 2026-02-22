@@ -40,7 +40,7 @@ def _mock_build_tools():
 def _mock_build_gemini_llm():
     return patch(
         "crewai_productfeature_planner.agents.gemini_product_manager.agent._build_gemini_llm",
-        return_value="gemini/gemini-2.5-flash-preview-05-20",
+        return_value="gemini/gemini-3-flash-preview",
     )
 
 
@@ -128,7 +128,7 @@ def test_build_gemini_llm_custom_model(monkeypatch):
 
 def test_build_gemini_llm_adds_prefix(monkeypatch):
     """Model names without a provider prefix get 'gemini/' prepended."""
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash-preview-05-20")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
     llm = _build_gemini_llm()
     # LiteLLM may strip the prefix, but the constructed model should include it
     assert "gemini" in llm.model.lower()
@@ -136,7 +136,7 @@ def test_build_gemini_llm_adds_prefix(monkeypatch):
 
 def test_build_gemini_llm_skips_prefix_when_qualified(monkeypatch):
     """Model names already containing '/' should not be double-prefixed."""
-    monkeypatch.setenv("GEMINI_MODEL", "gemini/gemini-2.5-flash-preview-05-20")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini/gemini-3-flash-preview")
     llm = _build_gemini_llm()
     assert "gemini/gemini/" not in llm.model
 

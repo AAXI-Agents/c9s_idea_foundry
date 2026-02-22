@@ -1,5 +1,6 @@
 """Tests for the iterative PRD flow."""
 
+import pytest
 from unittest.mock import MagicMock, patch
 
 from crewai_productfeature_planner.apis.prd.models import (
@@ -186,7 +187,7 @@ def test_section_approval_loop_raises_pause(monkeypatch):
     flow = PRDFlow()
     flow.state.idea = "Test idea"
     flow.state.run_id = "test-run"
-    flow.approval_callback = lambda iteration, key, agent_results, draft: PAUSE_SENTINEL
+    flow.approval_callback = lambda iteration, key, agent_results, draft, **kwargs: PAUSE_SENTINEL
 
     section = flow.state.draft.sections[0]
     section.content = "Some draft content"
@@ -368,7 +369,7 @@ def test_run_agents_parallel_single():
         )
     assert list(results.keys()) == [AGENT_OPENAI]
     assert results[AGENT_OPENAI] == "Agent draft content"
-    assert failed == set()
+    assert failed == {}
 
 
 def test_run_agents_parallel_multi():
@@ -406,7 +407,7 @@ def test_run_agents_parallel_multi():
     assert AGENT_OPENAI in results
     assert AGENT_GEMINI in results
     assert call_count == 2
-    assert failed == set()
+    assert failed == {}
 
 
 def test_run_agents_parallel_one_fails():
@@ -439,7 +440,8 @@ def test_run_agents_parallel_one_fails():
         )
     assert AGENT_OPENAI in results
     assert AGENT_GEMINI not in results
-    assert failed == {AGENT_GEMINI}
+    assert AGENT_GEMINI in failed
+    assert "Gemini exploded" in failed[AGENT_GEMINI]
 
 
 def test_run_agents_parallel_all_fail():
@@ -504,11 +506,12 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
             idea="Test idea",
             context="",
         )
-        assert failed == {AGENT_GEMINI}
+        assert AGENT_GEMINI in failed
+        assert "Gemini unavailable" in failed[AGENT_GEMINI]
         assert AGENT_OPENAI in results
 
         # Simulate generate_sections removing the failed agent
-        for name in failed:
+        for name in list(failed):
             if name in agents:
                 del agents[name]
 
@@ -529,10 +532,60 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
             idea="Test idea",
             context="",
         )
-        assert failed2 == set()
+        assert failed2 == {}
         assert AGENT_OPENAI in results2
         # Gemini should not have been called
         assert not any("gemini" in label for label in call_log)
+
+
+def test_prd_state_tracks_agent_changes():
+    """PRDState should track active_agents, dropped_agents, and agent_errors."""
+    flow = PRDFlow()
+    # Initially empty
+    assert flow.state.active_agents == []
+    assert flow.state.dropped_agents == []
+    assert flow.state.agent_errors == {}
+
+    # Set active agents
+    flow.state.active_agents = [AGENT_OPENAI, AGENT_GEMINI]
+    assert flow.state.active_agents == [AGENT_OPENAI, AGENT_GEMINI]
+
+    # Drop an agent with error
+    flow.state.dropped_agents.append(AGENT_GEMINI)
+    flow.state.agent_errors[AGENT_GEMINI] = "RuntimeError: model not found"
+    flow.state.active_agents = [AGENT_OPENAI]
+    assert flow.state.active_agents == [AGENT_OPENAI]
+    assert flow.state.dropped_agents == [AGENT_GEMINI]
+    assert flow.state.agent_errors == {AGENT_GEMINI: "RuntimeError: model not found"}
+
+
+def test_callback_receives_agent_kwargs():
+    """The approval callback should receive active_agents, dropped_agents, and agent_errors kwargs."""
+    received_kwargs = {}
+
+    def _cb(iteration, key, agent_results, draft, **kwargs):
+        received_kwargs.update(kwargs)
+        return (AGENT_OPENAI, True)
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-kwargs"
+    flow.state.active_agents = [AGENT_OPENAI]
+    flow.state.dropped_agents = [AGENT_GEMINI]
+    flow.state.agent_errors = {AGENT_GEMINI: "RuntimeError: boom"}
+    flow.approval_callback = _cb
+
+    section = flow.state.draft.sections[0]
+    section.content = "Draft content"
+    section.agent_results = {AGENT_OPENAI: "Draft content"}
+    section.iteration = 1
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    flow._section_approval_loop(section, agents, {})
+
+    assert received_kwargs.get("active_agents") == [AGENT_OPENAI]
+    assert received_kwargs.get("dropped_agents") == [AGENT_GEMINI]
+    assert received_kwargs.get("agent_errors") == {AGENT_GEMINI: "RuntimeError: boom"}
 
 
 def test_section_agent_results_after_approval():
@@ -547,7 +600,7 @@ def test_section_agent_results_after_approval():
     section.selected_agent = AGENT_OPENAI
     section.iteration = 1
 
-    flow.approval_callback = lambda iteration, key, agent_results, draft: (AGENT_GEMINI, True)
+    flow.approval_callback = lambda iteration, key, agent_results, draft, **kwargs: (AGENT_GEMINI, True)
 
     agents = {AGENT_OPENAI: MagicMock(), AGENT_GEMINI: MagicMock()}
     flow._section_approval_loop(section, agents, {})
@@ -588,3 +641,349 @@ def test_valid_agents_contains_both():
     """VALID_AGENTS should list both known agents."""
     assert AGENT_OPENAI in VALID_AGENTS
     assert AGENT_GEMINI in VALID_AGENTS
+
+
+# ── _maybe_refine_idea integration ───────────────────────────
+
+
+def test_maybe_refine_idea_skips_without_credentials(monkeypatch):
+    """Refinement should be skipped when no Gemini credentials are set."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow._maybe_refine_idea()
+    assert flow.state.idea == "Raw idea"
+    assert flow.state.idea_refined is False
+    assert flow.state.original_idea == ""
+
+
+def test_maybe_refine_idea_runs_with_credentials(monkeypatch):
+    """Refinement should run and update the idea when Gemini key is set."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+
+    with patch(
+        "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+        return_value=("Enriched idea with details", [{"iteration": 1, "idea": "Enriched idea with details", "evaluation": "IDEA_READY"}]),
+    ):
+        flow._maybe_refine_idea()
+
+    assert flow.state.idea == "Enriched idea with details"
+    assert flow.state.original_idea == "Raw idea"
+    assert flow.state.idea_refined is True
+    assert len(flow.state.refinement_history) == 1
+    assert flow.state.refinement_history[0]["iteration"] == 1
+
+
+def test_maybe_refine_idea_skips_when_already_refined(monkeypatch):
+    """Should not refine again if idea_refined is already True."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    flow = PRDFlow()
+    flow.state.idea = "Already refined idea"
+    flow.state.idea_refined = True
+    flow._maybe_refine_idea()
+    assert flow.state.idea == "Already refined idea"
+
+
+def test_maybe_refine_idea_continues_on_failure(monkeypatch):
+    """If the refiner fails, the original idea should be kept."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+
+    with patch(
+        "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+        side_effect=RuntimeError("Gemini API error"),
+    ):
+        flow._maybe_refine_idea()
+
+    assert flow.state.idea == "Raw idea"
+    assert flow.state.idea_refined is False
+
+
+def test_prd_state_refinement_fields():
+    """PRDState should initialise refinement fields properly."""
+    state = PRDState()
+    assert state.original_idea == ""
+    assert state.idea_refined is False
+    assert state.refinement_history == []
+
+
+# ── IdeaFinalized & idea_approval_callback ───────────────────
+
+
+def test_idea_finalized_exception_importable():
+    """IdeaFinalized exception should be importable from the flow module."""
+    from crewai_productfeature_planner.flows.prd_flow import IdeaFinalized
+    assert issubclass(IdeaFinalized, Exception)
+
+
+def test_idea_approval_callback_defaults_to_none():
+    """PRDFlow should have idea_approval_callback=None by default."""
+    flow = PRDFlow()
+    assert flow.idea_approval_callback is None
+
+
+def test_idea_approval_callback_finalize_raises(monkeypatch):
+    """When idea_approval_callback returns True, IdeaFinalized should be raised."""
+    from crewai_productfeature_planner.flows.prd_flow import IdeaFinalized
+
+    # Ensure no Gemini credentials — stages skip based on state flags
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.idea_refined = True
+    flow.state.original_idea = "Raw idea"
+
+    flow.idea_approval_callback = lambda refined, original, run_id, history: True
+
+    import pytest
+    with pytest.raises(IdeaFinalized):
+        flow.generate_sections()
+
+
+def test_idea_approval_callback_continue_does_not_raise(monkeypatch):
+    """When idea_approval_callback returns False, PRD generation should proceed."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.idea_refined = True
+    flow.state.original_idea = "Raw idea"
+
+    callback_called = False
+
+    def cb(refined, original, run_id, history):
+        nonlocal callback_called
+        callback_called = True
+        return False  # continue to PRD
+
+    flow.idea_approval_callback = cb
+
+    # Mock _get_available_agents to avoid real LLM creation
+    monkeypatch.setattr(
+        PRDFlow, "_get_available_agents",
+        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+    )
+
+    # generate_sections will proceed past the callback but fail on agents
+    with pytest.raises(RuntimeError, match="stop here"):
+        flow.generate_sections()
+
+    assert callback_called is True
+
+
+def test_idea_approval_callback_skipped_when_not_refined(monkeypatch):
+    """Callback should not be called if idea was not refined."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.idea_refined = False  # not refined
+
+    callback_called = False
+
+    def cb(refined, original, run_id, history):
+        nonlocal callback_called
+        callback_called = True
+        return True
+
+    flow.idea_approval_callback = cb
+
+    monkeypatch.setattr(
+        PRDFlow, "_get_available_agents",
+        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+    )
+
+    with pytest.raises(RuntimeError, match="stop here"):
+        flow.generate_sections()
+
+    assert callback_called is False
+
+
+def test_idea_approval_callback_skipped_when_none(monkeypatch):
+    """No callback set should proceed without error."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.idea_refined = True
+    flow.state.original_idea = "Raw idea"
+    flow.idea_approval_callback = None
+
+    monkeypatch.setattr(
+        PRDFlow, "_get_available_agents",
+        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+    )
+
+    # Should proceed past the approval gate without IdeaFinalized
+    with pytest.raises(RuntimeError, match="stop here"):
+        flow.generate_sections()
+
+
+# ── RequirementsFinalized & requirements_approval_callback ───
+
+
+def test_requirements_finalized_exception_importable():
+    """RequirementsFinalized exception should be importable."""
+    from crewai_productfeature_planner.flows.prd_flow import RequirementsFinalized
+    assert issubclass(RequirementsFinalized, Exception)
+
+
+def test_requirements_approval_callback_defaults_to_none():
+    """PRDFlow should have requirements_approval_callback=None by default."""
+    flow = PRDFlow()
+    assert flow.requirements_approval_callback is None
+
+
+def test_prd_state_requirements_fields():
+    """PRDState should initialise requirements breakdown fields properly."""
+    state = PRDState()
+    assert state.requirements_breakdown == ""
+    assert state.breakdown_history == []
+    assert state.requirements_broken_down is False
+
+
+def test_maybe_breakdown_requirements_skips_without_credentials(monkeypatch):
+    """Should skip breakdown when no Google credentials are set."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow._maybe_breakdown_requirements()
+    assert flow.state.requirements_broken_down is False
+
+
+def test_maybe_breakdown_requirements_runs_with_credentials(monkeypatch):
+    """Should run breakdown when credentials are present."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+
+    with patch(
+        "crewai_productfeature_planner.agents.requirements_breakdown.breakdown_requirements",
+        return_value=("## Feature 1\nDetailed reqs", [{"iteration": 1}]),
+    ):
+        flow._maybe_breakdown_requirements()
+
+    assert flow.state.requirements_broken_down is True
+    assert "Feature 1" in flow.state.requirements_breakdown
+    assert len(flow.state.breakdown_history) == 1
+
+
+def test_maybe_breakdown_requirements_skips_when_already_done(monkeypatch):
+    """Should not breakdown again if already done."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.requirements_broken_down = True
+
+    flow._maybe_breakdown_requirements()
+    # Should not have changed anything
+    assert flow.state.requirements_breakdown == ""
+
+
+def test_maybe_breakdown_requirements_continues_on_failure(monkeypatch):
+    """Should continue without requirements if breakdown fails."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+
+    with patch(
+        "crewai_productfeature_planner.agents.requirements_breakdown.breakdown_requirements",
+        side_effect=RuntimeError("LLM unavailable"),
+    ):
+        flow._maybe_breakdown_requirements()
+
+    assert flow.state.requirements_broken_down is False
+    assert flow.state.requirements_breakdown == ""
+
+
+def test_requirements_approval_callback_finalize_raises(monkeypatch):
+    """When requirements_approval_callback returns True, RequirementsFinalized should be raised."""
+    from crewai_productfeature_planner.flows.prd_flow import RequirementsFinalized
+
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.idea_refined = True
+    flow.state.original_idea = "Raw idea"
+    flow.state.requirements_broken_down = True
+    flow.state.requirements_breakdown = "## Feature 1"
+
+    flow.idea_approval_callback = lambda refined, original, run_id, history: False
+    flow.requirements_approval_callback = lambda reqs, idea, run_id, history: True
+
+    with pytest.raises(RequirementsFinalized):
+        flow.generate_sections()
+
+
+def test_requirements_approval_callback_continue_proceeds(monkeypatch):
+    """When requirements_approval_callback returns False, PRD generation should proceed."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.idea_refined = True
+    flow.state.original_idea = "Raw idea"
+    flow.state.requirements_broken_down = True
+    flow.state.requirements_breakdown = "## Feature 1"
+
+    callback_called = False
+
+    def req_cb(reqs, idea, run_id, history):
+        nonlocal callback_called
+        callback_called = True
+        return False
+
+    flow.idea_approval_callback = lambda refined, original, run_id, history: False
+    flow.requirements_approval_callback = req_cb
+
+    monkeypatch.setattr(
+        PRDFlow, "_get_available_agents",
+        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+    )
+
+    with pytest.raises(RuntimeError, match="stop here"):
+        flow.generate_sections()
+
+    assert callback_called is True
+
+
+def test_requirements_callback_skipped_when_not_broken_down(monkeypatch):
+    """Callback should not be called if requirements were not broken down."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.requirements_broken_down = False
+
+    callback_called = False
+
+    def req_cb(reqs, idea, run_id, history):
+        nonlocal callback_called
+        callback_called = True
+        return True
+
+    flow.requirements_approval_callback = req_cb
+
+    monkeypatch.setattr(
+        PRDFlow, "_get_available_agents",
+        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+    )
+
+    with pytest.raises(RuntimeError, match="stop here"):
+        flow.generate_sections()
+
+    assert callback_called is False

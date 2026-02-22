@@ -19,7 +19,7 @@ Two authentication modes are supported (at least one is required):
 If *both* are set, the Google API key takes precedence.
 
 Optional ``GEMINI_MODEL`` env var overrides the default model
-(default: ``gemini-2.5-flash-preview-05-20``).
+(default: ``gemini-3-flash-preview``).
 """
 
 import os
@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 CONFIG_DIR = Path(__file__).parent / "config"
 
 # Default Gemini model.  Override via GEMINI_MODEL env var.
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
+DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
 
 # Default Vertex AI region when GOOGLE_CLOUD_LOCATION is not set.
 DEFAULT_VERTEX_LOCATION = "asia-southeast1"

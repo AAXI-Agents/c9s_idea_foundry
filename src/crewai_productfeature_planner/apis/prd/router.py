@@ -282,6 +282,9 @@ async def approve_prd(request: PRDApproveRequest):
         sections_approved=approved_count,
         sections_total=total_sections,
         is_final_section=is_final,
+        active_agents=run.active_agents,
+        dropped_agents=run.dropped_agents,
+        agent_errors=run.agent_errors,
         message=msg,
     )
 
@@ -346,6 +349,9 @@ async def pause_prd(request: PRDPauseRequest):
         sections_approved=approved_count,
         sections_total=total_sections,
         is_final_section=False,
+        active_agents=run.active_agents,
+        dropped_agents=run.dropped_agents,
+        agent_errors=run.agent_errors,
         message=(
             f"Pause requested for run {request.run_id}. "
             f"Progress saved ({approved_count}/{total_sections} sections approved). "

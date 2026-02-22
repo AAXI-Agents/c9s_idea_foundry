@@ -1,0 +1,157 @@
+breakdown_requirements_task:
+  description: >
+    You are a Senior Solutions Architect breaking down a refined product
+    idea into structured, implementation-ready product requirements.
+
+    ## The Refined Idea
+    {idea}
+
+    ## Previous Requirements (Your Prior Output)
+    {previous_requirements}
+
+    ## Your Task
+    Decompose this idea into **product features**, where each feature
+    is a self-contained capability of the application.  If previous
+    requirements exist above, **build upon and improve them** — do NOT
+    start from scratch.  Address every gap identified in the feedback,
+    add missing detail, and refine existing sections.
+
+    For EACH feature produce the following sections:
+
+    ### 1. Feature Overview
+    - Feature name (concise, noun-phrase)
+    - One-paragraph description of what this feature does
+    - Primary user role(s) it serves (e.g., Broker, Developer, Admin)
+    - How an AI agent augments the user in this feature
+    - User stories in "As a [role], I want [action] so that [benefit]" format
+
+    ### 2. Data Entities & Attributes
+    For every data entity this feature introduces or touches:
+    - Entity name (PascalCase)
+    - ALL attributes with concrete data types (string, int, float,
+      datetime, boolean, enum with values, ObjectId, etc.)
+    - Required vs. optional flag for each attribute
+    - Default values where applicable
+    - Validation rules (min/max length, regex, range)
+    - Relationships to other entities (1:1, 1:N, M:N) with
+      foreign key field names
+    - Indexes (single-field, compound, unique, TTL) with field names
+    - Example document / record shape (JSON)
+
+    ### 3. State Machine
+    For entities that have lifecycle states:
+    - List every valid state with a one-line description
+      (e.g., Draft — initial state before submission)
+    - Define ALL valid transitions as "FromState → ToState (trigger)"
+    - Note which transitions an AI agent can initiate vs. user-only
+    - Business rules or guards on each transition
+    - Side effects on transition (e.g., send notification, update
+      related entity, emit event)
+    - Invalid transitions that must be explicitly rejected
+
+    ### 4. AI Agent Augmentation Points
+    - What the AI agent observes (inputs / context / data sources)
+    - What the AI agent recommends, generates, or automates
+    - Prompt template or instruction sketch for the AI agent
+    - How the user confirms, overrides, or delegates to the agent
+    - Confidence thresholds or guardrails (numeric where possible)
+    - Fallback behaviour when the AI agent is unavailable or
+      confidence is below threshold
+    - Feedback loop — how agent accuracy improves over time
+
+    ### 5. API Contract Sketch
+    - Key endpoints (method + path + purpose)
+    - Request payload shape with field names, types, and required flags
+    - Response payload shape with field names and types
+    - Pagination, filtering, and sorting parameters where applicable
+    - Authentication / authorization requirements
+    - Error codes specific to this feature with HTTP status and message
+    - Rate limiting considerations
+
+    ### 6. Acceptance Criteria
+    - 3-6 testable acceptance criteria in Given/When/Then format
+    - At least one criterion covering AI agent behaviour
+    - At least one criterion covering error / edge-case handling
+    - At least one criterion covering state transition validation
+    - At least one criterion covering data validation rules
+
+    Number features sequentially (Feature 1, Feature 2, …).
+    Be specific — use concrete field names, enum values, and endpoint
+    paths rather than abstract placeholders.  Every attribute must have
+    a concrete type.  Every endpoint must have a concrete path.
+
+    This is iteration {iteration} of {max_iterations}.
+    {previous_feedback}
+  expected_output: >
+    A comprehensive, data-architect-ready requirements breakdown
+    document (2000-5000 words) containing multiple numbered features,
+    each with the six sections described above.  Use professional
+    markdown formatting with clear headings, tables for entity
+    attributes, example JSON documents, and state-transition notation.
+    Every entity must have fully-typed attributes with validation
+    rules.  Every state machine must list all transitions and guards.
+
+evaluate_requirements_task:
+  description: >
+    Evaluate whether the following product requirements breakdown is
+    detailed and granular enough for a data architect to immediately
+    start building the data models, state engines, and API layer
+    without any follow-up questions.
+
+    ## Requirements Breakdown
+    {requirements}
+
+    ## Evaluation Criteria
+    Rate each criterion 1-5 (1=absent, 2=vague, 3=adequate,
+    4=detailed, 5=implementation-ready):
+
+    1. **Feature completeness** — Are all logical features of the
+       product identified?  Are there obvious features missing?
+    2. **Entity granularity** — Does every entity list ALL attributes
+       with concrete data types (not just "string" but also length
+       constraints, enums with values, etc.)?  Are relationships
+       specified with foreign key field names?  Are indexes defined?
+       Are example documents/records provided?
+    3. **State machine rigour** — Does every stateful entity have a
+       complete state diagram with ALL transitions, triggers, guards,
+       side effects, and explicitly-rejected invalid transitions?
+    4. **AI augmentation depth** — Are AI agent inputs, outputs,
+       confidence thresholds (numeric), user-override flows, and
+       fallback behaviours concrete?  Is there a prompt sketch?
+    5. **API contract precision** — Are endpoints fully specified with
+       method, path, request/response field names + types, required
+       flags, auth requirements, pagination, and error codes with
+       HTTP status?
+    6. **Acceptance criteria coverage** — Are all criteria in
+       Given/When/Then format?  Is there coverage for AI behaviour,
+       state transitions, data validation, and error handling?
+
+    ## Granularity Check
+    A data architect should be able to:
+    - Create every collection/table schema directly from the entities
+    - Build a state machine engine from the transition definitions
+    - Generate API stubs from the contract sketches
+    - Write integration tests from the acceptance criteria
+
+    If ANY of these four are not possible, the breakdown NEEDS_MORE.
+
+    ## Decision Rules
+    - All six criteria must score >= 4 for REQUIREMENTS_READY.
+    - If any criterion scores <= 2, always return NEEDS_MORE.
+    - If this is iteration {iteration} of {max_iterations} and
+      iteration >= {min_iterations}, accept scores >= 3 across the
+      board as REQUIREMENTS_READY.
+    - When returning NEEDS_MORE, list 2-4 **specific, actionable**
+      improvements.  Reference exact feature numbers and section
+      names (e.g. "Feature 2 → Data Entities: add validation rules
+      for email and phone fields").
+
+    End your evaluation with exactly one of:
+      REQUIREMENTS_READY — the breakdown is detailed enough.
+      NEEDS_MORE         — provide 2-4 specific improvements needed.
+  expected_output: >
+    A structured evaluation (200-400 words) with a score (1-5) for
+    each of the six criteria, a brief justification per score, the
+    granularity check result, and then exactly REQUIREMENTS_READY or
+    NEEDS_MORE on the final line.  When NEEDS_MORE, the specific
+    improvements must immediately precede the verdict.

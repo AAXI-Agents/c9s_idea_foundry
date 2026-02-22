@@ -233,6 +233,52 @@ def test_run_prd_flow_llm_error():
     assert "model overloaded" in run.error
 
 
+# ── make_approval_callback agent syncing ─────────────────────
+
+
+def test_approval_callback_syncs_agent_state():
+    """The service callback should update FlowRun with active/dropped agents."""
+    from crewai_productfeature_planner.apis.prd.models import PRDDraft
+    from crewai_productfeature_planner.apis.prd.service import make_approval_callback
+
+    runs.clear()
+    run = FlowRun(run_id="test-sync", flow_name="prd")
+    runs["test-sync"] = run
+
+    callback = make_approval_callback("test-sync")
+
+    # Simulate approval in a thread (callback blocks on event.wait)
+    def _approve():
+        import time
+        time.sleep(0.05)
+        approval_decisions["test-sync"] = True
+        approval_events["test-sync"].set()
+
+    import threading as _threading
+    t = _threading.Thread(target=_approve)
+    t.start()
+
+    result = callback(
+        1,
+        "executive_summary",
+        {"openai_pm": "draft content"},
+        PRDDraft.create_empty(),
+        active_agents=["openai_pm"],
+        dropped_agents=["gemini_pm"],
+        agent_errors={"gemini_pm": "RuntimeError: model not found"},
+    )
+    t.join()
+
+    assert run.active_agents == ["openai_pm"]
+    assert run.dropped_agents == ["gemini_pm"]
+    assert run.agent_errors == {"gemini_pm": "RuntimeError: model not found"}
+
+    # Cleanup
+    approval_events.pop("test-sync", None)
+    approval_decisions.pop("test-sync", None)
+    runs.clear()
+
+
 # ── Global error handler ─────────────────────────────────────
 
 
@@ -408,6 +454,111 @@ def test_approve_without_selected_agent(client):
     )
     assert resp.status_code == 200
     assert "r7" not in approval_selected
+
+
+# ── Agent tracking in responses ──────────────────────────────
+
+
+def test_approve_response_includes_active_agents(client):
+    """Approve response should include active_agents, dropped_agents and agent_errors."""
+    run = FlowRun(
+        run_id="r-agents", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
+    )
+    run.current_section_key = "executive_summary"
+    run.active_agents = ["openai_pm", "gemini_pm"]
+    run.dropped_agents = []
+    run.agent_errors = {}
+    runs["r-agents"] = run
+    event = threading.Event()
+    approval_events["r-agents"] = event
+
+    resp = client.post(
+        "/flow/prd/approve",
+        json={"run_id": "r-agents", "approve": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active_agents"] == ["openai_pm", "gemini_pm"]
+    assert body["dropped_agents"] == []
+    assert body["agent_errors"] == {}
+
+
+def test_approve_response_shows_dropped_agents(client):
+    """Approve response should reflect dropped agents and their errors."""
+    run = FlowRun(
+        run_id="r-dropped", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
+    )
+    run.current_section_key = "problem_statement"
+    run.active_agents = ["openai_pm"]
+    run.dropped_agents = ["gemini_pm"]
+    run.agent_errors = {"gemini_pm": "RuntimeError: model not found"}
+    runs["r-dropped"] = run
+    event = threading.Event()
+    approval_events["r-dropped"] = event
+
+    resp = client.post(
+        "/flow/prd/approve",
+        json={"run_id": "r-dropped", "approve": False},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active_agents"] == ["openai_pm"]
+    assert body["dropped_agents"] == ["gemini_pm"]
+    assert body["agent_errors"] == {"gemini_pm": "RuntimeError: model not found"}
+
+
+def test_run_status_includes_agent_tracking(client):
+    """GET /flow/runs/{run_id} should include agent tracking fields."""
+    run = FlowRun(run_id="r-status-agents", flow_name="prd")
+    run.active_agents = ["openai_pm"]
+    run.dropped_agents = ["gemini_pm"]
+    run.agent_errors = {"gemini_pm": "RuntimeError: boom"}
+    runs["r-status-agents"] = run
+
+    resp = client.get("/flow/runs/r-status-agents")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active_agents"] == ["openai_pm"]
+    assert body["dropped_agents"] == ["gemini_pm"]
+    assert body["agent_errors"] == {"gemini_pm": "RuntimeError: boom"}
+
+
+def test_run_status_empty_agents_by_default(client):
+    """A new run should have empty agent lists until the flow starts."""
+    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Agent tracking test"},
+        )
+    run_id = resp.json()["run_id"]
+    status_resp = client.get(f"/flow/runs/{run_id}")
+    body = status_resp.json()
+    assert body["active_agents"] == []
+    assert body["dropped_agents"] == []
+    assert body["agent_errors"] == {}
+    assert body["original_idea"] == ""
+    assert body["idea_refined"] is False
+
+
+def test_pause_response_includes_agents(client):
+    """Pause response should include agent tracking fields."""
+    run = FlowRun(
+        run_id="r-pause-agents", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
+    )
+    run.current_section_key = "executive_summary"
+    run.active_agents = ["openai_pm"]
+    run.dropped_agents = ["gemini_pm"]
+    run.agent_errors = {"gemini_pm": "RuntimeError: timeout"}
+    runs["r-pause-agents"] = run
+    event = threading.Event()
+    approval_events["r-pause-agents"] = event
+
+    resp = client.post("/flow/prd/pause", json={"run_id": "r-pause-agents"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active_agents"] == ["openai_pm"]
+    assert body["dropped_agents"] == ["gemini_pm"]
+    assert body["agent_errors"] == {"gemini_pm": "RuntimeError: timeout"}
 
 
 # ── API naming convention ────────────────────────────────────
@@ -617,6 +768,32 @@ def test_openapi_schema_includes_error_response(client):
     err_schema = schema["components"]["schemas"]["ErrorResponse"]
     assert "error_code" in err_schema["properties"]
     assert "message" in err_schema["properties"]
+
+
+def test_openapi_schema_includes_agent_tracking_fields(client):
+    """PRDRunStatusResponse & PRDActionResponse should have agent tracking fields."""
+    resp = client.get("/openapi.json")
+    schema = resp.json()
+    schemas = schema["components"]["schemas"]
+
+    # PRDRunStatusResponse
+    run_status = schemas["PRDRunStatusResponse"]
+    assert "active_agents" in run_status["properties"]
+    assert "dropped_agents" in run_status["properties"]
+    assert "agent_errors" in run_status["properties"]
+    assert "original_idea" in run_status["properties"]
+    assert "idea_refined" in run_status["properties"]
+
+    # PRDActionResponse
+    action_resp = schemas["PRDActionResponse"]
+    assert "active_agents" in action_resp["properties"]
+    assert "dropped_agents" in action_resp["properties"]
+    assert "agent_errors" in action_resp["properties"]
+
+    # PRDSectionDetail should have agent_results and selected_agent
+    section_detail = schemas["PRDSectionDetail"]
+    assert "agent_results" in section_detail["properties"]
+    assert "selected_agent" in section_detail["properties"]
 
 
 # ── Single active job guard ──────────────────────────────────

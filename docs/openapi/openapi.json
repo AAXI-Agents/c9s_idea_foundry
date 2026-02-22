@@ -119,6 +119,14 @@
             ],
             "title": "Feedback",
             "description": "Optional critique feedback from the user."
+          },
+          "selected_agent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Selected Agent",
+            "description": "Which agent's result to use (e.g. 'openai_pm' or 'gemini_pm'). Required when multiple agents produced results."
           }
         },
         "type": "object",
@@ -145,6 +153,44 @@
             "type": "string",
             "title": "Section",
             "description": "The section key the action was applied to."
+          },
+          "current_step": {
+            "type": ["integer", "null"],
+            "title": "Current Step",
+            "description": "1-based step number of the current section."
+          },
+          "sections_approved": {
+            "type": ["integer", "null"],
+            "title": "Sections Approved",
+            "description": "Number of sections approved so far."
+          },
+          "sections_total": {
+            "type": ["integer", "null"],
+            "title": "Sections Total",
+            "description": "Total number of sections in the PRD."
+          },
+          "is_final_section": {
+            "type": "boolean",
+            "title": "Is Final Section",
+            "description": "True when this approval completed the last section."
+          },
+          "active_agents": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Active Agents",
+            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm', 'gemini_pm'])."
+          },
+          "dropped_agents": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Dropped Agents",
+            "description": "Agent identifiers removed from the flow after failing during parallel drafting."
+          },
+          "agent_errors": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "title": "Agent Errors",
+            "description": "Map of dropped agent name to its error message (e.g. {'gemini_pm': 'RuntimeError: model not found'})."
           },
           "message": {
             "type": "string",
@@ -253,6 +299,11 @@
             "title": "Title",
             "description": "Human-readable section title."
           },
+          "step": {
+            "type": "integer",
+            "title": "Step",
+            "description": "1-based step number in the PRD workflow."
+          },
           "content": {
             "type": "string",
             "title": "Content",
@@ -272,16 +323,23 @@
             "type": "boolean",
             "title": "Is Approved",
             "description": "Whether this section is approved."
+          },
+          "agent_results": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "title": "Agent Results",
+            "description": "Per-agent draft results. Keys are agent identifiers (e.g. 'openai_pm', 'gemini_pm'), values are the markdown content each agent produced."
+          },
+          "selected_agent": {
+            "type": "string",
+            "title": "Selected Agent",
+            "description": "Which agent's result was selected by the user."
           }
         },
         "type": "object",
         "required": [
           "key",
-          "title",
-          "content",
-          "critique",
-          "iteration",
-          "is_approved"
+          "title"
         ],
         "title": "PRDSectionDetail"
       },
@@ -355,6 +413,51 @@
             "type": "string",
             "title": "Current Section Key",
             "description": "Key of the section currently being iterated."
+          },
+          "current_step": {
+            "type": "integer",
+            "title": "Current Step",
+            "description": "1-based step number of the current section."
+          },
+          "sections_approved": {
+            "type": "integer",
+            "title": "Sections Approved",
+            "description": "Number of approved sections."
+          },
+          "sections_total": {
+            "type": "integer",
+            "title": "Sections Total",
+            "description": "Total number of PRD sections."
+          },
+          "active_agents": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Active Agents",
+            "description": "Agent identifiers currently participating in the flow."
+          },
+          "dropped_agents": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Dropped Agents",
+            "description": "Agent identifiers removed after failing during parallel drafting."
+          },
+          "agent_errors": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "title": "Agent Errors",
+            "description": "Map of dropped agent name to its error message."
+          },
+          "original_idea": {
+            "type": "string",
+            "title": "Original Idea",
+            "description": "The raw idea before the Idea Refinement agent enriched it. Empty when refinement was skipped.",
+            "default": ""
+          },
+          "idea_refined": {
+            "type": "boolean",
+            "title": "Idea Refined",
+            "description": "Whether the idea was refined by the Idea Refinement agent.",
+            "default": false
           },
           "current_draft": {
             "$ref": "#/components/schemas/PRDDraftDetail"

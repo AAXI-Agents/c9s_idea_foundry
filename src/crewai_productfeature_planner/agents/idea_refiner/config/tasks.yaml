@@ -1,0 +1,62 @@
+refine_idea_task:
+  description: >
+    You are an industry expert reviewing a product feature idea.
+
+    ## The Idea (current version)
+    {idea}
+
+    ## Your Task
+    1. **Identify the industry / domain** this idea belongs to (e.g.,
+       FinTech, HealthTech, E-commerce, Developer Tools, etc.).
+    2. **Adopt the persona** of a demanding but constructive expert
+       user or stakeholder in that industry.
+    3. **Probe the idea** — ask 3-5 hard questions a real user would
+       ask (who benefits, what pain-point, competitive gap, risks,
+       regulatory concerns, scalability, etc.).
+    4. **Answer those questions yourself** using your domain expertise,
+       adding concrete details, data points, and real-world context.
+    5. **Produce a refined version** of the idea that incorporates
+       all the additional detail and context you uncovered.
+
+    The refined idea should be a self-contained, richly detailed
+    description — not a list of Q&As.  Write it as if you are
+    explaining the idea to a Product Manager who will build a PRD.
+
+    This is iteration {iteration} of {max_iterations}.
+    {previous_feedback}
+  expected_output: >
+    A refined and enriched description of the product idea (400-800
+    words) that includes concrete details about the target market,
+    user pain-points, competitive landscape, key features, and
+    success criteria.  Written in clear, professional prose — NOT
+    bullet-point fragments.
+
+evaluate_quality_task:
+  description: >
+    Evaluate whether the following refined product idea is detailed
+    and specific enough to serve as the foundation for a comprehensive
+    Product Requirements Document (PRD).
+
+    ## Refined Idea
+    {refined_idea}
+
+    ## Evaluation Criteria
+    Rate each criterion 1-5:
+    1. **Target audience clarity** — Is it clear WHO this is for?
+    2. **Problem definition** — Is the pain-point well-articulated?
+    3. **Solution specificity** — Are key features described concretely?
+    4. **Competitive context** — Is differentiation addressed?
+    5. **Success criteria** — Are measurable outcomes mentioned?
+
+    ## Decision Rules
+    - All five criteria must score >= 3 for READY.
+    - If this is iteration {iteration} of {max_iterations} and
+      iteration >= {min_iterations}, lean towards READY unless the
+      idea is clearly inadequate.
+
+    End your evaluation with exactly one of:
+      IDEA_READY  — the idea is rich enough for PRD generation.
+      NEEDS_MORE  — provide 2-3 specific improvements needed.
+  expected_output: >
+    A brief evaluation (100-200 words) with scores for each criterion,
+    followed by exactly IDEA_READY or NEEDS_MORE on the final line.

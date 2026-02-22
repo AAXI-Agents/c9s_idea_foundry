@@ -38,6 +38,26 @@ class FlowRun(BaseModel):
     error: str | None = None
     current_draft: PRDDraft = Field(default_factory=PRDDraft.create_empty)
     current_section_key: str = ""
+    active_agents: list[str] = Field(
+        default_factory=list,
+        description="Agent identifiers currently participating in the flow.",
+    )
+    dropped_agents: list[str] = Field(
+        default_factory=list,
+        description="Agent identifiers removed after failing during parallel drafting.",
+    )
+    agent_errors: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of agent name to error message for agents that failed.",
+    )
+    original_idea: str = Field(
+        default="",
+        description="The raw idea before refinement (empty when skipped).",
+    )
+    idea_refined: bool = Field(
+        default=False,
+        description="Whether the idea was refined by the Idea Refinement agent.",
+    )
 
 
 # ── In-memory stores ─────────────────────────────────────────

@@ -245,6 +245,27 @@ class PRDActionResponse(BaseModel):
         default=False,
         description="True when this approval completed the last section — the flow will finalize.",
     )
+    active_agents: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Agent identifiers currently participating in the flow "
+            "(e.g. ['openai_pm', 'gemini_pm'])."
+        ),
+    )
+    dropped_agents: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Agent identifiers that were removed from the flow after "
+            "failing during parallel drafting (e.g. ['gemini_pm'])."
+        ),
+    )
+    agent_errors: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Map of dropped agent name to its error message "
+            "(e.g. {'gemini_pm': 'RuntimeError: model not found'})."
+        ),
+    )
     message: str = Field(..., description="Human-readable result message.")
 
 
@@ -316,6 +337,38 @@ class PRDRunStatusResponse(BaseModel):
     sections_total: int = Field(
         default=0,
         description="Total number of PRD sections.",
+    )
+    active_agents: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Agent identifiers currently participating in the flow "
+            "(e.g. ['openai_pm', 'gemini_pm'])."
+        ),
+    )
+    dropped_agents: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Agent identifiers that were removed after failing during "
+            "parallel drafting (e.g. ['gemini_pm'])."
+        ),
+    )
+    agent_errors: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Map of dropped agent name to its error message "
+            "(e.g. {'gemini_pm': 'RuntimeError: model not found'})."
+        ),
+    )
+    original_idea: str = Field(
+        default="",
+        description=(
+            "The raw idea before the Idea Refinement agent enriched it. "
+            "Empty when refinement was skipped."
+        ),
+    )
+    idea_refined: bool = Field(
+        default=False,
+        description="Whether the idea was refined by the Idea Refinement agent.",
     )
     current_draft: PRDDraftDetail = Field(
         default_factory=PRDDraftDetail,

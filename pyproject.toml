@@ -17,10 +17,6 @@ dependencies = [
 [project.scripts]
 crewai_productfeature_planner = "crewai_productfeature_planner.main:run"
 run_crew = "crewai_productfeature_planner.main:run"
-train = "crewai_productfeature_planner.main:train"
-replay = "crewai_productfeature_planner.main:replay"
-test = "crewai_productfeature_planner.main:test"
-run_with_trigger = "crewai_productfeature_planner.main:run_with_trigger"
 run_prd_flow = "crewai_productfeature_planner.main:run_prd_flow"
 start_api = "crewai_productfeature_planner.main:start_api"
 preflight = "crewai_productfeature_planner.scripts.preflight:run_checks"

@@ -3,6 +3,9 @@
 Implements a section-by-section PRD workflow with support for multiple
 LLM agents running in parallel:
 
+  0. Idea Refinement — A Gemini-powered agent adopts an industry-expert
+     persona and iteratively enriches the raw idea (3-10 cycles) before
+     PRD drafting begins.
   1. Initial Draft — Multiple agents (OpenAI PM + Gemini PM when available)
      each draft the section simultaneously.  The user picks which result
      to use.
@@ -58,6 +61,22 @@ class PauseRequested(Exception):
     """Raised when the user requests to pause and save the current iteration."""
 
 
+class IdeaFinalized(Exception):
+    """Raised when the user approves the refined idea without generating a PRD.
+
+    The idea has already been saved to ``finalizeIdeas`` and the working
+    idea marked as completed by the time this is raised.
+    """
+
+
+class RequirementsFinalized(Exception):
+    """Raised when the user finalizes the requirements breakdown without PRD.
+
+    The requirements have been saved to ``finalizeIdeas`` and the
+    working idea marked as completed by the time this is raised.
+    """
+
+
 class PRDState(BaseModel):
     """Tracks the evolving PRD through the section-by-section workflow."""
 
@@ -69,6 +88,42 @@ class PRDState(BaseModel):
     final_prd: str = ""
     iteration: int = 0
     is_ready: bool = False
+    active_agents: list[str] = Field(
+        default_factory=list,
+        description="Agent identifiers currently participating in the flow.",
+    )
+    dropped_agents: list[str] = Field(
+        default_factory=list,
+        description="Agent identifiers removed after failing during parallel drafting.",
+    )
+    agent_errors: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of agent name to error message for agents that failed.",
+    )
+    original_idea: str = Field(
+        default="",
+        description="The raw idea before refinement (empty when refinement is skipped).",
+    )
+    idea_refined: bool = Field(
+        default=False,
+        description="Whether the idea was refined by the Idea Refinement agent.",
+    )
+    refinement_history: list[dict] = Field(
+        default_factory=list,
+        description="Iteration history from idea refinement (each dict has 'iteration', 'idea', and optionally 'evaluation').",
+    )
+    requirements_breakdown: str = Field(
+        default="",
+        description="Structured product requirements produced by the Requirements Breakdown agent.",
+    )
+    breakdown_history: list[dict] = Field(
+        default_factory=list,
+        description="Iteration history from requirements breakdown (each dict has 'iteration', 'requirements', 'evaluation').",
+    )
+    requirements_broken_down: bool = Field(
+        default=False,
+        description="Whether the idea has been broken down into requirements.",
+    )
 
 
 class PRDFlow(Flow[PRDState]):
@@ -105,6 +160,22 @@ class PRDFlow(Flow[PRDState]):
 
     approval_callback: (
         Callable[[int, str, dict[str, str], PRDDraft], ApprovalDecision] | None
+    ) = None
+
+    # Callback invoked after idea refinement (manual or agent) completes.
+    # Signature: (refined_idea, original_idea, run_id, refinement_history) -> bool
+    # Return True  → finalize the idea (save & stop, no PRD generation).
+    # Return False → continue to PRD generation.
+    idea_approval_callback: (
+        Callable[[str, str, str, list[dict]], bool] | None
+    ) = None
+
+    # Callback invoked after requirements breakdown completes.
+    # Signature: (requirements, idea, run_id, breakdown_history) -> bool
+    # Return True  → finalize the requirements (save & stop, no PRD).
+    # Return False → continue to PRD generation with enriched context.
+    requirements_approval_callback: (
+        Callable[[str, str, str, list[dict]], bool] | None
     ) = None
 
     # ------------------------------------------------------------------
@@ -174,12 +245,12 @@ class PRDFlow(Flow[PRDState]):
         section_title: str,
         idea: str,
         context: str,
-    ) -> tuple[dict[str, str], set[str]]:
+    ) -> tuple[dict[str, str], dict[str, str]]:
         """Execute draft tasks across *agents* in parallel.
 
         Returns a tuple of:
             - ``{agent_name: raw_output}`` dict with successful results.
-            - A ``set`` of agent names that failed during this round.
+            - ``{agent_name: error_message}`` dict for agents that failed.
 
         If one agent fails the others still succeed; the error is logged
         and that agent is omitted from the result dict.
@@ -206,7 +277,7 @@ class PRDFlow(Flow[PRDState]):
             return agent_name, result.raw
 
         results: dict[str, str] = {}
-        failed: set[str] = set()
+        failed: dict[str, str] = {}
         if len(agents) == 1:
             # Fast path — no thread overhead for single agent
             name, agent = next(iter(agents.items()))
@@ -224,10 +295,11 @@ class PRDFlow(Flow[PRDState]):
                         _, raw = future.result()
                         results[agent_name] = raw
                     except Exception as exc:  # noqa: BLE001
+                        error_msg = f"{type(exc).__name__}: {exc}"
                         logger.error(
-                            "[Draft] Agent '%s' failed: %s — skipping", agent_name, exc,
+                            "[Draft] Agent '%s' failed: %s — skipping", agent_name, error_msg,
                         )
-                        failed.add(agent_name)
+                        failed[agent_name] = error_msg
 
         if not results:
             raise RuntimeError("All agents failed during parallel drafting")
@@ -255,15 +327,129 @@ class PRDFlow(Flow[PRDState]):
         return default_agent, decision
 
     # ------------------------------------------------------------------
+    # Step 0 — Idea Refinement (Gemini-only, optional)
+    # ------------------------------------------------------------------
+    def _maybe_refine_idea(self) -> None:
+        """Run the Gemini-powered idea refiner if credentials are available.
+
+        The refiner iteratively enriches the raw idea (3-10 cycles)
+        from the perspective of an industry-expert user.  Skipped when
+        Gemini credentials are missing or when the idea was already
+        refined (e.g. resumed run).
+        """
+        if self.state.idea_refined:
+            logger.info("[IdeaRefiner] Skipping — idea already refined")
+            return
+
+        # Only run when Gemini credentials are present
+        has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
+        has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+        if not has_api_key and not has_project:
+            logger.info(
+                "[IdeaRefiner] Skipping — no GOOGLE_API_KEY or "
+                "GOOGLE_CLOUD_PROJECT set"
+            )
+            return
+
+        logger.info("[IdeaRefiner] Refining idea before PRD generation")
+        try:
+            from crewai_productfeature_planner.agents.idea_refiner import refine_idea
+
+            self.state.original_idea = self.state.idea
+            refined, history = refine_idea(
+                self.state.idea, run_id=self.state.run_id,
+            )
+            self.state.idea = refined
+            self.state.idea_refined = True
+            self.state.refinement_history = history
+            logger.info(
+                "[IdeaRefiner] Idea refined (%d → %d chars, %d iterations)",
+                len(self.state.original_idea), len(refined), len(history),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[IdeaRefiner] Refinement failed: %s — continuing with "
+                "original idea",
+                exc,
+            )
+
+    # ------------------------------------------------------------------
+    # Step 0c — Requirements Breakdown (Gemini-only, optional)
+    # ------------------------------------------------------------------
+    def _maybe_breakdown_requirements(self) -> None:
+        """Run the Gemini-powered requirements breakdown agent.
+
+        Decomposes the (optionally refined) idea into structured product
+        requirements with data entities, state machines, AI augmentation
+        points, and API contract sketches.
+
+        Skipped when Gemini credentials are missing or when the
+        requirements were already broken down (e.g. resumed run).
+        """
+        if self.state.requirements_broken_down:
+            logger.info(
+                "[RequirementsBreakdown] Skipping — already broken down"
+            )
+            return
+
+        # Only run when Gemini credentials are present
+        has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
+        has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+        if not has_api_key and not has_project:
+            logger.info(
+                "[RequirementsBreakdown] Skipping — no GOOGLE_API_KEY "
+                "or GOOGLE_CLOUD_PROJECT set"
+            )
+            return
+
+        logger.info(
+            "[RequirementsBreakdown] Breaking down idea into requirements"
+        )
+        try:
+            from crewai_productfeature_planner.agents.requirements_breakdown import (
+                breakdown_requirements,
+            )
+
+            requirements, history = breakdown_requirements(
+                self.state.idea, run_id=self.state.run_id,
+            )
+            self.state.requirements_breakdown = requirements
+            self.state.requirements_broken_down = True
+            self.state.breakdown_history = history
+            logger.info(
+                "[RequirementsBreakdown] Breakdown complete "
+                "(%d chars, %d iterations)",
+                len(requirements), len(history),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[RequirementsBreakdown] Breakdown failed: %s — "
+                "continuing without requirements",
+                exc,
+            )
+
+    # ------------------------------------------------------------------
     # Step 1 — Generate sections one by one
     # ------------------------------------------------------------------
     @start()
     def generate_sections(self) -> str:
-        """Draft each section, using multiple agents in parallel when available."""
+        """Run the agent pipeline then draft each section."""
+        # ── Agent pipeline (idea refinement → requirements → …) ──
+        from crewai_productfeature_planner.orchestrator import (
+            build_default_pipeline,
+        )
+
+        orchestrator = build_default_pipeline(self)
+        orchestrator.run_pipeline()
+
         logger.info("[Step 1] Generating PRD sections for idea: '%s'",
                     self.state.idea[:80])
         agents = self._get_available_agents()
         task_configs = get_task_configs()
+
+        # Track initial agent roster
+        self.state.active_agents = list(agents.keys())
+        self.state.dropped_agents = []
 
         for section in self.state.draft.sections:
             self.state.current_section_key = section.key
@@ -306,14 +492,18 @@ class PRDFlow(Flow[PRDState]):
 
             # Drop failed optional agents for the rest of the flow
             default = get_default_agent()
-            for name in failed_agents:
+            for name, error_msg in failed_agents.items():
                 if name != default and name in agents:
                     del agents[name]
+                    if name not in self.state.dropped_agents:
+                        self.state.dropped_agents.append(name)
+                    self.state.agent_errors[name] = error_msg
                     logger.warning(
-                        "[Agents] Removed failed optional agent '%s' — "
+                        "[Agents] Removed failed optional agent '%s' (%s) — "
                         "continuing with %d agent(s)",
-                        name, len(agents),
+                        name, error_msg, len(agents),
                     )
+            self.state.active_agents = list(agents.keys())
 
             # Persist section draft
             save_iteration(
@@ -351,6 +541,11 @@ class PRDFlow(Flow[PRDState]):
                     section.key,
                     section.agent_results,
                     self.state.draft,
+                    active_agents=list(self.state.active_agents),
+                    dropped_agents=list(self.state.dropped_agents),
+                    agent_errors=dict(self.state.agent_errors),
+                    original_idea=self.state.original_idea,
+                    idea_refined=self.state.idea_refined,
                 )
 
                 agent_name, action = self._parse_decision(decision, available)

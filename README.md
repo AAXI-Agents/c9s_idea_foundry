@@ -82,7 +82,10 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 | `GOOGLE_API_KEY` | **Yes**\* | — | Google API key ([get one here](https://aistudio.google.com/apikey)). Required when using Gemini API mode. Either this or `GOOGLE_CLOUD_PROJECT` must be set when `DEFAULT_AGENT=gemini_pm`; optional otherwise. |
 | `GOOGLE_CLOUD_PROJECT` | **Yes**\* | — | Google Cloud project ID with Vertex AI API enabled. Alternative to `GOOGLE_API_KEY`. Authenticate via `gcloud auth application-default login`. |
 | `GOOGLE_CLOUD_LOCATION` | No | `asia-southeast1` | Google Cloud region for Vertex AI ([available regions](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations)) |
-| `GEMINI_MODEL` | No | `gemini-2.5-flash-preview-05-20` | Gemini model to use ([available models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models)) |
+| `GEMINI_MODEL` | No | `gemini-3-flash-preview` | Gemini model to use ([available models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models)) |
+| `IDEA_REFINER_MIN_ITERATIONS` | No | `3` | Minimum idea-refinement cycles before the refiner can stop |
+| `IDEA_REFINER_MAX_ITERATIONS` | No | `10` | Maximum idea-refinement cycles |
+| `IDEA_REFINER_MODEL` | No | `GEMINI_MODEL` | Override the Gemini model used by the Idea Refinement agent |
 | `SERPER_API_KEY` | **Yes** | — | Google search via SerperDev for market research |
 | `MONGODB_URI` | No | `localhost` | MongoDB host |
 | `MONGODB_PORT` | No | `27017` | MongoDB port |
