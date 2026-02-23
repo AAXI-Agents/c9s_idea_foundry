@@ -1,17 +1,19 @@
 #!/usr/bin/env python
+import os
+import signal
+import subprocess
 import sys
 import warnings
 
-from crewai_productfeature_planner.apis.prd.models import AGENT_OPENAI, AGENT_GEMINI, PRDDraft, SECTION_ORDER, get_default_agent
-from crewai_productfeature_planner.flows.prd_flow import PAUSE_SENTINEL, IdeaFinalized, PauseRequested, PRDFlow, RequirementsFinalized
-from crewai_productfeature_planner.mongodb import find_unfinalized, get_run_documents, mark_completed, save_finalized, save_iteration
+from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryDraft, ExecutiveSummaryIteration, PRDDraft, SECTION_ORDER
+from crewai_productfeature_planner.flows.prd_flow import IdeaFinalized, PauseRequested, PRDFlow, RequirementsFinalized
+from crewai_productfeature_planner.mongodb import find_unfinalized, get_run_documents, mark_completed, save_executive_summary, save_iteration, save_pipeline_step
 from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
 from crewai_productfeature_planner.mongodb.crew_jobs import (
     create_job,
     fail_incomplete_jobs_on_startup,
     reactivate_job,
     update_job_completed,
-    update_job_failed,
     update_job_started,
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger
@@ -19,6 +21,81 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 logger = get_logger(__name__)
+
+# Process names used by the project's console_scripts entry points.
+_CREW_PROCESS_NAMES = ("run_crew", "crewai_productfeature_planner", "run_prd_flow")
+
+
+def _kill_stale_crew_processes() -> int:
+    """Kill any lingering CrewAI CLI processes from a previous run.
+
+    Scans ``ps`` output for processes whose command line contains one of
+    the known entry-point script names and sends ``SIGTERM``.
+
+    The current process **and its entire ancestor chain** (parent,
+    grandparent, …) are never killed.  This is important because
+    ``crewai run`` spawns ``uv run run_crew`` as an intermediate parent
+    whose command line matches the pattern.
+
+    Returns the number of processes terminated.
+    """
+    my_pid = os.getpid()
+    killed = 0
+
+    try:
+        # Use `ps` with PPID so we can build the ancestor chain.
+        result = subprocess.run(
+            ["ps", "axo", "pid,ppid,command"],
+            capture_output=True, text=True, timeout=5,
+        )
+
+        # First pass: build pid→ppid map so we can walk ancestors.
+        ppid_map: dict[int, int] = {}
+        lines: list[tuple[int, str]] = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(None, 2)
+            if len(parts) < 3:
+                continue
+            try:
+                pid = int(parts[0])
+                ppid = int(parts[1])
+            except ValueError:
+                continue
+            ppid_map[pid] = ppid
+            lines.append((pid, parts[2]))
+
+        # Build set of ancestor PIDs to protect.
+        protected: set[int] = set()
+        cur = my_pid
+        while cur and cur not in protected:
+            protected.add(cur)
+            cur = ppid_map.get(cur, 0)
+
+        # Second pass: kill matching processes that are NOT protected.
+        for pid, cmd in lines:
+            if pid in protected:
+                continue
+            if any(name in cmd for name in _CREW_PROCESS_NAMES):
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed += 1
+                    logger.info(
+                        "[Startup] Killed stale process PID %d: %s",
+                        pid, cmd[:120],
+                    )
+                except ProcessLookupError:
+                    pass  # already gone
+                except PermissionError:
+                    logger.debug(
+                        "[Startup] No permission to kill PID %d", pid,
+                    )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[Startup] Could not scan for stale processes: %s", exc)
+
+    return killed
 
 
 def _check_resumable_runs() -> dict | None:
@@ -42,12 +119,15 @@ def _check_resumable_runs() -> dict | None:
     print(f"{'=' * 60}")
     for i, run in enumerate(unfinalized, 1):
         sections = run.get("sections", [])
+        exec_iters = run.get("exec_summary_iterations", 0)
+        req_iters = run.get("req_breakdown_iterations", 0)
         created = run.get("created_at", "")
         if hasattr(created, "strftime"):
             created = created.strftime("%Y-%m-%d %H:%M")
         print(
             f"  [{i}] run_id={run['run_id']}  iter={run['iteration']}  "
-            f"sections={len(sections)}  created={created}"
+            f"sections={len(sections)}  exec_summary={exec_iters}  "
+            f"req_breakdown={req_iters}  created={created}"
         )
         idea_preview = (run.get("idea") or "")[:80]
         print(f"      idea: {idea_preview}")
@@ -68,11 +148,11 @@ def _check_resumable_runs() -> dict | None:
 
 
 def _restore_prd_state(run_info: dict) -> PRDFlow:
-    """Rebuild a PRDFlow with its state restored from MongoDB documents.
+    """Rebuild a PRDFlow with its state restored from a MongoDB document.
 
-    Reads all working documents for the run, reconstructs the PRDDraft
-    with section content and approval status, and sets the flow to resume
-    from the next unapproved section.
+    Reads the single working document for the run, reconstructs the
+    PRDDraft with section content and approval status from iteration
+    arrays, and sets the flow to resume from the next unapproved section.
     """
     run_id = run_info["run_id"]
     idea = run_info["idea"]
@@ -81,31 +161,35 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
     draft = PRDDraft.create_empty()
     section_keys_set = {key for key, _ in SECTION_ORDER}
 
-    # Replay documents to reconstruct section state
-    for doc in docs:
-        section_key = doc.get("section_key", "")
-        step = doc.get("step", "")
-        draft_obj = doc.get("draft", {})
-        critique = doc.get("critique", "")
+    total_iterations = 0
 
-        # Extract section content from the draft dict
-        if isinstance(draft_obj, dict):
-            content = draft_obj.get(section_key, "")
-        else:
-            # Backward-compat: legacy docs stored draft as a plain string
-            content = draft_obj or ""
+    if docs:
+        doc = docs[0]  # single-document model
+        section_obj = doc.get("section", {})
 
-        if section_key and section_key in section_keys_set:
-            section = draft.get_section(section_key)
-            if section is None:
-                continue
+        # Replay section iteration arrays to reconstruct section state
+        if isinstance(section_obj, dict):
+            for section_key, iterations in section_obj.items():
+                if section_key not in section_keys_set:
+                    continue
+                section = draft.get_section(section_key)
+                if section is None:
+                    continue
 
-            # Update content with the latest draft for this section
-            if content:
-                section.content = content
-            if critique:
-                section.critique = critique
-            section.iteration = max(section.iteration, doc.get("iteration", 0))
+                if isinstance(iterations, list) and iterations:
+                    # Use the latest iteration record
+                    latest = iterations[-1]
+                    if isinstance(latest, dict):
+                        content = latest.get("content", "")
+                        if content:
+                            section.content = content
+                        critique = latest.get("critique", "")
+                        if critique:
+                            section.critique = critique
+                        section.iteration = latest.get("iteration", 0)
+                        section.updated_date = latest.get("updated_date", "")
+                        if section.iteration > total_iterations:
+                            total_iterations = section.iteration
 
     # Determine which sections are approved:
     # A section is considered approved if a later section already has content.
@@ -120,23 +204,84 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
         if section.content and i < last_with_content:
             section.is_approved = True
 
-    # Calculate total iterations
-    total_iterations = max((d.get("iteration", 0) for d in docs), default=0)
+    # Restore executive_summary iterations from the top-level array
+    exec_summary_draft = ExecutiveSummaryDraft()
+    if docs:
+        doc = docs[0]
+        raw_exec = doc.get("executive_summary", [])
+        if isinstance(raw_exec, list):
+            for entry in raw_exec:
+                if not isinstance(entry, dict):
+                    continue
+                exec_summary_draft.iterations.append(
+                    ExecutiveSummaryIteration(
+                        content=entry.get("content", ""),
+                        iteration=entry.get("iteration", 1),
+                        critique=entry.get("critique"),
+                        updated_date=entry.get("updated_date", ""),
+                    )
+                )
+            if exec_summary_draft.iterations:
+                exec_summary_draft.is_approved = True
 
     flow = PRDFlow()
     flow.state.run_id = run_id
     flow.state.idea = idea
     flow.state.draft = draft
+    flow.state.executive_summary = exec_summary_draft
     flow.state.iteration = total_iterations
+    flow.state.status = "inprogress"
+
+    # Set finalized_idea from the last executive summary iteration
+    if exec_summary_draft.latest_content:
+        flow.state.finalized_idea = exec_summary_draft.latest_content
+
+    # If executive summary has iterations the idea was already refined
+    # (idea refinement runs before executive summary in the pipeline).
+    if exec_summary_draft.iterations:
+        flow.state.idea_refined = True
+
+    # Restore requirements_breakdown from the top-level array so the
+    # orchestrator skips re-running the breakdown on resume.
+    if docs:
+        doc = docs[0]
+        raw_reqs = doc.get("requirements_breakdown", [])
+        if isinstance(raw_reqs, list) and raw_reqs:
+            # Use the latest iteration's content
+            latest_req = raw_reqs[-1]
+            if isinstance(latest_req, dict) and latest_req.get("content"):
+                flow.state.requirements_breakdown = latest_req["content"]
+                flow.state.requirements_broken_down = True
+                # Reconstruct breakdown_history
+                flow.state.breakdown_history = [
+                    {
+                        "iteration": entry.get("iteration", i + 1),
+                        "requirements": entry.get("content", ""),
+                        "evaluation": entry.get("critique", ""),
+                    }
+                    for i, entry in enumerate(raw_reqs)
+                    if isinstance(entry, dict)
+                ]
+                logger.info(
+                    "Restored requirements_breakdown from %d iteration(s) "
+                    "(%d chars)",
+                    len(raw_reqs),
+                    len(flow.state.requirements_breakdown),
+                )
 
     next_section = draft.next_section()
     if next_section:
         flow.state.current_section_key = next_section.key
 
     approved_count = sum(1 for s in draft.sections if s.is_approved)
+    exec_iter_count = len(exec_summary_draft.iterations)
+    req_iter_count = len(flow.state.breakdown_history)
     logger.info(
-        "Restored PRD state: run_id=%s, %d/%d sections approved, iteration=%d",
+        "Restored PRD state: run_id=%s, %d/%d sections approved, "
+        "iteration=%d, exec_summary_iterations=%d, "
+        "requirements_breakdown_iterations=%d",
         run_id, approved_count, len(draft.sections), total_iterations,
+        exec_iter_count, req_iter_count,
     )
 
     return flow
@@ -243,13 +388,11 @@ def _manual_idea_refinement(idea: str, run_id: str = "") -> tuple[str, list[dict
         refinement_history.append({"iteration": iteration, "idea": current})
         if run_id:
             try:
-                save_iteration(
+                save_executive_summary(
                     run_id=run_id,
-                    idea=current,
+                    idea=idea,
                     iteration=iteration,
-                    draft={"idea_refinement": current},
-                    step=f"idea_manual_{iteration}",
-                    section_key="idea_refinement",
+                    content=current,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
@@ -270,9 +413,11 @@ def _approve_refined_idea(
     called after idea refinement (manual or agent) completes.
 
     Displays the final refined idea and offers:
-      * ``[y]es``  — finalize the idea: save to ``finalizeIdeas``, mark
-        the working idea as completed, and **stop** (no PRD generation).
-      * ``[c]ontinue`` — proceed to PRD section generation.
+      * ``[y]es``  — approve the idea: mark the working idea and
+        proceed to section drafting (``draft_section_task`` →
+        ``critique_section_task`` → ``refine_section_task``, iterated
+        between min/max counts).
+      * ``[c]ancel`` — stop without generating sections.
 
     Args:
         refined_idea: The idea after refinement.
@@ -282,7 +427,8 @@ def _approve_refined_idea(
             process.  Persisted alongside the finalized idea.
 
     Returns:
-        ``True`` to finalize (stop), ``False`` to continue to PRD.
+        ``True`` to finalize early (stop), ``False`` to continue to
+        section drafting.
     """
     history = refinement_history or []
     print(f"\n{'=' * 60}")
@@ -292,8 +438,12 @@ def _approve_refined_idea(
         print(f"  Original ({len(original_idea)} chars) → Refined ({len(refined_idea)} chars)")
     print(f"\n{refined_idea}\n")
     print(f"{'=' * 60}")
-    print("  [y] Approve — finalize this idea and save")
-    print("  [c] Continue — proceed to PRD generation")
+    print("  [y] Approve — save this idea and define all sections:")
+    print("        1. Draft each section independently (draft_section_task)")
+    print("        2. Critique each section (critique_section_task)")
+    print("        3. Refine with critique feedback (refine_section_task)")
+    print("        Steps 2-3 iterate between min/max iteration count")
+    print("  [c] Cancel — stop without generating sections")
     print(f"{'=' * 60}\n")
 
     while True:
@@ -303,25 +453,15 @@ def _approve_refined_idea(
                 "[IdeaApproval] User approved refined idea (run_id=%s, %d chars)",
                 run_id, len(refined_idea),
             )
-            # Persist the finalized idea
-            save_finalized(
-                run_id=run_id,
-                idea=refined_idea,
-                iteration=len(history),
-                final_prd="",
-                original_idea=original_idea,
-                finalized_type="idea",
-                refinement_history=history,
-            )
-            mark_completed(run_id)
-            return True
-        if choice in ("c", "continue"):
+            return False  # continue to section drafting
+        if choice in ("c", "cancel"):
             logger.info(
-                "[IdeaApproval] User chose to continue to PRD generation (run_id=%s)",
+                "[IdeaApproval] User cancelled — exiting CLI (run_id=%s)",
                 run_id,
             )
-            return False
-        print("Please enter 'y' to approve or 'c' to continue to PRD.")
+            print("\nGoodbye!")
+            sys.exit(0)
+        print("Please enter 'y' to approve or 'c' to cancel.")
 
 
 def _approve_requirements(
@@ -330,16 +470,19 @@ def _approve_requirements(
     run_id: str,
     breakdown_history: list[dict] | None = None,
 ) -> bool:
-    """Show the requirements breakdown and let the user finalize or continue.
+    """Show the requirements breakdown and let the user approve or cancel.
 
     This is used as the ``requirements_approval_callback`` on PRDFlow.
     It is called after the requirements breakdown agent completes.
 
     Displays the final requirements and offers:
-      * ``[y]es``  — finalize the requirements: save to ``finalizeIdeas``,
-        mark the working idea as completed, and **stop** (no PRD).
-      * ``[c]ontinue`` — proceed to PRD section generation with the
-        requirements as additional context.
+      * ``[y]es``  — approve the requirements and proceed to PRD
+        section drafting (draft → critique → refine for 9 sections).
+      * ``[c]ancel`` — stop the flow without generating sections.
+        Marks the working idea as completed.
+
+    The return value semantics match ``_approve_refined_idea``:
+    ``False`` to continue, ``True`` to finalize (stop).
 
     Args:
         requirements: The structured requirements breakdown.
@@ -348,7 +491,8 @@ def _approve_requirements(
         breakdown_history: Iteration history from the breakdown process.
 
     Returns:
-        ``True`` to finalize (stop), ``False`` to continue to PRD.
+        ``False`` to continue to PRD section drafting,
+        ``True`` to finalize (stop).
     """
     history = breakdown_history or []
     print(f"\n{'=' * 60}")
@@ -363,152 +507,35 @@ def _approve_requirements(
     else:
         print(f"\n{requirements}")
     print(f"\n{'=' * 60}")
-    print("  [y] Approve — finalize these requirements and save")
-    print("  [c] Continue — proceed to PRD generation")
+    print("  [y] Approve — auto-generate all sections (no further prompts):")
+    print("        1. Draft each section independently (draft_section_task)")
+    print("        2. Critique each section (critique_section_task)")
+    print("        3. Refine with critique feedback (refine_section_task)")
+    print("        Steps 2-3 auto-iterate between min/max iteration count")
+    print("        Once complete, status is set to 'completed'")
+    print("  [c] Cancel — stop without generating sections")
     print(f"{'=' * 60}\n")
 
     while True:
         choice = input("Choose action [y/c]: ").strip().lower()
         if choice in ("y", "yes"):
             logger.info(
-                "[RequirementsApproval] User approved requirements "
-                "(run_id=%s, %d chars)",
+                "[RequirementsApproval] User approved requirements — "
+                "continuing to PRD sections (run_id=%s, %d chars)",
                 run_id, len(requirements),
             )
-            # Persist the finalized requirements
-            save_finalized(
-                run_id=run_id,
-                idea=idea,
-                iteration=len(history),
-                final_prd="",
-                requirements_breakdown=requirements,
-                finalized_type="requirements",
-                breakdown_history=history,
-            )
-            mark_completed(run_id)
-            return True
-        if choice in ("c", "continue"):
+            return False  # continue to section drafting
+        if choice in ("c", "cancel"):
             logger.info(
-                "[RequirementsApproval] User chose to continue to PRD "
+                "[RequirementsApproval] User cancelled — exiting CLI "
                 "(run_id=%s)",
                 run_id,
             )
-            return False
-        print("Please enter 'y' to approve or 'c' to continue to PRD.")
+            print("\nGoodbye!")
+            sys.exit(0)
+        print("Please enter 'y' to approve or 'c' to cancel.")
 
 
-def _cli_approval_callback(iteration: int, section_key: str, agent_results: dict[str, str], draft, **kwargs) -> "tuple[str, bool | str] | str":
-    """Interactive CLI callback — show agent results and let user pick & approve.
-
-    When multiple agents produced results, the user first chooses which
-    agent's output to keep, then decides whether to approve or refine.
-
-    Returns:
-        ``(agent_name, True)`` to approve using *agent_name*'s result,
-        ``(agent_name, False)`` to refine, ``(agent_name, feedback)`` for
-        user-provided critique, or ``PAUSE_SENTINEL`` to pause.
-    """
-    section = draft.get_section(section_key)
-    step = section.step if section else "?"
-    total = len(draft.sections)
-
-    agent_names = list(agent_results.keys())
-    multi = len(agent_names) > 1
-
-    # --- Display agent results ------------------------------------------
-    dropped = kwargs.get("dropped_agents", [])
-    agent_errors = kwargs.get("agent_errors", {})
-    idea_refined = kwargs.get("idea_refined", False)
-    print(f"\n{'=' * 60}")
-    print(f"  Step {step}/{total}: {section_key} — Iteration {iteration}")
-    if idea_refined and step == 1 and iteration == 1:
-        print(f"  ✦ Idea was enriched by the Idea Refinement agent")
-    if multi:
-        print(f"  {len(agent_names)} agent(s) produced results")
-    if dropped:
-        print(f"  Dropped agents: {', '.join(dropped)}")
-        for agent_name in dropped:
-            err = agent_errors.get(agent_name, "unknown error")
-            label = _agent_display_name(agent_name)
-            print(f"    ✖ {label}: {err}")
-    print(f"{'=' * 60}")
-
-    for idx, (agent_name, content) in enumerate(agent_results.items(), 1):
-        label = _agent_display_name(agent_name)
-        print(f"\n--- [{idx}] {label} ---")
-        print(content[:2000])
-        if len(content) > 2000:
-            print(f"\n... ({len(content) - 2000} more chars) ...")
-    print(f"\n{'=' * 60}")
-
-    # --- Agent selection ------------------------------------------------
-    if multi:
-        selected = _select_agent(agent_names)
-    else:
-        selected = agent_names[0]
-
-    # --- Action selection -----------------------------------------------
-    print()
-    while True:
-        answer = (
-            input(
-                "Choose action — [y]es to approve / [n]o to refine "
-                "/ [f]eedback to provide critique / [p]ause & save: "
-            )
-            .strip()
-            .lower()
-        )
-        if answer in ("y", "yes"):
-            return (selected, True)
-        if answer in ("n", "no"):
-            return (selected, False)
-        if answer in ("p", "pause"):
-            return PAUSE_SENTINEL
-        if answer in ("f", "feedback"):
-            print("Enter your critique feedback (press Enter twice to finish):")
-            lines: list[str] = []
-            while True:
-                line = input()
-                if line == "" and lines and lines[-1] == "":
-                    break
-                lines.append(line)
-            feedback = "\n".join(lines).strip()
-            if feedback:
-                return (selected, feedback)
-            print("Empty feedback — please try again.")
-        else:
-            print("Please enter 'y', 'n', 'f', or 'p'.")
-
-
-def _agent_display_name(agent_name: str) -> str:
-    """Human-readable label for an agent key."""
-    default = get_default_agent()
-    names = {
-        AGENT_OPENAI: "OpenAI PM",
-        AGENT_GEMINI: "Gemini PM",
-    }
-    label = names.get(agent_name, agent_name)
-    if agent_name == default:
-        label += " (default)"
-    return label
-
-
-def _select_agent(agent_names: list[str]) -> str:
-    """Prompt user to pick one of the available agents."""
-    print("\nSelect which agent's result to use:")
-    for idx, name in enumerate(agent_names, 1):
-        print(f"  [{idx}] {_agent_display_name(name)}")
-    while True:
-        choice = input(f"Enter 1-{len(agent_names)}: ").strip()
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(agent_names):
-                selected = agent_names[idx]
-                print(f"  → Selected: {_agent_display_name(selected)}")
-                return selected
-        except ValueError:
-            pass
-        print(f"Please enter 1-{len(agent_names)}.")
 
 
 def _prompt_next_action() -> str | None:
@@ -548,6 +575,11 @@ def run():
         crewai run                              # interactive prompt
         crewai run "Add dark mode to dashboard" # idea as argument
     """
+    # Kill stale CrewAI processes from a previous run
+    killed = _kill_stale_crew_processes()
+    if killed:
+        print(f"  Terminated {killed} stale process(es) from previous run.")
+
     # Startup recovery: mark any incomplete jobs as failed
     try:
         recovered = fail_incomplete_jobs_on_startup()
@@ -586,12 +618,39 @@ def _run_single_flow(idea: str | None = None) -> None:
         if run_info is not None:
             resumed_flow = _restore_prd_state(run_info)
             print(f"\nResuming run_id={resumed_flow.state.run_id}")
+            exec_iters = len(resumed_flow.state.executive_summary.iterations)
+            if exec_iters:
+                print(
+                    f"Executive Summary: {exec_iters} iteration(s) "
+                    f"({'approved — skipping to sections' if exec_iters >= 3 else 'in progress'})"
+                )
             next_section = resumed_flow.state.draft.next_section()
             if next_section:
                 total = len(resumed_flow.state.draft.sections)
                 print(f"Next: Step {next_section.step}/{total} — {next_section.title}")
             approved = sum(1 for s in resumed_flow.state.draft.sections if s.is_approved)
             print(f"Progress: {approved}/{len(resumed_flow.state.draft.sections)} sections approved\n")
+
+            # If the flow already progressed past requirements approval
+            # (executive summary iterations or section content exist),
+            # prompt to continue from where it left off instead of
+            # re-showing the requirements approval gate.
+            if (
+                resumed_flow.state.executive_summary.iterations
+                or any(s.content for s in resumed_flow.state.draft.sections)
+            ):
+                print(f"{'=' * 60}")
+                print("  [y] Continue — auto-generate remaining sections")
+                print("  [c] Cancel — exit the program")
+                print(f"{'=' * 60}\n")
+                while True:
+                    choice = input("Choose action [y/c]: ").strip().lower()
+                    if choice in ("y", "yes"):
+                        break
+                    if choice in ("c", "cancel"):
+                        print("\nGoodbye!")
+                        sys.exit(0)
+                    print("Please enter 'y' to continue or 'c' to cancel.")
 
     if resumed_flow is not None:
         flow = resumed_flow
@@ -649,7 +708,6 @@ def _run_single_flow(idea: str | None = None) -> None:
 
     logger.info("Starting PRD flow (idea='%s')", idea)
     try:
-        flow.approval_callback = _cli_approval_callback
         flow.idea_approval_callback = _approve_refined_idea
         flow.requirements_approval_callback = _approve_requirements
         result = flow.kickoff()
@@ -665,13 +723,6 @@ def _run_single_flow(idea: str | None = None) -> None:
 
             final_prd = flow.state.final_prd or flow.state.draft.assemble()
             confluence_xhtml = md_to_confluence_xhtml(final_prd)
-            save_finalized(
-                run_id=flow.state.run_id,
-                idea=flow.state.idea,
-                iteration=flow.state.iteration,
-                final_prd=final_prd,
-                confluence_xhtml=confluence_xhtml,
-            )
             mark_completed(flow.state.run_id)
 
         update_job_completed(flow.state.run_id, status="completed")
@@ -729,10 +780,13 @@ def _run_single_flow(idea: str | None = None) -> None:
         print(f"  'crewai run' to resume from where you left off.")
         print(f"{'=' * 60}")
     except Exception as e:
-        update_job_failed(flow.state.run_id, error=str(e))
-        logger.error("PRD flow failed: %s", e)
+        approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
+        total = len(flow.state.draft.sections)
+        update_job_completed(flow.state.run_id, status="paused")
+        logger.error("PRD flow failed (kept inprogress): %s", e)
         print(f"\nPRD flow failed: {e}")
-        print(f"Your progress has been saved. Run 'crewai run' to resume.")
+        print(f"Your progress has been saved ({approved}/{total} sections approved).")
+        print(f"Run 'crewai run' to resume from where you left off.")
 
 
 def run_prd_flow():

@@ -22,7 +22,6 @@ from crewai_productfeature_planner.mongodb.crew_jobs import (
     create_job,
     reactivate_job,
     update_job_completed,
-    update_job_failed,
     update_job_started,
     update_job_status,
 )
@@ -149,18 +148,6 @@ def run_prd_flow(run_id: str, idea: str) -> None:
                 "persisting finalized PRD from service",
                 run_id,
             )
-            from crewai_productfeature_planner.mongodb.finalized_ideas.repository import save_finalized
-            from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
-
-            final_prd = flow.state.final_prd or flow.state.draft.assemble()
-            confluence_xhtml = md_to_confluence_xhtml(final_prd)
-            save_finalized(
-                run_id=run_id,
-                idea=idea,
-                iteration=flow.state.iteration,
-                final_prd=final_prd,
-                confluence_xhtml=confluence_xhtml,
-            )
             mark_completed(run_id)
 
         update_job_completed(run_id, status="completed")
@@ -186,10 +173,10 @@ def run_prd_flow(run_id: str, idea: str) -> None:
             run_id, exc,
         )
     except Exception as exc:
-        run.status = FlowStatus.FAILED
+        run.status = FlowStatus.PAUSED
         run.error = f"INTERNAL_ERROR: {exc}"
-        update_job_failed(run_id, error=str(exc))
-        logger.error("[API] PRD flow failed (run_id=%s): %s", run_id, exc)
+        update_job_completed(run_id, status="paused")
+        logger.error("[API] PRD flow failed (kept inprogress, run_id=%s): %s", run_id, exc)
     finally:
         # Cleanup approval resources
         approval_events.pop(run_id, None)
@@ -297,18 +284,6 @@ def resume_prd_flow(run_id: str) -> None:
                 "persisting finalized PRD from service",
                 run_id,
             )
-            from crewai_productfeature_planner.mongodb.finalized_ideas.repository import save_finalized
-            from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
-
-            final_prd = flow.state.final_prd or flow.state.draft.assemble()
-            confluence_xhtml = md_to_confluence_xhtml(final_prd)
-            save_finalized(
-                run_id=run_id,
-                idea=idea,
-                iteration=flow.state.iteration,
-                final_prd=final_prd,
-                confluence_xhtml=confluence_xhtml,
-            )
             mark_completed(run_id)
 
         update_job_completed(run_id, status="completed")
@@ -334,10 +309,10 @@ def resume_prd_flow(run_id: str) -> None:
             run_id, exc,
         )
     except Exception as exc:
-        run.status = FlowStatus.FAILED
+        run.status = FlowStatus.PAUSED
         run.error = f"INTERNAL_ERROR: {exc}"
-        update_job_failed(run_id, error=str(exc))
-        logger.error("[API] Resumed PRD flow failed (run_id=%s): %s", run_id, exc)
+        update_job_completed(run_id, status="paused")
+        logger.error("[API] Resumed PRD flow failed (kept inprogress, run_id=%s): %s", run_id, exc)
     finally:
         approval_events.pop(run_id, None)
         approval_decisions.pop(run_id, None)

@@ -125,11 +125,11 @@ def test_build_tools_returns_six_items():
 
 
 def test_get_task_configs_has_all_tasks():
-    """Task config YAML should define draft, critique, and refine tasks."""
+    """Task config YAML should define draft and critique tasks (no refine_prd_task)."""
     configs = get_task_configs()
     assert "draft_prd_task" in configs
     assert "critique_prd_task" in configs
-    assert "refine_prd_task" in configs
+    assert "refine_prd_task" not in configs
 
 
 def test_draft_task_has_required_fields():
@@ -149,43 +149,41 @@ def test_critique_task_references_dod():
     assert "READY_FOR_DEV" in critique["description"]
 
 
-def test_refine_task_accepts_draft_and_critique():
-    """Refine task template should accept both {draft} and {critique}."""
+def test_critique_task_references_executive_summary():
+    """Critique task should reference {executive_summary} and {critique} fields."""
     configs = get_task_configs()
-    refine = configs["refine_prd_task"]
-    assert "{draft}" in refine["description"]
-    assert "{critique}" in refine["description"]
+    critique = configs["critique_prd_task"]
+    assert "{executive_summary}" in critique["description"]
+    assert "{critique}" in critique["description"]
+
+
+def test_draft_task_references_executive_summary():
+    """Draft task should reference {idea} and {executive_summary} fields."""
+    configs = get_task_configs()
+    draft = configs["draft_prd_task"]
+    assert "{idea}" in draft["description"]
+    assert "{executive_summary}" in draft["description"]
 
 
 # ── LLM configuration tests ──────────────────────────────────
 
-def test_build_llm_uses_pm_model_env(monkeypatch):
-    """PM_MODEL env var should take priority over MODEL."""
-    monkeypatch.setenv("PM_MODEL", "gpt-4.1")
-    monkeypatch.setenv("MODEL", "o3")
-    llm = _build_llm()
-    assert "gpt-4.1" in llm.model
-
-
-def test_build_llm_falls_back_to_model_env(monkeypatch):
-    """Without PM_MODEL, should fall back to MODEL env var."""
-    monkeypatch.delenv("PM_MODEL", raising=False)
-    monkeypatch.setenv("MODEL", "gpt-4.1")
+def test_build_llm_uses_openai_model_env(monkeypatch):
+    """OPENAI_MODEL env var should set the model."""
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1")
     llm = _build_llm()
     assert "gpt-4.1" in llm.model
 
 
 def test_build_llm_defaults_to_o3(monkeypatch):
-    """Without any env var set, should default to o3."""
-    monkeypatch.delenv("PM_MODEL", raising=False)
-    monkeypatch.delenv("MODEL", raising=False)
+    """Without OPENAI_MODEL env var, should default to o3."""
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
     llm = _build_llm()
     assert "o3" in llm.model
 
 
 def test_build_llm_adds_openai_prefix(monkeypatch):
     """Model names without a provider prefix get 'openai/' prepended."""
-    monkeypatch.setenv("PM_MODEL", "o3")
+    monkeypatch.setenv("OPENAI_MODEL", "o3")
     llm = _build_llm()
     # CrewAI normalises the model name; verify it resolved to an OpenAI provider.
     assert llm.model == "o3"
@@ -193,7 +191,7 @@ def test_build_llm_adds_openai_prefix(monkeypatch):
 
 def test_build_llm_skips_prefix_when_qualified(monkeypatch):
     """Model names already containing '/' should not be double-prefixed."""
-    monkeypatch.setenv("PM_MODEL", "openai/gpt-4.1")
+    monkeypatch.setenv("OPENAI_MODEL", "openai/gpt-4.1")
     llm = _build_llm()
     # CrewAI strips the provider prefix internally.
     assert llm.model == "gpt-4.1"
@@ -205,7 +203,7 @@ def test_build_llm_skips_prefix_when_qualified(monkeypatch):
 def test_build_llm_default_timeout(monkeypatch):
     """Without LLM_TIMEOUT env var, should use DEFAULT_LLM_TIMEOUT."""
     monkeypatch.delenv("LLM_TIMEOUT", raising=False)
-    monkeypatch.setenv("PM_MODEL", "o3")
+    monkeypatch.setenv("OPENAI_MODEL", "o3")
     llm = _build_llm()
     assert llm.timeout == DEFAULT_LLM_TIMEOUT
 
@@ -213,7 +211,7 @@ def test_build_llm_default_timeout(monkeypatch):
 def test_build_llm_custom_timeout(monkeypatch):
     """LLM_TIMEOUT env var should override the default."""
     monkeypatch.setenv("LLM_TIMEOUT", "120")
-    monkeypatch.setenv("PM_MODEL", "o3")
+    monkeypatch.setenv("OPENAI_MODEL", "o3")
     llm = _build_llm()
     assert llm.timeout == 120
 
@@ -221,7 +219,7 @@ def test_build_llm_custom_timeout(monkeypatch):
 def test_build_llm_default_max_retries(monkeypatch):
     """Without LLM_MAX_RETRIES, should use DEFAULT_LLM_MAX_RETRIES."""
     monkeypatch.delenv("LLM_MAX_RETRIES", raising=False)
-    monkeypatch.setenv("PM_MODEL", "o3")
+    monkeypatch.setenv("OPENAI_MODEL", "o3")
     llm = _build_llm()
     assert llm.max_retries == DEFAULT_LLM_MAX_RETRIES
 
@@ -229,7 +227,7 @@ def test_build_llm_default_max_retries(monkeypatch):
 def test_build_llm_custom_max_retries(monkeypatch):
     """LLM_MAX_RETRIES env var should override the default."""
     monkeypatch.setenv("LLM_MAX_RETRIES", "5")
-    monkeypatch.setenv("PM_MODEL", "o3")
+    monkeypatch.setenv("OPENAI_MODEL", "o3")
     llm = _build_llm()
     assert llm.max_retries == 5
 

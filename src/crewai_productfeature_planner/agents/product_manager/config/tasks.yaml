@@ -1,84 +1,165 @@
-draft_prd_task:
+"draft_prd_task":
   description: >
     Create a comprehensive Product Requirements Document (PRD) for the
-    following feature idea:
+    following feature idea including researching competitors and technical standards to ensure the PRD is grounded in industry best practices. The idea is provided by the user in the {idea} field.
 
-    {idea}
+    The PRD is summarized into the "Executive Summary". It is iterated before going into the sections step. It is iterated between the minimum and maximum iteration defined count.
 
-    The PRD must include the following sections:
-    - Executive Summary
-    - Problem Statement
-    - User Personas (with pain points and goals)
-    - Functional Requirements
-    - Non-Functional Requirements (performance, scalability, security)
-    - User Stories with Acceptance Criteria
-    - Edge Cases and Error Handling
-    - Analytics and Success Metrics
-    - Dependencies and Assumptions
-    - Out of Scope items
+    The Executive Summary is captured in the {executive_summary} field.
 
-    Research competitors and technical standards to ensure the PRD is
-    grounded in industry best practices.
+    During this iteration process:
+    - "run_id" use as the unique identifier for the PRD and will be use to resume any unfinished idea iterations.
+    - "idea" is the {idea} being developed that is originally provided by the user.
+    - "finalized_idea" is the final iterated version of the idea.
+    - "executive_summary" is the idea that is iterated by the agent or user. In it, we have an array of all its iteration counts with fields "content", "iteration", "critique", and "updated_date".
+      - "content" is the actual text of the executive summary for that iteration which is {executive_summary}.
+      - "iteration" is the current iteration count and default is 1.
+      - "critique" is the feedback from the critique task, initially null.
+      - "created_date" is the timestamp of creation for the "idea".
+      - "updated_date" is the timestamp of completed date for that iteration.
+      - "completed_at" is the timestamp of completion for the "idea" when user approved all its iterations and "status" is set to "completed".
+      - "status" indicates the current state of the idea. It is default to "new" when the "idea" is created. It is set to "inprogress" when the idea is being worked on and "completed" when the idea is finished.
+
+    After the executive summary is approved, the PRD is broken down into
+    9 individual sections. Each section is stored under the "section"
+    object. Every section has its own array of iteration records with
+    fields "content", "iteration", "critique", and "updated_date".
+    Each section is independently iterated (critique → refine cycles)
+    between the minimum and maximum iteration count.
+
+    Before section drafting, a "requirements_breakdown" pre-processing step
+    decomposes the idea into structured product requirements. Each
+    breakdown iteration is stored in the top-level "requirements_breakdown"
+    array with fields "content", "iteration", "critique", "step", and
+    "updated_date".
+
   expected_output: >
-    A well-structured PRD document in markdown format covering all the
-    required sections with specific, actionable requirements.
+    A well-structured PRD document in JSON format covering the initial executive summary with its iterations, the requirements breakdown, and individual section iterations. This is stored in the "workingIdeas" collection.
+
+    {
+      "run_id": string,
+      "idea": string,
+      "finalized_idea": string,
+      "executive_summary": [{
+        "content": string,
+        "iteration": int | 1,
+        "critique": string | null,
+        "updated_date": string
+      }],
+      "requirements_breakdown": [{
+        "content": string,
+        "iteration": int | 1,
+        "critique": string | null,
+        "step": string,
+        "updated_date": string
+      }],
+      "section": {
+        "problem_statement": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "user_personas": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "functional_requirements": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "non_functional_requirements": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "edge_cases": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "error_handling": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "success_metrics": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "dependencies": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }],
+        "assumptions": [{
+          "content": string,
+          "iteration": int | 1,
+          "critique": string | null,
+          "updated_date": string
+        }]
+      },
+      "created_at": string,
+      "update_date": string | null,
+      "completed_at": string | null,
+      "status": string | "new" | "inprogress" | "completed"
+    }
+
   agent: product_manager
 
 critique_prd_task:
   description: >
     Critically review the following PRD draft and identify gaps,
-    weaknesses, and missing elements:
-
-    --- START OF PRD DRAFT ---
-    {draft}
-    --- END OF PRD DRAFT ---
+    weaknesses, and missing elements. 
+    The Critique is captured in the {critique} field that is generated by this task.
 
     Evaluate against the Definition of Done (DoD) checklist:
-    1. Are all user personas clearly defined with pain points and goals?
-    2. Are functional requirements specific and testable?
-    3. Are non-functional requirements quantified (performance targets, scale limits)?
-    4. Does every user story have clear acceptance criteria?
+    1. Is the problem statement clear and concise?
+    2. Are all user personas clearly defined with pain points and goals?
+    3. Are functional requirements specific and testable?
+    4. Are non-functional requirements quantified (performance targets, scale limits)?
     5. Are edge cases and error scenarios addressed comprehensively?
     6. Are analytics/tracking requirements specified with concrete metrics?
     7. Are dependencies and risks documented with mitigations?
-    8. Is the scope boundary (in/out) clearly defined?
 
     For each gap found, provide a specific, actionable recommendation.
     Rate the PRD readiness on a scale of 1-10.
     If the PRD scores 8 or higher on ALL criteria, mark it as "READY_FOR_DEV".
     Otherwise mark it as "NEEDS_REFINEMENT".
+
+    Use the {critique} field to iterate and criticize the {executive_summary}.
+    The {executive_summary} field should be updated with the new iteration that has been refined based on the critique.
+    A new iteration is created in the executive summary iterated record is created and updated in the "executive_summary" array field with a new record containing "content", "iteration", "critique", and "updated_date" field. The iteration count should be incremented by 1.
   expected_output: >
-    A structured critique containing:
-    - Readiness score (1-10) for each DoD criterion
-    - Overall status: "READY_FOR_DEV" or "NEEDS_REFINEMENT"
-    - List of identified gaps with severity (Critical / Major / Minor)
-    - Specific recommendations for each gap
-  agent: product_manager
+    Updating the PRD document in the "workingIdeas" collection with the new iteration in the executive summary using "run_id" as a reference.
+    Add a new iterated record into "executive_summary" array field.
+    Update the "update_date" field with the current timestamp.
+    Update the "status" field to "inprogress" if not already set.
 
-refine_prd_task:
-  description: >
-    Refine the following PRD based on the critique feedback provided.
-
-    --- CURRENT PRD DRAFT ---
-    {draft}
-    --- END OF DRAFT ---
-
-    --- CRITIQUE FEEDBACK ---
-    {critique}
-    --- END OF CRITIQUE ---
-
-    Address every gap and recommendation identified in the critique.
-    Focus especially on Critical and Major issues first.
-    Ensure the refined PRD is comprehensive, technically feasible,
-    and ready for development handoff to a Jira Specialist.
-  expected_output: >
-    An improved PRD document in markdown format that addresses all
-    identified gaps and incorporates the critique feedback. The document
-    should be Jira-ready with clearly defined stories and acceptance criteria.
+    {
+      "run_id": string,
+      "executive_summary": [{
+        "content": string,
+        "iteration": int | 1,
+        "critique": string | null,
+        "updated_date": string
+      }],
+      "update_date": string | null,
+      "status": string | "new" | "inprogress" | "completed"
+    }
   agent: product_manager
 
 # ── Section-level tasks ──────────────────────────────────────
-
 draft_section_task:
   description: >
     You are drafting the **{section_title}** section of a Product Requirements
@@ -86,32 +167,23 @@ draft_section_task:
 
     {idea}
 
-    --- CONTEXT FROM OTHER APPROVED SECTIONS ---
-    {context_sections}
-    --- END OF CONTEXT ---
+    --- SECTION CONTENT ---
+    {section_content}
+    --- END OF SECTION CONTENT ---
 
-    The full PRD has these sections (each drafted and approved individually):
-      1. Executive Summary — a concise 1-2 paragraph overview of the feature.
-         Do NOT include sub-topics like "Why Now", "Objectives",
-         "Target Market", "Competitive Landscape", "Scope", or
-         "Change Log" here — those have their own dedicated sections.
-      2. Why Now / Market Timing
-      3. Objectives (OKRs)
-      4. Target Market / Audience
-      5. Competitive Landscape
-      6. Scope / Solution Overview
-      7. Change Log / Version History
-      8. Problem Statement
-      9. User Personas
-      10. Functional Requirements
-      11. Non-Functional Requirements
-      12. User Stories with Acceptance Criteria
-      13. Edge Cases and Error Handling
-      14. Analytics and Success Metrics
-      15. Dependencies and Assumptions
-      16. Out of Scope
+    The full PRD has these sections (each is indvidual **{section_title}**):
+      1. Problem Statement (describing the problem being solved)
+      2. User Personas (describing the users of the feature)
+      3. Functional Requirements (detailing the specific functionalities needed)
+      4. Non-Functional Requirements (describing performance, scalability, security, etc.)
+      5. Edge Cases (covering unusual but possible scenarios)
+      6. Error Handling (detailing how errors are managed)
+      7. Success Metrics (defining how success will be measured)
+      8. Dependencies (listing any dependencies on other teams, systems, or technologies)
+      9. Assumptions (stating any assumptions made during the planning)
 
     Write a comprehensive, detailed **{section_title}** section that:
+    - Use the latest iterated {executive_summary} as a reference for tone and style.
     - Stays strictly within the scope of this section type — do NOT
       duplicate content that belongs in another section listed above.
     - Is consistent with the other sections provided as context above.
@@ -121,29 +193,48 @@ draft_section_task:
 
     Output ONLY the content for the **{section_title}** section.
     Do NOT include the section heading — just the body content.
+    Do NOT wrap the output in JSON or any other structure.
   expected_output: >
-    A well-written {section_title} section in markdown format with specific,
-    actionable content appropriate for this section type.
+    A well-written, comprehensive {section_title} section in clear,
+    professional markdown format.
+
+    Output ONLY the body content for this section — no section heading,
+    no JSON wrapper, no metadata.  The content will be stored by the
+    system automatically.
   agent: product_manager
 
 critique_section_task:
   description: >
-    Critically review the **{section_title}** section of a PRD:
+    Critically review the **{section_title}** section of a PRD.
 
-    --- SECTION CONTENT ---
-    {section_content}
-    --- END OF SECTION ---
+    Use the executive summary as the authoritative reference for tone,
+    scope, and product vision:
 
-    --- OTHER SECTIONS FOR CONTEXT ---
-    {context_sections}
-    --- END OF CONTEXT ---
+    --- EXECUTIVE SUMMARY ---
+    {executive_summary}
+    --- END OF EXECUTIVE SUMMARY ---
+
+    Here are the other sections already approved for this PRD — use them
+    to check cross-section consistency and avoid duplication:
+
+    --- APPROVED SECTIONS ---
+    {approved_sections}
+    --- END OF APPROVED SECTIONS ---
+
+    Now critically review this section:
+
+    --- CRITIQUE SECTION CONTENT ---
+    {critique_section_content}
+    --- END OF CRITIQUE SECTION CONTENT ---
 
     Evaluate the section for:
     1. Completeness — does it cover everything expected for this section type?
     2. Specificity — are requirements concrete and testable?
-    3. Consistency — does it align with the other sections?
+    3. Consistency — does it align with the executive summary and the other
+       approved sections above?
     4. Clarity — is it well-organized and unambiguous?
     5. Actionability — can a development team act on this?
+    6. No Duplication — does it avoid repeating content from other sections?
 
     For each gap, provide a specific, actionable recommendation.
     Rate readiness on a scale of 1-10.
@@ -159,30 +250,44 @@ critique_section_task:
 
 refine_section_task:
   description: >
-    Refine the **{section_title}** section of a PRD based on critique feedback.
+    Refine the **{section_title}** section of a PRD based on critique section feedback.
+
+    Use the executive summary as the authoritative reference for tone,
+    scope, and product vision:
+
+    --- EXECUTIVE SUMMARY ---
+    {executive_summary}
+    --- END OF EXECUTIVE SUMMARY ---
+
+    Here are the other sections already approved for this PRD — maintain
+    consistency with them and avoid duplicating their content:
+
+    --- APPROVED SECTIONS ---
+    {approved_sections}
+    --- END OF APPROVED SECTIONS ---
 
     --- CURRENT SECTION CONTENT ---
     {section_content}
-    --- END OF SECTION ---
+    --- END OF SECTION CONTENT---
 
-    --- CRITIQUE FEEDBACK ---
-    {critique}
-    --- END OF CRITIQUE ---
-
-    --- OTHER SECTIONS FOR CONTEXT ---
-    {context_sections}
-    --- END OF CONTEXT ---
+    --- CRITIQUE SECTION CONTENT ---
+    {critique_section_content}
+    --- END OF CRITIQUE SECTION CONTENT ---
 
     Address every gap and recommendation identified in the critique.
     Focus especially on Critical and Major issues first.
     Ensure the refined section is:
-    - Consistent with the other sections
+    - Consistent with the executive summary and the other approved sections
     - Comprehensive and ready for development handoff
     - Specific and actionable
+    - Free of content that belongs in other sections
 
     Output ONLY the refined content for the **{section_title}** section.
     Do NOT include the section heading — just the body content.
   expected_output: >
-    An improved {section_title} section in markdown format that addresses all
-    identified gaps and incorporates the critique feedback.
+    An improved {section_title} section that addresses every gap from
+    the critique feedback, in clear professional markdown format.
+
+    Output ONLY the refined body content — no section heading, no JSON
+    wrapper, no metadata.  The system stores iterations automatically.
   agent: product_manager

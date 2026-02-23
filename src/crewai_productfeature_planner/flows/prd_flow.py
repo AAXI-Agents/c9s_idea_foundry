@@ -15,12 +15,13 @@ LLM agents running in parallel:
 
 The user must approve each section before the flow moves to the next one.
 Each iteration is persisted to MongoDB (``ideas.workingIdeas``).
-The assembled final PRD is saved to ``ideas.finalizeIdeas``.
+The assembled final PRD is saved and the working idea marked completed.
 """
 
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from typing import Callable, Union
 
 from crewai import Agent, Crew, Process, Task
@@ -34,18 +35,101 @@ from crewai_productfeature_planner.agents.product_manager import (
 from crewai_productfeature_planner.apis.prd.models import (
     AGENT_GEMINI,
     AGENT_OPENAI,
+    ExecutiveSummaryDraft,
+    ExecutiveSummaryIteration,
     PRDDraft,
     get_default_agent,
 )
 from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
 from crewai_productfeature_planner.scripts.logging_config import get_logger
-from crewai_productfeature_planner.mongodb import mark_completed, save_failed, save_finalized, save_iteration
+from crewai_productfeature_planner.mongodb import (
+    mark_completed,
+    save_executive_summary,
+    save_failed,
+    save_finalized_idea,
+    save_iteration,
+    update_executive_summary_critique,
+    update_section_critique,
+)
 from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 
 logger = get_logger(__name__)
 
 PAUSE_SENTINEL = "__PAUSE__"
+
+# Minimum and maximum critique→refine iterations for each PRD section.
+# Override via ``PRD_SECTION_MIN_ITERATIONS`` / ``PRD_SECTION_MAX_ITERATIONS``.
+DEFAULT_MIN_SECTION_ITERATIONS = 2
+DEFAULT_MAX_SECTION_ITERATIONS = 10
+
+# When resuming, skip Phase 1 (executive summary iteration) if the
+# document already has at least this many executive summary iterations.
+# Override via ``PRD_EXEC_RESUME_THRESHOLD``.
+DEFAULT_EXEC_RESUME_THRESHOLD = 3
+
+# How many PM agents to run in parallel for section drafting.
+# 1 = default agent only; 2 = default + optional (e.g. Gemini + OpenAI).
+# Override via ``DEFAULT_MULTI_AGENTS``.
+DEFAULT_MULTI_AGENTS = 1
+
+# Maximum allowed character count for a single PRD section.
+# If a refine result exceeds this, it is treated as degenerate LLM
+# output (e.g. repetitive "ofofofof…") and the previous version is
+# kept.  Override via ``PRD_SECTION_MAX_CHARS``.
+DEFAULT_SECTION_MAX_CHARS = 30_000
+
+# If a refine result is more than this multiplier times the previous
+# content length, it is considered degenerate.  Override via
+# ``PRD_SECTION_GROWTH_FACTOR``.
+DEFAULT_SECTION_GROWTH_FACTOR = 5.0
+
+
+def _get_section_iteration_limits() -> tuple[int, int]:
+    """Return ``(min_iterations, max_iterations)`` from env or defaults."""
+    min_iter = int(os.environ.get(
+        "PRD_SECTION_MIN_ITERATIONS", str(DEFAULT_MIN_SECTION_ITERATIONS),
+    ))
+    max_iter = int(os.environ.get(
+        "PRD_SECTION_MAX_ITERATIONS", str(DEFAULT_MAX_SECTION_ITERATIONS),
+    ))
+    # Sanity clamp
+    min_iter = max(1, min(min_iter, 10))
+    max_iter = max(min_iter, min(max_iter, 20))
+    return min_iter, max_iter
+
+
+def _is_degenerate_content(
+    content: str,
+    prev_len: int = 0,
+    *,
+    max_chars: int | None = None,
+    growth_factor: float | None = None,
+) -> bool:
+    """Return *True* if *content* looks like degenerate LLM output.
+
+    Two independent triggers:
+    1. Absolute size exceeds *max_chars* (env ``PRD_SECTION_MAX_CHARS``).
+    2. Size exceeds *prev_len* × *growth_factor*
+       (env ``PRD_SECTION_GROWTH_FACTOR``), when *prev_len* > 0.
+    """
+    if max_chars is None:
+        max_chars = int(os.environ.get(
+            "PRD_SECTION_MAX_CHARS",
+            str(DEFAULT_SECTION_MAX_CHARS),
+        ))
+    if growth_factor is None:
+        growth_factor = float(os.environ.get(
+            "PRD_SECTION_GROWTH_FACTOR",
+            str(DEFAULT_SECTION_GROWTH_FACTOR),
+        ))
+    new_len = len(content)
+    if new_len > max_chars:
+        return True
+    if prev_len > 0 and new_len > prev_len * growth_factor:
+        return True
+    return False
+
 
 # Type alias for the approval callback return.
 #   - True/False       → approve / refine (selects first available agent)
@@ -64,16 +148,24 @@ class PauseRequested(Exception):
 class IdeaFinalized(Exception):
     """Raised when the user approves the refined idea without generating a PRD.
 
-    The idea has already been saved to ``finalizeIdeas`` and the working
-    idea marked as completed by the time this is raised.
+    The working idea has been marked as completed by the time this
+    is raised.
     """
 
 
 class RequirementsFinalized(Exception):
     """Raised when the user finalizes the requirements breakdown without PRD.
 
-    The requirements have been saved to ``finalizeIdeas`` and the
-    working idea marked as completed by the time this is raised.
+    The working idea has been marked as completed by the time this
+    is raised.
+    """
+
+
+class ExecutiveSummaryCompleted(Exception):
+    """Raised when the executive summary iteration is complete.
+
+    The user chose not to continue to section-level drafting.  The
+    executive summary has been saved to ``workingIdeas``.
     """
 
 
@@ -88,6 +180,22 @@ class PRDState(BaseModel):
     final_prd: str = ""
     iteration: int = 0
     is_ready: bool = False
+    status: str = Field(
+        default="new",
+        description="Lifecycle status: 'new', 'inprogress', or 'completed'.",
+    )
+    created_at: str = Field(
+        default="",
+        description="ISO-8601 timestamp when the run was created.",
+    )
+    update_date: str = Field(
+        default="",
+        description="ISO-8601 timestamp of the last update.",
+    )
+    completed_at: str = Field(
+        default="",
+        description="ISO-8601 timestamp when the run was completed.",
+    )
     active_agents: list[str] = Field(
         default_factory=list,
         description="Agent identifiers currently participating in the flow.",
@@ -123,6 +231,14 @@ class PRDState(BaseModel):
     requirements_broken_down: bool = Field(
         default=False,
         description="Whether the idea has been broken down into requirements.",
+    )
+    executive_summary: ExecutiveSummaryDraft = Field(
+        default_factory=ExecutiveSummaryDraft,
+        description="Iterative executive summary produced in the draft phase.",
+    )
+    finalized_idea: str = Field(
+        default="",
+        description="Copy of the last iterated executive summary content once Phase 1 completes.",
     )
 
 
@@ -178,6 +294,14 @@ class PRDFlow(Flow[PRDState]):
         Callable[[str, str, str, list[dict]], bool] | None
     ) = None
 
+    # Callback invoked after executive summary iteration completes.
+    # Signature: (executive_summary, idea, run_id, iterations) -> bool
+    # Return True  → continue to section-level drafting.
+    # Return False → stop after the executive summary (raise ExecutiveSummaryCompleted).
+    executive_summary_callback: (
+        Callable[[str, str, str, list[dict]], bool] | None
+    ) = None
+
     # ------------------------------------------------------------------
     # Helper — build available agents
     # ------------------------------------------------------------------
@@ -186,11 +310,21 @@ class PRDFlow(Flow[PRDState]):
         """Return a dict of agent-name → Agent for all available LLMs.
 
         The *default* agent (``DEFAULT_AGENT`` env var, falls back to
-        ``openai_pm``) is always created first and is required.  Any
-        additional agents whose API key is present are appended as
-        optional parallel runners.
+        ``openai_pm``) is always created first and is required.
+
+        ``DEFAULT_MULTI_AGENTS`` controls how many PM agents run in
+        parallel:
+
+        * **1** (default) — only the default agent is used.
+        * **2** — the default agent plus one optional agent whose API
+          key is present.
         """
         default = get_default_agent()
+        max_agents = int(
+            os.environ.get("DEFAULT_MULTI_AGENTS", str(DEFAULT_MULTI_AGENTS)),
+        )
+        max_agents = max(1, max_agents)  # at least the default
+
         agents: dict[str, Agent] = {}
 
         # --- factories keyed by agent identifier ---
@@ -213,25 +347,33 @@ class PRDFlow(Flow[PRDState]):
         agents[default] = factory_fn()
         logger.info("[Agents] Default agent: %s", default)
 
-        # 2) Create optional secondary agents
-        for name, (factory_fn, env_key) in factories.items():
-            if name == default:
-                continue  # already created
-            # env_key may be a single string or a list of alternatives
-            if env_key:
-                keys = [env_key] if isinstance(env_key, str) else env_key
-                if not any(os.environ.get(k) for k in keys):
-                    logger.info("[Agents] None of %s set — skipping %s",
-                                keys, name)
-                    continue
-            try:
-                agents[name] = factory_fn()
-                logger.info("[Agents] Optional agent enabled: %s", name)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[Agents] Failed to create %s: %s — continuing without it",
-                    name, exc,
-                )
+        # 2) Create optional secondary agents (if multi-agent is enabled)
+        if len(agents) < max_agents:
+            for name, (factory_fn, env_key) in factories.items():
+                if name == default:
+                    continue  # already created
+                if len(agents) >= max_agents:
+                    break
+                # env_key may be a single string or a list of alternatives
+                if env_key:
+                    keys = [env_key] if isinstance(env_key, str) else env_key
+                    if not any(os.environ.get(k) for k in keys):
+                        logger.info("[Agents] None of %s set — skipping %s",
+                                    keys, name)
+                        continue
+                try:
+                    agents[name] = factory_fn()
+                    logger.info("[Agents] Optional agent enabled: %s", name)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[Agents] Failed to create %s: %s — continuing without it",
+                        name, exc,
+                    )
+        else:
+            logger.info(
+                "[Agents] DEFAULT_MULTI_AGENTS=%d — using default agent only",
+                max_agents,
+            )
 
         return agents
 
@@ -244,7 +386,8 @@ class PRDFlow(Flow[PRDState]):
         task_configs: dict,
         section_title: str,
         idea: str,
-        context: str,
+        section_content: str,
+        executive_summary: str,
     ) -> tuple[dict[str, str], dict[str, str]]:
         """Execute draft tasks across *agents* in parallel.
 
@@ -260,7 +403,8 @@ class PRDFlow(Flow[PRDState]):
                 description=task_configs["draft_section_task"]["description"].format(
                     section_title=section_title,
                     idea=idea,
-                    context_sections=context or "(No other sections yet)",
+                    section_content=section_content or "(Initial draft)",
+                    executive_summary=executive_summary or "(Not yet available)",
                 ),
                 expected_output=task_configs["draft_section_task"]["expected_output"].format(
                     section_title=section_title,
@@ -303,6 +447,15 @@ class PRDFlow(Flow[PRDState]):
 
         if not results:
             raise RuntimeError("All agents failed during parallel drafting")
+
+        # Reorder so default agent appears first in the dict.
+        # as_completed returns results in finishing order which is
+        # non-deterministic; callers rely on iteration order to pick
+        # the initial selected agent.
+        default = get_default_agent()
+        if default in results and next(iter(results)) != default:
+            results = {default: results[default], **{k: v for k, v in results.items() if k != default}}
+
         return results, failed
 
     # ------------------------------------------------------------------
@@ -322,8 +475,10 @@ class PRDFlow(Flow[PRDState]):
             agent_name, action = decision
             return str(agent_name), action
 
-        # Legacy single-value return — pick first available agent
-        default_agent = available_agents[0]
+        # Legacy single-value return — prefer the DEFAULT_AGENT;
+        # fall back to the first available agent if it is not in the list.
+        default = get_default_agent()
+        default_agent = default if default in available_agents else available_agents[0]
         return default_agent, decision
 
     # ------------------------------------------------------------------
@@ -429,11 +584,11 @@ class PRDFlow(Flow[PRDState]):
             )
 
     # ------------------------------------------------------------------
-    # Step 1 — Generate sections one by one
+    # Step 1 — Executive Summary iteration → then section drafting
     # ------------------------------------------------------------------
     @start()
     def generate_sections(self) -> str:
-        """Run the agent pipeline then draft each section."""
+        """Run the agent pipeline, iterate the executive summary, then draft sections."""
         # ── Agent pipeline (idea refinement → requirements → …) ──
         from crewai_productfeature_planner.orchestrator import (
             build_default_pipeline,
@@ -442,8 +597,6 @@ class PRDFlow(Flow[PRDState]):
         orchestrator = build_default_pipeline(self)
         orchestrator.run_pipeline()
 
-        logger.info("[Step 1] Generating PRD sections for idea: '%s'",
-                    self.state.idea[:80])
         agents = self._get_available_agents()
         task_configs = get_task_configs()
 
@@ -451,10 +604,136 @@ class PRDFlow(Flow[PRDState]):
         self.state.active_agents = list(agents.keys())
         self.state.dropped_agents = []
 
+        # Set lifecycle status fields
+        if not self.state.created_at:
+            self.state.created_at = datetime.now(timezone.utc).isoformat()
+        self.state.status = "inprogress"
+        self.state.update_date = datetime.now(timezone.utc).isoformat()
+
+        # ── Check if Phase 1 can be skipped (resumed run) ────
+        exec_resume_threshold = int(os.environ.get(
+            "PRD_EXEC_RESUME_THRESHOLD",
+            str(DEFAULT_EXEC_RESUME_THRESHOLD),
+        ))
+        existing_iters = len(self.state.executive_summary.iterations)
+        skip_phase1 = existing_iters >= exec_resume_threshold
+
+        if skip_phase1:
+            logger.info(
+                "[Phase 1] Skipping — executive summary already has "
+                "%d iteration(s) (threshold=%d). Using last iteration "
+                "as context for section drafting.",
+                existing_iters,
+                exec_resume_threshold,
+            )
+            # Ensure the executive summary is marked approved
+            self.state.executive_summary.is_approved = True
+            self.state.finalized_idea = (
+                self.state.executive_summary.latest_content
+            )
+        else:
+            # ── Phase 1: Executive Summary iteration ─────────────
+            logger.info(
+                "[Phase 1] Iterating executive summary for idea: '%s'",
+                self.state.idea[:80],
+            )
+            self._iterate_executive_summary(agents, task_configs)
+
+            # ── User decision gate — continue to sections? ───────
+            if self.executive_summary_callback is not None:
+                continue_to_sections = self.executive_summary_callback(
+                    self.state.executive_summary.latest_content,
+                    self.state.idea,
+                    self.state.run_id,
+                    [
+                        {
+                            "iteration": it.iteration,
+                            "content": it.content,
+                            "critique": it.critique,
+                        }
+                        for it in self.state.executive_summary.iterations
+                    ],
+                )
+                if not continue_to_sections:
+                    logger.info(
+                        "[Phase 1] User chose not to continue to sections — "
+                        "stopping after executive summary"
+                    )
+                    raise ExecutiveSummaryCompleted()
+            else:
+                # No callback — auto-continue to sections
+                logger.info(
+                    "[Phase 1] No executive_summary_callback set — "
+                    "auto-continuing to section drafting"
+                )
+
+        # ── Phase 2: Section-by-section drafting ─────────────
+        # Carry the Phase 1 executive summary into the PRDDraft so it
+        # is not re-drafted by the section loop.
+        exec_section = self.state.draft.get_section("executive_summary")
+        if exec_section is not None and not exec_section.is_approved:
+            exec_section.content = self.state.executive_summary.latest_content
+            exec_section.is_approved = True
+            exec_section.iteration = len(self.state.executive_summary.iterations)
+            exec_section.updated_date = datetime.now(timezone.utc).isoformat()
+            logger.info(
+                "[Phase 2] Populated executive_summary section from "
+                "Phase 1 (%d chars, %d iterations) — marked approved",
+                len(exec_section.content),
+                exec_section.iteration,
+            )
+
+        logger.info(
+            "[Phase 2] Generating PRD sections for idea: '%s'",
+            self.state.idea[:80],
+        )
+
         for section in self.state.draft.sections:
+            # Skip sections already approved (e.g. executive_summary
+            # completed in Phase 1).
+            if section.is_approved:
+                logger.info(
+                    "[Phase 2] Skipping section '%s' — already approved",
+                    section.title,
+                )
+                continue
+
             self.state.current_section_key = section.key
             total_steps = len(self.state.draft.sections)
-            context = self.state.draft.all_sections_context(exclude_key=section.key)
+
+            # ── Resume guard: skip drafting if section already has
+            #    content from a prior run (restored from MongoDB).
+            if section.content and section.iteration > 0:
+                # If restored content is degenerate (e.g. saved before
+                # the guard existed), wipe it and fall through to the
+                # normal draft step instead of resuming with garbage.
+                if _is_degenerate_content(section.content):
+                    logger.warning(
+                        "[Phase 2] Section '%s' restored content is "
+                        "degenerate (%d chars) — wiping and re-drafting",
+                        section.title, len(section.content),
+                    )
+                    section.content = ""
+                    section.iteration = 0
+                    section.agent_results = {}
+                    section.selected_agent = None
+                    section.critique = ""
+                else:
+                    logger.info(
+                        "[Phase 2] Resuming section '%s' at iteration %d "
+                        "(%d chars) — skipping draft step",
+                        section.title, section.iteration,
+                        len(section.content),
+                    )
+                    # Ensure agent_results is populated so the approval
+                    # loop has something to work with.
+                    if not section.agent_results:
+                        agent_key = section.selected_agent or get_default_agent()
+                        section.agent_results = {agent_key: section.content}
+                    if not section.selected_agent:
+                        section.selected_agent = get_default_agent()
+                    self._section_approval_loop(section, agents, task_configs)
+                    continue
 
             logger.info("[Draft] Step %d/%d — Generating section '%s' with %d agent(s)",
                         section.step, total_steps, section.title, len(agents))
@@ -466,7 +745,8 @@ class PRDFlow(Flow[PRDState]):
                     task_configs=task_configs,
                     section_title=section.title,
                     idea=self.state.idea,
-                    context=context,
+                    section_content=section.content,
+                    executive_summary=self.state.executive_summary.latest_content,
                 )
             except Exception as exc:
                 logger.error("[Draft] Section '%s' generation failed: %s",
@@ -483,12 +763,34 @@ class PRDFlow(Flow[PRDState]):
                 raise
 
             section.agent_results = agent_results
-            # Default content to first available agent's result
-            first_agent = next(iter(agent_results))
-            section.content = agent_results[first_agent]
+            # Default content to the default agent's result (guaranteed
+            # to be first in agent_results thanks to reordering in
+            # _run_agents_parallel).
+            default = get_default_agent()
+            first_agent = default if default in agent_results else next(iter(agent_results))
+            draft_content = agent_results[first_agent]
+
+            # ── Degenerate draft guard ─────────────────────
+            if _is_degenerate_content(draft_content):
+                logger.warning(
+                    "[Draft] Section '%s' degenerate draft detected "
+                    "(%d chars) — substituting placeholder",
+                    section.title, len(draft_content),
+                )
+                draft_content = (
+                    f"# {section.title}\n\n"
+                    "(Draft content was too large and has been "
+                    "replaced — the refine step will generate "
+                    "proper content.)"
+                )
+                agent_results[first_agent] = draft_content
+
+            section.content = draft_content
             section.selected_agent = first_agent
             section.iteration = 1
+            section.updated_date = datetime.now(timezone.utc).isoformat()
             self.state.iteration += 1
+            self.state.update_date = section.updated_date
 
             # Drop failed optional agents for the rest of the flow
             default = get_default_agent()
@@ -509,7 +811,7 @@ class PRDFlow(Flow[PRDState]):
             save_iteration(
                 run_id=self.state.run_id,
                 idea=self.state.idea,
-                iteration=self.state.iteration,
+                iteration=section.iteration,
                 draft={section.key: section.content},
                 step=f"draft_{section.key}",
                 section_key=section.key,
@@ -528,13 +830,270 @@ class PRDFlow(Flow[PRDState]):
                     self.state.iteration)
         return self.finalize()
 
+    # ------------------------------------------------------------------
+    # Phase 1 helper — Executive Summary iteration
+    # ------------------------------------------------------------------
+    def _iterate_executive_summary(
+        self,
+        agents: dict[str, Agent],
+        task_configs: dict,
+    ) -> None:
+        """Draft and iterate the executive summary using critique_prd_task.
+
+        Uses ``draft_prd_task`` for the initial draft, then loops
+        ``critique_prd_task`` up to min/max iterations.  Each iteration
+        both critiques the current summary and produces a refined version.
+
+        The executive summary is stored at the top-level
+        ``executive_summary`` array in ``workingIdeas`` (not under ``draft``).
+        """
+        min_iter, max_iter = _get_section_iteration_limits()
+        # Pick the default agent for the executive summary phase
+        default_name = get_default_agent()
+        pm = agents.get(default_name) or next(iter(agents.values()))
+
+        # Always persist the original user-inputted idea, not the refined one
+        user_idea = self.state.original_idea or self.state.idea
+
+        # ── Initial draft (iteration 1) ───────────────────────
+        draft_task = Task(
+            description=task_configs["draft_prd_task"]["description"].format(
+                idea=self.state.idea,
+                executive_summary="(initial draft — first iteration)",
+            ),
+            expected_output=task_configs["draft_prd_task"]["expected_output"],
+            agent=pm,
+        )
+        crew = Crew(
+            agents=[pm],
+            tasks=[draft_task],
+            process=Process.sequential,
+            verbose=True,
+        )
+        try:
+            draft_result = crew_kickoff_with_retry(
+                crew, step_label="draft_executive_summary",
+            )
+        except Exception as exc:
+            logger.error("[ExecSummary] Initial draft failed: %s", exc)
+            save_failed(
+                run_id=self.state.run_id,
+                idea=user_idea,
+                iteration=0,
+                error=str(exc),
+                step="draft_executive_summary",
+            )
+            raise
+
+        current_content = draft_result.raw
+        now = datetime.now(timezone.utc).isoformat()
+        first_iter = ExecutiveSummaryIteration(
+            content=current_content,
+            iteration=1,
+            critique=None,
+            updated_date=now,
+        )
+        self.state.executive_summary.iterations.append(first_iter)
+        self.state.iteration = 1
+        self.state.update_date = now
+
+        save_executive_summary(
+            run_id=self.state.run_id,
+            idea=user_idea,
+            iteration=1,
+            content=current_content,
+            critique=None,
+        )
+        logger.info(
+            "[ExecSummary] Initial draft (%d chars)", len(current_content),
+        )
+
+        # ── Critique → iterate loop ──────────────────────────
+        iteration = 1
+        while iteration < max_iter:
+            # --- Critique ---
+            logger.info(
+                "[ExecSummary] Critique iteration %d/%d", iteration, max_iter,
+            )
+            critique_task = Task(
+                description=task_configs["critique_prd_task"]["description"].format(
+                    critique="(generate critique)",
+                    executive_summary=current_content,
+                ),
+                expected_output=task_configs["critique_prd_task"][
+                    "expected_output"
+                ],
+                agent=pm,
+            )
+            crew = Crew(
+                agents=[pm],
+                tasks=[critique_task],
+                process=Process.sequential,
+                verbose=True,
+            )
+            try:
+                critique_result = crew_kickoff_with_retry(
+                    crew, step_label=f"critique_exec_summary_iter{iteration}",
+                )
+            except Exception as exc:
+                logger.error(
+                    "[ExecSummary] Critique failed at iteration %d: %s",
+                    iteration, exc,
+                )
+                save_failed(
+                    run_id=self.state.run_id,
+                    idea=user_idea,
+                    iteration=iteration,
+                    error=str(exc),
+                    step=f"critique_exec_summary_iter{iteration}",
+                )
+                raise
+
+            critique_text = critique_result.raw
+
+            # Update critique on the current iteration record
+            update_executive_summary_critique(
+                run_id=self.state.run_id,
+                iteration=iteration,
+                critique=critique_text,
+            )
+            # Update in-memory model
+            current_iter = self.state.executive_summary.iterations[-1]
+            current_iter.critique = critique_text
+            self.state.critique = critique_text
+
+            # --- Check termination ----
+            is_ready = "READY_FOR_DEV" in critique_text.upper()
+            past_min = iteration >= min_iter
+
+            if is_ready and past_min:
+                logger.info(
+                    "[ExecSummary] READY_FOR_DEV at iteration %d "
+                    "(min=%d) — approved",
+                    iteration, min_iter,
+                )
+                self.state.executive_summary.is_approved = True
+                break
+
+            # --- Produce refined version (the critique task output
+            #     already contains the refined executive summary per
+            #     the task description; but we run the draft task
+            #     again with the critique as context to get a clean
+            #     refined version) ---
+            iteration += 1
+            refine_desc = task_configs["draft_prd_task"]["description"].format(
+                idea=self.state.idea,
+                executive_summary=current_content,
+            )
+            refine_desc += (
+                f"\n\n--- CRITIQUE FEEDBACK ---\n{critique_text}\n"
+                f"--- END OF CRITIQUE ---\n\n"
+                "Address every gap identified in the critique above. "
+                "Produce an improved executive summary."
+            )
+            refine_task = Task(
+                description=refine_desc,
+                expected_output=task_configs["draft_prd_task"][
+                    "expected_output"
+                ],
+                agent=pm,
+            )
+            crew = Crew(
+                agents=[pm],
+                tasks=[refine_task],
+                process=Process.sequential,
+                verbose=True,
+            )
+            try:
+                refine_result = crew_kickoff_with_retry(
+                    crew,
+                    step_label=f"refine_exec_summary_iter{iteration}",
+                )
+            except Exception as exc:
+                logger.error(
+                    "[ExecSummary] Refine failed at iteration %d: %s",
+                    iteration, exc,
+                )
+                save_failed(
+                    run_id=self.state.run_id,
+                    idea=user_idea,
+                    iteration=iteration,
+                    error=str(exc),
+                    step=f"refine_exec_summary_iter{iteration}",
+                )
+                raise
+
+            current_content = refine_result.raw
+            now = datetime.now(timezone.utc).isoformat()
+            new_iter = ExecutiveSummaryIteration(
+                content=current_content,
+                iteration=iteration,
+                critique=None,
+                updated_date=now,
+            )
+            self.state.executive_summary.iterations.append(new_iter)
+            self.state.iteration = iteration
+            self.state.update_date = now
+
+            save_executive_summary(
+                run_id=self.state.run_id,
+                idea=user_idea,
+                iteration=iteration,
+                content=current_content,
+                critique=None,
+            )
+            logger.info(
+                "[ExecSummary] Refined iteration %d (%d chars)",
+                iteration, len(current_content),
+            )
+
+        # Force-approve if max reached without READY_FOR_DEV
+        if not self.state.executive_summary.is_approved:
+            self.state.executive_summary.is_approved = True
+            logger.info(
+                "[ExecSummary] Max iterations (%d) reached — "
+                "force-approved",
+                max_iter,
+            )
+
+        # Copy the last iterated executive summary to finalized_idea
+        self.state.finalized_idea = self.state.executive_summary.latest_content
+        save_finalized_idea(
+            run_id=self.state.run_id,
+            finalized_idea=self.state.finalized_idea,
+        )
+        logger.info(
+            "[ExecSummary] Copied executive summary to finalized_idea "
+            "(%d chars)",
+            len(self.state.finalized_idea),
+        )
+
     def _section_approval_loop(self, section, agents: dict[str, Agent], task_configs) -> None:
-        """Critique/refine a single section until user approves it."""
+        """Iterate a single section through critique→refine cycles.
+
+        Each section is automatically iterated between *min* and *max*
+        iterations (controlled by ``PRD_SECTION_MIN_ITERATIONS`` /
+        ``PRD_SECTION_MAX_ITERATIONS`` env vars, defaulting to 2 / 5).
+
+        * Before *min* is reached the cycle always continues
+          (critique → refine → …) regardless of the critique verdict.
+        * After *min*, if the critique contains ``SECTION_READY``, the
+          section is auto-approved (when no callback is set).
+        * At *max*, the section is force-approved regardless.
+
+        When an ``approval_callback`` is configured (API / UI mode) the
+        user is given the opportunity to approve, pause, or provide
+        feedback at every iteration.  A user-approval overrides the
+        minimum-iteration gate.
+        """
+        min_iter, max_iter = _get_section_iteration_limits()
+        total_steps = len(self.state.draft.sections)
+
         while not section.is_approved:
             user_feedback: str | None = None
             available = list(section.agent_results.keys()) or list(agents.keys())
 
-            # --- User approval gate ---
+            # ── Optional user gate (callback) ─────────────────
             if self.approval_callback is not None:
                 decision = self.approval_callback(
                     section.iteration,
@@ -557,52 +1116,55 @@ class PRDFlow(Flow[PRDState]):
 
                 if action is True:
                     section.is_approved = True
-                    logger.info("[Approval] Step %d/%d — Section '%s' approved (agent=%s) at iteration %d",
-                                section.step, len(self.state.draft.sections),
-                                section.title, agent_name, section.iteration)
+                    logger.info(
+                        "[Approval] Step %d/%d — Section '%s' approved "
+                        "(agent=%s) at iteration %d",
+                        section.step, total_steps, section.title,
+                        agent_name, section.iteration,
+                    )
                     break
                 if action == PAUSE_SENTINEL or decision == PAUSE_SENTINEL:
-                    logger.info("[Pause] User requested pause at step %d/%d section '%s' iteration %d",
-                                section.step, len(self.state.draft.sections),
-                                section.title, section.iteration)
+                    logger.info(
+                        "[Pause] User requested pause at step %d/%d "
+                        "section '%s' iteration %d",
+                        section.step, total_steps, section.title,
+                        section.iteration,
+                    )
                     raise PauseRequested()
                 if isinstance(action, str) and action.strip():
                     user_feedback = action.strip()
                     logger.info(
-                        "[Approval] User provided critique for section '%s' (agent=%s, %d chars)",
+                        "[Approval] User provided critique for section "
+                        "'%s' (agent=%s, %d chars)",
                         section.title, agent_name, len(user_feedback),
                     )
 
-            # Resolve the agent to use for critique/refine
+            # Resolve agent for critique / refine
             selected = section.selected_agent or available[0]
             pm = agents.get(selected) or next(iter(agents.values()))
 
-            # --- Self-Critique (skipped when user provided feedback) ---
-            context = self.state.draft.all_sections_context(exclude_key=section.key)
-
+            # ── Critique (user feedback or agent) ─────────────
             if user_feedback is not None:
                 self.state.critique = user_feedback
-                save_iteration(
-                    run_id=self.state.run_id,
-                    idea=self.state.idea,
-                    iteration=self.state.iteration,
-                    draft={section.key: section.content},
-                    critique=self.state.critique,
-                    step=f"user_critique_{section.key}",
-                    section_key=section.key,
-                    section_title=section.title,
-                )
+                section.critique = user_feedback
             else:
-                logger.info("[Critique] Step %d/%d — Section '%s' — iteration %d",
-                            section.step, len(self.state.draft.sections),
-                            section.title, section.iteration)
+                logger.info(
+                    "[Critique] Step %d/%d — Section '%s' — iteration %d",
+                    section.step, total_steps, section.title,
+                    section.iteration,
+                )
                 critique_task = Task(
-                    description=task_configs["critique_section_task"]["description"].format(
+                    description=task_configs["critique_section_task"][
+                        "description"
+                    ].format(
                         section_title=section.title,
-                        section_content=section.content,
-                        context_sections=context or "(No other sections available)",
+                        critique_section_content=section.content,
+                        executive_summary=self.state.executive_summary.latest_content or "(Not yet available)",
+                        approved_sections=self.state.draft.approved_context(exclude_key=section.key) or "(None yet)",
                     ),
-                    expected_output=task_configs["critique_section_task"]["expected_output"],
+                    expected_output=task_configs["critique_section_task"][
+                        "expected_output"
+                    ],
                     agent=pm,
                 )
                 crew = Crew(
@@ -616,8 +1178,10 @@ class PRDFlow(Flow[PRDState]):
                         crew, step_label=f"critique_{section.key}",
                     )
                 except Exception as exc:
-                    logger.error("[Critique] Section '%s' failed at iteration %d: %s",
-                                 section.title, section.iteration, exc)
+                    logger.error(
+                        "[Critique] Section '%s' failed at iteration %d: %s",
+                        section.title, section.iteration, exc,
+                    )
                     save_failed(
                         run_id=self.state.run_id,
                         idea=self.state.idea,
@@ -632,37 +1196,58 @@ class PRDFlow(Flow[PRDState]):
                 self.state.critique = critique_result.raw
                 section.critique = self.state.critique
 
-                save_iteration(
-                    run_id=self.state.run_id,
-                    idea=self.state.idea,
-                    iteration=self.state.iteration,
-                    draft={section.key: section.content},
-                    critique=self.state.critique,
-                    step=f"critique_{section.key}",
-                    section_key=section.key,
-                    section_title=section.title,
+            update_section_critique(
+                run_id=self.state.run_id,
+                section_key=section.key,
+                iteration=section.iteration,
+                critique=self.state.critique,
+            )
+
+            # ── Check termination conditions ──────────────────
+            is_ready = "SECTION_READY" in self.state.critique.upper()
+            past_min = section.iteration >= min_iter
+            at_max = section.iteration >= max_iter
+
+            if at_max:
+                section.is_approved = True
+                logger.info(
+                    "[Iteration] Section '%s' reached max iterations "
+                    "(%d) — auto-approved",
+                    section.title, max_iter,
                 )
+                break
 
-                # Auto-approval fallback
-                if "SECTION_READY" in self.state.critique.upper() and self.approval_callback is None:
-                    section.is_approved = True
-                    logger.info("[Critique] Section '%s' marked SECTION_READY — auto-approved",
-                                section.title)
-                    break
+            if is_ready and past_min and self.approval_callback is None:
+                section.is_approved = True
+                logger.info(
+                    "[Critique] Section '%s' marked SECTION_READY at "
+                    "iteration %d (min=%d) — auto-approved",
+                    section.title, section.iteration, min_iter,
+                )
+                break
 
-            # --- Refinement ---
-            logger.info("[Refine] Step %d/%d — Section '%s' — iteration %d",
-                        section.step, len(self.state.draft.sections),
-                        section.title, section.iteration)
+            # ── Refine ────────────────────────────────────────
+            prev_content = section.content  # snapshot for degenerate guard
+            logger.info(
+                "[Refine] Step %d/%d — Section '%s' — iteration %d",
+                section.step, total_steps, section.title,
+                section.iteration,
+            )
             refine_task = Task(
-                description=task_configs["refine_section_task"]["description"].format(
+                description=task_configs["refine_section_task"][
+                    "description"
+                ].format(
                     section_title=section.title,
                     section_content=section.content,
-                    critique=self.state.critique,
-                    context_sections=context or "(No other sections available)",
+                    critique_section_content=self.state.critique,
+                    executive_summary=self.state.executive_summary.latest_content or "(Not yet available)",
+                    approved_sections=self.state.draft.approved_context(exclude_key=section.key) or "(None yet)",
                 ),
-                expected_output=task_configs["refine_section_task"]["expected_output"].format(
+                expected_output=task_configs["refine_section_task"][
+                    "expected_output"
+                ].format(
                     section_title=section.title,
+                    critique_section_content=self.state.critique,
                 ),
                 agent=pm,
             )
@@ -677,8 +1262,10 @@ class PRDFlow(Flow[PRDState]):
                     crew, step_label=f"refine_{section.key}",
                 )
             except Exception as exc:
-                logger.error("[Refine] Section '%s' failed at iteration %d: %s",
-                             section.title, section.iteration, exc)
+                logger.error(
+                    "[Refine] Section '%s' failed at iteration %d: %s",
+                    section.title, section.iteration, exc,
+                )
                 save_failed(
                     run_id=self.state.run_id,
                     idea=self.state.idea,
@@ -691,15 +1278,36 @@ class PRDFlow(Flow[PRDState]):
                 )
                 raise
             section.content = refine_result.raw
-            # Update agent_results so subsequent callbacks see the refined content
+
+            # ── Degenerate output guard ─────────────────────
+            if _is_degenerate_content(
+                section.content, prev_len=len(prev_content),
+            ):
+                logger.warning(
+                    "[Refine] Section '%s' degenerate output detected "
+                    "(%d chars, prev=%d) — "
+                    "reverting to previous content and force-approving",
+                    section.title, len(section.content),
+                    len(prev_content),
+                )
+                section.content = prev_content
+                section.agent_results = {
+                    section.selected_agent: prev_content,
+                }
+                section.is_approved = True
+                break
+
+            # Update agent_results so subsequent callbacks see refined content
             section.agent_results = {section.selected_agent: section.content}
             section.iteration += 1
+            section.updated_date = datetime.now(timezone.utc).isoformat()
             self.state.iteration += 1
+            self.state.update_date = section.updated_date
 
             save_iteration(
                 run_id=self.state.run_id,
                 idea=self.state.idea,
-                iteration=self.state.iteration,
+                iteration=section.iteration,
                 draft={section.key: section.content},
                 critique=self.state.critique,
                 step=f"refine_{section.key}",
@@ -708,8 +1316,10 @@ class PRDFlow(Flow[PRDState]):
                 selected_agent=section.selected_agent,
             )
 
-            logger.debug("[Refine] Section '%s' refined (%d chars)",
-                         section.title, len(section.content))
+            logger.debug(
+                "[Refine] Section '%s' refined (%d chars)",
+                section.title, len(section.content),
+            )
 
     # ------------------------------------------------------------------
     # Step 4 — Final Assembly & Persist
@@ -733,24 +1343,12 @@ class PRDFlow(Flow[PRDState]):
             "[Step 4] Generated Confluence XHTML (%d chars)", len(confluence_xhtml)
         )
 
-        # Save to MongoDB finalizeIdeas (Markdown + XHTML)
-        doc_id = save_finalized(
-            run_id=self.state.run_id,
-            idea=self.state.idea,
-            iteration=self.state.iteration,
-            final_prd=self.state.final_prd,
-            confluence_xhtml=confluence_xhtml,
-        )
-        if doc_id is None:
-            logger.error(
-                "[Step 4] save_finalized returned None for run_id=%s — "
-                "the PRD may not be persisted in finalizeIdeas",
-                self.state.run_id,
-            )
-
-        # Mark working-idea documents as completed
+        # Mark working-idea document as completed
         mark_completed(self.state.run_id)
 
         self.state.is_ready = True
+        self.state.status = "completed"
+        self.state.completed_at = datetime.now(timezone.utc).isoformat()
+        self.state.update_date = self.state.completed_at
         logger.info("[Step 4] %s", save_result)
         return save_result

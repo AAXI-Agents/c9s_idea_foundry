@@ -75,10 +75,10 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `OPENAI_API_KEY` | **Yes**\* | — | OpenAI API key (required when `DEFAULT_AGENT=openai_pm`) |
-| `MODEL` | No | `o3` | Default CrewAI model selector |
-| `PM_MODEL` | No | `MODEL` | Override the PM reasoning model |
-| `DEFAULT_AGENT` | No | `openai_pm` | Primary agent for all LLM tasks (`openai_pm` or `gemini_pm`). The default agent is always required; additional agents run the same task in parallel so you can compare results. |
+| `OPENAI_API_KEY` | **Yes**\* | — | OpenAI API key (required when `DEFAULT_AGENT=openai_pm` or `DEFAULT_MULTI_AGENTS=2`) |
+| `OPENAI_MODEL` | No | `o3` | OpenAI model for the Product Manager agent |
+| `DEFAULT_AGENT` | No | `openai_pm` | Primary agent for all LLM tasks (`openai_pm` or `gemini_pm`). The default agent is always required; additional agents are optional. |
+| `DEFAULT_MULTI_AGENTS` | No | `1` | Number of PM agents to run in parallel. `1` = default only; `2` = default + optional agent (e.g. OpenAI when default is Gemini). |
 | `GOOGLE_API_KEY` | **Yes**\* | — | Google API key ([get one here](https://aistudio.google.com/apikey)). Required when using Gemini API mode. Either this or `GOOGLE_CLOUD_PROJECT` must be set when `DEFAULT_AGENT=gemini_pm`; optional otherwise. |
 | `GOOGLE_CLOUD_PROJECT` | **Yes**\* | — | Google Cloud project ID with Vertex AI API enabled. Alternative to `GOOGLE_API_KEY`. Authenticate via `gcloud auth application-default login`. |
 | `GOOGLE_CLOUD_LOCATION` | No | `asia-southeast1` | Google Cloud region for Vertex AI ([available regions](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations)) |
@@ -86,6 +86,11 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 | `IDEA_REFINER_MIN_ITERATIONS` | No | `3` | Minimum idea-refinement cycles before the refiner can stop |
 | `IDEA_REFINER_MAX_ITERATIONS` | No | `10` | Maximum idea-refinement cycles |
 | `IDEA_REFINER_MODEL` | No | `GEMINI_MODEL` | Override the Gemini model used by the Idea Refinement agent |
+| `REQUIREMENTS_BREAKDOWN_MIN_ITERATIONS` | No | `3` | Minimum requirements-breakdown cycles before the agent can stop |
+| `REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS` | No | `10` | Maximum requirements-breakdown cycles |
+| `REQUIREMENTS_BREAKDOWN_MODEL` | No | `GEMINI_MODEL` | Override the Gemini model used by the Requirements Breakdown agent |
+| `PRD_SECTION_MIN_ITERATIONS` | No | `2` | Minimum critique→refine iterations per PRD section |
+| `PRD_SECTION_MAX_ITERATIONS` | No | `10` | Maximum critique→refine iterations per PRD section |
 | `SERPER_API_KEY` | **Yes** | — | Google search via SerperDev for market research |
 | `MONGODB_URI` | No | `localhost` | MongoDB host |
 | `MONGODB_PORT` | No | `27017` | MongoDB port |

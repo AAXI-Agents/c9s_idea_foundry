@@ -351,13 +351,11 @@ def test_refine_idea_saves_iterations_with_run_id(monkeypatch):
         mock_db.return_value = {"workingIdeas": mock_collection}
         result, history = refine_idea("Raw idea", run_id="test_run_123")
 
-    assert mock_collection.insert_one.call_count == 2
-    # Verify first saved doc
-    first_doc = mock_collection.insert_one.call_args_list[0][0][0]
-    assert first_doc["run_id"] == "test_run_123"
-    assert first_doc["iteration"] == 1
-    assert first_doc["step"] == "idea_refine_1"
-    assert first_doc["section_key"] == "idea_refinement"
+    assert mock_collection.update_one.call_count == 2
+    # Verify first saved doc uses upsert with correct run_id filter
+    first_call = mock_collection.update_one.call_args_list[0]
+    assert first_call[0][0] == {"run_id": "test_run_123"}
+    assert first_call[1].get("upsert") is True
 
 
 def test_refine_idea_no_run_id_skips_save(monkeypatch):
@@ -378,4 +376,4 @@ def test_refine_idea_no_run_id_skips_save(monkeypatch):
         mock_db.return_value = {"workingIdeas": mock_collection}
         refine_idea("Raw idea")  # no run_id
 
-    mock_collection.insert_one.assert_not_called()
+    mock_collection.update_one.assert_not_called()

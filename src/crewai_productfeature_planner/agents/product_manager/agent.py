@@ -18,8 +18,8 @@ logger = get_logger(__name__)
 CONFIG_DIR = Path(__file__).parent / "config"
 
 # Default reasoning model for the Product Manager agent.
-# Override via PM_MODEL env var; falls back to the global MODEL var.
-DEFAULT_PM_MODEL = "o3"
+# Override via OPENAI_MODEL env var.
+DEFAULT_OPENAI_MODEL = "o3"
 
 # LLM timeout / retry defaults.  Reasoning models (o3) can take 60-120 s;
 # a generous default avoids premature timeouts while still failing eventually.
@@ -60,18 +60,14 @@ def _build_llm() -> LLM:
     """Build the OpenAI LLM for the Product Manager agent.
 
     Resolution order for model name:
-        1. ``PM_MODEL`` env var  (agent-specific override)
-        2. ``MODEL`` env var     (global project default)
-        3. ``DEFAULT_PM_MODEL``  (hard-coded fallback — o3)
+        1. ``OPENAI_MODEL`` env var  (project-level OpenAI model)
+        2. ``DEFAULT_OPENAI_MODEL``  (hard-coded fallback — o3)
 
     Timeout and retry behaviour are controlled via:
         - ``LLM_TIMEOUT``      — request timeout in seconds (default 300)
         - ``LLM_MAX_RETRIES``  — number of retries on transient errors (default 3)
     """
-    model_name = os.environ.get(
-        "PM_MODEL",
-        os.environ.get("MODEL", DEFAULT_PM_MODEL),
-    )
+    model_name = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
     # Prefix with provider when not already qualified.
     if "/" not in model_name:
         model_name = f"openai/{model_name}"

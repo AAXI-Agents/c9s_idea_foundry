@@ -121,21 +121,48 @@ class TestIdeaRefinementStage:
         assert flow.state.idea_refined is True
         assert flow.state.refinement_history == [{"iteration": 1}]
 
-    def test_requires_approval_true(self):
+    def test_requires_approval_false_breakdown_already_done(self, monkeypatch):
+        """Auto-bypass idea approval even when requirements already done."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+        flow = PRDFlow()
+        flow.state.idea_refined = True
+        flow.state.requirements_broken_down = True
+        flow.idea_approval_callback = lambda *a: True
+        stage = build_idea_refinement_stage(flow)
+        assert stage.requires_approval() is False
+
+    def test_requires_approval_true_no_gemini(self, monkeypatch):
+        """Approval gate fires when Gemini is unavailable (no breakdown)."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
         flow = PRDFlow()
         flow.state.idea_refined = True
         flow.idea_approval_callback = lambda *a: True
         stage = build_idea_refinement_stage(flow)
         assert stage.requires_approval() is True
 
-    def test_requires_approval_false_not_refined(self):
+    def test_requires_approval_false_bypass_for_breakdown(self, monkeypatch):
+        """Auto-bypass idea approval when requirements breakdown will follow."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+        flow = PRDFlow()
+        flow.state.idea_refined = True
+        flow.state.requirements_broken_down = False
+        flow.idea_approval_callback = lambda *a: True
+        stage = build_idea_refinement_stage(flow)
+        assert stage.requires_approval() is False
+
+    def test_requires_approval_false_not_refined(self, monkeypatch):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
         flow = PRDFlow()
         flow.state.idea_refined = False
         flow.idea_approval_callback = lambda *a: True
         stage = build_idea_refinement_stage(flow)
         assert stage.requires_approval() is False
 
-    def test_requires_approval_false_no_callback(self):
+    def test_requires_approval_false_no_callback(self, monkeypatch):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
         flow = PRDFlow()
         flow.state.idea_refined = True
         flow.idea_approval_callback = None
@@ -255,6 +282,28 @@ class TestRequirementsBreakdownStage:
         stage = build_requirements_breakdown_stage(flow)
         assert stage.requires_approval() is False
 
+    def test_requires_approval_false_exec_summary_iterations(self):
+        """Auto-skip approval when executive summary already has iterations (resume)."""
+        from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
+
+        flow = PRDFlow()
+        flow.state.requirements_broken_down = True
+        flow.requirements_approval_callback = lambda *a: True
+        flow.state.executive_summary.iterations.append(
+            ExecutiveSummaryIteration(content="v1", iteration=1)
+        )
+        stage = build_requirements_breakdown_stage(flow)
+        assert stage.requires_approval() is False
+
+    def test_requires_approval_false_sections_in_progress(self):
+        """Auto-skip approval when sections already have content (resume)."""
+        flow = PRDFlow()
+        flow.state.requirements_broken_down = True
+        flow.requirements_approval_callback = lambda *a: True
+        flow.state.draft.sections[1].content = "Some drafted content"
+        stage = build_requirements_breakdown_stage(flow)
+        assert stage.requires_approval() is False
+
     def test_get_approval_calls_callback(self):
         approvals = []
         flow = PRDFlow()
@@ -334,23 +383,21 @@ class TestBuildDefaultPipeline:
         assert flow.state.requirements_broken_down is True
 
     def test_pipeline_idea_finalization_stops_early(self, monkeypatch):
-        """IdeaFinalized stops the pipeline before requirements."""
-        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+        """IdeaFinalized stops the pipeline when no Gemini (no breakdown)."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
 
         flow = PRDFlow()
         flow.state.idea = "raw idea"
+        flow.state.idea_refined = True  # already refined (skipped stage)
         flow.idea_approval_callback = lambda *a: True  # finalize
 
-        with patch(
-            "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
-            return_value=("refined idea", [{"iteration": 1}]),
-        ):
-            orch = build_default_pipeline(flow)
-            with pytest.raises(IdeaFinalized):
-                orch.run_pipeline()
+        orch = build_default_pipeline(flow)
+        with pytest.raises(IdeaFinalized):
+            orch.run_pipeline()
 
-        assert orch.completed == ["idea_refinement"]
-        assert flow.state.requirements_broken_down is False
+        # Both stages skipped (no Gemini), but idea gate fired
+        assert "idea_refinement" in orch.skipped
 
     def test_pipeline_requirements_finalization(self, monkeypatch):
         """RequirementsFinalized stops the pipeline after requirements."""
@@ -358,7 +405,7 @@ class TestBuildDefaultPipeline:
 
         flow = PRDFlow()
         flow.state.idea = "raw idea"
-        flow.idea_approval_callback = lambda *a: False  # continue
+        # idea approval auto-bypassed — requirements breakdown follows
         flow.requirements_approval_callback = lambda *a: True  # finalize
 
         with patch(

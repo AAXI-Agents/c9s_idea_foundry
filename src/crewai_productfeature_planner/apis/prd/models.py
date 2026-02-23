@@ -7,21 +7,15 @@ from pydantic import BaseModel, Field
 
 SECTION_ORDER: list[tuple[str, str]] = [
     ("executive_summary", "Executive Summary"),
-    ("why_now", "Why Now / Market Timing"),
-    ("objectives_okrs", "Objectives (OKRs)"),
-    ("target_market", "Target Market / Audience"),
-    ("competitive_landscape", "Competitive Landscape"),
-    ("scope_solution_overview", "Scope / Solution Overview"),
-    ("change_log", "Change Log / Version History"),
     ("problem_statement", "Problem Statement"),
     ("user_personas", "User Personas"),
     ("functional_requirements", "Functional Requirements"),
-    ("non_functional_requirements", "Non-Functional Requirements"),
-    ("user_stories", "User Stories with Acceptance Criteria"),
-    ("edge_cases", "Edge Cases and Error Handling"),
-    ("analytics_metrics", "Analytics and Success Metrics"),
-    ("dependencies_assumptions", "Dependencies and Assumptions"),
-    ("out_of_scope", "Out of Scope"),
+    ("no_functional_requirements", "Non-Functional Requirements"),
+    ("edge_cases", "Edge Cases"),
+    ("error_handling", "Error Handling"),
+    ("success_metrics", "Success Metrics"),
+    ("dependencies", "Dependencies"),
+    ("assumptions", "Assumptions"),
 ]
 
 SECTION_KEYS: list[str] = [key for key, _ in SECTION_ORDER]
@@ -51,6 +45,53 @@ def get_default_agent() -> str:
     return agent
 
 
+# ── Executive Summary iteration model ────────────────────────
+
+
+class ExecutiveSummaryIteration(BaseModel):
+    """A single iteration record for the executive summary phase."""
+
+    content: str = Field(default="", description="Markdown content of this iteration.")
+    iteration: int = Field(
+        default=1, description="1-based iteration number."
+    )
+    critique: str | None = Field(
+        default=None,
+        description="Critique feedback from critique_prd_task, initially null.",
+    )
+    updated_date: str = Field(
+        default="",
+        description="ISO-8601 timestamp of this iteration.",
+    )
+
+
+class ExecutiveSummaryDraft(BaseModel):
+    """Tracks the iterative executive summary produced in the draft phase."""
+
+    iterations: list[ExecutiveSummaryIteration] = Field(default_factory=list)
+    is_approved: bool = Field(
+        default=False,
+        description="Whether the executive summary has been approved.",
+    )
+
+    @property
+    def latest(self) -> ExecutiveSummaryIteration | None:
+        """Return the most recent iteration, or None if empty."""
+        return self.iterations[-1] if self.iterations else None
+
+    @property
+    def latest_content(self) -> str:
+        """Return the content of the most recent iteration."""
+        latest = self.latest
+        return latest.content if latest else ""
+
+    @property
+    def current_iteration(self) -> int:
+        """Return the current iteration number (0 if none)."""
+        latest = self.latest
+        return latest.iteration if latest else 0
+
+
 class PRDSection(BaseModel):
     """A single section of a PRD with its own iteration tracking."""
 
@@ -64,6 +105,10 @@ class PRDSection(BaseModel):
     critique: str = Field(default="", description="Latest critique for this section.")
     iteration: int = Field(
         default=0, description="How many times this section has been iterated."
+    )
+    updated_date: str = Field(
+        default="",
+        description="ISO-8601 timestamp of the last update to this section.",
     )
     is_approved: bool = Field(
         default=False, description="Whether the user has approved this section."
@@ -278,6 +323,10 @@ class PRDSectionDetail(BaseModel):
     content: str = Field(default="", description="Current markdown content.")
     critique: str = Field(default="", description="Latest critique text.")
     iteration: int = Field(default=0, description="Section iteration count.")
+    updated_date: str = Field(
+        default="",
+        description="ISO-8601 timestamp of the last update to this section.",
+    )
     is_approved: bool = Field(default=False, description="Whether this section is approved.")
     agent_results: dict[str, str] = Field(
         default_factory=dict,
@@ -314,6 +363,14 @@ class PRDRunStatusResponse(BaseModel):
     status: str = Field(..., description="Current lifecycle status.")
     iteration: int = Field(default=0, description="Total iteration count across all sections.")
     created_at: str = Field(..., description="ISO-8601 creation timestamp.")
+    update_date: str | None = Field(
+        default=None,
+        description="ISO-8601 timestamp of the last update.",
+    )
+    completed_at: str | None = Field(
+        default=None,
+        description="ISO-8601 timestamp when the run was completed.",
+    )
     result: str | None = Field(default=None, description="Final result when completed.")
     error: str | None = Field(
         default=None,

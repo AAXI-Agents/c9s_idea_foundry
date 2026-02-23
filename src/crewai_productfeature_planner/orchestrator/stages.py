@@ -82,6 +82,17 @@ def build_idea_refinement_stage(flow: "PRDFlow") -> AgentStage:
         flow.state.refinement_history = result.history
 
     def _requires_approval() -> bool:
+        # Skip the idea approval gate when requirements breakdown is
+        # configured (will run next OR has already completed).
+        # The user will approve at the requirements stage instead.
+        if _has_gemini_credentials():
+            logger.info(
+                "[IdeaRefiner] Auto-approving — requirements breakdown "
+                "%s",
+                "already done" if flow.state.requirements_broken_down
+                else "will run next",
+            )
+            return False
         return (
             flow.state.idea_refined
             and flow.idea_approval_callback is not None
@@ -158,6 +169,22 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
         flow.state.requirements_broken_down = True
 
     def _requires_approval() -> bool:
+        # On resume: if executive summary iterations or section content
+        # already exist, the user previously approved requirements —
+        # skip the gate so they aren't re-prompted.
+        if flow.state.executive_summary.iterations:
+            logger.info(
+                "[RequirementsBreakdown] Auto-approving — executive "
+                "summary already has %d iteration(s) (resumed run)",
+                len(flow.state.executive_summary.iterations),
+            )
+            return False
+        if any(s.content for s in flow.state.draft.sections):
+            logger.info(
+                "[RequirementsBreakdown] Auto-approving — sections "
+                "already in progress (resumed run)",
+            )
+            return False
         return (
             flow.state.requirements_broken_down
             and flow.requirements_approval_callback is not None

@@ -228,16 +228,14 @@ def refine_idea(raw_idea: str, run_id: str = "") -> tuple[str, list[dict]]:
         # Persist to workingIdeas when run_id is available
         if run_id:
             try:
-                from crewai_productfeature_planner.mongodb import save_iteration
+                from crewai_productfeature_planner.mongodb import save_executive_summary
 
-                save_iteration(
+                save_executive_summary(
                     run_id=run_id,
-                    idea=current_idea,
+                    idea=raw_idea,
                     iteration=iteration,
-                    draft={"idea_refinement": current_idea},
+                    content=current_idea,
                     critique=evaluation,
-                    step=f"idea_refine_{iteration}",
-                    section_key="idea_refinement",
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

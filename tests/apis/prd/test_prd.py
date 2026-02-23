@@ -26,12 +26,28 @@ def _set_dummy_keys(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _mock_crew_jobs():
-    """Prevent API tests from writing to real MongoDB crewJobs collection."""
+    """Prevent API tests from writing to real MongoDB crewJobs collection.
+
+    Patches both the router-level imports (kickoff endpoint) and the
+    service-level imports (run_prd_flow / make_approval_callback) so
+    that no test in this module ever touches a real database.
+
+    Also patches ``fail_incomplete_jobs_on_startup`` used in the
+    FastAPI lifespan to prevent a real MongoDB connection on startup.
+    """
     with (
         patch("crewai_productfeature_planner.apis.prd.router.create_job"),
         patch(
             "crewai_productfeature_planner.apis.prd.router.find_active_job",
             return_value=None,
+        ),
+        patch("crewai_productfeature_planner.apis.prd.service.update_job_started"),
+        patch("crewai_productfeature_planner.apis.prd.service.update_job_completed"),
+        patch("crewai_productfeature_planner.apis.prd.service.update_job_status"),
+        patch("crewai_productfeature_planner.apis.prd.service.mark_completed"),
+        patch(
+            "crewai_productfeature_planner.apis.fail_incomplete_jobs_on_startup",
+            return_value=0,
         ),
     ):
         yield
@@ -114,7 +130,7 @@ def test_get_run_status_found(client):
     assert body["run_id"] == run_id
     assert body["flow_name"] == "prd"
     assert body["sections_approved"] == 0
-    assert body["sections_total"] == 16
+    assert body["sections_total"] == 10
 
 
 def test_get_run_status_not_found(client):
@@ -148,7 +164,7 @@ def test_run_prd_flow_success():
 
 
 def test_run_prd_flow_failure():
-    """Failed flow should set status to FAILED with INTERNAL_ERROR code."""
+    """Failed flow should set status to PAUSED (kept inprogress for resume)."""
     from crewai_productfeature_planner.apis.prd.service import run_prd_flow
 
     runs.clear()
@@ -163,7 +179,7 @@ def test_run_prd_flow_failure():
 
         run_prd_flow("test-fail", "Bad idea")
 
-    assert run.status == FlowStatus.FAILED
+    assert run.status == FlowStatus.PAUSED
     assert "LLM timeout" in run.error
     assert run.error.startswith("INTERNAL_ERROR:")
 
@@ -611,7 +627,7 @@ def test_pause_awaiting_approval(client):
     assert body["action"] == "paused"
     assert body["section"] == "executive_summary"
     assert body["sections_approved"] == 0
-    assert body["sections_total"] == 16
+    assert body["sections_total"] == 10
     assert body["is_final_section"] is False
     assert event.is_set()
     assert pause_requested.get("r-pause") is True
@@ -692,8 +708,8 @@ def test_resume_success(mock_find, mock_resume, client):
     assert body["run_id"] == "abc123"
     assert body["status"] == "running"
     assert body["sections_approved"] == 1
-    assert body["sections_total"] == 16
-    assert body["next_section"] == "why_now"
+    assert body["sections_total"] == 10
+    assert body["next_section"] == "problem_statement"
     assert "abc123" in runs
 
 

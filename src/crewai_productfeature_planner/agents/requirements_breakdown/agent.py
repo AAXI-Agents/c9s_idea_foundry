@@ -255,17 +255,17 @@ def breakdown_requirements(
         if run_id:
             try:
                 from crewai_productfeature_planner.mongodb import (
-                    save_iteration,
+                    save_pipeline_step,
                 )
 
-                save_iteration(
+                save_pipeline_step(
                     run_id=run_id,
                     idea=refined_idea,
+                    pipeline_key="requirements_breakdown",
                     iteration=iteration,
-                    draft={"requirements_breakdown": current_requirements},
+                    content=current_requirements,
                     critique=evaluation,
                     step=f"requirements_breakdown_{iteration}",
-                    section_key="requirements_breakdown",
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

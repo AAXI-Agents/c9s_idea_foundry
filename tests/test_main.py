@@ -7,7 +7,9 @@ from crewai_productfeature_planner.main import (
     _approve_refined_idea,
     _approve_requirements,
     _choose_refinement_mode,
+    _kill_stale_crew_processes,
     _manual_idea_refinement,
+    _restore_prd_state,
 )
 
 
@@ -139,7 +141,7 @@ class TestManualIdeaRefinement:
         out = capsys.readouterr().out
         assert out.count("Please enter") == 2
 
-    @patch("crewai_productfeature_planner.main.save_iteration")
+    @patch("crewai_productfeature_planner.main.save_executive_summary")
     def test_saves_iterations_with_run_id(self, mock_save):
         """When run_id is provided, iterations should be saved to workingIdeas."""
         inputs = [
@@ -160,11 +162,12 @@ class TestManualIdeaRefinement:
         assert mock_save.call_count == 2
         first_call = mock_save.call_args_list[0][1]
         assert first_call["run_id"] == "run_abc"
-        assert first_call["step"] == "idea_manual_1"
+        assert first_call["idea"] == "Original"
+        assert first_call["content"] == "Revised v1"
 
-    @patch("crewai_productfeature_planner.main.save_iteration")
+    @patch("crewai_productfeature_planner.main.save_executive_summary")
     def test_no_run_id_skips_save(self, mock_save):
-        """Without run_id, no save_iteration calls should be made."""
+        """Without run_id, no save_executive_summary calls should be made."""
         inputs = ["e", "Revised", "", "", "y"]
         with patch("builtins.input", side_effect=inputs):
             _manual_idea_refinement("Original")  # no run_id
@@ -178,65 +181,47 @@ class TestApproveRefinedIdea:
     """Tests for the idea approval prompt."""
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_approve_yes(self, mock_save, mock_mark):
-        """[y] should finalize the idea and return True."""
+    def test_approve_yes(self, mock_mark):
+        """[y] should return False (continue to sections)."""
         history = [{"iteration": 1, "idea": "v1"}, {"iteration": 2, "idea": "Refined"}]
         with patch("builtins.input", return_value="y"):
             result = _approve_refined_idea("Refined", "Original", "run123", refinement_history=history)
-        assert result is True
-        mock_save.assert_called_once()
-        call_kwargs = mock_save.call_args[1]
-        assert call_kwargs["run_id"] == "run123"
-        assert call_kwargs["idea"] == "Refined"
-        assert call_kwargs["original_idea"] == "Original"
-        assert call_kwargs["finalized_type"] == "idea"
-        assert call_kwargs["final_prd"] == ""
-        assert call_kwargs["iteration"] == 2
-        assert call_kwargs["refinement_history"] == history
-        mock_mark.assert_called_once_with("run123")
-
-    @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_approve_yes_full(self, mock_save, mock_mark):
-        with patch("builtins.input", return_value="yes"):
-            result = _approve_refined_idea("Refined", "Orig", "r1", refinement_history=[])
-        assert result is True
-        mock_save.assert_called_once()
-        assert mock_save.call_args[1]["iteration"] == 0
-
-    @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_continue(self, mock_save, mock_mark):
-        """[c] should return False without saving."""
-        with patch("builtins.input", return_value="c"):
-            result = _approve_refined_idea("Refined", "Original", "run456")
         assert result is False
-        mock_save.assert_not_called()
         mock_mark.assert_not_called()
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_continue_full_word(self, mock_save, mock_mark):
-        with patch("builtins.input", return_value="continue"):
-            result = _approve_refined_idea("Refined", "Orig", "r2")
+    def test_approve_yes_full(self, mock_mark):
+        with patch("builtins.input", return_value="yes"):
+            result = _approve_refined_idea("Refined", "Orig", "r1", refinement_history=[])
         assert result is False
+        mock_mark.assert_not_called()
+
+    def test_cancel_exits_program(self):
+        """[c] should exit the CLI program via sys.exit(0)."""
+        with patch("builtins.input", return_value="c"):
+            with pytest.raises(SystemExit) as exc_info:
+                _approve_refined_idea("Refined", "Original", "run456")
+        assert exc_info.value.code == 0
+
+    def test_cancel_full_word_exits_program(self):
+        with patch("builtins.input", return_value="cancel"):
+            with pytest.raises(SystemExit) as exc_info:
+                _approve_refined_idea("Refined", "Orig", "r2")
+        assert exc_info.value.code == 0
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_invalid_then_valid(self, mock_save, mock_mark, capsys):
+    def test_invalid_then_valid(self, mock_mark, capsys):
         with patch("builtins.input", side_effect=["x", "z", "y"]):
             result = _approve_refined_idea("Refined", "Orig", "r3")
-        assert result is True
+        assert result is False
         out = capsys.readouterr().out
         assert out.count("Please enter") == 2
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_case_insensitive(self, mock_save, mock_mark):
+    def test_case_insensitive(self, mock_mark):
         with patch("builtins.input", return_value="Y"):
             result = _approve_refined_idea("R", "O", "r4")
-        assert result is True
+        assert result is False
 
 
 # ── _run_single_flow refinement wiring ──────────────────────
@@ -274,7 +259,6 @@ class TestRunSingleFlowRefinement:
                 "kickoff",
                 capture_kickoff,
             ),
-            patch("crewai_productfeature_planner.main.save_finalized"),
             patch("crewai_productfeature_planner.main.mark_completed"),
         ):
             from crewai_productfeature_planner.main import _run_single_flow
@@ -333,7 +317,6 @@ class TestRunSingleFlowRefinement:
                 "kickoff",
                 capture_kickoff,
             ),
-            patch("crewai_productfeature_planner.main.save_finalized"),
             patch("crewai_productfeature_planner.main.mark_completed"),
         ):
             from crewai_productfeature_planner.main import _run_single_flow
@@ -387,7 +370,6 @@ class TestResumedFlowRefinement:
 
         with (
             patch.object(PRDFlow, "kickoff", capture_kickoff),
-            patch("crewai_productfeature_planner.main.save_finalized"),
             patch("crewai_productfeature_planner.main.mark_completed"),
         ):
             from crewai_productfeature_planner.main import _run_single_flow
@@ -435,7 +417,6 @@ class TestResumedFlowRefinement:
 
         with (
             patch.object(PRDFlow, "kickoff", capture_kickoff),
-            patch("crewai_productfeature_planner.main.save_finalized"),
             patch("crewai_productfeature_planner.main.mark_completed"),
         ):
             from crewai_productfeature_planner.main import _run_single_flow
@@ -477,7 +458,6 @@ class TestResumedFlowRefinement:
 
         with (
             patch.object(PRDFlow, "kickoff", capture_kickoff),
-            patch("crewai_productfeature_planner.main.save_finalized"),
             patch("crewai_productfeature_planner.main.mark_completed"),
         ):
             from crewai_productfeature_planner.main import _run_single_flow
@@ -489,6 +469,125 @@ class TestResumedFlowRefinement:
         assert captured.state.original_idea == ""
 
 
+# ── Resume continuation prompt ───────────────────────────────
+
+
+class TestResumeContinuationPrompt:
+    """Verify the continue/cancel prompt shown when resuming a run
+    that already has sections or executive summary in progress."""
+
+    @patch("crewai_productfeature_planner.main.update_job_completed")
+    @patch("crewai_productfeature_planner.main.update_job_started")
+    @patch("crewai_productfeature_planner.main.reactivate_job")
+    @patch("crewai_productfeature_planner.main._check_resumable_runs")
+    @patch("crewai_productfeature_planner.main._restore_prd_state")
+    def test_continue_resumes_flow(
+        self, mock_restore, mock_check,
+        mock_reactivate, mock_started, mock_completed,
+    ):
+        """[y] at the resume prompt should continue to kickoff."""
+        from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+        from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
+
+        flow = PRDFlow()
+        flow.state.idea = "Existing idea"
+        flow.state.run_id = "resume-1"
+        flow.state.idea_refined = True
+        flow.state.executive_summary.iterations.append(
+            ExecutiveSummaryIteration(content="v1", iteration=1)
+        )
+        mock_check.return_value = {"run_id": "resume-1", "idea": "Existing idea"}
+        mock_restore.return_value = flow
+
+        captured = None
+
+        def capture_kickoff(self_flow):
+            nonlocal captured
+            captured = self_flow
+            self_flow.state.is_ready = True
+            self_flow.state.final_prd = "PRD"
+            return "done"
+
+        with (
+            patch.object(PRDFlow, "kickoff", capture_kickoff),
+            patch("crewai_productfeature_planner.main.mark_completed"),
+            patch("builtins.input", return_value="y"),
+        ):
+            from crewai_productfeature_planner.main import _run_single_flow
+            _run_single_flow(idea=None)
+
+        assert captured is not None
+        assert captured.state.run_id == "resume-1"
+
+    @patch("crewai_productfeature_planner.main.update_job_completed")
+    @patch("crewai_productfeature_planner.main.update_job_started")
+    @patch("crewai_productfeature_planner.main.reactivate_job")
+    @patch("crewai_productfeature_planner.main._check_resumable_runs")
+    @patch("crewai_productfeature_planner.main._restore_prd_state")
+    def test_cancel_exits_program(
+        self, mock_restore, mock_check,
+        mock_reactivate, mock_started, mock_completed,
+    ):
+        """[c] at the resume prompt should exit via sys.exit(0)."""
+        from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+        from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
+
+        flow = PRDFlow()
+        flow.state.idea = "Existing idea"
+        flow.state.run_id = "resume-2"
+        flow.state.idea_refined = True
+        flow.state.executive_summary.iterations.append(
+            ExecutiveSummaryIteration(content="v1", iteration=1)
+        )
+        mock_check.return_value = {"run_id": "resume-2", "idea": "Existing idea"}
+        mock_restore.return_value = flow
+
+        with patch("builtins.input", return_value="c"):
+            with pytest.raises(SystemExit) as exc_info:
+                from crewai_productfeature_planner.main import _run_single_flow
+                _run_single_flow(idea=None)
+        assert exc_info.value.code == 0
+
+    @patch("crewai_productfeature_planner.main.update_job_completed")
+    @patch("crewai_productfeature_planner.main.update_job_started")
+    @patch("crewai_productfeature_planner.main.reactivate_job")
+    @patch("crewai_productfeature_planner.main._check_resumable_runs")
+    @patch("crewai_productfeature_planner.main._restore_prd_state")
+    def test_no_prompt_when_no_progress(
+        self, mock_restore, mock_check,
+        mock_reactivate, mock_started, mock_completed,
+    ):
+        """Resume without exec summary or sections should NOT show the prompt."""
+        from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+
+        flow = PRDFlow()
+        flow.state.idea = "Existing idea"
+        flow.state.run_id = "resume-3"
+        flow.state.idea_refined = True
+        # No exec summary iterations, no section content
+        mock_check.return_value = {"run_id": "resume-3", "idea": "Existing idea"}
+        mock_restore.return_value = flow
+
+        captured = None
+
+        def capture_kickoff(self_flow):
+            nonlocal captured
+            captured = self_flow
+            self_flow.state.is_ready = True
+            self_flow.state.final_prd = "PRD"
+            return "done"
+
+        with (
+            patch.object(PRDFlow, "kickoff", capture_kickoff),
+            patch("crewai_productfeature_planner.main.mark_completed"),
+        ):
+            from crewai_productfeature_planner.main import _run_single_flow
+            _run_single_flow(idea=None)
+
+        # No input() call needed — prompt was not shown
+        assert captured is not None
+
+
 # ── _approve_requirements ────────────────────────────────────
 
 
@@ -496,74 +595,55 @@ class TestApproveRequirements:
     """Tests for the requirements approval prompt."""
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_approve_yes(self, mock_save, mock_mark):
-        """[y] should finalize requirements and return True."""
+    def test_approve_yes(self, mock_mark):
+        """[y] should approve requirements and return False (continue to sections)."""
         history = [{"iteration": 1, "requirements": "v1"}]
         with patch("builtins.input", return_value="y"):
             result = _approve_requirements(
                 "## Feature 1\nReqs", "Test idea", "run789",
                 breakdown_history=history,
             )
-        assert result is True
-        mock_save.assert_called_once()
-        call_kwargs = mock_save.call_args[1]
-        assert call_kwargs["run_id"] == "run789"
-        assert call_kwargs["idea"] == "Test idea"
-        assert call_kwargs["finalized_type"] == "requirements"
-        assert call_kwargs["final_prd"] == ""
-        assert call_kwargs["requirements_breakdown"] == "## Feature 1\nReqs"
-        assert call_kwargs["iteration"] == 1
-        assert call_kwargs["breakdown_history"] == history
-        mock_mark.assert_called_once_with("run789")
-
-    @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_approve_yes_full(self, mock_save, mock_mark):
-        with patch("builtins.input", return_value="yes"):
-            result = _approve_requirements("Reqs", "Idea", "r1", breakdown_history=[])
-        assert result is True
-        assert mock_save.call_args[1]["iteration"] == 0
-
-    @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_continue(self, mock_save, mock_mark):
-        """[c] should return False without saving."""
-        with patch("builtins.input", return_value="c"):
-            result = _approve_requirements("Reqs", "Idea", "r2")
         assert result is False
-        mock_save.assert_not_called()
         mock_mark.assert_not_called()
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_continue_full_word(self, mock_save, mock_mark):
-        with patch("builtins.input", return_value="continue"):
-            result = _approve_requirements("Reqs", "Idea", "r3")
+    def test_approve_yes_full(self, mock_mark):
+        with patch("builtins.input", return_value="yes"):
+            result = _approve_requirements("Reqs", "Idea", "r1", breakdown_history=[])
         assert result is False
+        mock_mark.assert_not_called()
+
+    def test_cancel_exits_program(self):
+        """[c] should exit the CLI program via sys.exit(0)."""
+        with patch("builtins.input", return_value="c"):
+            with pytest.raises(SystemExit) as exc_info:
+                _approve_requirements("Reqs", "Idea", "r2")
+        assert exc_info.value.code == 0
+
+    def test_cancel_full_word_exits_program(self):
+        with patch("builtins.input", return_value="cancel"):
+            with pytest.raises(SystemExit) as exc_info:
+                _approve_requirements("Reqs", "Idea", "r3")
+        assert exc_info.value.code == 0
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_invalid_then_valid(self, mock_save, mock_mark, capsys):
+    def test_invalid_then_valid(self, mock_mark, capsys):
         with patch("builtins.input", side_effect=["x", "z", "y"]):
             result = _approve_requirements("Reqs", "Idea", "r4")
-        assert result is True
+        assert result is False
         out = capsys.readouterr().out
         assert out.count("Please enter") == 2
 
     @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_case_insensitive(self, mock_save, mock_mark):
+    def test_case_insensitive(self, mock_mark):
         with patch("builtins.input", return_value="Y"):
             result = _approve_requirements("Reqs", "Idea", "r5")
-        assert result is True
+        assert result is False
 
-    @patch("crewai_productfeature_planner.main.mark_completed")
-    @patch("crewai_productfeature_planner.main.save_finalized")
-    def test_truncates_long_requirements(self, mock_save, mock_mark, capsys):
+    def test_truncates_long_requirements(self, capsys):
         """Requirements longer than 3000 chars should be truncated in display."""
         long_reqs = "A" * 4000
-        with patch("builtins.input", return_value="c"):
+        with patch("builtins.input", return_value="y"):
             _approve_requirements(long_reqs, "Idea", "r6")
         out = capsys.readouterr().out
         assert "more chars" in out
@@ -621,7 +701,6 @@ class TestRunSingleFlowRequirements:
 
         with (
             patch.object(PRDFlow, "kickoff", capture_kickoff),
-            patch("crewai_productfeature_planner.main.save_finalized"),
             patch("crewai_productfeature_planner.main.mark_completed"),
         ):
             from crewai_productfeature_planner.main import _run_single_flow
@@ -629,3 +708,242 @@ class TestRunSingleFlowRequirements:
 
         assert captured_flow is not None
         assert captured_flow.requirements_approval_callback is not None
+
+
+# ── _restore_prd_state ───────────────────────────────────────
+
+
+class TestRestorePrdState:
+    """Tests for _restore_prd_state executive summary restoration."""
+
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_restores_executive_summary_iterations(self, mock_docs):
+        """Should reconstruct executive summary iterations from MongoDB doc."""
+        mock_docs.return_value = [{
+            "run_id": "run-1",
+            "idea": "Test idea",
+            "section": {},
+            "executive_summary": [
+                {"content": "v1", "iteration": 1, "critique": None, "updated_date": "2026-01-01"},
+                {"content": "v2", "iteration": 2, "critique": "needs work", "updated_date": "2026-01-02"},
+                {"content": "v3", "iteration": 3, "critique": "READY_FOR_DEV", "updated_date": "2026-01-03"},
+            ],
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-1", "idea": "Test idea"})
+
+        assert len(flow.state.executive_summary.iterations) == 3
+        assert flow.state.executive_summary.latest_content == "v3"
+        assert flow.state.executive_summary.is_approved is True
+        assert flow.state.finalized_idea == "v3"
+        assert flow.state.idea_refined is True
+
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_empty_executive_summary(self, mock_docs):
+        """No executive_summary in doc should produce empty iterations."""
+        mock_docs.return_value = [{
+            "run_id": "run-2",
+            "idea": "Test idea",
+            "section": {},
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-2", "idea": "Test idea"})
+
+        assert len(flow.state.executive_summary.iterations) == 0
+        assert flow.state.executive_summary.is_approved is False
+        assert flow.state.finalized_idea == ""
+        assert flow.state.idea_refined is False
+
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_no_docs_returns_empty_exec_summary(self, mock_docs):
+        """No documents at all should produce empty executive summary."""
+        mock_docs.return_value = []
+
+        flow = _restore_prd_state({"run_id": "run-3", "idea": "Test"})
+
+        assert len(flow.state.executive_summary.iterations) == 0
+        assert flow.state.finalized_idea == ""
+
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_partial_executive_summary_fields(self, mock_docs):
+        """Iteration records with missing optional fields should still restore."""
+        mock_docs.return_value = [{
+            "run_id": "run-4",
+            "idea": "Test",
+            "section": {},
+            "executive_summary": [
+                {"content": "v1", "iteration": 1},
+            ],
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-4", "idea": "Test"})
+
+        assert len(flow.state.executive_summary.iterations) == 1
+        assert flow.state.executive_summary.iterations[0].content == "v1"
+        assert flow.state.executive_summary.iterations[0].critique is None
+        assert flow.state.executive_summary.iterations[0].updated_date == ""
+
+    # ── requirements_breakdown restoration ──────────────────────
+
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_restores_requirements_breakdown(self, mock_docs):
+        """Should set requirements_broken_down and rebuild breakdown_history."""
+        mock_docs.return_value = [{
+            "run_id": "run-rb-1",
+            "idea": "Test idea",
+            "section": {},
+            "executive_summary": [
+                {"content": "exec v1", "iteration": 1},
+            ],
+            "requirements_breakdown": [
+                {"content": "reqs v1", "iteration": 1, "critique": "needs work"},
+                {"content": "reqs v2", "iteration": 2, "critique": "better"},
+                {"content": "reqs v3", "iteration": 3, "critique": "READY_FOR_DEV"},
+            ],
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-rb-1", "idea": "Test idea"})
+
+        assert flow.state.requirements_broken_down is True
+        assert flow.state.requirements_breakdown == "reqs v3"
+        assert len(flow.state.breakdown_history) == 3
+        assert flow.state.breakdown_history[0]["iteration"] == 1
+        assert flow.state.breakdown_history[0]["requirements"] == "reqs v1"
+        assert flow.state.breakdown_history[0]["evaluation"] == "needs work"
+        assert flow.state.breakdown_history[2]["requirements"] == "reqs v3"
+
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_empty_requirements_breakdown(self, mock_docs):
+        """No requirements_breakdown should leave flag False."""
+        mock_docs.return_value = [{
+            "run_id": "run-rb-2",
+            "idea": "Test idea",
+            "section": {},
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-rb-2", "idea": "Test idea"})
+
+        assert flow.state.requirements_broken_down is False
+        assert flow.state.requirements_breakdown == ""
+        assert flow.state.breakdown_history == []
+
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_requirements_breakdown_with_empty_content(self, mock_docs):
+        """Iteration records with no content should not set flag."""
+        mock_docs.return_value = [{
+            "run_id": "run-rb-3",
+            "idea": "Test idea",
+            "section": {},
+            "requirements_breakdown": [
+                {"iteration": 1},  # no content key
+            ],
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-rb-3", "idea": "Test idea"})
+
+        assert flow.state.requirements_broken_down is False
+
+
+# ══════════════════════════════════════════════════════════════
+# _kill_stale_crew_processes
+# ══════════════════════════════════════════════════════════════
+
+
+class TestKillStaleCrewProcesses:
+    """Tests for _kill_stale_crew_processes."""
+
+    @patch("crewai_productfeature_planner.main.subprocess.run")
+    @patch("crewai_productfeature_planner.main.os.kill")
+    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    def test_kills_stale_run_crew_process(self, _getpid, mock_kill, mock_ps):
+        mock_ps.return_value.stdout = (
+            "  PID  PPID COMMAND\n"
+            "  100     1 /path/to/.venv/bin/python main.py\n"
+            "  200     1 /path/to/.venv/bin/python /path/to/.venv/bin/run_crew\n"
+        )
+        killed = _kill_stale_crew_processes()
+        assert killed == 1
+        mock_kill.assert_called_once_with(200, __import__("signal").SIGTERM)
+
+    @patch("crewai_productfeature_planner.main.subprocess.run")
+    @patch("crewai_productfeature_planner.main.os.kill")
+    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    def test_does_not_kill_self(self, _getpid, mock_kill, mock_ps):
+        mock_ps.return_value.stdout = (
+            "  PID  PPID COMMAND\n"
+            "  100     1 /path/to/.venv/bin/python /path/to/.venv/bin/run_crew\n"
+        )
+        killed = _kill_stale_crew_processes()
+        assert killed == 0
+        mock_kill.assert_not_called()
+
+    @patch("crewai_productfeature_planner.main.subprocess.run")
+    @patch("crewai_productfeature_planner.main.os.kill")
+    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    def test_does_not_kill_ancestor_processes(self, _getpid, mock_kill, mock_ps):
+        """crewai run → uv run run_crew → our process.
+
+        The 'uv run run_crew' parent must NOT be killed even though its
+        command line matches 'run_crew'.
+        """
+        mock_ps.return_value.stdout = (
+            "  PID  PPID COMMAND\n"
+            "   10     1 crewai run\n"
+            "   50    10 uv run run_crew\n"
+            "  100    50 /path/to/.venv/bin/python main:run\n"
+            "  999     1 /old/.venv/bin/run_crew\n"
+        )
+        killed = _kill_stale_crew_processes()
+        # Only PID 999 (the stale process) should be killed.
+        # PID 50 is our parent and must be protected.
+        assert killed == 1
+        mock_kill.assert_called_once_with(999, __import__("signal").SIGTERM)
+
+    @patch("crewai_productfeature_planner.main.subprocess.run")
+    @patch("crewai_productfeature_planner.main.os.kill")
+    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    def test_ignores_unrelated_processes(self, _getpid, mock_kill, mock_ps):
+        mock_ps.return_value.stdout = (
+            "  PID  PPID COMMAND\n"
+            "  100     1 /path/python main.py\n"
+            "  300     1 /usr/bin/python some_other_script\n"
+            "  400     1 vim main.py\n"
+        )
+        killed = _kill_stale_crew_processes()
+        assert killed == 0
+        mock_kill.assert_not_called()
+
+    @patch("crewai_productfeature_planner.main.subprocess.run")
+    @patch("crewai_productfeature_planner.main.os.kill")
+    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    def test_handles_already_gone_process(self, _getpid, mock_kill, mock_ps):
+        mock_ps.return_value.stdout = (
+            "  PID  PPID COMMAND\n"
+            "  100     1 /path/python main.py\n"
+            "  500     1 /path/to/.venv/bin/run_crew\n"
+        )
+        mock_kill.side_effect = ProcessLookupError()
+        killed = _kill_stale_crew_processes()
+        assert killed == 0
+
+    @patch("crewai_productfeature_planner.main.subprocess.run",
+           side_effect=Exception("ps not available"))
+    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    def test_handles_ps_failure_gracefully(self, _getpid, mock_ps):
+        killed = _kill_stale_crew_processes()
+        assert killed == 0
+
+    @patch("crewai_productfeature_planner.main.subprocess.run")
+    @patch("crewai_productfeature_planner.main.os.kill")
+    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    def test_kills_multiple_stale_processes(self, _getpid, mock_kill, mock_ps):
+        mock_ps.return_value.stdout = (
+            "  PID  PPID COMMAND\n"
+            "  100     1 /path/python main.py\n"
+            "  200     1 /path/run_crew\n"
+            "  300     1 /path/crewai_productfeature_planner\n"
+            "  400     1 /path/run_prd_flow\n"
+        )
+        killed = _kill_stale_crew_processes()
+        assert killed == 3
+        assert mock_kill.call_count == 3
