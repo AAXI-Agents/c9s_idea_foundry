@@ -192,6 +192,18 @@ class PRDKickoffRequest(BaseModel):
         description="The product feature idea to build a PRD for.",
         examples=["Add dark mode to the dashboard"],
     )
+    auto_approve: bool = Field(
+        default=False,
+        description=(
+            "When true, the flow runs end-to-end without pausing for "
+            "manual approval at each section (same behaviour as the CLI). "
+            "Sections auto-iterate between PRD_SECTION_MIN_ITERATIONS and "
+            "PRD_SECTION_MAX_ITERATIONS and are auto-approved when the "
+            "critique contains SECTION_READY after the minimum iterations. "
+            "The POST /flow/prd/approve endpoint is not needed when this "
+            "is enabled — poll GET /flow/runs/{run_id} for progress instead."
+        ),
+    )
 
 
 class PRDApproveRequest(BaseModel):
@@ -245,13 +257,28 @@ class PRDResumeRequest(BaseModel):
         description="The run_id of an unfinalized working idea to resume.",
         examples=["a1b2c3d4e5f6"],
     )
+    auto_approve: bool = Field(
+        default=False,
+        description=(
+            "When true, the resumed flow runs end-to-end without pausing "
+            "for manual approval at each section (same behaviour as the "
+            "CLI). Poll GET /flow/runs/{run_id} for progress instead of "
+            "calling POST /flow/prd/approve."
+        ),
+    )
 
 
 # ── API response models ───────────────────────────────────────
 
 
 class PRDKickoffResponse(BaseModel):
-    """Response for POST /flow/prd/kickoff."""
+    """Response for POST /flow/prd/kickoff.
+
+    Returned when a new PRD flow is accepted.  The flow runs in the
+    background through Idea Refinement → Requirements Breakdown →
+    Phase 1 (Executive Summary iteration) → Phase 2 (9-section
+    auto-iterate).  Poll GET /flow/runs/{run_id} for status.
+    """
 
     run_id: str = Field(..., description="Unique identifier for this flow run.")
     flow_name: str = Field(default="prd", description="Name of the flow.")
@@ -361,7 +388,15 @@ class PRDRunStatusResponse(BaseModel):
     run_id: str = Field(..., description="Unique run identifier.")
     flow_name: str = Field(..., description="Name of the flow.")
     status: str = Field(..., description="Current lifecycle status.")
-    iteration: int = Field(default=0, description="Total iteration count across all sections.")
+    iteration: int = Field(
+        default=0,
+        description=(
+            "Total iteration count across all sections.  In the two-phase "
+            "flow, Phase 1 (Executive Summary) iterates ≥ PRD_EXEC_RESUME_THRESHOLD "
+            "times, and Phase 2 sections each iterate between "
+            "PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS."
+        ),
+    )
     created_at: str = Field(..., description="ISO-8601 creation timestamp.")
     update_date: str | None = Field(
         default=None,
@@ -375,8 +410,11 @@ class PRDRunStatusResponse(BaseModel):
     error: str | None = Field(
         default=None,
         description=(
-            "Error message if the run failed or paused due to an error. "
-            "Prefixed with an error code: BILLING_ERROR, LLM_ERROR, or INTERNAL_ERROR."
+            "Error message if the run was paused due to an error. "
+            "Prefixed with an error code: BILLING_ERROR, LLM_ERROR, or "
+            "INTERNAL_ERROR. Note: errors always result in status='paused' "
+            "(never 'failed'), so the run can be resumed after the issue "
+            "is resolved."
         ),
     )
     current_section_key: str = Field(
@@ -458,7 +496,13 @@ class PRDResumableListResponse(BaseModel):
 
 
 class PRDResumeResponse(BaseModel):
-    """Response for POST /flow/prd/resume."""
+    """Response for POST /flow/prd/resume.
+
+    Returned when a paused or unfinalized run is successfully resumed.
+    Sections with existing content will skip the draft step and resume
+    directly into the critique→refine loop.  Degenerate content left by
+    a previous crash is cleaned up automatically.
+    """
 
     run_id: str = Field(..., description="The resumed run identifier.")
     flow_name: str = Field(default="prd", description="Name of the flow.")
@@ -491,10 +535,18 @@ class JobDetail(BaseModel):
         ...,
         description=(
             "Job lifecycle status: queued, running, awaiting_approval, "
-            "paused, completed, or failed."
+            "paused, or completed. Note: flow errors always result in "
+            "'paused' (not 'failed'), allowing the run to be resumed."
         ),
     )
-    error: str | None = Field(default=None, description="Error message when status is 'failed'.")
+    error: str | None = Field(
+        default=None,
+        description=(
+            "Error message when the job was paused due to an error. "
+            "Present when the job encountered an LLM, billing, or "
+            "internal error and was automatically paused."
+        ),
+    )
 
     queued_at: str | None = Field(default=None, description="ISO-8601 timestamp when the job was created.")
     started_at: str | None = Field(default=None, description="ISO-8601 timestamp when execution began.")

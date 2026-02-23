@@ -1,8 +1,9 @@
 {
   "post": {
-    "summary": "Pause and Save Progress",
-    "description": "Pause a running PRD flow and save current progress.",
+    "summary": "Pause and save current progress",
+    "description": "Pauses the running PRD flow and saves current progress to MongoDB. The flow can be resumed later via POST /flow/prd/resume.\n\n- If the run is in 'awaiting_approval', the pause takes effect immediately.\n- If the run is in 'running', a pause flag is set and the flow will pause at the next approval checkpoint.\n\n**Error recovery**: if the flow encounters an error (LLM timeout, billing issue, etc.), it is automatically paused with status 'paused' — the run is never marked 'failed', so it can always be resumed.\n\nEquivalent to the CLI pause action.",
     "operationId": "pause_prd_flow_prd_pause_post",
+    "tags": ["Approvals"],
     "requestBody": {
       "content": {
         "application/json": {

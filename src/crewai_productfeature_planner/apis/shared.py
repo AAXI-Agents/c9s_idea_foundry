@@ -14,14 +14,20 @@ from crewai_productfeature_planner.apis.prd.models import PRDDraft
 
 
 class FlowStatus(str, Enum):
-    """Lifecycle status of a flow run."""
+    """Lifecycle status of a flow run.
+
+    Note: errors during flow execution always result in ``PAUSED``
+    (never ``FAILED``), so runs can be resumed after the issue is
+    resolved.  ``FAILED`` is retained for backward compatibility but
+    is not set by the current flow implementation.
+    """
 
     PENDING = "pending"
     RUNNING = "running"
     AWAITING_APPROVAL = "awaiting_approval"
     PAUSED = "paused"
     COMPLETED = "completed"
-    FAILED = "failed"
+    FAILED = "failed"  # Retained for backward compat; flow uses PAUSED on errors
 
 
 class FlowRun(BaseModel):

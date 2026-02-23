@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CrewAI Product Feature Planner API",
-    "description": "HTTP interface for triggering CrewAI flows.",
-    "version": "0.1.0"
+    "description": "HTTP interface for the CrewAI PRD generation flow. The flow uses a two-phase architecture: Phase 1 iterates an Executive Summary, Phase 2 auto-iterates 9 remaining PRD sections with configurable min/max iterations. Includes degenerate output guards, error-to-paused recovery, and resume-from-last-iteration support.",
+    "version": "0.2.0"
   },
   "paths": {
     "/health": {
@@ -59,6 +59,12 @@
             "minLength": 1,
             "title": "Idea",
             "description": "The product feature idea to build a PRD for."
+          },
+          "auto_approve": {
+            "type": "boolean",
+            "default": false,
+            "title": "Auto Approve",
+            "description": "When true, the flow runs end-to-end without pausing for manual approval at each section (same behaviour as the CLI). Sections auto-iterate and are auto-approved when the critique contains SECTION_READY. The POST /flow/prd/approve endpoint is not needed — poll GET /flow/runs/{run_id} for progress instead."
           }
         },
         "type": "object",
@@ -98,7 +104,7 @@
           "message"
         ],
         "title": "PRDKickoffResponse",
-        "description": "Response for POST /flow/prd/kickoff."
+        "description": "Response for POST /flow/prd/kickoff. Returned when a new PRD flow is accepted. The flow runs in the background through Idea Refinement, Requirements Breakdown, Phase 1 (Executive Summary iteration), and Phase 2 (9-section auto-iterate)."
       },
       "PRDApproveRequest": {
         "properties": {
@@ -228,6 +234,12 @@
             "type": "string",
             "title": "Run Id",
             "description": "The run_id of an unfinalized working idea to resume."
+          },
+          "auto_approve": {
+            "type": "boolean",
+            "default": false,
+            "title": "Auto Approve",
+            "description": "When true, the resumed flow runs end-to-end without pausing for manual approval at each section. Poll GET /flow/runs/{run_id} for progress instead of calling POST /flow/prd/approve."
           }
         },
         "type": "object",
@@ -272,6 +284,14 @@
             "title": "Next Section",
             "description": "Key of the next section to iterate."
           },
+          "next_step": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "title": "Next Step",
+            "description": "1-based step number of the next section."
+          },
           "message": {
             "type": "string",
             "title": "Message",
@@ -285,7 +305,7 @@
           "message"
         ],
         "title": "PRDResumeResponse",
-        "description": "Response for POST /flow/prd/resume."
+        "description": "Response for POST /flow/prd/resume. Sections with existing content skip the draft step and resume into the critique/refine loop. Degenerate content from a previous crash is cleaned up automatically."
       },
       "PRDSectionDetail": {
         "properties": {
@@ -318,6 +338,11 @@
             "type": "integer",
             "title": "Iteration",
             "description": "Section iteration count."
+          },
+          "updated_date": {
+            "type": "string",
+            "title": "Updated Date",
+            "description": "ISO-8601 timestamp of the last update to this section."
           },
           "is_approved": {
             "type": "boolean",
@@ -386,12 +411,28 @@
           "iteration": {
             "type": "integer",
             "title": "Iteration",
-            "description": "Total iteration count across all sections."
+            "description": "Total iteration count across all sections. Phase 1 (Executive Summary) iterates >= PRD_EXEC_RESUME_THRESHOLD times, Phase 2 sections each iterate between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS."
           },
           "created_at": {
             "type": "string",
             "title": "Created At",
             "description": "ISO-8601 creation timestamp."
+          },
+          "update_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Update Date",
+            "description": "ISO-8601 timestamp of the last update."
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "Completed At",
+            "description": "ISO-8601 timestamp when the run was completed."
           },
           "result": {
             "type": [
@@ -407,7 +448,7 @@
               "null"
             ],
             "title": "Error",
-            "description": "Error message if failed."
+            "description": "Error message if the run was paused due to an error. Prefixed with an error code: BILLING_ERROR, LLM_ERROR, or INTERNAL_ERROR. Errors always result in status='paused' (never 'failed')."
           },
           "current_section_key": {
             "type": "string",
@@ -561,7 +602,7 @@
           "status": {
             "type": "string",
             "title": "Status",
-            "description": "Job lifecycle status."
+            "description": "Job lifecycle status: queued, running, awaiting_approval, paused, or completed. Errors result in 'paused' (not 'failed'), allowing runs to be resumed."
           },
           "error": {
             "type": [
@@ -569,7 +610,7 @@
               "null"
             ],
             "title": "Error",
-            "description": "Error message when status is 'failed'."
+            "description": "Error message when the job was paused due to an error (LLM, billing, or internal)."
           },
           "queued_at": {
             "type": [

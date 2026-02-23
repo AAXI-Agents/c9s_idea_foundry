@@ -1,8 +1,9 @@
 {
   "post": {
-    "summary": "Resume a Paused or Unfinalized Run",
-    "description": "Resumes a previously paused or unfinalized PRD flow.",
+    "summary": "Resume a paused or unfinalized run",
+    "description": "Resumes a previously paused or unfinalized PRD flow. Restores section state from MongoDB and continues the iteration loop from the next unapproved section.\n\n**auto_approve mode**: set `auto_approve: true` in the request body to resume the flow end-to-end without pausing for manual approval (same as CLI mode). The API responds immediately with 202 and the flow proceeds autonomously.\n\n**Resume behaviour:**\n- Sections that already have content skip the initial draft step and go directly into the critique→refine loop.\n- If Phase 1 (Executive Summary) has ≥ PRD_EXEC_RESUME_THRESHOLD iterations, Phase 1 is skipped entirely and Phase 2 resumes from the next unapproved section.\n- Any degenerate content (empty or whitespace-only) left by a previous crash is cleaned up before iteration resumes.\n- Requirements approval is skipped if already completed.\n\nThe run_id must appear in the resumable list returned by GET /flow/prd/resumable.\n\nEquivalent to selecting a run to resume in the CLI startup prompt.",
     "operationId": "resume_prd_flow_prd_resume_post",
+    "tags": ["Flow Runs"],
     "requestBody": {
       "content": {
         "application/json": {

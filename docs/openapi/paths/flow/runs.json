@@ -1,8 +1,9 @@
 {
   "get": {
-    "summary": "List All Flow Runs",
-    "description": "Returns all in-memory flow runs.",
+    "summary": "List all flow runs",
+    "description": "Returns all in-memory flow runs. Useful for dashboards and MCP clients to discover active, paused, or completed runs. Note: errors result in status='paused' (never 'failed').",
     "operationId": "list_runs_flow_runs_get",
+    "tags": ["Flow Runs"],
     "responses": {
       "200": {
         "description": "List of all runs.",

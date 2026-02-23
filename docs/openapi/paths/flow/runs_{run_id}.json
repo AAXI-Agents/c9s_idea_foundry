@@ -1,8 +1,9 @@
 {
   "get": {
-    "summary": "Get Run Status",
-    "description": "Check the status of a flow run.",
+    "summary": "Get flow run status",
+    "description": "Returns the current status, iteration, section progress, and draft content for a flow run. Includes per-section approval status, current step number, and agent participation details.\n\nThe flow uses a **two-phase architecture**:\n- **Phase 1** — Executive Summary: iterative refinement (≥ PRD_EXEC_RESUME_THRESHOLD cycles).\n- **Phase 2** — 9 remaining sections: each auto-iterates between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS cycles. A section is auto-approved when the critique contains SECTION_READY after the minimum iterations are met.\n\n**Error handling**: any error during the flow sets the status to 'paused' (never 'failed'), allowing the run to be resumed.\n\nUse this endpoint to poll for state changes after kickoff, approval, pause, or resume actions.",
     "operationId": "get_run_status_flow_runs__run_id__get",
+    "tags": ["Flow Runs"],
     "parameters": [
       {
         "name": "run_id",

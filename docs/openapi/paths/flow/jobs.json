@@ -1,8 +1,9 @@
 {
   "get": {
-    "summary": "List All Jobs",
-    "description": "Returns job records from the crewJobs collection.",
+    "summary": "List all persistent job records",
+    "description": "Returns job records from the crewJobs MongoDB collection. Each job tracks the full lifecycle of a flow run including queue time, running time, and terminal status. Note: flow errors result in status='paused' (not 'failed'), allowing runs to be resumed.\n\nOptional query parameters 'status' and 'flow_name' can be used to filter results.",
     "operationId": "list_all_jobs_flow_jobs_get",
+    "tags": ["Jobs"],
     "parameters": [
       {
         "name": "status",

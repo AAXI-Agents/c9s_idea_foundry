@@ -1,8 +1,9 @@
 {
   "get": {
-    "summary": "Get a Single Job",
-    "description": "Returns a single job record by job_id.",
+    "summary": "Get a single job record",
+    "description": "Returns a single job record by job_id from the crewJobs MongoDB collection. Includes lifecycle timestamps, computed durations, and error details if the job was paused due to an error.",
     "operationId": "get_job_flow_jobs__job_id__get",
+    "tags": ["Jobs"],
     "parameters": [
       {
         "name": "job_id",

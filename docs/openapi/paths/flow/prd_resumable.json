@@ -1,8 +1,9 @@
 {
   "get": {
-    "summary": "List Resumable Runs",
-    "description": "Returns a list of runs that can be resumed.",
+    "summary": "List resumable (unfinalized) runs",
+    "description": "Returns a list of working ideas from MongoDB that have not been finalized. These are runs that were paused, abandoned, or interrupted (including runs that were automatically paused due to errors) and can be resumed via POST /flow/prd/resume.\n\nEach entry includes the section keys that already have draft content and the last iteration number.\n\nEquivalent to the CLI startup prompt that checks for unfinalized runs.",
     "operationId": "list_resumable_runs_flow_prd_resumable_get",
+    "tags": ["Flow Runs"],
     "responses": {
       "200": {
         "description": "Resumable runs listed successfully.",

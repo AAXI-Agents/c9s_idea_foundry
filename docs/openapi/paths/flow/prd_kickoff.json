@@ -1,8 +1,9 @@
 {
   "post": {
-    "summary": "Kickoff Prd Flow",
-    "description": "Trigger the iterative PRD generation flow.\n\nReturns immediately with a ``run_id``. The flow runs until the user\napproves. Poll ``GET /flow/runs/{run_id}`` for status, then call\n``POST /flow/prd/approve`` to finalise.",
+    "summary": "Kick off PRD flow",
+    "description": "Starts the PRD generation flow asynchronously.\n\n**Flow phases:**\n1. **Idea Refinement** — A Gemini-powered agent enriches the raw idea (3-10 cycles).\n2. **Requirements Breakdown** — The enriched idea is decomposed into structured requirements.\n3. **Phase 1: Executive Summary** — Iterative drafting and refinement (≥ PRD_EXEC_RESUME_THRESHOLD cycles).\n4. **Phase 2: Sections** — 9 remaining sections auto-iterate between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS. A section is auto-approved when its critique contains SECTION_READY after the minimum iterations.\n\n**auto_approve mode**: set `auto_approve: true` in the request body to run the flow end-to-end without pausing for manual approval (same as CLI mode). The API responds immediately with 202 and the flow proceeds autonomously. Poll GET /flow/runs/{run_id} for progress.\n\n**Degenerate output guard**: if a refine result exceeds PRD_SECTION_MAX_CHARS or grows by more than PRD_SECTION_GROWTH_FACTOR times the previous length, it is treated as garbage LLM output and the previous version is kept.\n\n**Error handling**: any error pauses the run (status='paused') rather than marking it failed, so it can be resumed later.\n\nOnly one job may be active at a time — returns 409 if a job is already running.",
     "operationId": "kickoff_prd_flow_flow_prd_kickoff_post",
+    "tags": ["Flow Runs"],
     "requestBody": {
       "content": {
         "application/json": {
@@ -15,7 +16,7 @@
     },
     "responses": {
       "202": {
-        "description": "Successful Response",
+        "description": "Flow accepted and queued.",
         "content": {
           "application/json": {
             "schema": {
@@ -23,6 +24,9 @@
             }
           }
         }
+      },
+      "409": {
+        "description": "A job is already active. Only one job can run at a time."
       },
       "422": {
         "description": "Validation Error",

@@ -120,14 +120,19 @@ def make_approval_callback(run_id: str):
     return _callback
 
 
-def run_prd_flow(run_id: str, idea: str) -> None:
-    """Execute the PRD flow in background and update the run record."""
+def run_prd_flow(run_id: str, idea: str, auto_approve: bool = False) -> None:
+    """Execute the PRD flow in background and update the run record.
+
+    When *auto_approve* is ``True`` the flow runs end-to-end without
+    pausing for manual approval (same as the CLI).  Sections auto-iterate
+    and are approved when the critique contains ``SECTION_READY``.
+    """
     from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
     from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
-    logger.info("[API] PRD flow started (run_id=%s)", run_id)
+    logger.info("[API] PRD flow started (run_id=%s, auto_approve=%s)", run_id, auto_approve)
 
     # Track job lifecycle in crewJobs
     update_job_started(run_id)
@@ -136,7 +141,8 @@ def run_prd_flow(run_id: str, idea: str) -> None:
         flow = PRDFlow()
         flow.state.idea = idea
         flow.state.run_id = run_id
-        flow.approval_callback = make_approval_callback(run_id)
+        if not auto_approve:
+            flow.approval_callback = make_approval_callback(run_id)
         result = flow.kickoff()
         run.result = result
         run.status = FlowStatus.COMPLETED
@@ -244,14 +250,18 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft"]:
     return idea, draft
 
 
-def resume_prd_flow(run_id: str) -> None:
-    """Resume a previously paused/unfinalized PRD flow from MongoDB state."""
+def resume_prd_flow(run_id: str, auto_approve: bool = False) -> None:
+    """Resume a previously paused/unfinalized PRD flow from MongoDB state.
+
+    When *auto_approve* is ``True`` the flow runs end-to-end without
+    pausing for manual approval.
+    """
     from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
     from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
-    logger.info("[API] Resuming PRD flow (run_id=%s)", run_id)
+    logger.info("[API] Resuming PRD flow (run_id=%s, auto_approve=%s)", run_id, auto_approve)
 
     # Reactivate the existing job record (don't create a duplicate)
     reactivate_job(run_id)
@@ -272,7 +282,8 @@ def resume_prd_flow(run_id: str) -> None:
             run.current_section_key = next_section.key
 
         run.current_draft = draft
-        flow.approval_callback = make_approval_callback(run_id)
+        if not auto_approve:
+            flow.approval_callback = make_approval_callback(run_id)
         result = flow.kickoff()
         run.result = result
         run.status = FlowStatus.COMPLETED

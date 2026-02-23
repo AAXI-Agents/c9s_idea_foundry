@@ -77,7 +77,16 @@ _ERROR_RESPONSES = {
     response_model=PRDRunStatusResponse,
     description=(
         "Returns the current status, iteration, section progress, and draft "
-        "content for a flow run. Includes per-section approval status. "
+        "content for a flow run. Includes per-section approval status, "
+        "current step number, and agent participation details.\n\n"
+        "The flow uses a **two-phase architecture**:\n"
+        "- **Phase 1** — Executive Summary: iterative refinement (≥ PRD_EXEC_RESUME_THRESHOLD cycles).\n"
+        "- **Phase 2** — 9 remaining sections: each auto-iterates between "
+        "PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS cycles. "
+        "A section is auto-approved when the critique contains SECTION_READY "
+        "after the minimum iterations are met.\n\n"
+        "**Error handling**: any error during the flow sets the status to "
+        "``paused`` (never ``failed``), allowing the run to be resumed.\n\n"
         "Use this endpoint to poll for state changes after kickoff, "
         "approval, pause, or resume actions."
     ),
@@ -146,14 +155,35 @@ async def list_runs():
     summary="Kick off PRD flow",
     response_model=PRDKickoffResponse,
     description=(
-        "Starts the PRD generation flow asynchronously. The flow drafts "
-        "each section one by one, starting with Executive Summary. "
-        "After each section draft, the flow pauses and waits for user "
-        "approval via POST /flow/prd/approve. "
+        "Starts the PRD generation flow asynchronously.\n\n"
+        "**Flow phases:**\n"
+        "1. **Idea Refinement** — A Gemini-powered agent enriches the raw idea "
+        "(3-10 cycles) before drafting begins.\n"
+        "2. **Requirements Breakdown** — The enriched idea is decomposed into "
+        "structured requirements.\n"
+        "3. **Phase 1: Executive Summary** — Iterative drafting and refinement "
+        "(≥ PRD_EXEC_RESUME_THRESHOLD cycles).\n"
+        "4. **Phase 2: Sections** — 9 remaining sections are drafted and "
+        "auto-iterated between PRD_SECTION_MIN_ITERATIONS and "
+        "PRD_SECTION_MAX_ITERATIONS. A section is auto-approved when its "
+        "critique contains SECTION_READY after the minimum iterations.\n\n"
+        "**Degenerate output guard**: if a refine result exceeds "
+        "PRD_SECTION_MAX_CHARS or grows by more than PRD_SECTION_GROWTH_FACTOR "
+        "times the previous length, it is treated as garbage LLM output and "
+        "the previous version is kept.\n\n"
+        "**Error handling**: any error pauses the run (status=``paused``) "
+        "rather than marking it failed, so it can be resumed later.\n\n"
+        "Set ``auto_approve=true`` in the request body to run the entire "
+        "flow without pausing for manual approval (same as CLI mode). "
+        "The API responds immediately with 202 and the flow proceeds "
+        "autonomously — poll GET /flow/runs/{run_id} for progress.\n\n"
+        "Only one job may be active at a time — returns 409 if a job is "
+        "already running.\n\n"
         "Poll GET /flow/runs/{run_id} to track progress."
     ),
     responses={
         202: {"description": "Flow accepted and queued."},
+        409: {"description": "A job is already active. Only one job can run at a time."},
         422: {"description": "Validation error."},
         **_ERROR_RESPONSES,
     },
@@ -186,16 +216,25 @@ async def kickoff_prd_flow(
         request.idea[:80],
     )
 
-    background_tasks.add_task(run_prd_flow, run_id, request.idea)
+    background_tasks.add_task(run_prd_flow, run_id, request.idea, request.auto_approve)
+
+    if request.auto_approve:
+        msg = (
+            "PRD flow initiated in auto-approve mode — sections will "
+            "iterate and approve automatically (like the CLI). "
+            f"Poll GET /flow/runs/{run_id} for progress."
+        )
+    else:
+        msg = (
+            "PRD flow queued. Poll GET /flow/runs/{run_id} for status. "
+            "POST /flow/prd/approve to approve or continue."
+        )
 
     return PRDKickoffResponse(
         run_id=run_id,
         flow_name="prd",
         status=run.status.value,
-        message=(
-            "PRD flow queued. Poll GET /flow/runs/{run_id} for status. "
-            "POST /flow/prd/approve to approve or continue."
-        ),
+        message=msg,
     )
 
 
@@ -206,13 +245,17 @@ async def kickoff_prd_flow(
     response_model=PRDActionResponse,
     description=(
         "Submits a user decision for the current section. Actions:\n\n"
-        "- **approve=true** - approve the current section, the flow moves "
+        "- **approve=true** — approve the current section; the flow moves "
         "to the next section.\n"
-        "- **approve=false** - the agent self-critiques and refines the "
-        "current section.\n"
-        "- **approve=false + feedback** - the user feedback replaces the "
+        "- **approve=false** — the agent self-critiques and refines the "
+        "current section (another iteration).\n"
+        "- **approve=false + feedback** — the user feedback replaces the "
         "agent self-critique for more targeted refinement.\n\n"
-        "Only valid when the run is in awaiting_approval state."
+        "**Note:** In CLI mode, sections auto-iterate without manual "
+        "approval. This endpoint is used in API/callback mode where "
+        "the flow pauses at ``awaiting_approval`` and waits for an "
+        "explicit decision.\n\n"
+        "Only valid when the run is in ``awaiting_approval`` state."
     ),
     responses={
         200: {"description": "Decision accepted."},
@@ -297,9 +340,14 @@ async def approve_prd(request: PRDApproveRequest):
     description=(
         "Pauses the running PRD flow and saves current progress to MongoDB. "
         "The flow can be resumed later via POST /flow/prd/resume.\n\n"
-        "- If the run is in awaiting_approval, the pause takes effect immediately.\n"
-        "- If the run is in running, a pause flag is set and the flow "
+        "- If the run is in ``awaiting_approval``, the pause takes effect "
+        "immediately.\n"
+        "- If the run is in ``running``, a pause flag is set and the flow "
         "will pause at the next approval checkpoint.\n\n"
+        "**Error recovery**: if the flow encounters an error (LLM timeout, "
+        "billing issue, etc.), it is automatically paused with status "
+        "``paused`` — the run is never marked ``failed``, so it can always "
+        "be resumed.\n\n"
         "Equivalent to the CLI pause action."
     ),
     responses={
@@ -368,7 +416,10 @@ async def pause_prd(request: PRDPauseRequest):
     description=(
         "Returns a list of working ideas from MongoDB that have not been "
         "finalized. These are runs that were paused, abandoned, or "
-        "interrupted and can be resumed via POST /flow/prd/resume.\n\n"
+        "interrupted (including runs that were automatically paused due "
+        "to errors) and can be resumed via POST /flow/prd/resume.\n\n"
+        "Each entry includes the section keys that already have draft "
+        "content and the last iteration number.\n\n"
         "Equivalent to the CLI startup prompt that checks for unfinalized runs."
     ),
     responses={
@@ -406,6 +457,18 @@ async def list_resumable_runs():
         "Resumes a previously paused or unfinalized PRD flow. Restores "
         "section state from MongoDB and continues the iteration loop "
         "from the next unapproved section.\n\n"
+        "Set ``auto_approve=true`` in the request body to resume without "
+        "pausing for manual approval (same as CLI mode). The API responds "
+        "immediately with 202 and the flow proceeds autonomously.\n\n"
+        "**Resume behaviour:**\n"
+        "- Sections that already have content skip the initial draft step "
+        "and go directly into the critique→refine loop.\n"
+        "- If Phase 1 (Executive Summary) has ≥ PRD_EXEC_RESUME_THRESHOLD "
+        "iterations, Phase 1 is skipped entirely and Phase 2 resumes from "
+        "the next unapproved section.\n"
+        "- Any degenerate content (empty or whitespace-only) left by a "
+        "previous crash is cleaned up before iteration resumes.\n"
+        "- Requirements approval is skipped if already completed.\n\n"
         "The run_id must appear in the resumable list returned by "
         "GET /flow/prd/resumable.\n\n"
         "Equivalent to selecting a run to resume in the CLI startup prompt."
@@ -442,7 +505,7 @@ async def resume_prd(
     run = FlowRun(run_id=request.run_id, flow_name="prd")
     runs[request.run_id] = run
 
-    background_tasks.add_task(resume_prd_flow, request.run_id)
+    background_tasks.add_task(resume_prd_flow, request.run_id, request.auto_approve)
 
     sections_done = len(run_info.get("sections", []))
     total_sections = len(SECTION_KEYS)
@@ -453,6 +516,23 @@ async def resume_prd(
     )
     # Resolve step number for the next section
     next_step = (SECTION_KEYS.index(next_section_key) + 1) if next_section_key else None
+
+    if request.auto_approve:
+        msg = (
+            f"Resuming run {request.run_id} in auto-approve mode "
+            f"(step {next_step or '?'}/{total_sections}, "
+            f"{sections_done}/{total_sections} sections approved). "
+            f"Sections will iterate and approve automatically. "
+            f"Poll GET /flow/runs/{request.run_id} for progress."
+        )
+    else:
+        msg = (
+            f"Resuming run {request.run_id} from saved state "
+            f"(step {next_step or '?'}/{total_sections}, "
+            f"{sections_done}/{total_sections} sections approved). "
+            f"Poll GET /flow/runs/{request.run_id} for status."
+        )
+
     return PRDResumeResponse(
         run_id=request.run_id,
         flow_name="prd",
@@ -461,12 +541,7 @@ async def resume_prd(
         sections_total=total_sections,
         next_section=next_section_key,
         next_step=next_step,
-        message=(
-            f"Resuming run {request.run_id} from saved state "
-            f"(step {next_step or '?'}/{total_sections}, "
-            f"{sections_done}/{total_sections} sections approved). "
-            f"Poll GET /flow/runs/{request.run_id} for status."
-        ),
+        message=msg,
     )
 
 

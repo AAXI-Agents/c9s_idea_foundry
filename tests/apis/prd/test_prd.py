@@ -842,3 +842,143 @@ def test_endpoints_document_500_503(client):
                 responses = spec.get("responses", {})
                 assert "500" in responses, f"{method.upper()} {path} missing 500"
                 assert "503" in responses, f"{method.upper()} {path} missing 503"
+
+
+# ── auto_approve mode ────────────────────────────────────────
+
+
+def test_kickoff_auto_approve_returns_202(client):
+    """Kickoff with auto_approve=true should return 202 with auto-approve message."""
+    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode", "auto_approve": True},
+        )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["status"] == "pending"
+    assert "auto-approve" in body["message"]
+    # Should NOT mention /approve endpoint
+    assert "/flow/prd/approve" not in body["message"]
+
+
+def test_kickoff_no_auto_approve_mentions_approve(client):
+    """Kickoff without auto_approve should mention /approve in message."""
+    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode"},
+        )
+    body = resp.json()
+    assert "/flow/prd/approve" in body["message"]
+
+
+def test_kickoff_auto_approve_skips_callback():
+    """run_prd_flow with auto_approve=True should not set approval_callback."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="auto-ok", flow_name="prd")
+    runs["auto-ok"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.approval_callback = None  # explicit default
+        mock_instance.kickoff.return_value = "# PRD done"
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("auto-ok", "Idea", auto_approve=True)
+
+    # approval_callback should NOT have been set
+    assert mock_instance.approval_callback is None
+
+
+def test_kickoff_manual_approve_sets_callback():
+    """run_prd_flow with auto_approve=False should set approval_callback."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="manual-ok", flow_name="prd")
+    runs["manual-ok"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.approval_callback = None  # explicit default
+        mock_instance.kickoff.return_value = "# PRD done"
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("manual-ok", "Idea", auto_approve=False)
+
+    # approval_callback should have been set to a callable
+    assert mock_instance.approval_callback is not None
+    assert callable(mock_instance.approval_callback)
+
+
+@patch("crewai_productfeature_planner.apis.prd.router.resume_prd_flow")
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
+def test_resume_auto_approve_returns_202(mock_find, mock_resume, client):
+    """Resume with auto_approve=true should return 202 with auto-approve message."""
+    mock_find.return_value = [
+        {
+            "run_id": "abc123",
+            "idea": "Dark mode",
+            "iteration": 3,
+            "sections": ["executive_summary"],
+        }
+    ]
+    resp = client.post(
+        "/flow/prd/resume",
+        json={"run_id": "abc123", "auto_approve": True},
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert "auto-approve" in body["message"]
+    # The service should have been called with auto_approve=True
+    mock_resume.assert_called_once_with("abc123", True)
+
+
+@patch("crewai_productfeature_planner.apis.prd.router.resume_prd_flow")
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
+def test_resume_no_auto_approve_default(mock_find, mock_resume, client):
+    """Resume without auto_approve defaults to False."""
+    mock_find.return_value = [
+        {
+            "run_id": "abc123",
+            "idea": "Dark mode",
+            "iteration": 3,
+            "sections": ["executive_summary"],
+        }
+    ]
+    resp = client.post("/flow/prd/resume", json={"run_id": "abc123"})
+    assert resp.status_code == 202
+    # The service should have been called with auto_approve=False
+    mock_resume.assert_called_once_with("abc123", False)
+
+
+def test_resume_auto_approve_skips_callback():
+    """resume_prd_flow with auto_approve=True should not set approval_callback."""
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="resume-auto", flow_name="prd")
+    runs["resume-auto"] = run
+
+    with (
+        patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.restore_prd_state"
+        ) as mock_restore,
+    ):
+        from crewai_productfeature_planner.apis.prd.models import PRDDraft
+        mock_restore.return_value = ("idea", PRDDraft.create_empty())
+        mock_instance = MagicMock()
+        mock_instance.approval_callback = None  # explicit default
+        mock_instance.kickoff.return_value = "# PRD"
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        resume_prd_flow("resume-auto", auto_approve=True)
+
+    assert mock_instance.approval_callback is None

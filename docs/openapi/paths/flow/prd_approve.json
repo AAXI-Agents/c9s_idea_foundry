@@ -1,8 +1,9 @@
 {
   "post": {
-    "summary": "Approve Prd",
-    "description": "Approve or continue refining a PRD run.",
+    "summary": "Approve or continue section refinement",
+    "description": "Submits a user decision for the current section.\n\nActions:\n- **approve=true** — approve the current section; the flow moves to the next section.\n- **approve=false** — the agent self-critiques and refines the current section (another iteration).\n- **approve=false + feedback** — the user feedback replaces the agent self-critique for more targeted refinement.\n\n**Note:** In CLI mode, sections auto-iterate without manual approval. This endpoint is used in API/callback mode where the flow pauses at 'awaiting_approval' and waits for an explicit decision.\n\nOnly valid when the run is in 'awaiting_approval' state.",
     "operationId": "approve_prd_flow_prd_approve_post",
+    "tags": ["Approvals"],
     "requestBody": {
       "content": {
         "application/json": {
