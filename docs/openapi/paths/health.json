@@ -1,7 +1,10 @@
 {
   "get": {
-    "summary": "Health",
-    "description": "Basic liveness probe.",
+    "tags": [
+      "Health"
+    ],
+    "summary": "Health check",
+    "description": "Returns a simple ok payload to confirm the service is running.",
     "operationId": "health_health_get",
     "responses": {
       "200": {
@@ -9,26 +12,6 @@
         "content": {
           "application/json": {
             "schema": {}
-          }
-        }
-      },
-      "500": {
-        "description": "Internal server error (INTERNAL_ERROR).",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "./openapi.json#/components/schemas/ErrorResponse"
-            }
-          }
-        }
-      },
-      "503": {
-        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "./openapi.json#/components/schemas/ErrorResponse"
-            }
           }
         }
       }

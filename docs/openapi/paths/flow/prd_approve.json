@@ -1,14 +1,16 @@
 {
   "post": {
+    "tags": [
+      "Approvals"
+    ],
     "summary": "Approve or continue section refinement",
-    "description": "Submits a user decision for the current section.\n\nActions:\n- **approve=true** — approve the current section; the flow moves to the next section.\n- **approve=false** — the agent self-critiques and refines the current section (another iteration).\n- **approve=false + feedback** — the user feedback replaces the agent self-critique for more targeted refinement.\n\n**Note:** In CLI mode, sections auto-iterate without manual approval. This endpoint is used in API/callback mode where the flow pauses at 'awaiting_approval' and waits for an explicit decision.\n\nOnly valid when the run is in 'awaiting_approval' state.",
+    "description": "Submits a user decision for the current section. Actions:\n\n- **approve=true** \u2014 approve the current section; the flow moves to the next section.\n- **approve=false** \u2014 the agent self-critiques and refines the current section (another iteration).\n- **approve=false + feedback** \u2014 the user feedback replaces the agent self-critique for more targeted refinement.\n\n**Note:** In CLI mode, sections auto-iterate without manual approval. This endpoint is used in API/callback mode where the flow pauses at ``awaiting_approval`` and waits for an explicit decision.\n\nOnly valid when the run is in ``awaiting_approval`` state.",
     "operationId": "approve_prd_flow_prd_approve_post",
-    "tags": ["Approvals"],
     "requestBody": {
       "content": {
         "application/json": {
           "schema": {
-            "$ref": "../openapi.json#/components/schemas/PRDApproveRequest"
+            "$ref": "#/components/schemas/PRDApproveRequest"
           }
         }
       },
@@ -16,11 +18,11 @@
     },
     "responses": {
       "200": {
-        "description": "Successful Response",
+        "description": "Decision accepted.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/PRDActionResponse"
+              "$ref": "#/components/schemas/PRDActionResponse"
             }
           }
         }
@@ -31,32 +33,32 @@
       "409": {
         "description": "Run is not awaiting approval."
       },
-      "422": {
-        "description": "Validation Error",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
-            }
-          }
-        }
-      },
       "500": {
-        "description": "Internal server error (INTERNAL_ERROR).",
+        "description": "Internal server error. The `error_code` field will be `INTERNAL_ERROR`. Check the `message` and `detail` fields for diagnostics.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
             }
           }
         }

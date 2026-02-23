@@ -1,9 +1,11 @@
 {
   "get": {
+    "tags": [
+      "Flow Runs"
+    ],
     "summary": "Get flow run status",
-    "description": "Returns the current status, iteration, section progress, and draft content for a flow run. Includes per-section approval status, current step number, and agent participation details.\n\nThe flow uses a **two-phase architecture**:\n- **Phase 1** — Executive Summary: iterative refinement (≥ PRD_EXEC_RESUME_THRESHOLD cycles).\n- **Phase 2** — 9 remaining sections: each auto-iterates between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS cycles. A section is auto-approved when the critique contains SECTION_READY after the minimum iterations are met.\n\n**Error handling**: any error during the flow sets the status to 'paused' (never 'failed'), allowing the run to be resumed.\n\nUse this endpoint to poll for state changes after kickoff, approval, pause, or resume actions.",
+    "description": "Returns the current status, iteration, section progress, and draft content for a flow run. Includes per-section approval status, current step number, and agent participation details.\n\nThe flow uses a **two-phase architecture**:\n- **Phase 1** \u2014 Executive Summary: iterative refinement (\u2265 PRD_EXEC_RESUME_THRESHOLD cycles).\n- **Phase 2** \u2014 9 remaining sections: each auto-iterates between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS cycles. A section is auto-approved when the critique contains SECTION_READY after the minimum iterations are met.\n\n**Error handling**: any error during the flow sets the status to ``paused`` (never ``failed``), allowing the run to be resumed.\n\nUse this endpoint to poll for state changes after kickoff, approval, pause, or resume actions.",
     "operationId": "get_run_status_flow_runs__run_id__get",
-    "tags": ["Flow Runs"],
     "parameters": [
       {
         "name": "run_id",
@@ -17,11 +19,11 @@
     ],
     "responses": {
       "200": {
-        "description": "Successful Response",
+        "description": "Run details returned successfully.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/PRDRunStatusResponse"
+              "$ref": "#/components/schemas/PRDRunStatusResponse"
             }
           }
         }
@@ -29,32 +31,32 @@
       "404": {
         "description": "Run not found."
       },
-      "422": {
-        "description": "Validation Error",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
-            }
-          }
-        }
-      },
       "500": {
-        "description": "Internal server error (INTERNAL_ERROR).",
+        "description": "Internal server error. The `error_code` field will be `INTERNAL_ERROR`. Check the `message` and `detail` fields for diagnostics.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
             }
           }
         }

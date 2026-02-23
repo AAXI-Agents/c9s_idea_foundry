@@ -1,14 +1,16 @@
 {
   "post": {
+    "tags": [
+      "Approvals"
+    ],
     "summary": "Pause and save current progress",
-    "description": "Pauses the running PRD flow and saves current progress to MongoDB. The flow can be resumed later via POST /flow/prd/resume.\n\n- If the run is in 'awaiting_approval', the pause takes effect immediately.\n- If the run is in 'running', a pause flag is set and the flow will pause at the next approval checkpoint.\n\n**Error recovery**: if the flow encounters an error (LLM timeout, billing issue, etc.), it is automatically paused with status 'paused' — the run is never marked 'failed', so it can always be resumed.\n\nEquivalent to the CLI pause action.",
+    "description": "Pauses the running PRD flow and saves current progress to MongoDB. The flow can be resumed later via POST /flow/prd/resume.\n\n- If the run is in ``awaiting_approval``, the pause takes effect immediately.\n- If the run is in ``running``, a pause flag is set and the flow will pause at the next approval checkpoint.\n\n**Error recovery**: if the flow encounters an error (LLM timeout, billing issue, etc.), it is automatically paused with status ``paused`` \u2014 the run is never marked ``failed``, so it can always be resumed.\n\nEquivalent to the CLI pause action.",
     "operationId": "pause_prd_flow_prd_pause_post",
-    "tags": ["Approvals"],
     "requestBody": {
       "content": {
         "application/json": {
           "schema": {
-            "$ref": "../openapi.json#/components/schemas/PRDPauseRequest"
+            "$ref": "#/components/schemas/PRDPauseRequest"
           }
         }
       },
@@ -20,7 +22,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/PRDActionResponse"
+              "$ref": "#/components/schemas/PRDActionResponse"
             }
           }
         }
@@ -31,32 +33,32 @@
       "409": {
         "description": "Run cannot be paused in its current state."
       },
-      "422": {
-        "description": "Validation Error",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
-            }
-          }
-        }
-      },
       "500": {
-        "description": "Internal server error (INTERNAL_ERROR).",
+        "description": "Internal server error. The `error_code` field will be `INTERNAL_ERROR`. Check the `message` and `detail` fields for diagnostics.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
             }
           }
         }

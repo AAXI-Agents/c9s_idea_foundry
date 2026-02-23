@@ -1115,6 +1115,9 @@ class PRDFlow(Flow[PRDState]):
                     agent_errors=dict(self.state.agent_errors),
                     original_idea=self.state.original_idea,
                     idea_refined=self.state.idea_refined,
+                    finalized_idea=self.state.finalized_idea,
+                    requirements_breakdown=self.state.requirements_breakdown,
+                    executive_summary=self.state.executive_summary,
                 )
 
                 agent_name, action = self._parse_decision(decision, available)

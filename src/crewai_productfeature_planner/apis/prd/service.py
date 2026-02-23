@@ -6,6 +6,8 @@ import threading
 from typing import TYPE_CHECKING, Union
 
 from crewai_productfeature_planner.apis.prd.models import (
+    ExecutiveSummaryDraft,
+    ExecutiveSummaryIteration,
     PRDDraft,
     SECTION_ORDER,
 )
@@ -72,6 +74,14 @@ def make_approval_callback(run_id: str):
             run.agent_errors = kwargs.get("agent_errors", {})
             run.original_idea = kwargs.get("original_idea", "")
             run.idea_refined = kwargs.get("idea_refined", False)
+            # Sync pre-PRD pipeline state
+            run.finalized_idea = kwargs.get("finalized_idea", run.finalized_idea)
+            run.requirements_breakdown = kwargs.get(
+                "requirements_breakdown", run.requirements_breakdown,
+            )
+            exec_summary = kwargs.get("executive_summary")
+            if exec_summary is not None:
+                run.executive_summary = exec_summary
 
         update_job_status(run_id, "awaiting_approval")
 
@@ -120,6 +130,43 @@ def make_approval_callback(run_id: str):
     return _callback
 
 
+def _sync_flow_state_to_run(run_id: str, flow: "PRDFlow") -> None:
+    """Copy final flow state fields onto the in-memory FlowRun.
+
+    Called after ``flow.kickoff()`` returns (or on pause/error) so that
+    ``GET /flow/runs/{run_id}`` exposes the full state — matching what
+    the CLI has access to.
+    """
+    run = runs.get(run_id)
+    if run is None:
+        return
+
+    state = flow.state
+    run.current_draft = state.draft
+    run.current_section_key = state.current_section_key
+    run.iteration = state.iteration
+    run.active_agents = list(state.active_agents)
+    run.dropped_agents = list(state.dropped_agents)
+    run.agent_errors = dict(state.agent_errors)
+    run.original_idea = state.original_idea
+    run.idea_refined = state.idea_refined
+    run.finalized_idea = state.finalized_idea
+    run.requirements_breakdown = state.requirements_breakdown
+    run.executive_summary = state.executive_summary
+    run.confluence_url = state.confluence_url
+    run.jira_output = state.jira_output
+
+    # output_file is generated during finalize — extract from state if set
+    if state.final_prd and not run.output_file:
+        from crewai_productfeature_planner.mongodb import get_output_file
+        try:
+            output_file = get_output_file(run_id)
+            if output_file:
+                run.output_file = output_file
+        except Exception:
+            pass
+
+
 def run_prd_flow(run_id: str, idea: str, auto_approve: bool = False) -> None:
     """Execute the PRD flow in background and update the run record.
 
@@ -137,6 +184,7 @@ def run_prd_flow(run_id: str, idea: str, auto_approve: bool = False) -> None:
     # Track job lifecycle in crewJobs
     update_job_started(run_id)
 
+    flow: PRDFlow | None = None
     try:
         flow = PRDFlow()
         flow.state.idea = idea
@@ -184,6 +232,9 @@ def run_prd_flow(run_id: str, idea: str, auto_approve: bool = False) -> None:
         update_job_completed(run_id, status="paused")
         logger.error("[API] PRD flow failed (kept inprogress, run_id=%s): %s", run_id, exc)
     finally:
+        # Sync flow state to in-memory run for GET /flow/runs/{run_id}
+        if flow is not None:
+            _sync_flow_state_to_run(run_id, flow)
         # Cleanup approval resources
         approval_events.pop(run_id, None)
         approval_decisions.pop(run_id, None)
@@ -192,14 +243,21 @@ def run_prd_flow(run_id: str, idea: str, auto_approve: bool = False) -> None:
         pause_requested.pop(run_id, None)
 
 
-def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft"]:
+def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDraft", str, list[dict]]:
     """Rebuild a PRDDraft from MongoDB documents for a given run_id.
 
+    Mirrors the full restore logic in :func:`main._restore_prd_state` so
+    that resumed flows have the same state as CLI resumes, including
+    executive summary iterations, requirements breakdown, and section
+    iteration history.
+
     Returns:
-        A tuple of ``(idea, draft)`` with section content and approval status
+        A tuple of ``(idea, draft, exec_summary, requirements_breakdown,
+        breakdown_history)`` with section content and approval status
         reconstructed from persisted working documents.
     """
     from crewai_productfeature_planner.mongodb import (
+        ensure_section_field,
         find_unfinalized,
         get_run_documents,
     )
@@ -215,28 +273,43 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft"]:
 
     draft = PRDDraft.create_empty()
     section_keys_set = {key for key, _ in SECTION_ORDER}
+    total_iterations = 0
 
-    for doc in docs:
-        section_key = doc.get("section_key", "")
-        draft_obj = doc.get("draft", {})
-        critique = doc.get("critique", "")
+    if docs:
+        doc = docs[0]  # single-document model
+        section_obj = doc.get("section", {})
 
-        # Extract section content from the draft dict
-        if isinstance(draft_obj, dict):
-            content = draft_obj.get(section_key, "")
-        else:
-            # Backward-compat: legacy docs stored draft as a plain string
-            content = draft_obj or ""
+        # Edge case: section field missing — reinitialise in MongoDB
+        if "section" not in doc:
+            logger.warning(
+                "Working-idea document for run_id=%s is missing the "
+                "'section' field — re-initialising",
+                run_id,
+            )
+            ensure_section_field(run_id)
+            section_obj = {}
 
-        if section_key and section_key in section_keys_set:
-            section = draft.get_section(section_key)
-            if section is None:
-                continue
-            if content:
-                section.content = content
-            if critique:
-                section.critique = critique
-            section.iteration = max(section.iteration, doc.get("iteration", 0))
+        # Replay section iteration arrays to reconstruct section state
+        if isinstance(section_obj, dict):
+            for section_key, iterations in section_obj.items():
+                if section_key not in section_keys_set:
+                    continue
+                section = draft.get_section(section_key)
+                if section is None:
+                    continue
+                if isinstance(iterations, list) and iterations:
+                    latest = iterations[-1]
+                    if isinstance(latest, dict):
+                        content = latest.get("content", "")
+                        if content:
+                            section.content = content
+                        critique = latest.get("critique", "")
+                        if critique:
+                            section.critique = critique
+                        section.iteration = latest.get("iteration", 0)
+                        section.updated_date = latest.get("updated_date", "")
+                        if section.iteration > total_iterations:
+                            total_iterations = section.iteration
 
     # Infer approval: sections before the last one with content were approved
     last_with_content = -1
@@ -247,7 +320,63 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft"]:
         if section.content and i < last_with_content:
             section.is_approved = True
 
-    return idea, draft
+    # ── Restore executive_summary iterations ──────────────────
+    exec_summary_draft = ExecutiveSummaryDraft()
+    if docs:
+        doc = docs[0]
+        raw_exec = doc.get("executive_summary", [])
+        if isinstance(raw_exec, list):
+            for entry in raw_exec:
+                if not isinstance(entry, dict):
+                    continue
+                exec_summary_draft.iterations.append(
+                    ExecutiveSummaryIteration(
+                        content=entry.get("content", ""),
+                        iteration=entry.get("iteration", 1),
+                        critique=entry.get("critique"),
+                        updated_date=entry.get("updated_date", ""),
+                    )
+                )
+            if exec_summary_draft.iterations:
+                exec_summary_draft.is_approved = True
+
+    # ── Restore requirements_breakdown ────────────────────────
+    requirements_breakdown = ""
+    breakdown_history: list[dict] = []
+    if docs:
+        doc = docs[0]
+        raw_reqs = doc.get("requirements_breakdown", [])
+        if isinstance(raw_reqs, list) and raw_reqs:
+            latest_req = raw_reqs[-1]
+            if isinstance(latest_req, dict) and latest_req.get("content"):
+                requirements_breakdown = latest_req["content"]
+                breakdown_history = [
+                    {
+                        "iteration": entry.get("iteration", i + 1),
+                        "requirements": entry.get("content", ""),
+                        "evaluation": entry.get("critique", ""),
+                    }
+                    for i, entry in enumerate(raw_reqs)
+                    if isinstance(entry, dict)
+                ]
+                logger.info(
+                    "Restored requirements_breakdown from %d iteration(s) "
+                    "(%d chars)",
+                    len(raw_reqs),
+                    len(requirements_breakdown),
+                )
+
+    approved_count = sum(1 for s in draft.sections if s.is_approved)
+    exec_iter_count = len(exec_summary_draft.iterations)
+    logger.info(
+        "Restored PRD state: run_id=%s, %d/%d sections approved, "
+        "iteration=%d, exec_summary_iterations=%d, "
+        "requirements_breakdown_iterations=%d",
+        run_id, approved_count, len(draft.sections), total_iterations,
+        exec_iter_count, len(breakdown_history),
+    )
+
+    return idea, draft, exec_summary_draft, requirements_breakdown, breakdown_history
 
 
 def resume_prd_flow(run_id: str, auto_approve: bool = False) -> None:
@@ -267,14 +396,30 @@ def resume_prd_flow(run_id: str, auto_approve: bool = False) -> None:
     reactivate_job(run_id)
     update_job_started(run_id)
 
+    flow: PRDFlow | None = None
     try:
-        idea, draft = restore_prd_state(run_id)
+        idea, draft, exec_summary, requirements_breakdown, breakdown_history = (
+            restore_prd_state(run_id)
+        )
 
         flow = PRDFlow()
         flow.state.run_id = run_id
         flow.state.idea = idea
         flow.state.draft = draft
         flow.state.iteration = max(s.iteration for s in draft.sections)
+        flow.state.executive_summary = exec_summary
+        flow.state.requirements_breakdown = requirements_breakdown
+        flow.state.breakdown_history = breakdown_history
+        if requirements_breakdown:
+            flow.state.requirements_broken_down = True
+
+        # Set finalized_idea from the last executive summary iteration
+        if exec_summary.latest_content:
+            flow.state.finalized_idea = exec_summary.latest_content
+
+        # If exec summary has iterations, idea was already refined
+        if exec_summary.iterations:
+            flow.state.idea_refined = True
 
         next_section = draft.next_section()
         if next_section:
@@ -282,6 +427,9 @@ def resume_prd_flow(run_id: str, auto_approve: bool = False) -> None:
             run.current_section_key = next_section.key
 
         run.current_draft = draft
+        run.executive_summary = exec_summary
+        run.requirements_breakdown = requirements_breakdown
+
         if not auto_approve:
             flow.approval_callback = make_approval_callback(run_id)
         result = flow.kickoff()
@@ -325,6 +473,9 @@ def resume_prd_flow(run_id: str, auto_approve: bool = False) -> None:
         update_job_completed(run_id, status="paused")
         logger.error("[API] Resumed PRD flow failed (kept inprogress, run_id=%s): %s", run_id, exc)
     finally:
+        # Sync flow state to in-memory run for GET /flow/runs/{run_id}
+        if flow is not None:
+            _sync_flow_state_to_run(run_id, flow)
         approval_events.pop(run_id, None)
         approval_decisions.pop(run_id, None)
         approval_feedback.pop(run_id, None)

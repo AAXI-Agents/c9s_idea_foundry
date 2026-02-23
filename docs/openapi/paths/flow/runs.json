@@ -1,47 +1,36 @@
 {
   "get": {
+    "tags": [
+      "Flow Runs"
+    ],
     "summary": "List all flow runs",
-    "description": "Returns all in-memory flow runs. Useful for dashboards and MCP clients to discover active, paused, or completed runs. Note: errors result in status='paused' (never 'failed').",
+    "description": "Returns all in-memory flow runs. Useful for dashboards and MCP clients to discover active, paused, or completed runs.",
     "operationId": "list_runs_flow_runs_get",
-    "tags": ["Flow Runs"],
     "responses": {
       "200": {
         "description": "List of all runs.",
         "content": {
           "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "count": {
-                  "type": "integer"
-                },
-                "runs": {
-                  "type": "array",
-                  "items": {
-                    "type": "object"
-                  }
-                }
-              }
-            }
+            "schema": {}
           }
         }
       },
       "500": {
-        "description": "Internal server error (INTERNAL_ERROR).",
+        "description": "Internal server error. The `error_code` field will be `INTERNAL_ERROR`. Check the `message` and `detail` fields for diagnostics.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }

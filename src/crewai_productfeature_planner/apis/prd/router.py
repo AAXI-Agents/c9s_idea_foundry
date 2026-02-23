@@ -443,6 +443,8 @@ async def list_resumable_runs():
             iteration=r.get("iteration", 0),
             created_at=str(created) if created else None,
             sections=r.get("sections", []),
+            exec_summary_iterations=r.get("exec_summary_iterations", 0),
+            req_breakdown_iterations=r.get("req_breakdown_iterations", 0),
         ))
     return PRDResumableListResponse(count=len(items), runs=items)
 
@@ -572,6 +574,8 @@ def _job_doc_to_detail(doc: dict) -> JobDetail:
         running_time_ms=doc.get("running_time_ms"),
         running_time_human=doc.get("running_time_human"),
         updated_at=_iso(doc.get("updated_at")),
+        output_file=doc.get("output_file"),
+        confluence_url=doc.get("confluence_url"),
     )
 
 

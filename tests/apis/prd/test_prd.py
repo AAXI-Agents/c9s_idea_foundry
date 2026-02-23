@@ -971,8 +971,17 @@ def test_resume_auto_approve_skips_callback():
             "crewai_productfeature_planner.apis.prd.service.restore_prd_state"
         ) as mock_restore,
     ):
-        from crewai_productfeature_planner.apis.prd.models import PRDDraft
-        mock_restore.return_value = ("idea", PRDDraft.create_empty())
+        from crewai_productfeature_planner.apis.prd.models import (
+            ExecutiveSummaryDraft,
+            PRDDraft,
+        )
+        mock_restore.return_value = (
+            "idea",
+            PRDDraft.create_empty(),
+            ExecutiveSummaryDraft(),
+            "",
+            [],
+        )
         mock_instance = MagicMock()
         mock_instance.approval_callback = None  # explicit default
         mock_instance.kickoff.return_value = "# PRD"
@@ -982,3 +991,644 @@ def test_resume_auto_approve_skips_callback():
         resume_prd_flow("resume-auto", auto_approve=True)
 
     assert mock_instance.approval_callback is None
+
+
+# ── New fields: FlowRun / status-response ────────────────────
+
+
+def test_run_status_includes_confluence_url(client):
+    """GET /flow/runs/{run_id} should expose confluence_url."""
+    run = FlowRun(run_id="r-conf", flow_name="prd")
+    run.confluence_url = "https://wiki.example.com/pages/12345"
+    runs["r-conf"] = run
+
+    resp = client.get("/flow/runs/r-conf")
+    assert resp.status_code == 200
+    assert resp.json()["confluence_url"] == "https://wiki.example.com/pages/12345"
+
+
+def test_run_status_includes_jira_output(client):
+    """GET /flow/runs/{run_id} should expose jira_output."""
+    run = FlowRun(run_id="r-jira", flow_name="prd")
+    run.jira_output = "Created PROJ-101, PROJ-102"
+    runs["r-jira"] = run
+
+    resp = client.get("/flow/runs/r-jira")
+    assert resp.status_code == 200
+    assert resp.json()["jira_output"] == "Created PROJ-101, PROJ-102"
+
+
+def test_run_status_includes_output_file(client):
+    """GET /flow/runs/{run_id} should expose output_file."""
+    run = FlowRun(run_id="r-out", flow_name="prd")
+    run.output_file = "output/prds/prd_v1_20260223.md"
+    runs["r-out"] = run
+
+    resp = client.get("/flow/runs/r-out")
+    assert resp.status_code == 200
+    assert resp.json()["output_file"] == "output/prds/prd_v1_20260223.md"
+
+
+def test_run_status_includes_finalized_idea(client):
+    """GET /flow/runs/{run_id} should expose finalized_idea."""
+    run = FlowRun(run_id="r-fin", flow_name="prd")
+    run.finalized_idea = "A refined executive summary of the feature"
+    runs["r-fin"] = run
+
+    resp = client.get("/flow/runs/r-fin")
+    assert resp.status_code == 200
+    assert resp.json()["finalized_idea"] == "A refined executive summary of the feature"
+
+
+def test_run_status_includes_requirements_breakdown(client):
+    """GET /flow/runs/{run_id} should expose requirements_breakdown."""
+    run = FlowRun(run_id="r-req", flow_name="prd")
+    run.requirements_breakdown = "## Requirements\n- FR1: User login"
+    runs["r-req"] = run
+
+    resp = client.get("/flow/runs/r-req")
+    assert resp.status_code == 200
+    assert "FR1: User login" in resp.json()["requirements_breakdown"]
+
+
+def test_run_status_includes_executive_summary(client):
+    """GET /flow/runs/{run_id} should expose executive_summary with iterations."""
+    from crewai_productfeature_planner.apis.prd.models import (
+        ExecutiveSummaryDraft,
+        ExecutiveSummaryIteration,
+    )
+
+    run = FlowRun(run_id="r-exec", flow_name="prd")
+    run.executive_summary = ExecutiveSummaryDraft(
+        iterations=[
+            ExecutiveSummaryIteration(
+                content="First draft of exec summary",
+                iteration=1,
+                critique="Needs more detail",
+                updated_date="2026-02-23T10:00:00Z",
+            ),
+            ExecutiveSummaryIteration(
+                content="Refined exec summary with more detail",
+                iteration=2,
+                critique=None,
+                updated_date="2026-02-23T10:05:00Z",
+            ),
+        ],
+        is_approved=True,
+    )
+    runs["r-exec"] = run
+
+    resp = client.get("/flow/runs/r-exec")
+    assert resp.status_code == 200
+    body = resp.json()
+    exec_summary = body["executive_summary"]
+    assert exec_summary["is_approved"] is True
+    assert len(exec_summary["iterations"]) == 2
+    assert exec_summary["iterations"][0]["content"] == "First draft of exec summary"
+    assert exec_summary["iterations"][1]["iteration"] == 2
+
+
+def test_run_status_new_fields_default_empty(client):
+    """New fields should default to empty values on a fresh FlowRun."""
+    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "New fields test"},
+        )
+    run_id = resp.json()["run_id"]
+    status_resp = client.get(f"/flow/runs/{run_id}")
+    body = status_resp.json()
+    assert body["confluence_url"] == ""
+    assert body["jira_output"] == ""
+    assert body["output_file"] == ""
+    assert body["finalized_idea"] == ""
+    assert body["requirements_breakdown"] == ""
+    assert body["executive_summary"]["iterations"] == []
+    assert body["executive_summary"]["is_approved"] is False
+
+
+# ── _sync_flow_state_to_run ──────────────────────────────────
+
+
+def test_sync_flow_state_copies_all_fields():
+    """_sync_flow_state_to_run should copy every new state field to FlowRun."""
+    from crewai_productfeature_planner.apis.prd.models import (
+        ExecutiveSummaryDraft,
+        ExecutiveSummaryIteration,
+    )
+    from crewai_productfeature_planner.apis.prd.service import _sync_flow_state_to_run
+
+    runs.clear()
+    run = FlowRun(run_id="sync-test", flow_name="prd")
+    runs["sync-test"] = run
+
+    mock_flow = MagicMock()
+    mock_flow.state.draft = MagicMock()
+    mock_flow.state.current_section_key = "user_personas"
+    mock_flow.state.iteration = 5
+    mock_flow.state.active_agents = ["gemini_pm"]
+    mock_flow.state.dropped_agents = ["openai_pm"]
+    mock_flow.state.agent_errors = {"openai_pm": "timeout"}
+    mock_flow.state.original_idea = "original idea text"
+    mock_flow.state.idea_refined = True
+    mock_flow.state.finalized_idea = "refined executive summary"
+    mock_flow.state.requirements_breakdown = "structured requirements"
+    mock_flow.state.executive_summary = ExecutiveSummaryDraft(
+        iterations=[ExecutiveSummaryIteration(content="exec", iteration=1)],
+    )
+    mock_flow.state.confluence_url = "https://wiki.test.com/page/1"
+    mock_flow.state.jira_output = "PROJ-1"
+    mock_flow.state.final_prd = ""
+
+    _sync_flow_state_to_run("sync-test", mock_flow)
+
+    assert run.current_section_key == "user_personas"
+    assert run.iteration == 5
+    assert run.active_agents == ["gemini_pm"]
+    assert run.dropped_agents == ["openai_pm"]
+    assert run.agent_errors == {"openai_pm": "timeout"}
+    assert run.original_idea == "original idea text"
+    assert run.idea_refined is True
+    assert run.finalized_idea == "refined executive summary"
+    assert run.requirements_breakdown == "structured requirements"
+    assert run.confluence_url == "https://wiki.test.com/page/1"
+    assert run.jira_output == "PROJ-1"
+    assert run.executive_summary.iterations[0].content == "exec"
+    runs.clear()
+
+
+def test_sync_flow_state_noop_missing_run():
+    """_sync_flow_state_to_run should silently skip if run_id not found."""
+    from crewai_productfeature_planner.apis.prd.service import _sync_flow_state_to_run
+
+    runs.clear()
+    _sync_flow_state_to_run("nonexistent", MagicMock())
+
+
+def test_sync_flow_state_queries_output_file_from_db():
+    """When final_prd is non-empty, _sync should query MongoDB for output_file."""
+    from crewai_productfeature_planner.apis.prd.service import _sync_flow_state_to_run
+
+    runs.clear()
+    run = FlowRun(run_id="sync-out", flow_name="prd")
+    runs["sync-out"] = run
+
+    mock_flow = MagicMock()
+    mock_flow.state.final_prd = "# Some PRD content"
+    mock_flow.state.confluence_url = ""
+    mock_flow.state.jira_output = ""
+    mock_flow.state.finalized_idea = ""
+    mock_flow.state.requirements_breakdown = ""
+
+    with patch(
+        "crewai_productfeature_planner.mongodb.get_output_file",
+        return_value="output/prds/prd_v2_test.md",
+    ) as mock_get:
+        _sync_flow_state_to_run("sync-out", mock_flow)
+
+    mock_get.assert_called_once_with("sync-out")
+    assert run.output_file == "output/prds/prd_v2_test.md"
+    runs.clear()
+
+
+# ── run_prd_flow state sync ──────────────────────────────────
+
+
+def test_run_prd_flow_syncs_state_on_completion():
+    """run_prd_flow should sync flow state after successful completion."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="sync-ok", flow_name="prd")
+    runs["sync-ok"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.kickoff.return_value = "# Done"
+        mock_instance.state.confluence_url = "https://wiki.test.com/done"
+        mock_instance.state.jira_output = "PROJ-99"
+        mock_instance.state.finalized_idea = "final exec summary"
+        mock_instance.state.requirements_breakdown = "FR1, FR2"
+        mock_instance.state.final_prd = ""
+        mock_instance.state.is_ready = True
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("sync-ok", "Test idea")
+
+    assert run.confluence_url == "https://wiki.test.com/done"
+    assert run.jira_output == "PROJ-99"
+    assert run.finalized_idea == "final exec summary"
+    assert run.requirements_breakdown == "FR1, FR2"
+    runs.clear()
+
+
+def test_run_prd_flow_syncs_state_on_pause():
+    """run_prd_flow should sync flow state even when PauseRequested."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+    from crewai_productfeature_planner.flows.prd_flow import PauseRequested
+
+    runs.clear()
+    run = FlowRun(run_id="sync-pause", flow_name="prd")
+    runs["sync-pause"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.kickoff.side_effect = PauseRequested()
+        mock_instance.state.requirements_breakdown = "partial reqs"
+        mock_instance.state.final_prd = ""
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("sync-pause", "Test idea")
+
+    assert run.status == FlowStatus.PAUSED
+    assert run.requirements_breakdown == "partial reqs"
+    runs.clear()
+
+
+def test_run_prd_flow_syncs_state_on_error():
+    """run_prd_flow should sync flow state even on unexpected exceptions."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="sync-err", flow_name="prd")
+    runs["sync-err"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.kickoff.side_effect = RuntimeError("boom")
+        mock_instance.state.confluence_url = "https://wiki.test.com/partial"
+        mock_instance.state.final_prd = ""
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("sync-err", "Test idea")
+
+    assert run.status == FlowStatus.PAUSED
+    assert "INTERNAL_ERROR" in run.error
+    assert run.confluence_url == "https://wiki.test.com/partial"
+    runs.clear()
+
+
+# ── Approval callback syncs new kwargs ───────────────────────
+
+
+def test_approval_callback_syncs_new_kwargs():
+    """The approval callback should sync finalized_idea, requirements_breakdown, executive_summary."""
+    from crewai_productfeature_planner.apis.prd.models import (
+        ExecutiveSummaryDraft,
+        ExecutiveSummaryIteration,
+        PRDDraft,
+    )
+    from crewai_productfeature_planner.apis.prd.service import make_approval_callback
+
+    runs.clear()
+    run = FlowRun(run_id="cb-sync", flow_name="prd")
+    runs["cb-sync"] = run
+
+    callback = make_approval_callback("cb-sync")
+
+    exec_summary = ExecutiveSummaryDraft(
+        iterations=[ExecutiveSummaryIteration(content="exec content", iteration=1)],
+    )
+
+    def _approve():
+        import time
+        time.sleep(0.05)
+        approval_decisions["cb-sync"] = True
+        approval_events["cb-sync"].set()
+
+    import threading as _threading
+    t = _threading.Thread(target=_approve)
+    t.start()
+
+    callback(
+        1,
+        "executive_summary",
+        {"gemini_pm": "draft"},
+        PRDDraft.create_empty(),
+        active_agents=["gemini_pm"],
+        finalized_idea="refined idea",
+        requirements_breakdown="## Requirements list",
+        executive_summary=exec_summary,
+    )
+    t.join()
+
+    assert run.finalized_idea == "refined idea"
+    assert run.requirements_breakdown == "## Requirements list"
+    assert run.executive_summary.iterations[0].content == "exec content"
+
+    approval_events.pop("cb-sync", None)
+    approval_decisions.pop("cb-sync", None)
+    runs.clear()
+
+
+def test_approval_callback_preserves_existing_when_kwargs_absent():
+    """When new kwargs are not passed, existing FlowRun values should be kept."""
+    from crewai_productfeature_planner.apis.prd.models import PRDDraft
+    from crewai_productfeature_planner.apis.prd.service import make_approval_callback
+
+    runs.clear()
+    run = FlowRun(run_id="cb-keep", flow_name="prd")
+    run.finalized_idea = "already set"
+    run.requirements_breakdown = "existing reqs"
+    runs["cb-keep"] = run
+
+    callback = make_approval_callback("cb-keep")
+
+    def _approve():
+        import time
+        time.sleep(0.05)
+        approval_decisions["cb-keep"] = True
+        approval_events["cb-keep"].set()
+
+    import threading as _threading
+    t = _threading.Thread(target=_approve)
+    t.start()
+
+    # Call without the new kwargs
+    callback(
+        1,
+        "problem_statement",
+        {"gemini_pm": "draft"},
+        PRDDraft.create_empty(),
+        active_agents=["gemini_pm"],
+    )
+    t.join()
+
+    # Existing values should be preserved
+    assert run.finalized_idea == "already set"
+    assert run.requirements_breakdown == "existing reqs"
+
+    approval_events.pop("cb-keep", None)
+    approval_decisions.pop("cb-keep", None)
+    runs.clear()
+
+
+# ── Resumable runs iteration counts ─────────────────────────
+
+
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
+def test_resumable_runs_include_iteration_counts(mock_find, client):
+    """GET /flow/prd/resumable should include exec_summary and req_breakdown iteration counts."""
+    mock_find.return_value = [
+        {
+            "run_id": "res-1",
+            "idea": "Dark mode",
+            "iteration": 3,
+            "sections": ["executive_summary", "problem_statement"],
+            "exec_summary_iterations": 5,
+            "req_breakdown_iterations": 2,
+            "created_at": "2026-02-23T12:00:00Z",
+        },
+    ]
+    resp = client.get("/flow/prd/resumable")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    run_data = body["runs"][0]
+    assert run_data["exec_summary_iterations"] == 5
+    assert run_data["req_breakdown_iterations"] == 2
+
+
+@patch("crewai_productfeature_planner.mongodb.find_unfinalized")
+def test_resumable_runs_default_zero_iterations(mock_find, client):
+    """Missing exec/req iteration counts should default to 0."""
+    mock_find.return_value = [
+        {
+            "run_id": "res-2",
+            "idea": "Light mode",
+            "iteration": 1,
+            "sections": [],
+            "created_at": "2026-02-23T12:00:00Z",
+        },
+    ]
+    resp = client.get("/flow/prd/resumable")
+    body = resp.json()
+    run_data = body["runs"][0]
+    assert run_data["exec_summary_iterations"] == 0
+    assert run_data["req_breakdown_iterations"] == 0
+
+
+# ── restore_prd_state full 5-tuple ──────────────────────────
+
+
+def test_restore_prd_state_returns_five_tuple():
+    """restore_prd_state should return (idea, draft, exec_summary, requirements, breakdown_history)."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch("crewai_productfeature_planner.mongodb.get_run_documents") as mock_docs,
+    ):
+        mock_unf.return_value = [{"run_id": "r1", "idea": "Test idea"}]
+        mock_docs.return_value = [{
+            "section": {
+                "executive_summary": [{"content": "ES content", "iteration": 1}],
+                "problem_statement": [{"content": "PS content", "iteration": 1}],
+            },
+            "executive_summary": [
+                {"content": "ES iteration 1", "iteration": 1, "critique": "needs more"},
+                {"content": "ES iteration 2", "iteration": 2, "critique": None},
+            ],
+            "requirements_breakdown": [
+                {"content": "Req v1", "iteration": 1, "critique": "ok"},
+                {"content": "Req v2", "iteration": 2, "critique": "good"},
+            ],
+        }]
+
+        result = restore_prd_state("r1")
+
+    assert len(result) == 5
+    idea, draft, exec_summary, requirements, breakdown_history = result
+    assert idea == "Test idea"
+    assert draft.get_section("executive_summary").content == "ES content"
+    assert draft.get_section("problem_statement").content == "PS content"
+    assert len(exec_summary.iterations) == 2
+    assert exec_summary.iterations[0].content == "ES iteration 1"
+    assert exec_summary.iterations[1].critique is None
+    assert exec_summary.is_approved is True
+    assert requirements == "Req v2"
+    assert len(breakdown_history) == 2
+    assert breakdown_history[0]["requirements"] == "Req v1"
+    assert breakdown_history[1]["requirements"] == "Req v2"
+
+
+def test_restore_prd_state_no_exec_summary():
+    """restore_prd_state should handle missing executive_summary gracefully."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch("crewai_productfeature_planner.mongodb.get_run_documents") as mock_docs,
+    ):
+        mock_unf.return_value = [{"run_id": "r2", "idea": "Idea"}]
+        mock_docs.return_value = [{"section": {}}]
+
+        idea, draft, exec_summary, requirements, breakdown_history = restore_prd_state("r2")
+
+    assert idea == "Idea"
+    assert len(exec_summary.iterations) == 0
+    assert exec_summary.is_approved is False
+    assert requirements == ""
+    assert breakdown_history == []
+
+
+def test_restore_prd_state_reinitialises_missing_section():
+    """restore_prd_state should reinitialise when 'section' field is missing."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch("crewai_productfeature_planner.mongodb.get_run_documents") as mock_docs,
+        patch("crewai_productfeature_planner.mongodb.ensure_section_field") as mock_ensure,
+    ):
+        mock_unf.return_value = [{"run_id": "r3", "idea": "Idea"}]
+        mock_docs.return_value = [{"foo": "bar"}]
+
+        restore_prd_state("r3")
+
+    mock_ensure.assert_called_once_with("r3")
+
+
+def test_restore_prd_state_not_found():
+    """restore_prd_state should raise ValueError when run_id is not in unfinalized."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+
+    with patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf:
+        mock_unf.return_value = []
+
+        with pytest.raises(ValueError, match="not found"):
+            restore_prd_state("nonexistent")
+
+
+# ── Job detail with new fields ───────────────────────────────
+
+
+def test_job_detail_includes_output_file_and_confluence(client):
+    """GET /flow/jobs/{job_id} should include output_file and confluence_url."""
+    with patch("crewai_productfeature_planner.apis.prd.router.find_job") as mock_find:
+        mock_find.return_value = {
+            "job_id": "j1",
+            "flow_name": "prd",
+            "idea": "test",
+            "status": "completed",
+            "output_file": "output/prds/prd_v1.md",
+            "confluence_url": "https://wiki.test.com/page/1",
+        }
+        resp = client.get("/flow/jobs/j1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["output_file"] == "output/prds/prd_v1.md"
+    assert body["confluence_url"] == "https://wiki.test.com/page/1"
+
+
+def test_job_detail_null_for_missing_output_fields(client):
+    """GET /flow/jobs/{job_id} should return null for missing output fields."""
+    with patch("crewai_productfeature_planner.apis.prd.router.find_job") as mock_find:
+        mock_find.return_value = {
+            "job_id": "j2",
+            "flow_name": "prd",
+            "idea": "test",
+            "status": "running",
+        }
+        resp = client.get("/flow/jobs/j2")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["output_file"] is None
+    assert body["confluence_url"] is None
+
+
+# ── Resume sets restored exec/req state on flow ─────────────
+
+
+def test_resume_prd_flow_restores_full_state():
+    """resume_prd_flow should restore exec_summary and requirements from 5-tuple."""
+    from crewai_productfeature_planner.apis.prd.models import (
+        ExecutiveSummaryDraft,
+        ExecutiveSummaryIteration,
+        PRDDraft,
+    )
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="resume-full", flow_name="prd")
+    runs["resume-full"] = run
+
+    exec_summary = ExecutiveSummaryDraft(
+        iterations=[ExecutiveSummaryIteration(content="exec v1", iteration=1)],
+        is_approved=True,
+    )
+
+    with (
+        patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.restore_prd_state"
+        ) as mock_restore,
+    ):
+        draft = PRDDraft.create_empty()
+        mock_restore.return_value = (
+            "idea",
+            draft,
+            exec_summary,
+            "structured requirements",
+            [{"iteration": 1, "requirements": "req v1"}],
+        )
+        mock_instance = MagicMock()
+        mock_instance.approval_callback = None
+        mock_instance.kickoff.return_value = "# PRD"
+        mock_instance.state = MagicMock()
+        mock_instance.state.final_prd = ""
+        mock_instance.state.is_ready = True
+        MockFlow.return_value = mock_instance
+
+        resume_prd_flow("resume-full", auto_approve=True)
+
+    # Verify the flow was set up with the restored state
+    assert mock_instance.state.executive_summary == exec_summary
+    assert mock_instance.state.requirements_breakdown == "structured requirements"
+    assert mock_instance.state.requirements_broken_down is True
+    assert mock_instance.state.finalized_idea == "exec v1"
+    assert mock_instance.state.idea_refined is True
+    runs.clear()
+
+
+# ── Lifespan smoke test ─────────────────────────────────────
+
+
+def test_lifespan_startup_recovery(client):
+    """The lifespan runs startup recovery; the app should start without errors."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+
+
+# ── OpenAPI schema includes new fields ───────────────────────
+
+
+def test_openapi_schema_has_prd_status_new_fields(client):
+    """OpenAPI schema should document the new fields on PRDRunStatusResponse."""
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    status_props = schema["components"]["schemas"]["PRDRunStatusResponse"]["properties"]
+    for field in (
+        "confluence_url", "jira_output", "output_file",
+        "finalized_idea", "requirements_breakdown", "executive_summary",
+    ):
+        assert field in status_props, f"Missing {field} in PRDRunStatusResponse schema"
+
+
+def test_openapi_schema_has_resumable_new_fields(client):
+    """OpenAPI schema should document exec/req iteration counts on PRDResumableRun."""
+    resp = client.get("/openapi.json")
+    schema = resp.json()
+    props = schema["components"]["schemas"]["PRDResumableRun"]["properties"]
+    assert "exec_summary_iterations" in props
+    assert "req_breakdown_iterations" in props
+
+
+def test_openapi_schema_has_job_detail_new_fields(client):
+    """OpenAPI schema should document output_file/confluence_url on JobDetail."""
+    resp = client.get("/openapi.json")
+    schema = resp.json()
+    props = schema["components"]["schemas"]["JobDetail"]["properties"]
+    assert "output_file" in props
+    assert "confluence_url" in props

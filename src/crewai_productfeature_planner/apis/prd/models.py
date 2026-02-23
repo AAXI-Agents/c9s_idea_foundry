@@ -463,6 +463,50 @@ class PRDRunStatusResponse(BaseModel):
         default=False,
         description="Whether the idea was refined by the Idea Refinement agent.",
     )
+    finalized_idea: str = Field(
+        default="",
+        description=(
+            "Copy of the last executive summary content once Phase 1 "
+            "completes. Empty until the executive summary iteration "
+            "loop finishes."
+        ),
+    )
+    requirements_breakdown: str = Field(
+        default="",
+        description=(
+            "Structured product requirements produced by the Requirements "
+            "Breakdown agent. Empty until the breakdown phase completes."
+        ),
+    )
+    executive_summary: ExecutiveSummaryDraft = Field(
+        default_factory=ExecutiveSummaryDraft,
+        description=(
+            "Iterative executive summary produced in Phase 1. Contains "
+            "the full iteration history with content, critique, and "
+            "timestamps for each cycle."
+        ),
+    )
+    confluence_url: str = Field(
+        default="",
+        description=(
+            "URL of the Confluence page where the PRD was published. "
+            "Empty until post-completion publishing succeeds."
+        ),
+    )
+    jira_output: str = Field(
+        default="",
+        description=(
+            "Summary of Jira tickets created from PRD requirements. "
+            "Empty until post-completion ticketing completes."
+        ),
+    )
+    output_file: str = Field(
+        default="",
+        description=(
+            "Path to the generated PRD markdown file on disk. "
+            "Empty until the flow finalizes."
+        ),
+    )
     current_draft: PRDDraftDetail = Field(
         default_factory=PRDDraftDetail,
         description="Full structured draft with per-section state.",
@@ -481,6 +525,14 @@ class PRDResumableRun(BaseModel):
     sections: list[str] = Field(
         default_factory=list,
         description="Section keys that have draft content.",
+    )
+    exec_summary_iterations: int = Field(
+        default=0,
+        description="Number of executive summary iterations completed.",
+    )
+    req_breakdown_iterations: int = Field(
+        default=0,
+        description="Number of requirements breakdown iterations completed.",
     )
 
 
@@ -565,6 +617,14 @@ class JobDetail(BaseModel):
         default=None, description="Running duration in human-readable form (e.g. '1h 23m 45s')."
     )
     updated_at: str | None = Field(default=None, description="ISO-8601 timestamp of last update.")
+    output_file: str | None = Field(
+        default=None,
+        description="Path to the generated PRD markdown file, if available.",
+    )
+    confluence_url: str | None = Field(
+        default=None,
+        description="URL of the published Confluence page, if available.",
+    )
 
 
 class JobListResponse(BaseModel):

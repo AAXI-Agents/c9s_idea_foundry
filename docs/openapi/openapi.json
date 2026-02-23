@@ -2,18 +2,18 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CrewAI Product Feature Planner API",
-    "description": "HTTP interface for the CrewAI PRD generation flow. The flow uses a two-phase architecture: Phase 1 iterates an Executive Summary, Phase 2 auto-iterates 9 remaining PRD sections with configurable min/max iterations. Includes degenerate output guards, error-to-paused recovery, and resume-from-last-iteration support.",
-    "version": "0.2.0"
+    "description": "HTTP interface for the CrewAI PRD generation flow. The flow uses a two-phase architecture: Phase 1 iterates an Executive Summary, Phase 2 auto-iterates 9 remaining PRD sections with configurable min/max iterations. Includes degenerate output guards, error-to-paused recovery, resume-from-last-iteration support, Confluence publishing, and Jira ticketing.",
+    "version": "0.3.0"
   },
   "paths": {
     "/health": {
       "$ref": "./paths/health.json"
     },
-    "/flow/runs": {
-      "$ref": "./paths/flow/runs.json"
-    },
     "/flow/runs/{run_id}": {
       "$ref": "./paths/flow/runs_{run_id}.json"
+    },
+    "/flow/runs": {
+      "$ref": "./paths/flow/runs.json"
     },
     "/flow/prd/kickoff": {
       "$ref": "./paths/flow/prd_kickoff.json"
@@ -39,6 +39,117 @@
   },
   "components": {
     "schemas": {
+      "ErrorResponse": {
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "title": "Error Code",
+            "description": "Machine-readable error code. One of: LLM_ERROR, BILLING_ERROR, INTERNAL_ERROR.",
+            "examples": [
+              "LLM_ERROR"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable description of the error.",
+            "examples": [
+              "LLM timeout after 4 attempts"
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id",
+            "description": "The run_id affected by this error, if applicable.",
+            "examples": [
+              "a1b2c3d4e5f6"
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "Additional diagnostic detail (e.g. the original exception message)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "description": "Standard error envelope returned by all API endpoints.\n\nReturned for any unexpected server-side error (HTTP 500) or when\nthe upstream LLM / OpenAI service is unavailable (HTTP 503).\n\nError codes:\n    ``LLM_ERROR``      \u2014 The LLM backend returned an unrecoverable\n                         error after exhausting all retry attempts\n                         (e.g. timeouts, model overload).\n    ``BILLING_ERROR``  \u2014 OpenAI billing / quota issue detected\n                         (e.g. ``insufficient_quota``,\n                         ``billing_hard_limit_reached``).\n    ``INTERNAL_ERROR`` \u2014 Any other unexpected server-side failure."
+      },
+      "ExecutiveSummaryDraft": {
+        "properties": {
+          "iterations": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutiveSummaryIteration"
+            },
+            "type": "array",
+            "title": "Iterations"
+          },
+          "is_approved": {
+            "type": "boolean",
+            "title": "Is Approved",
+            "description": "Whether the executive summary has been approved.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ExecutiveSummaryDraft",
+        "description": "Tracks the iterative executive summary produced in the draft phase."
+      },
+      "ExecutiveSummaryIteration": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Markdown content of this iteration.",
+            "default": ""
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "description": "1-based iteration number.",
+            "default": 1
+          },
+          "critique": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Critique",
+            "description": "Critique feedback from critique_prd_task, initially null."
+          },
+          "updated_date": {
+            "type": "string",
+            "title": "Updated Date",
+            "description": "ISO-8601 timestamp of this iteration.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ExecutiveSummaryIteration",
+        "description": "A single iteration record for the executive summary phase."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -52,19 +163,387 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "JobDetail": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Unique job identifier (same as run_id)."
+          },
+          "flow_name": {
+            "type": "string",
+            "title": "Flow Name",
+            "description": "Name of the flow (e.g. 'prd')."
+          },
+          "idea": {
+            "type": "string",
+            "title": "Idea",
+            "description": "The feature idea / input text.",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Job lifecycle status: queued, running, awaiting_approval, paused, or completed. Note: flow errors always result in 'paused' (not 'failed'), allowing the run to be resumed."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message when the job was paused due to an error. Present when the job encountered an LLM, billing, or internal error and was automatically paused."
+          },
+          "queued_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued At",
+            "description": "ISO-8601 timestamp when the job was created."
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "ISO-8601 timestamp when execution began."
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "ISO-8601 timestamp when the job reached a terminal state."
+          },
+          "queue_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Time Ms",
+            "description": "Time spent in queue (started_at - queued_at) in milliseconds."
+          },
+          "queue_time_human": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Time Human",
+            "description": "Queue duration in human-readable form (e.g. '0h 1m 30s')."
+          },
+          "running_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Time Ms",
+            "description": "Time spent running (completed_at - started_at) in milliseconds."
+          },
+          "running_time_human": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Time Human",
+            "description": "Running duration in human-readable form (e.g. '1h 23m 45s')."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "ISO-8601 timestamp of last update."
+          },
+          "output_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output File",
+            "description": "Path to the generated PRD markdown file, if available."
+          },
+          "confluence_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confluence Url",
+            "description": "URL of the published Confluence page, if available."
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "flow_name",
+          "status"
+        ],
+        "title": "JobDetail",
+        "description": "A persistent job record from the ``crewJobs`` collection."
+      },
+      "JobListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of jobs returned."
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobDetail"
+            },
+            "type": "array",
+            "title": "Jobs",
+            "description": "List of job records."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "JobListResponse",
+        "description": "Response for GET /flow/jobs."
+      },
+      "PRDActionResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The run this action was applied to."
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "The action that was taken: 'approved', 'continuing refinement', 'continuing refinement with user feedback', or 'paused'."
+          },
+          "section": {
+            "type": "string",
+            "title": "Section",
+            "description": "The section key the action was applied to.",
+            "default": ""
+          },
+          "current_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step",
+            "description": "1-based step number of the current section."
+          },
+          "sections_approved": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Approved",
+            "description": "Number of sections approved so far (including this one if approved)."
+          },
+          "sections_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Total",
+            "description": "Total number of sections in the PRD."
+          },
+          "is_final_section": {
+            "type": "boolean",
+            "title": "Is Final Section",
+            "description": "True when this approval completed the last section \u2014 the flow will finalize.",
+            "default": false
+          },
+          "active_agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Agents",
+            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm'])."
+          },
+          "dropped_agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dropped Agents",
+            "description": "Agent identifiers that were removed from the flow after failing during parallel drafting."
+          },
+          "agent_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Agent Errors",
+            "description": "Map of dropped agent name to its error message."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable result message."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "action",
+          "message"
+        ],
+        "title": "PRDActionResponse",
+        "description": "Response for approval, pause, and feedback actions."
+      },
+      "PRDApproveRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The run to approve or continue.",
+            "examples": [
+              "a1b2c3d4e5f6"
+            ]
+          },
+          "approve": {
+            "type": "boolean",
+            "title": "Approve",
+            "description": "True to approve the current section, False to keep refining.",
+            "examples": [
+              true
+            ]
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback",
+            "description": "Optional critique feedback from the user. When provided with approve=false, this feedback is used as the critique for the current section instead of the agent's self-critique.",
+            "examples": [
+              "Add more detail to the security section and include OAuth2 flow."
+            ]
+          },
+          "selected_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Agent",
+            "description": "Which agent's result to use (e.g. 'openai_pm'). Required when multiple agents produced results for the current section. Defaults to the first available agent when omitted.",
+            "examples": [
+              "openai_pm"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "approve"
+        ],
+        "title": "PRDApproveRequest",
+        "description": "Request body for POST /flow/prd/approve."
+      },
+      "PRDDraftDetail": {
+        "properties": {
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PRDSectionDetail"
+            },
+            "type": "array",
+            "title": "Sections",
+            "description": "Ordered list of PRD sections with their current state."
+          },
+          "all_approved": {
+            "type": "boolean",
+            "title": "All Approved",
+            "description": "True when every section has been approved.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "PRDDraftDetail",
+        "description": "Structured draft state for API responses."
+      },
       "PRDKickoffRequest": {
         "properties": {
           "idea": {
             "type": "string",
             "minLength": 1,
             "title": "Idea",
-            "description": "The product feature idea to build a PRD for."
+            "description": "The product feature idea to build a PRD for.",
+            "examples": [
+              "Add dark mode to the dashboard"
+            ]
           },
           "auto_approve": {
             "type": "boolean",
-            "default": false,
             "title": "Auto Approve",
-            "description": "When true, the flow runs end-to-end without pausing for manual approval at each section (same behaviour as the CLI). Sections auto-iterate and are auto-approved when the critique contains SECTION_READY. The POST /flow/prd/approve endpoint is not needed — poll GET /flow/runs/{run_id} for progress instead."
+            "description": "When true, the flow runs end-to-end without pausing for manual approval at each section (same behaviour as the CLI). Sections auto-iterate between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS and are auto-approved when the critique contains SECTION_READY after the minimum iterations. The POST /flow/prd/approve endpoint is not needed when this is enabled \u2014 poll GET /flow/runs/{run_id} for progress instead.",
+            "default": false
           }
         },
         "type": "object",
@@ -84,7 +563,8 @@
           "flow_name": {
             "type": "string",
             "title": "Flow Name",
-            "description": "Name of the flow."
+            "description": "Name of the flow.",
+            "default": "prd"
           },
           "status": {
             "type": "string",
@@ -104,121 +584,17 @@
           "message"
         ],
         "title": "PRDKickoffResponse",
-        "description": "Response for POST /flow/prd/kickoff. Returned when a new PRD flow is accepted. The flow runs in the background through Idea Refinement, Requirements Breakdown, Phase 1 (Executive Summary iteration), and Phase 2 (9-section auto-iterate)."
-      },
-      "PRDApproveRequest": {
-        "properties": {
-          "run_id": {
-            "type": "string",
-            "title": "Run Id",
-            "description": "The run to approve or continue."
-          },
-          "approve": {
-            "type": "boolean",
-            "title": "Approve",
-            "description": "True to approve the current section, False to keep refining."
-          },
-          "feedback": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Feedback",
-            "description": "Optional critique feedback from the user."
-          },
-          "selected_agent": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Selected Agent",
-            "description": "Which agent's result to use (e.g. 'openai_pm'). Required when multiple agents produced results."
-          }
-        },
-        "type": "object",
-        "required": [
-          "run_id",
-          "approve"
-        ],
-        "title": "PRDApproveRequest",
-        "description": "Request body for POST /flow/prd/approve."
-      },
-      "PRDActionResponse": {
-        "properties": {
-          "run_id": {
-            "type": "string",
-            "title": "Run Id",
-            "description": "The run this action was applied to."
-          },
-          "action": {
-            "type": "string",
-            "title": "Action",
-            "description": "The action that was taken."
-          },
-          "section": {
-            "type": "string",
-            "title": "Section",
-            "description": "The section key the action was applied to."
-          },
-          "current_step": {
-            "type": ["integer", "null"],
-            "title": "Current Step",
-            "description": "1-based step number of the current section."
-          },
-          "sections_approved": {
-            "type": ["integer", "null"],
-            "title": "Sections Approved",
-            "description": "Number of sections approved so far."
-          },
-          "sections_total": {
-            "type": ["integer", "null"],
-            "title": "Sections Total",
-            "description": "Total number of sections in the PRD."
-          },
-          "is_final_section": {
-            "type": "boolean",
-            "title": "Is Final Section",
-            "description": "True when this approval completed the last section."
-          },
-          "active_agents": {
-            "items": { "type": "string" },
-            "type": "array",
-            "title": "Active Agents",
-            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm'])."
-          },
-          "dropped_agents": {
-            "items": { "type": "string" },
-            "type": "array",
-            "title": "Dropped Agents",
-            "description": "Agent identifiers removed from the flow after failing during parallel drafting."
-          },
-          "agent_errors": {
-            "type": "object",
-            "additionalProperties": { "type": "string" },
-            "title": "Agent Errors",
-            "description": "Map of dropped agent name to its error message."
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "description": "Human-readable result message."
-          }
-        },
-        "type": "object",
-        "required": [
-          "run_id",
-          "action",
-          "message"
-        ],
-        "title": "PRDActionResponse",
-        "description": "Response for approval, pause, and feedback actions."
+        "description": "Response for POST /flow/prd/kickoff.\n\nReturned when a new PRD flow is accepted.  The flow runs in the\nbackground through Idea Refinement \u2192 Requirements Breakdown \u2192\nPhase 1 (Executive Summary iteration) \u2192 Phase 2 (9-section\nauto-iterate).  Poll GET /flow/runs/{run_id} for status."
       },
       "PRDPauseRequest": {
         "properties": {
           "run_id": {
             "type": "string",
             "title": "Run Id",
-            "description": "The run to pause."
+            "description": "The run to pause.",
+            "examples": [
+              "a1b2c3d4e5f6"
+            ]
           }
         },
         "type": "object",
@@ -228,18 +604,103 @@
         "title": "PRDPauseRequest",
         "description": "Request body for POST /flow/prd/pause."
       },
+      "PRDResumableListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of resumable runs."
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/PRDResumableRun"
+            },
+            "type": "array",
+            "title": "Runs",
+            "description": "List of resumable runs."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "PRDResumableListResponse",
+        "description": "Response for GET /flow/prd/resumable."
+      },
+      "PRDResumableRun": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Unique run identifier."
+          },
+          "idea": {
+            "type": "string",
+            "title": "Idea",
+            "description": "The feature idea text.",
+            "default": ""
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "description": "Last iteration number.",
+            "default": 0
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At",
+            "description": "ISO-8601 timestamp of the last activity."
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sections",
+            "description": "Section keys that have draft content."
+          },
+          "exec_summary_iterations": {
+            "type": "integer",
+            "title": "Exec Summary Iterations",
+            "description": "Number of executive summary iterations completed.",
+            "default": 0
+          },
+          "req_breakdown_iterations": {
+            "type": "integer",
+            "title": "Req Breakdown Iterations",
+            "description": "Number of requirements breakdown iterations completed.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "PRDResumableRun",
+        "description": "An unfinalized run that can be resumed."
+      },
       "PRDResumeRequest": {
         "properties": {
           "run_id": {
             "type": "string",
             "title": "Run Id",
-            "description": "The run_id of an unfinalized working idea to resume."
+            "description": "The run_id of an unfinalized working idea to resume.",
+            "examples": [
+              "a1b2c3d4e5f6"
+            ]
           },
           "auto_approve": {
             "type": "boolean",
-            "default": false,
             "title": "Auto Approve",
-            "description": "When true, the resumed flow runs end-to-end without pausing for manual approval at each section. Poll GET /flow/runs/{run_id} for progress instead of calling POST /flow/prd/approve."
+            "description": "When true, the resumed flow runs end-to-end without pausing for manual approval at each section (same behaviour as the CLI). Poll GET /flow/runs/{run_id} for progress instead of calling POST /flow/prd/approve.",
+            "default": false
           }
         },
         "type": "object",
@@ -259,7 +720,8 @@
           "flow_name": {
             "type": "string",
             "title": "Flow Name",
-            "description": "Name of the flow."
+            "description": "Name of the flow.",
+            "default": "prd"
           },
           "status": {
             "type": "string",
@@ -269,25 +731,35 @@
           "sections_approved": {
             "type": "integer",
             "title": "Sections Approved",
-            "description": "Number of sections already approved."
+            "description": "Number of sections already approved.",
+            "default": 0
           },
           "sections_total": {
             "type": "integer",
             "title": "Sections Total",
-            "description": "Total number of PRD sections."
+            "description": "Total number of PRD sections.",
+            "default": 0
           },
           "next_section": {
-            "type": [
-              "string",
-              "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Next Section",
             "description": "Key of the next section to iterate."
           },
           "next_step": {
-            "type": [
-              "integer",
-              "null"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Next Step",
             "description": "1-based step number of the next section."
@@ -305,91 +777,7 @@
           "message"
         ],
         "title": "PRDResumeResponse",
-        "description": "Response for POST /flow/prd/resume. Sections with existing content skip the draft step and resume into the critique/refine loop. Degenerate content from a previous crash is cleaned up automatically."
-      },
-      "PRDSectionDetail": {
-        "properties": {
-          "key": {
-            "type": "string",
-            "title": "Key",
-            "description": "Section identifier slug."
-          },
-          "title": {
-            "type": "string",
-            "title": "Title",
-            "description": "Human-readable section title."
-          },
-          "step": {
-            "type": "integer",
-            "title": "Step",
-            "description": "1-based step number in the PRD workflow."
-          },
-          "content": {
-            "type": "string",
-            "title": "Content",
-            "description": "Current markdown content."
-          },
-          "critique": {
-            "type": "string",
-            "title": "Critique",
-            "description": "Latest critique text."
-          },
-          "iteration": {
-            "type": "integer",
-            "title": "Iteration",
-            "description": "Section iteration count."
-          },
-          "updated_date": {
-            "type": "string",
-            "title": "Updated Date",
-            "description": "ISO-8601 timestamp of the last update to this section."
-          },
-          "is_approved": {
-            "type": "boolean",
-            "title": "Is Approved",
-            "description": "Whether this section is approved."
-          },
-          "agent_results": {
-            "type": "object",
-            "additionalProperties": { "type": "string" },
-            "title": "Agent Results",
-            "description": "Per-agent draft results. Keys are agent identifiers (e.g. 'openai_pm'), values are the markdown content each agent produced."
-          },
-          "selected_agent": {
-            "type": "string",
-            "title": "Selected Agent",
-            "description": "Which agent's result was selected by the user."
-          }
-        },
-        "type": "object",
-        "required": [
-          "key",
-          "title"
-        ],
-        "title": "PRDSectionDetail"
-      },
-      "PRDDraftDetail": {
-        "properties": {
-          "sections": {
-            "items": {
-              "$ref": "#/components/schemas/PRDSectionDetail"
-            },
-            "type": "array",
-            "title": "Sections",
-            "description": "Ordered list of PRD sections with their current state."
-          },
-          "all_approved": {
-            "type": "boolean",
-            "title": "All Approved",
-            "description": "True when every section has been approved."
-          }
-        },
-        "type": "object",
-        "required": [
-          "sections",
-          "all_approved"
-        ],
-        "title": "PRDDraftDetail"
+        "description": "Response for POST /flow/prd/resume.\n\nReturned when a paused or unfinalized run is successfully resumed.\nSections with existing content will skip the draft step and resume\ndirectly into the critique\u2192refine loop.  Degenerate content left by\na previous crash is cleaned up automatically."
       },
       "PRDRunStatusResponse": {
         "properties": {
@@ -411,7 +799,8 @@
           "iteration": {
             "type": "integer",
             "title": "Iteration",
-            "description": "Total iteration count across all sections. Phase 1 (Executive Summary) iterates >= PRD_EXEC_RESUME_THRESHOLD times, Phase 2 sections each iterate between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS."
+            "description": "Total iteration count across all sections.  In the two-phase flow, Phase 1 (Executive Summary) iterates \u2265 PRD_EXEC_RESUME_THRESHOLD times, and Phase 2 sections each iterate between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS.",
+            "default": 0
           },
           "created_at": {
             "type": "string",
@@ -419,72 +808,98 @@
             "description": "ISO-8601 creation timestamp."
           },
           "update_date": {
-            "type": [
-              "string",
-              "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Update Date",
             "description": "ISO-8601 timestamp of the last update."
           },
           "completed_at": {
-            "type": [
-              "string",
-              "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Completed At",
             "description": "ISO-8601 timestamp when the run was completed."
           },
           "result": {
-            "type": [
-              "string",
-              "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Result",
             "description": "Final result when completed."
           },
           "error": {
-            "type": [
-              "string",
-              "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Error",
-            "description": "Error message if the run was paused due to an error. Prefixed with an error code: BILLING_ERROR, LLM_ERROR, or INTERNAL_ERROR. Errors always result in status='paused' (never 'failed')."
+            "description": "Error message if the run was paused due to an error. Prefixed with an error code: BILLING_ERROR, LLM_ERROR, or INTERNAL_ERROR. Note: errors always result in status='paused' (never 'failed'), so the run can be resumed after the issue is resolved."
           },
           "current_section_key": {
             "type": "string",
             "title": "Current Section Key",
-            "description": "Key of the section currently being iterated."
+            "description": "Key of the section currently being iterated.",
+            "default": ""
           },
           "current_step": {
             "type": "integer",
             "title": "Current Step",
-            "description": "1-based step number of the current section."
+            "description": "1-based step number of the current section.",
+            "default": 0
           },
           "sections_approved": {
             "type": "integer",
             "title": "Sections Approved",
-            "description": "Number of approved sections."
+            "description": "Number of approved sections (convenience, derivable from current_draft).",
+            "default": 0
           },
           "sections_total": {
             "type": "integer",
             "title": "Sections Total",
-            "description": "Total number of PRD sections."
+            "description": "Total number of PRD sections.",
+            "default": 0
           },
           "active_agents": {
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "type": "array",
             "title": "Active Agents",
-            "description": "Agent identifiers currently participating in the flow."
+            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm'])."
           },
           "dropped_agents": {
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "type": "array",
             "title": "Dropped Agents",
-            "description": "Agent identifiers removed after failing during parallel drafting."
+            "description": "Agent identifiers that were removed after failing during parallel drafting."
           },
           "agent_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
             "type": "object",
-            "additionalProperties": { "type": "string" },
             "title": "Agent Errors",
             "description": "Map of dropped agent name to its error message."
           },
@@ -500,8 +915,43 @@
             "description": "Whether the idea was refined by the Idea Refinement agent.",
             "default": false
           },
+          "finalized_idea": {
+            "type": "string",
+            "title": "Finalized Idea",
+            "description": "Copy of the last executive summary content once Phase 1 completes. Empty until the executive summary iteration loop finishes.",
+            "default": ""
+          },
+          "requirements_breakdown": {
+            "type": "string",
+            "title": "Requirements Breakdown",
+            "description": "Structured product requirements produced by the Requirements Breakdown agent. Empty until the breakdown phase completes.",
+            "default": ""
+          },
+          "executive_summary": {
+            "$ref": "#/components/schemas/ExecutiveSummaryDraft",
+            "description": "Iterative executive summary produced in Phase 1. Contains the full iteration history with content, critique, and timestamps for each cycle."
+          },
+          "confluence_url": {
+            "type": "string",
+            "title": "Confluence Url",
+            "description": "URL of the Confluence page where the PRD was published. Empty until post-completion publishing succeeds.",
+            "default": ""
+          },
+          "jira_output": {
+            "type": "string",
+            "title": "Jira Output",
+            "description": "Summary of Jira tickets created from PRD requirements. Empty until post-completion ticketing completes.",
+            "default": ""
+          },
+          "output_file": {
+            "type": "string",
+            "title": "Output File",
+            "description": "Path to the generated PRD markdown file on disk. Empty until the flow finalizes.",
+            "default": ""
+          },
           "current_draft": {
-            "$ref": "#/components/schemas/PRDDraftDetail"
+            "$ref": "#/components/schemas/PRDDraftDetail",
+            "description": "Full structured draft with per-section state."
           }
         },
         "type": "object",
@@ -509,204 +959,81 @@
           "run_id",
           "flow_name",
           "status",
-          "iteration",
-          "created_at",
-          "current_section_key",
-          "current_draft"
+          "created_at"
         ],
-        "title": "PRDRunStatusResponse"
+        "title": "PRDRunStatusResponse",
+        "description": "Response for GET /flow/runs/{run_id}."
       },
-      "PRDResumableRun": {
+      "PRDSectionDetail": {
         "properties": {
-          "run_id": {
+          "key": {
             "type": "string",
-            "title": "Run Id",
-            "description": "Unique run identifier."
+            "title": "Key",
+            "description": "Section identifier slug."
           },
-          "idea": {
+          "title": {
             "type": "string",
-            "title": "Idea",
-            "description": "The feature idea text."
+            "title": "Title",
+            "description": "Human-readable section title."
+          },
+          "step": {
+            "type": "integer",
+            "title": "Step",
+            "description": "1-based step number in the PRD workflow.",
+            "default": 0
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Current markdown content.",
+            "default": ""
+          },
+          "critique": {
+            "type": "string",
+            "title": "Critique",
+            "description": "Latest critique text.",
+            "default": ""
           },
           "iteration": {
             "type": "integer",
             "title": "Iteration",
-            "description": "Last iteration number."
+            "description": "Section iteration count.",
+            "default": 0
           },
-          "created_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Created At",
-            "description": "ISO-8601 timestamp of the last activity."
+          "updated_date": {
+            "type": "string",
+            "title": "Updated Date",
+            "description": "ISO-8601 timestamp of the last update to this section.",
+            "default": ""
           },
-          "sections": {
-            "items": {
+          "is_approved": {
+            "type": "boolean",
+            "title": "Is Approved",
+            "description": "Whether this section is approved.",
+            "default": false
+          },
+          "agent_results": {
+            "additionalProperties": {
               "type": "string"
             },
-            "type": "array",
-            "title": "Sections",
-            "description": "Section keys that have draft content."
+            "type": "object",
+            "title": "Agent Results",
+            "description": "Per-agent draft results. Keys are agent identifiers (e.g. 'openai_pm'), values are the markdown content each agent produced for this section."
+          },
+          "selected_agent": {
+            "type": "string",
+            "title": "Selected Agent",
+            "description": "Which agent's result was selected by the user.",
+            "default": ""
           }
         },
         "type": "object",
         "required": [
-          "run_id",
-          "idea",
-          "iteration",
-          "sections"
+          "key",
+          "title"
         ],
-        "title": "PRDResumableRun"
-      },
-      "PRDResumableListResponse": {
-        "properties": {
-          "count": {
-            "type": "integer",
-            "title": "Count",
-            "description": "Number of resumable runs."
-          },
-          "runs": {
-            "items": {
-              "$ref": "#/components/schemas/PRDResumableRun"
-            },
-            "type": "array",
-            "title": "Runs",
-            "description": "List of resumable runs."
-          }
-        },
-        "type": "object",
-        "required": [
-          "count",
-          "runs"
-        ],
-        "title": "PRDResumableListResponse"
-      },
-      "JobDetail": {
-        "properties": {
-          "job_id": {
-            "type": "string",
-            "title": "Job Id",
-            "description": "Unique job identifier (same as run_id)."
-          },
-          "flow_name": {
-            "type": "string",
-            "title": "Flow Name",
-            "description": "Name of the flow (e.g. 'prd')."
-          },
-          "idea": {
-            "type": "string",
-            "title": "Idea",
-            "description": "The feature idea / input text."
-          },
-          "status": {
-            "type": "string",
-            "title": "Status",
-            "description": "Job lifecycle status: queued, running, awaiting_approval, paused, or completed. Errors result in 'paused' (not 'failed'), allowing runs to be resumed."
-          },
-          "error": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Error",
-            "description": "Error message when the job was paused due to an error (LLM, billing, or internal)."
-          },
-          "queued_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Queued At",
-            "description": "ISO-8601 timestamp when the job was created."
-          },
-          "started_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Started At",
-            "description": "ISO-8601 timestamp when execution began."
-          },
-          "completed_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Completed At",
-            "description": "ISO-8601 timestamp when the job reached a terminal state."
-          },
-          "queue_time_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "title": "Queue Time Ms",
-            "description": "Time spent in queue in milliseconds."
-          },
-          "queue_time_human": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Queue Time Human",
-            "description": "Queue duration in human-readable form."
-          },
-          "running_time_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "title": "Running Time Ms",
-            "description": "Time spent running in milliseconds."
-          },
-          "running_time_human": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Running Time Human",
-            "description": "Running duration in human-readable form."
-          },
-          "updated_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "title": "Updated At",
-            "description": "ISO-8601 timestamp of last update."
-          }
-        },
-        "type": "object",
-        "required": [
-          "job_id",
-          "flow_name",
-          "status"
-        ],
-        "title": "JobDetail"
-      },
-      "JobListResponse": {
-        "properties": {
-          "count": {
-            "type": "integer",
-            "title": "Count",
-            "description": "Number of jobs returned."
-          },
-          "jobs": {
-            "items": {
-              "$ref": "#/components/schemas/JobDetail"
-            },
-            "type": "array",
-            "title": "Jobs",
-            "description": "List of job records."
-          }
-        },
-        "type": "object",
-        "required": [
-          "count",
-          "jobs"
-        ],
-        "title": "JobListResponse"
+        "title": "PRDSectionDetail",
+        "description": "A section's state as returned in run-status responses."
       },
       "ValidationError": {
         "properties": {
@@ -747,38 +1074,6 @@
           "type"
         ],
         "title": "ValidationError"
-      },
-      "ErrorResponse": {
-        "description": "Standard error envelope returned by all API endpoints for server-side or LLM errors.",
-        "properties": {
-          "error_code": {
-            "type": "string",
-            "title": "Error Code",
-            "description": "Machine-readable error code. One of: LLM_ERROR, BILLING_ERROR, INTERNAL_ERROR.",
-            "enum": ["LLM_ERROR", "BILLING_ERROR", "INTERNAL_ERROR"],
-            "examples": ["LLM_ERROR"]
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "description": "Human-readable description of the error.",
-            "examples": ["LLM timeout after 4 attempts"]
-          },
-          "run_id": {
-            "type": ["string", "null"],
-            "title": "Run Id",
-            "description": "The run_id affected by this error, if applicable.",
-            "examples": ["a1b2c3d4e5f6"]
-          },
-          "detail": {
-            "type": ["string", "null"],
-            "title": "Detail",
-            "description": "Additional diagnostic detail (e.g. the original exception message)."
-          }
-        },
-        "type": "object",
-        "required": ["error_code", "message"],
-        "title": "ErrorResponse"
       }
     }
   }

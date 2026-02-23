@@ -36,15 +36,47 @@ _logger = get_logger(__name__)
 async def _lifespan(application: FastAPI):
     """Startup / shutdown lifecycle hook.
 
-    On startup, marks any incomplete jobs from previous runs as failed
-    so they are not left in a stale ``queued`` / ``running`` state.
+    Runs the same recovery tasks as the CLI on startup:
+    1. Kill stale crew processes from a previous server crash.
+    2. Mark incomplete crew-jobs as failed.
+    3. Generate missing markdown outputs for completed ideas.
+    4. Publish unpublished PRDs to Confluence (when credentials are set).
     """
+    # 1. Kill stale processes
+    try:
+        from crewai_productfeature_planner.main import _kill_stale_crew_processes
+        killed = _kill_stale_crew_processes()
+        if killed:
+            _logger.info("Startup recovery: killed %d stale process(es)", killed)
+    except Exception as exc:
+        _logger.warning("Startup recovery (kill stale processes) failed: %s", exc)
+
+    # 2. Fail incomplete jobs
     try:
         count = fail_incomplete_jobs_on_startup()
         if count:
             _logger.info("Startup recovery: %d incomplete job(s) marked as failed", count)
     except Exception as exc:
-        _logger.warning("Startup recovery failed: %s", exc)
+        _logger.warning("Startup recovery (fail incomplete jobs) failed: %s", exc)
+
+    # 3. Generate missing output files
+    try:
+        from crewai_productfeature_planner.main import _generate_missing_outputs
+        generated = _generate_missing_outputs()
+        if generated:
+            _logger.info("Startup recovery: generated %d missing output file(s)", generated)
+    except Exception as exc:
+        _logger.warning("Startup recovery (generate missing outputs) failed: %s", exc)
+
+    # 4. Publish unpublished PRDs to Confluence
+    try:
+        from crewai_productfeature_planner.main import _publish_unpublished_prds
+        published = _publish_unpublished_prds()
+        if published:
+            _logger.info("Startup recovery: published %d PRD(s) to Confluence", published)
+    except Exception as exc:
+        _logger.warning("Startup recovery (publish unpublished PRDs) failed: %s", exc)
+
     yield
 
 

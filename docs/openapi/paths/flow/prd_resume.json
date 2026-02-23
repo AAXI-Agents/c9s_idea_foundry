@@ -1,14 +1,16 @@
 {
   "post": {
+    "tags": [
+      "Flow Runs"
+    ],
     "summary": "Resume a paused or unfinalized run",
-    "description": "Resumes a previously paused or unfinalized PRD flow. Restores section state from MongoDB and continues the iteration loop from the next unapproved section.\n\n**auto_approve mode**: set `auto_approve: true` in the request body to resume the flow end-to-end without pausing for manual approval (same as CLI mode). The API responds immediately with 202 and the flow proceeds autonomously.\n\n**Resume behaviour:**\n- Sections that already have content skip the initial draft step and go directly into the critique→refine loop.\n- If Phase 1 (Executive Summary) has ≥ PRD_EXEC_RESUME_THRESHOLD iterations, Phase 1 is skipped entirely and Phase 2 resumes from the next unapproved section.\n- Any degenerate content (empty or whitespace-only) left by a previous crash is cleaned up before iteration resumes.\n- Requirements approval is skipped if already completed.\n\nThe run_id must appear in the resumable list returned by GET /flow/prd/resumable.\n\nEquivalent to selecting a run to resume in the CLI startup prompt.",
+    "description": "Resumes a previously paused or unfinalized PRD flow. Restores section state from MongoDB and continues the iteration loop from the next unapproved section.\n\nSet ``auto_approve=true`` in the request body to resume without pausing for manual approval (same as CLI mode). The API responds immediately with 202 and the flow proceeds autonomously.\n\n**Resume behaviour:**\n- Sections that already have content skip the initial draft step and go directly into the critique\u2192refine loop.\n- If Phase 1 (Executive Summary) has \u2265 PRD_EXEC_RESUME_THRESHOLD iterations, Phase 1 is skipped entirely and Phase 2 resumes from the next unapproved section.\n- Any degenerate content (empty or whitespace-only) left by a previous crash is cleaned up before iteration resumes.\n- Requirements approval is skipped if already completed.\n\nThe run_id must appear in the resumable list returned by GET /flow/prd/resumable.\n\nEquivalent to selecting a run to resume in the CLI startup prompt.",
     "operationId": "resume_prd_flow_prd_resume_post",
-    "tags": ["Flow Runs"],
     "requestBody": {
       "content": {
         "application/json": {
           "schema": {
-            "$ref": "../openapi.json#/components/schemas/PRDResumeRequest"
+            "$ref": "#/components/schemas/PRDResumeRequest"
           }
         }
       },
@@ -20,7 +22,7 @@
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/PRDResumeResponse"
+              "$ref": "#/components/schemas/PRDResumeResponse"
             }
           }
         }
@@ -31,32 +33,32 @@
       "409": {
         "description": "Run is already active."
       },
-      "422": {
-        "description": "Validation Error",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "../openapi.json#/components/schemas/HTTPValidationError"
-            }
-          }
-        }
-      },
       "500": {
-        "description": "Internal server error (INTERNAL_ERROR).",
+        "description": "Internal server error. The `error_code` field will be `INTERNAL_ERROR`. Check the `message` and `detail` fields for diagnostics.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable (LLM_ERROR or BILLING_ERROR). The affected flow run is automatically paused.",
+        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "../openapi.json#/components/schemas/ErrorResponse"
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
             }
           }
         }

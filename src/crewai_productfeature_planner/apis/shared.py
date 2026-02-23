@@ -7,7 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from crewai_productfeature_planner.apis.prd.models import PRDDraft
+from crewai_productfeature_planner.apis.prd.models import (
+    ExecutiveSummaryDraft,
+    PRDDraft,
+)
 
 
 # ── Shared types ──────────────────────────────────────────────
@@ -63,6 +66,30 @@ class FlowRun(BaseModel):
     idea_refined: bool = Field(
         default=False,
         description="Whether the idea was refined by the Idea Refinement agent.",
+    )
+    finalized_idea: str = Field(
+        default="",
+        description="Last executive summary content once Phase 1 completes.",
+    )
+    requirements_breakdown: str = Field(
+        default="",
+        description="Structured requirements from the Requirements Breakdown agent.",
+    )
+    executive_summary: ExecutiveSummaryDraft = Field(
+        default_factory=ExecutiveSummaryDraft,
+        description="Iterative executive summary produced in Phase 1.",
+    )
+    confluence_url: str = Field(
+        default="",
+        description="URL of the Confluence page where the PRD was published.",
+    )
+    jira_output: str = Field(
+        default="",
+        description="Summary of Jira tickets created from PRD requirements.",
+    )
+    output_file: str = Field(
+        default="",
+        description="Path to the generated PRD markdown file.",
     )
 
 
