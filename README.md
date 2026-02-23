@@ -20,7 +20,7 @@ crewai install
 ```
 ### Customizing
 
-**Add your `OPENAI_API_KEY` into the `.env` file.** Optionally set `GOOGLE_API_KEY` (or `GOOGLE_CLOUD_PROJECT` for Vertex AI) to enable multi-agent parallel analysis with Google Gemini.
+**Add your `OPENAI_API_KEY` into the `.env` file.** Optionally set `GOOGLE_API_KEY` (or `GOOGLE_CLOUD_PROJECT` for Vertex AI) to enable Gemini-powered idea refinement and requirements breakdown.
 
 - Modify `src/crewai_productfeature_planner/config/agents.yaml` to define your agents
 - Modify `src/crewai_productfeature_planner/config/tasks.yaml` to define your tasks
@@ -77,9 +77,9 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 |---|---|---|---|
 | `OPENAI_API_KEY` | **Yes**\* | — | OpenAI API key (required when `DEFAULT_AGENT=openai_pm` or `DEFAULT_MULTI_AGENTS=2`) |
 | `OPENAI_MODEL` | No | `o3` | OpenAI model for the Product Manager agent |
-| `DEFAULT_AGENT` | No | `openai_pm` | Primary agent for all LLM tasks (`openai_pm` or `gemini_pm`). The default agent is always required; additional agents are optional. |
-| `DEFAULT_MULTI_AGENTS` | No | `1` | Number of PM agents to run in parallel. `1` = default only; `2` = default + optional agent (e.g. OpenAI when default is Gemini). |
-| `GOOGLE_API_KEY` | **Yes**\* | — | Google API key ([get one here](https://aistudio.google.com/apikey)). Required when using Gemini API mode. Either this or `GOOGLE_CLOUD_PROJECT` must be set when `DEFAULT_AGENT=gemini_pm`; optional otherwise. |
+| `DEFAULT_AGENT` | No | `openai_pm` | Primary agent for all LLM tasks (`openai_pm`). |
+| `DEFAULT_MULTI_AGENTS` | No | `1` | Number of PM agents to run in parallel. |
+| `GOOGLE_API_KEY` | **Yes**\* | — | Google API key ([get one here](https://aistudio.google.com/apikey)). Required for Gemini-powered idea refinement and requirements breakdown. Either this or `GOOGLE_CLOUD_PROJECT` must be set. |
 | `GOOGLE_CLOUD_PROJECT` | **Yes**\* | — | Google Cloud project ID with Vertex AI API enabled. Alternative to `GOOGLE_API_KEY`. Authenticate via `gcloud auth application-default login`. |
 | `GOOGLE_CLOUD_LOCATION` | No | `asia-southeast1` | Google Cloud region for Vertex AI ([available regions](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations)) |
 | `GEMINI_MODEL` | No | `gemini-3-flash-preview` | Gemini model to use ([available models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models)) |

@@ -52,12 +52,12 @@ def _build_breakdown_llm() -> LLM:
         2. ``GEMINI_MODEL`` env var
         3. Hard-coded default (same as Gemini PM)
     """
-    from crewai_productfeature_planner.agents.gemini_product_manager.agent import (
+    from crewai_productfeature_planner.agents.gemini_utils import (
         DEFAULT_GEMINI_MODEL,
-        _ensure_gemini_env,
+        ensure_gemini_env,
     )
 
-    _ensure_gemini_env()
+    ensure_gemini_env()
 
     model_name = os.environ.get(
         "REQUIREMENTS_BREAKDOWN_MODEL",

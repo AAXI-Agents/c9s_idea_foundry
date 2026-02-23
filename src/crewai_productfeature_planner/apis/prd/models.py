@@ -23,10 +23,9 @@ SECTION_KEYS: list[str] = [key for key, _ in SECTION_ORDER]
 
 # Well-known agent identifiers used across the codebase.
 AGENT_OPENAI = "openai_pm"
-AGENT_GEMINI = "gemini_pm"
 
 # All recognised agent identifiers (order = display preference).
-VALID_AGENTS: list[str] = [AGENT_OPENAI, AGENT_GEMINI]
+VALID_AGENTS: list[str] = [AGENT_OPENAI]
 
 # Fallback when DEFAULT_AGENT env var is not set.
 DEFAULT_AGENT_FALLBACK = AGENT_OPENAI
@@ -117,7 +116,7 @@ class PRDSection(BaseModel):
         default_factory=dict,
         description=(
             "Per-agent draft results for this section. Keys are agent "
-            "identifiers (e.g. 'openai_pm', 'gemini_pm'), values are "
+            "identifiers (e.g. 'openai_pm'), values are "
             "the markdown content each agent produced."
         ),
     )
@@ -231,7 +230,7 @@ class PRDApproveRequest(BaseModel):
     selected_agent: str | None = Field(
         default=None,
         description=(
-            "Which agent's result to use (e.g. 'openai_pm' or 'gemini_pm'). "
+            "Which agent's result to use (e.g. 'openai_pm'). "
             "Required when multiple agents produced results for the current "
             "section. Defaults to the first available agent when omitted."
         ),
@@ -321,21 +320,20 @@ class PRDActionResponse(BaseModel):
         default_factory=list,
         description=(
             "Agent identifiers currently participating in the flow "
-            "(e.g. ['openai_pm', 'gemini_pm'])."
+            "(e.g. ['openai_pm'])."
         ),
     )
     dropped_agents: list[str] = Field(
         default_factory=list,
         description=(
             "Agent identifiers that were removed from the flow after "
-            "failing during parallel drafting (e.g. ['gemini_pm'])."
+            "failing during parallel drafting."
         ),
     )
     agent_errors: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Map of dropped agent name to its error message "
-            "(e.g. {'gemini_pm': 'RuntimeError: model not found'})."
+            "Map of dropped agent name to its error message."
         ),
     )
     message: str = Field(..., description="Human-readable result message.")
@@ -359,7 +357,7 @@ class PRDSectionDetail(BaseModel):
         default_factory=dict,
         description=(
             "Per-agent draft results. Keys are agent identifiers "
-            "(e.g. 'openai_pm', 'gemini_pm'), values are the markdown "
+            "(e.g. 'openai_pm'), values are the markdown "
             "content each agent produced for this section."
         ),
     )
@@ -437,21 +435,20 @@ class PRDRunStatusResponse(BaseModel):
         default_factory=list,
         description=(
             "Agent identifiers currently participating in the flow "
-            "(e.g. ['openai_pm', 'gemini_pm'])."
+            "(e.g. ['openai_pm'])."
         ),
     )
     dropped_agents: list[str] = Field(
         default_factory=list,
         description=(
             "Agent identifiers that were removed after failing during "
-            "parallel drafting (e.g. ['gemini_pm'])."
+            "parallel drafting."
         ),
     )
     agent_errors: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Map of dropped agent name to its error message "
-            "(e.g. {'gemini_pm': 'RuntimeError: model not found'})."
+            "Map of dropped agent name to its error message."
         ),
     )
     original_idea: str = Field(

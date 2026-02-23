@@ -4,7 +4,6 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from crewai_productfeature_planner.apis.prd.models import (
-    AGENT_GEMINI,
     AGENT_OPENAI,
     DEFAULT_AGENT_FALLBACK,
     ExecutiveSummaryDraft,
@@ -15,6 +14,9 @@ from crewai_productfeature_planner.apis.prd.models import (
     VALID_AGENTS,
     get_default_agent,
 )
+
+# Stand-in identifier used in multi-agent infrastructure tests.
+_SECOND_AGENT = "second_pm"
 from crewai_productfeature_planner.flows.prd_flow import (
     DEFAULT_MAX_SECTION_ITERATIONS,
     DEFAULT_MIN_SECTION_ITERATIONS,
@@ -250,9 +252,9 @@ def test_finalize_saves_prd(mock_writer_cls, mock_mark_completed):
 def test_parse_decision_tuple():
     """Tuple decisions should be unpacked as (agent_name, action)."""
     agent, action = PRDFlow._parse_decision(
-        (AGENT_GEMINI, True), [AGENT_OPENAI, AGENT_GEMINI],
+        (_SECOND_AGENT, True), [AGENT_OPENAI, _SECOND_AGENT],
     )
-    assert agent == AGENT_GEMINI
+    assert agent == _SECOND_AGENT
     assert action is True
 
 
@@ -268,30 +270,30 @@ def test_parse_decision_tuple_feedback():
 def test_parse_decision_legacy_true():
     """Legacy True return should select the DEFAULT_AGENT."""
     with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=AGENT_OPENAI):
-        agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI, AGENT_GEMINI])
+        agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI, _SECOND_AGENT])
     assert agent == AGENT_OPENAI
     assert action is True
 
 
 def test_parse_decision_legacy_false():
     """Legacy False return should select the DEFAULT_AGENT when available."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=AGENT_GEMINI):
-        agent, action = PRDFlow._parse_decision(False, [AGENT_GEMINI, AGENT_OPENAI])
-    assert agent == AGENT_GEMINI
+    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=_SECOND_AGENT):
+        agent, action = PRDFlow._parse_decision(False, [_SECOND_AGENT, AGENT_OPENAI])
+    assert agent == _SECOND_AGENT
     assert action is False
 
 
 def test_parse_decision_legacy_prefers_default_agent():
     """Legacy decision should prefer DEFAULT_AGENT over first in available list."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=AGENT_GEMINI):
-        agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI, AGENT_GEMINI])
-    assert agent == AGENT_GEMINI
+    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=_SECOND_AGENT):
+        agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI, _SECOND_AGENT])
+    assert agent == _SECOND_AGENT
     assert action is True
 
 
 def test_parse_decision_legacy_falls_back_when_default_unavailable():
     """Legacy decision should fall back to first available when default not in list."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=AGENT_GEMINI):
+    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=_SECOND_AGENT):
         agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI])
     assert agent == AGENT_OPENAI
     assert action is True
@@ -309,80 +311,23 @@ def test_parse_decision_legacy_string():
 
 @patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
 def test_get_available_agents_openai_only(mock_create_pm, monkeypatch):
-    """Without GOOGLE_API_KEY/GOOGLE_CLOUD_PROJECT only OpenAI PM should be returned."""
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    """Default agent should be OpenAI PM."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
-    monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "2")
+    monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
     mock_create_pm.return_value = MagicMock()
     agents = PRDFlow._get_available_agents()
     assert list(agents.keys()) == [AGENT_OPENAI]
     mock_create_pm.assert_called_once()
 
 
-@patch(
-    "crewai_productfeature_planner.agents.gemini_product_manager.create_gemini_product_manager",
-)
 @patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
-def test_get_available_agents_both(mock_create_pm, mock_create_gemini, monkeypatch):
-    """With GOOGLE_API_KEY and DEFAULT_MULTI_AGENTS=2 both agents should be returned."""
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    monkeypatch.delenv("DEFAULT_AGENT", raising=False)
-    monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "2")
-    mock_create_pm.return_value = MagicMock()
-    mock_create_gemini.return_value = MagicMock()
-    agents = PRDFlow._get_available_agents()
-    assert AGENT_OPENAI in agents
-    assert AGENT_GEMINI in agents
-    # Default agent should come first
-    assert list(agents.keys())[0] == AGENT_OPENAI
-
-
-@patch(
-    "crewai_productfeature_planner.agents.gemini_product_manager.create_gemini_product_manager",
-)
-def test_get_available_agents_gemini_default(mock_create_gemini, monkeypatch):
-    """When DEFAULT_AGENT=gemini_pm and multi=2, Gemini first and OpenAI optional."""
-    monkeypatch.setenv("DEFAULT_AGENT", "gemini_pm")
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "2")
-    mock_create_gemini.return_value = MagicMock()
-    with patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager") as mock_pm:
-        mock_pm.return_value = MagicMock()
-        agents = PRDFlow._get_available_agents()
-    assert list(agents.keys())[0] == AGENT_GEMINI
-    assert AGENT_OPENAI in agents
-
-
-@patch(
-    "crewai_productfeature_planner.agents.gemini_product_manager.create_gemini_product_manager",
-)
-def test_get_available_agents_gemini_default_no_openai(mock_create_gemini, monkeypatch):
-    """When DEFAULT_AGENT=gemini_pm and OPENAI_API_KEY is unset, only Gemini returned."""
-    monkeypatch.setenv("DEFAULT_AGENT", "gemini_pm")
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "2")
-    mock_create_gemini.return_value = MagicMock()
-    agents = PRDFlow._get_available_agents()
-    assert list(agents.keys()) == [AGENT_GEMINI]
-
-
-@patch(
-    "crewai_productfeature_planner.agents.gemini_product_manager.create_gemini_product_manager",
-)
-@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
-def test_get_available_agents_multi_agents_1_limits_to_default(mock_create_pm, mock_create_gemini, monkeypatch):
-    """DEFAULT_MULTI_AGENTS=1 should skip optional agents even when keys are present."""
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+def test_get_available_agents_multi_agents_1_limits_to_default(mock_create_pm, monkeypatch):
+    """DEFAULT_MULTI_AGENTS=1 should use only the default agent."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
     monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
     mock_create_pm.return_value = MagicMock()
-    mock_create_gemini.return_value = MagicMock()
     agents = PRDFlow._get_available_agents()
     assert list(agents.keys()) == [AGENT_OPENAI]
-    mock_create_gemini.assert_not_called()
 
 
 def test_run_agents_parallel_single():
@@ -419,15 +364,15 @@ def test_run_agents_parallel_multi():
     """Multiple agents should run in parallel and return all results."""
     mock_result_openai = MagicMock()
     mock_result_openai.raw = "OpenAI result"
-    mock_result_gemini = MagicMock()
-    mock_result_gemini.raw = "Gemini result"
+    mock_result_second = MagicMock()
+    mock_result_second.raw = "Second agent result"
 
     call_count = 0
 
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
-        return mock_result_openai if "openai" in step_label else mock_result_gemini
+        return mock_result_openai if "openai" in step_label else mock_result_second
 
     with patch(
         "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
@@ -436,7 +381,7 @@ def test_run_agents_parallel_multi():
         "crewai_productfeature_planner.flows.prd_flow.Task",
     ):
         results, failed = PRDFlow._run_agents_parallel(
-            agents={AGENT_OPENAI: MagicMock(), AGENT_GEMINI: MagicMock()},
+            agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
             task_configs={
                 "draft_section_task": {
                     "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
@@ -449,7 +394,7 @@ def test_run_agents_parallel_multi():
             executive_summary="",
         )
     assert AGENT_OPENAI in results
-    assert AGENT_GEMINI in results
+    assert _SECOND_AGENT in results
     assert call_count == 2
     assert failed == {}
 
@@ -460,8 +405,8 @@ def test_run_agents_parallel_one_fails():
     mock_result.raw = "Survivor result"
 
     def mock_kickoff(crew, step_label=""):
-        if "gemini" in step_label:
-            raise RuntimeError("Gemini exploded")
+        if "second" in step_label:
+            raise RuntimeError("Second agent exploded")
         return mock_result
 
     with patch(
@@ -471,7 +416,7 @@ def test_run_agents_parallel_one_fails():
         "crewai_productfeature_planner.flows.prd_flow.Task",
     ):
         results, failed = PRDFlow._run_agents_parallel(
-            agents={AGENT_OPENAI: MagicMock(), AGENT_GEMINI: MagicMock()},
+            agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
             task_configs={
                 "draft_section_task": {
                     "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
@@ -484,9 +429,9 @@ def test_run_agents_parallel_one_fails():
             executive_summary="",
         )
     assert AGENT_OPENAI in results
-    assert AGENT_GEMINI not in results
-    assert AGENT_GEMINI in failed
-    assert "Gemini exploded" in failed[AGENT_GEMINI]
+    assert _SECOND_AGENT not in results
+    assert _SECOND_AGENT in failed
+    assert "Second agent exploded" in failed[_SECOND_AGENT]
 
 
 def test_run_agents_parallel_all_fail():
@@ -504,7 +449,7 @@ def test_run_agents_parallel_all_fail():
     ):
         with pytest.raises(RuntimeError, match="All agents failed"):
             PRDFlow._run_agents_parallel(
-                agents={AGENT_OPENAI: MagicMock(), AGENT_GEMINI: MagicMock()},
+                agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
                 task_configs={
                     "draft_section_task": {
                         "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
@@ -520,24 +465,25 @@ def test_run_agents_parallel_all_fail():
 
 def test_run_agents_parallel_reorders_default_first(monkeypatch):
     """Results dict should have the DEFAULT_AGENT first regardless of completion order."""
-    monkeypatch.setenv("DEFAULT_AGENT", "gemini_pm")
-
     mock_result_openai = MagicMock()
     mock_result_openai.raw = "OpenAI result"
-    mock_result_gemini = MagicMock()
-    mock_result_gemini.raw = "Gemini result"
+    mock_result_second = MagicMock()
+    mock_result_second.raw = "Second agent result"
 
     def mock_kickoff(crew, step_label=""):
-        return mock_result_openai if "openai" in step_label else mock_result_gemini
+        return mock_result_openai if "openai" in step_label else mock_result_second
 
     with patch(
+        "crewai_productfeature_planner.flows.prd_flow.get_default_agent",
+        return_value=_SECOND_AGENT,
+    ), patch(
         "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
         side_effect=mock_kickoff,
     ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
         "crewai_productfeature_planner.flows.prd_flow.Task",
     ):
         results, failed = PRDFlow._run_agents_parallel(
-            agents={AGENT_OPENAI: MagicMock(), AGENT_GEMINI: MagicMock()},
+            agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
             task_configs={
                 "draft_section_task": {
                     "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
@@ -549,8 +495,8 @@ def test_run_agents_parallel_reorders_default_first(monkeypatch):
             section_content="",
             executive_summary="",
         )
-    # DEFAULT_AGENT=gemini_pm should be first key
-    assert list(results.keys())[0] == AGENT_GEMINI
+    # DEFAULT_AGENT=second_pm should be first key
+    assert list(results.keys())[0] == _SECOND_AGENT
     assert failed == {}
 
 
@@ -563,11 +509,11 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
 
     def mock_kickoff(crew, step_label=""):
         call_log.append(step_label)
-        if "gemini" in step_label:
-            raise RuntimeError("Gemini unavailable")
+        if "second" in step_label:
+            raise RuntimeError("Second agent unavailable")
         return mock_result
 
-    agents = {AGENT_OPENAI: MagicMock(), AGENT_GEMINI: MagicMock()}
+    agents = {AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()}
 
     with patch(
         "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
@@ -575,7 +521,7 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
     ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
         "crewai_productfeature_planner.flows.prd_flow.Task",
     ):
-        # First call — Gemini fails
+        # First call — second agent fails
         results, failed = PRDFlow._run_agents_parallel(
             agents=agents,
             task_configs={
@@ -589,8 +535,8 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
             section_content="",
             executive_summary="",
         )
-        assert AGENT_GEMINI in failed
-        assert "Gemini unavailable" in failed[AGENT_GEMINI]
+        assert _SECOND_AGENT in failed
+        assert "Second agent unavailable" in failed[_SECOND_AGENT]
         assert AGENT_OPENAI in results
 
         # Simulate generate_sections removing the failed agent
@@ -598,10 +544,10 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
             if name in agents:
                 del agents[name]
 
-        assert AGENT_GEMINI not in agents
+        assert _SECOND_AGENT not in agents
         assert len(agents) == 1
 
-        # Second call — should only use the default agent, no Gemini attempt
+        # Second call — should only use the default agent
         call_log.clear()
         results2, failed2 = PRDFlow._run_agents_parallel(
             agents=agents,
@@ -618,8 +564,8 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
         )
         assert failed2 == {}
         assert AGENT_OPENAI in results2
-        # Gemini should not have been called
-        assert not any("gemini" in label for label in call_log)
+        # Second agent should not have been called
+        assert not any("second" in label for label in call_log)
 
 
 def test_prd_state_tracks_agent_changes():
@@ -631,16 +577,16 @@ def test_prd_state_tracks_agent_changes():
     assert flow.state.agent_errors == {}
 
     # Set active agents
-    flow.state.active_agents = [AGENT_OPENAI, AGENT_GEMINI]
-    assert flow.state.active_agents == [AGENT_OPENAI, AGENT_GEMINI]
+    flow.state.active_agents = [AGENT_OPENAI, _SECOND_AGENT]
+    assert flow.state.active_agents == [AGENT_OPENAI, _SECOND_AGENT]
 
     # Drop an agent with error
-    flow.state.dropped_agents.append(AGENT_GEMINI)
-    flow.state.agent_errors[AGENT_GEMINI] = "RuntimeError: model not found"
+    flow.state.dropped_agents.append(_SECOND_AGENT)
+    flow.state.agent_errors[_SECOND_AGENT] = "RuntimeError: model not found"
     flow.state.active_agents = [AGENT_OPENAI]
     assert flow.state.active_agents == [AGENT_OPENAI]
-    assert flow.state.dropped_agents == [AGENT_GEMINI]
-    assert flow.state.agent_errors == {AGENT_GEMINI: "RuntimeError: model not found"}
+    assert flow.state.dropped_agents == [_SECOND_AGENT]
+    assert flow.state.agent_errors == {_SECOND_AGENT: "RuntimeError: model not found"}
 
 
 def test_callback_receives_agent_kwargs():
@@ -655,8 +601,8 @@ def test_callback_receives_agent_kwargs():
     flow.state.idea = "Test idea"
     flow.state.run_id = "test-kwargs"
     flow.state.active_agents = [AGENT_OPENAI]
-    flow.state.dropped_agents = [AGENT_GEMINI]
-    flow.state.agent_errors = {AGENT_GEMINI: "RuntimeError: boom"}
+    flow.state.dropped_agents = [_SECOND_AGENT]
+    flow.state.agent_errors = {_SECOND_AGENT: "RuntimeError: boom"}
     flow.approval_callback = _cb
 
     section = flow.state.draft.sections[0]
@@ -668,8 +614,8 @@ def test_callback_receives_agent_kwargs():
     flow._section_approval_loop(section, agents, {})
 
     assert received_kwargs.get("active_agents") == [AGENT_OPENAI]
-    assert received_kwargs.get("dropped_agents") == [AGENT_GEMINI]
-    assert received_kwargs.get("agent_errors") == {AGENT_GEMINI: "RuntimeError: boom"}
+    assert received_kwargs.get("dropped_agents") == [_SECOND_AGENT]
+    assert received_kwargs.get("agent_errors") == {_SECOND_AGENT: "RuntimeError: boom"}
 
 
 def test_section_agent_results_after_approval():
@@ -679,19 +625,19 @@ def test_section_agent_results_after_approval():
     section.content = "OpenAI draft"
     section.agent_results = {
         AGENT_OPENAI: "OpenAI draft",
-        AGENT_GEMINI: "Gemini draft",
+        _SECOND_AGENT: "Second agent draft",
     }
     section.selected_agent = AGENT_OPENAI
     section.iteration = 1
 
-    flow.approval_callback = lambda iteration, key, agent_results, draft, **kwargs: (AGENT_GEMINI, True)
+    flow.approval_callback = lambda iteration, key, agent_results, draft, **kwargs: (_SECOND_AGENT, True)
 
-    agents = {AGENT_OPENAI: MagicMock(), AGENT_GEMINI: MagicMock()}
+    agents = {AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()}
     flow._section_approval_loop(section, agents, {})
 
     assert section.is_approved is True
-    assert section.selected_agent == AGENT_GEMINI
-    assert section.content == "Gemini draft"
+    assert section.selected_agent == _SECOND_AGENT
+    assert section.content == "Second agent draft"
 
 
 # ── get_default_agent() ──────────────────────────────────────────
@@ -709,10 +655,10 @@ def test_get_default_agent_openai(monkeypatch):
     assert get_default_agent() == AGENT_OPENAI
 
 
-def test_get_default_agent_gemini(monkeypatch):
-    """DEFAULT_AGENT=gemini_pm should return gemini_pm."""
+def test_get_default_agent_gemini_falls_back(monkeypatch):
+    """DEFAULT_AGENT=gemini_pm (removed agent) should fall back to openai_pm."""
     monkeypatch.setenv("DEFAULT_AGENT", "gemini_pm")
-    assert get_default_agent() == AGENT_GEMINI
+    assert get_default_agent() == DEFAULT_AGENT_FALLBACK
 
 
 def test_get_default_agent_invalid(monkeypatch):
@@ -721,10 +667,9 @@ def test_get_default_agent_invalid(monkeypatch):
     assert get_default_agent() == DEFAULT_AGENT_FALLBACK
 
 
-def test_valid_agents_contains_both():
-    """VALID_AGENTS should list both known agents."""
+def test_valid_agents_contains_openai():
+    """VALID_AGENTS should list the known agent."""
     assert AGENT_OPENAI in VALID_AGENTS
-    assert AGENT_GEMINI in VALID_AGENTS
 
 
 # ── _maybe_refine_idea integration ───────────────────────────

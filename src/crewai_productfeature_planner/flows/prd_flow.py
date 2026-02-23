@@ -33,7 +33,6 @@ from crewai_productfeature_planner.agents.product_manager import (
     get_task_configs,
 )
 from crewai_productfeature_planner.apis.prd.models import (
-    AGENT_GEMINI,
     AGENT_OPENAI,
     ExecutiveSummaryDraft,
     ExecutiveSummaryIteration,
@@ -249,9 +248,8 @@ class PRDFlow(Flow[PRDState]):
     Summary.  Each approved section is used as context for subsequent ones.
 
     When ``GOOGLE_API_KEY`` or ``GOOGLE_CLOUD_PROJECT`` is set in the
-    environment, the flow creates a second *Gemini Product Manager* agent
-    and runs both agents in parallel for the initial draft.  The user
-    then picks which result to keep.
+    environment, the flow creates Gemini-powered agents for idea
+    refinement and requirements breakdown phases.
 
     Args:
         approval_callback: An optional callable::
@@ -259,7 +257,7 @@ class PRDFlow(Flow[PRDState]):
             (iteration, section_key, agent_results, draft) -> ApprovalDecision
 
         *agent_results* is ``dict[str, str]`` mapping agent names
-        (``"openai_pm"``, ``"gemini_pm"``) to their draft content.
+        (``"openai_pm"``) to their draft content.
 
         Return values:
 
@@ -331,15 +329,8 @@ class PRDFlow(Flow[PRDState]):
         def _openai() -> Agent:
             return create_product_manager()
 
-        def _gemini() -> Agent:
-            from crewai_productfeature_planner.agents.gemini_product_manager import (
-                create_gemini_product_manager,
-            )
-            return create_gemini_product_manager()
-
         factories: dict[str, tuple[callable, str | list[str] | None]] = {
             AGENT_OPENAI: (_openai, "OPENAI_API_KEY"),
-            AGENT_GEMINI: (_gemini, ["GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT"]),
         }
 
         # 1) Create the default agent (required)

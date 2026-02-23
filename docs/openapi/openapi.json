@@ -132,7 +132,7 @@
               "null"
             ],
             "title": "Selected Agent",
-            "description": "Which agent's result to use (e.g. 'openai_pm' or 'gemini_pm'). Required when multiple agents produced results."
+            "description": "Which agent's result to use (e.g. 'openai_pm'). Required when multiple agents produced results."
           }
         },
         "type": "object",
@@ -184,7 +184,7 @@
             "items": { "type": "string" },
             "type": "array",
             "title": "Active Agents",
-            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm', 'gemini_pm'])."
+            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm'])."
           },
           "dropped_agents": {
             "items": { "type": "string" },
@@ -196,7 +196,7 @@
             "type": "object",
             "additionalProperties": { "type": "string" },
             "title": "Agent Errors",
-            "description": "Map of dropped agent name to its error message (e.g. {'gemini_pm': 'RuntimeError: model not found'})."
+            "description": "Map of dropped agent name to its error message."
           },
           "message": {
             "type": "string",
@@ -353,7 +353,7 @@
             "type": "object",
             "additionalProperties": { "type": "string" },
             "title": "Agent Results",
-            "description": "Per-agent draft results. Keys are agent identifiers (e.g. 'openai_pm', 'gemini_pm'), values are the markdown content each agent produced."
+            "description": "Per-agent draft results. Keys are agent identifiers (e.g. 'openai_pm'), values are the markdown content each agent produced."
           },
           "selected_agent": {
             "type": "string",
