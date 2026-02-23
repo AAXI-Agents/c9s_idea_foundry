@@ -28,7 +28,11 @@ class PRDFileWriteInput(BaseModel):
 
 
 class PRDFileWriteTool(BaseTool):
-    """Saves PRD documents to disk with automatic versioning."""
+    """Saves PRD documents to disk with automatic versioning.
+
+    Files are organised into year/month subdirectories under the base
+    output directory:  ``output/prds/YYYY/MM/prd_vN_YYYYMMDD_HHMMSS.md``.
+    """
 
     name: str = "prd_file_writer"
     description: str = (
@@ -39,11 +43,13 @@ class PRDFileWriteTool(BaseTool):
     output_dir: str = "output/prds"
 
     def _run(self, content: str, filename: str = "", version: int = 1) -> str:
-        output_path = Path(self.output_dir)
+        now = datetime.now()
+        # Build year/month subdirectory: output/prds/YYYY/MM
+        output_path = Path(self.output_dir) / now.strftime("%Y") / now.strftime("%m")
         output_path.mkdir(parents=True, exist_ok=True)
 
         if not filename:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = now.strftime("%Y%m%d_%H%M%S")
             filename = f"prd_v{version}_{timestamp}.md"
         elif not filename.endswith(".md"):
             filename = f"{filename}.md"
