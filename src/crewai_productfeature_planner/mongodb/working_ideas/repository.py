@@ -55,6 +55,172 @@ def mark_completed(run_id: str) -> int:
         return 0
 
 
+def mark_paused(run_id: str) -> int:
+    """Mark the working-idea document for *run_id* as ``paused``.
+
+    Called after ``save_progress()`` writes partial output so the
+    document status reflects that the run can be resumed, not that
+    it permanently failed.
+
+    Returns:
+        The number of documents updated (0 or 1), or ``0`` on failure.
+    """
+    try:
+        now = _now_iso()
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "status": "paused",
+                "update_date": now,
+            }},
+        )
+        logger.info(
+            "[MongoDB] Marked working-idea doc paused for run_id=%s (matched=%d)",
+            run_id, result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to mark working idea paused for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def ensure_section_field(run_id: str) -> bool:
+    """Ensure the ``section`` field exists on the working-idea document.
+
+    If the ``section`` object was accidentally deleted or never created,
+    this function re-initialises it to an empty dict so that subsequent
+    ``save_iteration`` / ``$push`` operations work correctly.
+
+    The filter ``section: {$exists: false}`` guarantees we never
+    overwrite real section data.
+
+    Returns:
+        ``True`` if the field was (re-)created, ``False`` if it already
+        existed or on failure.
+    """
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id, "section": {"$exists": False}},
+            {"$set": {"section": {}}},
+        )
+        if result.modified_count > 0:
+            logger.warning(
+                "[MongoDB] Re-initialised missing 'section' field "
+                "for run_id=%s",
+                run_id,
+            )
+            return True
+        return False
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to ensure section field for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def get_output_file(run_id: str) -> str | None:
+    """Return the current ``output_file`` path for *run_id*, or ``None``.
+
+    Used to look up a previously-stored markdown path so the caller
+    can delete the old file before persisting a new one.
+    """
+    try:
+        db = get_db()
+        doc = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id},
+            {"output_file": 1, "_id": 0},
+        )
+        if doc:
+            return doc.get("output_file") or None
+        return None
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to get output_file for run_id=%s: %s",
+            run_id, exc,
+        )
+        return None
+
+
+def save_output_file(run_id: str, output_file: str) -> bool:
+    """Store the generated markdown file path on the working-idea document.
+
+    Called after ``PRDFileWriteTool`` successfully writes a file so that
+    the ``workingIdeas`` document contains a reference to the on-disk
+    output.
+
+    Args:
+        run_id: The run identifier.
+        output_file: Relative or absolute path to the generated markdown
+            file (e.g. ``"output/prds/2026/02/prd_v10_20260223_071542.md"``).
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    "output_file": output_file,
+                    "update_date": now,
+                },
+            },
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Saved output_file for run_id=%s: %s (matched=%d)",
+            run_id, output_file, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save output_file for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def find_completed_without_output() -> list[dict[str, Any]]:
+    """Find completed working ideas that have no associated output file.
+
+    Queries ``workingIdeas`` for documents whose ``status`` is
+    ``"completed"`` and whose ``output_file`` field is either missing
+    or ``null``.
+
+    Returns:
+        A list of full document dicts, or an empty list on failure.
+    """
+    try:
+        db = get_db()
+        query = {
+            "status": "completed",
+            "$or": [
+                {"output_file": {"$exists": False}},
+                {"output_file": None},
+                {"output_file": ""},
+            ],
+        }
+        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+        logger.info(
+            "[MongoDB] Found %d completed idea(s) without output file",
+            len(docs),
+        )
+        return docs
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to query completed ideas without output: %s",
+            exc,
+        )
+        return []
+
+
 def find_unfinalized() -> list[dict[str, Any]]:
     """Find working ideas that have not been finalized.
 
@@ -106,6 +272,7 @@ def find_unfinalized() -> list[dict[str, Any]]:
                 "sections": sections,
                 "exec_summary_iterations": exec_iter_count,
                 "req_breakdown_iterations": req_iter_count,
+                "section_missing": "section" not in doc,
             })
         logger.info("[MongoDB] Found %d unfinalized working idea(s)", len(runs))
         return runs
@@ -329,6 +496,7 @@ def save_executive_summary(
                     "run_id": run_id,
                     "created_at": now,
                     "completed_at": None,
+                    "section": {},
                 },
             },
             upsert=True,
@@ -491,6 +659,7 @@ def save_pipeline_step(
                     "run_id": run_id,
                     "created_at": now,
                     "completed_at": None,
+                    "section": {},
                 },
             },
             upsert=True,
@@ -529,7 +698,18 @@ def save_failed(
     now = _now_iso()
     try:
         db = get_db()
-        result = db[WORKING_COLLECTION].update_one(
+        col = db[WORKING_COLLECTION]
+
+        # Ensure the ``section`` field exists on pre-existing documents
+        # that were created before this initialisation was added.  The
+        # filter ``section: {$exists: false}`` guarantees we never
+        # overwrite real section data.
+        col.update_one(
+            {"run_id": run_id, "section": {"$exists": False}},
+            {"$set": {"section": {}}},
+        )
+
+        result = col.update_one(
             {"run_id": run_id},
             {
                 "$set": {

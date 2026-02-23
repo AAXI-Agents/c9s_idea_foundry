@@ -4,6 +4,8 @@ Reads environment variables to control behaviour:
     CREWAI_DEBUG            – set to "true" to emit DEBUG-level messages to the log file.
     CREWAI_FLOW_DEBUG       – set to "true" to also stream flow-execution logs to the console.
     CREWAI_LOG_RETENTION_DAYS – number of daily log files to keep (default 7).
+    CREWAI_VERBOSE          – set to "true" to enable verbose CrewAI agent/crew output
+                              on the console (default "false").
 
 Log files are stored in the ``logs/`` directory with the naming pattern
 ``crewai_YYYY-MM-DD.log`` and automatically rotated at midnight.
@@ -90,3 +92,13 @@ def get_logger(name: str) -> logging.Logger:
     """
     setup_logging()
     return logging.getLogger(f"crewai_productfeature_planner.{name}")
+
+
+def is_verbose() -> bool:
+    """Return ``True`` when ``CREWAI_VERBOSE`` is set to a truthy value.
+
+    Controls whether CrewAI agents and crews emit verbose console output.
+    Defaults to ``False`` so that internal prompt scaffolding (e.g.
+    *"you MUST return the actual complete content …"*) is suppressed.
+    """
+    return _is_truthy(os.environ.get("CREWAI_VERBOSE"))

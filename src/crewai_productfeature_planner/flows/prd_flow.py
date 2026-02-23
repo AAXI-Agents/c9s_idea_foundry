@@ -28,11 +28,15 @@ from crewai import Agent, Crew, Process, Task
 from crewai.flow.flow import Flow, start
 from pydantic import BaseModel, Field
 
+from crewai_productfeature_planner.agents.gemini_product_manager.agent import (
+    create_gemini_product_manager,
+)
 from crewai_productfeature_planner.agents.product_manager import (
     create_product_manager,
     get_task_configs,
 )
 from crewai_productfeature_planner.apis.prd.models import (
+    AGENT_GEMINI,
     AGENT_OPENAI,
     ExecutiveSummaryDraft,
     ExecutiveSummaryIteration,
@@ -40,13 +44,16 @@ from crewai_productfeature_planner.apis.prd.models import (
     get_default_agent,
 )
 from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
-from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.mongodb import (
+    get_output_file,
     mark_completed,
+    mark_paused,
     save_executive_summary,
     save_failed,
     save_finalized_idea,
     save_iteration,
+    save_output_file,
     update_executive_summary_critique,
     update_section_critique,
 )
@@ -329,8 +336,12 @@ class PRDFlow(Flow[PRDState]):
         def _openai() -> Agent:
             return create_product_manager()
 
+        def _gemini() -> Agent:
+            return create_gemini_product_manager()
+
         factories: dict[str, tuple[callable, str | list[str] | None]] = {
             AGENT_OPENAI: (_openai, "OPENAI_API_KEY"),
+            AGENT_GEMINI: (_gemini, ["GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT"]),
         }
 
         # 1) Create the default agent (required)
@@ -406,7 +417,7 @@ class PRDFlow(Flow[PRDState]):
                 agents=[agent],
                 tasks=[draft_task],
                 process=Process.sequential,
-                verbose=True,
+                verbose=is_verbose(),
             )
             result = crew_kickoff_with_retry(crew, step_label=f"draft_{agent_name}")
             return agent_name, result.raw
@@ -859,7 +870,7 @@ class PRDFlow(Flow[PRDState]):
             agents=[pm],
             tasks=[draft_task],
             process=Process.sequential,
-            verbose=True,
+            verbose=is_verbose(),
         )
         try:
             draft_result = crew_kickoff_with_retry(
@@ -920,7 +931,7 @@ class PRDFlow(Flow[PRDState]):
                 agents=[pm],
                 tasks=[critique_task],
                 process=Process.sequential,
-                verbose=True,
+                verbose=is_verbose(),
             )
             try:
                 critique_result = crew_kickoff_with_retry(
@@ -993,7 +1004,7 @@ class PRDFlow(Flow[PRDState]):
                 agents=[pm],
                 tasks=[refine_task],
                 process=Process.sequential,
-                verbose=True,
+                verbose=is_verbose(),
             )
             try:
                 refine_result = crew_kickoff_with_retry(
@@ -1162,7 +1173,7 @@ class PRDFlow(Flow[PRDState]):
                     agents=[pm],
                     tasks=[critique_task],
                     process=Process.sequential,
-                    verbose=True,
+                    verbose=is_verbose(),
                 )
                 try:
                     critique_result = crew_kickoff_with_retry(
@@ -1246,7 +1257,7 @@ class PRDFlow(Flow[PRDState]):
                 agents=[pm],
                 tasks=[refine_task],
                 process=Process.sequential,
-                verbose=True,
+                verbose=is_verbose(),
             )
             try:
                 refine_result = crew_kickoff_with_retry(
@@ -1274,19 +1285,36 @@ class PRDFlow(Flow[PRDState]):
             if _is_degenerate_content(
                 section.content, prev_len=len(prev_content),
             ):
-                logger.warning(
-                    "[Refine] Section '%s' degenerate output detected "
-                    "(%d chars, prev=%d) — "
-                    "reverting to previous content and force-approving",
-                    section.title, len(section.content),
-                    len(prev_content),
-                )
+                degenerate_len = len(section.content)
                 section.content = prev_content
                 section.agent_results = {
                     section.selected_agent: prev_content,
                 }
-                section.is_approved = True
-                break
+
+                if section.iteration >= min_iter:
+                    logger.warning(
+                        "[Refine] Section '%s' degenerate output detected "
+                        "(%d chars, prev=%d) — "
+                        "reverting to previous content and force-approving",
+                        section.title, degenerate_len,
+                        len(prev_content),
+                    )
+                    section.is_approved = True
+                    break
+
+                logger.warning(
+                    "[Refine] Section '%s' degenerate output detected "
+                    "(%d chars, prev=%d) — "
+                    "reverting to previous content and retrying "
+                    "(iteration %d < min %d)",
+                    section.title, degenerate_len,
+                    len(prev_content), section.iteration, min_iter,
+                )
+                section.iteration += 1
+                section.updated_date = datetime.now(timezone.utc).isoformat()
+                self.state.iteration += 1
+                self.state.update_date = section.updated_date
+                continue
 
             # Update agent_results so subsequent callbacks see refined content
             section.agent_results = {section.selected_agent: section.content}
@@ -1313,6 +1341,109 @@ class PRDFlow(Flow[PRDState]):
             )
 
     # ------------------------------------------------------------------
+    # Save progress markdown (partial output on error / pause)
+    # ------------------------------------------------------------------
+    def save_progress(self) -> str:
+        """Write a progress markdown capturing whatever work is available.
+
+        Called when the flow is interrupted (error, pause, billing) so
+        the user still gets a file in ``output/prds/`` with the refined
+        idea, requirements breakdown, and any completed sections.
+
+        Returns:
+            The save-result string from :class:`PRDFileWriteTool`, or an
+            empty string if there is nothing meaningful to save.
+        """
+        parts: list[str] = []
+
+        # Refined idea
+        idea_text = self.state.finalized_idea or self.state.idea
+        if idea_text:
+            parts.append(f"## Refined Idea\n\n{idea_text}")
+
+        # Requirements breakdown
+        if self.state.requirements_broken_down and self.state.requirements_breakdown:
+            parts.append(f"## Requirements Breakdown\n\n{self.state.requirements_breakdown}")
+
+        # Executive summary (latest iteration)
+        if self.state.executive_summary.latest_content:
+            parts.append(f"## Executive Summary\n\n{self.state.executive_summary.latest_content}")
+
+        # Any drafted sections (skip executive_summary — already above)
+        for section in self.state.draft.sections:
+            if section.content and section.key != "executive_summary":
+                parts.append(f"## {section.title}\n\n{section.content}")
+
+        if not parts:
+            logger.info("[Progress] Nothing to save — no content produced yet")
+            return ""
+
+        # Use the definitive header when every section is approved;
+        # otherwise mark the document as in-progress.
+        all_approved = self.state.draft.all_approved()
+        header = (
+            "# Product Requirements Document\n\n"
+            if all_approved
+            else "# Product Requirements Document (In Progress)\n\n"
+        )
+        content = header + "\n\n---\n\n".join(parts)
+
+        writer = PRDFileWriteTool()
+        save_result = writer._run(
+            content=content,
+            filename="",
+            version=max(self.state.iteration, 1),
+        )
+        logger.info("[Progress] %s", save_result)
+
+        # Persist the output file path to the workingIdeas document
+        self._persist_output_path(save_result)
+
+        # Update workingIdeas status from "failed" → "paused" so a
+        # subsequent restart treats this as a resumable run.
+        mark_paused(self.state.run_id)
+
+        return save_result
+
+    def _persist_output_path(self, save_result: str) -> None:
+        """Extract the file path from *save_result* and store it in MongoDB.
+
+        Before storing the new path, any previously stored output file
+        for this run is deleted from disk so only the latest version
+        remains.
+
+        The *save_result* string is of the form
+        ``"PRD saved to output/prds/2026/02/prd_v10_20260223_071542.md"``.
+        """
+        from pathlib import Path
+
+        # Extract path from "PRD saved to <path>"
+        prefix = "PRD saved to "
+        if save_result.startswith(prefix):
+            output_path = save_result[len(prefix):]
+        else:
+            output_path = save_result
+
+        # Delete the previous output file (if any) so only the latest
+        # version exists on disk.
+        old_path = get_output_file(self.state.run_id)
+        if old_path and old_path != output_path:
+            try:
+                p = Path(old_path)
+                if p.is_file():
+                    p.unlink()
+                    logger.info(
+                        "[Cleanup] Deleted previous output file: %s", old_path,
+                    )
+            except OSError as exc:
+                logger.warning(
+                    "[Cleanup] Could not delete previous output %s: %s",
+                    old_path, exc,
+                )
+
+        save_output_file(self.state.run_id, output_path)
+
+    # ------------------------------------------------------------------
     # Step 4 — Final Assembly & Persist
     # ------------------------------------------------------------------
     def finalize(self) -> str:
@@ -1327,6 +1458,9 @@ class PRDFlow(Flow[PRDState]):
             filename="",
             version=self.state.iteration,
         )
+
+        # Persist the output file path to the workingIdeas document
+        self._persist_output_path(save_result)
 
         # Convert to Confluence-compatible XHTML
         confluence_xhtml = md_to_confluence_xhtml(self.state.final_prd)

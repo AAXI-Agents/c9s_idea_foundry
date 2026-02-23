@@ -7,7 +7,7 @@ import warnings
 
 from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryDraft, ExecutiveSummaryIteration, PRDDraft, SECTION_ORDER
 from crewai_productfeature_planner.flows.prd_flow import IdeaFinalized, PauseRequested, PRDFlow, RequirementsFinalized
-from crewai_productfeature_planner.mongodb import find_unfinalized, get_run_documents, mark_completed, save_executive_summary, save_iteration, save_pipeline_step
+from crewai_productfeature_planner.mongodb import find_completed_without_output, find_unfinalized, get_run_documents, mark_completed, save_executive_summary, save_iteration, save_output_file, save_pipeline_step, ensure_section_field
 from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
 from crewai_productfeature_planner.mongodb.crew_jobs import (
     create_job,
@@ -134,6 +134,11 @@ def _check_resumable_runs() -> dict | None:
     print(f"  [n] Start a new idea")
     print(f"{'=' * 60}\n")
 
+    for i, run in enumerate(unfinalized, 1):
+        if run.get("section_missing"):
+            print(f"  ⚠  [{i}] section data missing — sections will be"
+                  f" regenerated on resume")
+
     while True:
         choice = input("Choose a number to resume, or 'n' for new: ").strip().lower()
         if choice in ("n", "new"):
@@ -166,6 +171,19 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
     if docs:
         doc = docs[0]  # single-document model
         section_obj = doc.get("section", {})
+
+        # Edge case: section field was accidentally deleted or never
+        # created.  Re-initialise it in MongoDB so save_iteration works
+        # and let the flow reprocess all sections from scratch.
+        if "section" not in doc:
+            logger.warning(
+                "Working-idea document for run_id=%s is missing the "
+                "'section' field — re-initialising; sections will be "
+                "regenerated",
+                run_id,
+            )
+            ensure_section_field(run_id)
+            section_obj = {}
 
         # Replay section iteration arrays to reconstruct section state
         if isinstance(section_obj, dict):
@@ -564,6 +582,123 @@ def _prompt_next_action() -> str | None:
             print("Please enter 'n' for a new idea or 'q' to exit.")
 
 
+def _generate_missing_outputs() -> int:
+    """Generate markdown files for completed ideas that are missing output.
+
+    On startup, queries MongoDB for ``workingIdeas`` documents whose
+    ``status`` is ``"completed"`` but have no ``output_file`` recorded.
+    For each, reconstructs the PRD content from the document and writes
+    a markdown file via :class:`PRDFileWriteTool`.
+
+    Returns:
+        The number of output files generated.
+    """
+    from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
+
+    try:
+        docs = find_completed_without_output()
+    except Exception as exc:
+        logger.debug("Could not check for completed ideas without output: %s", exc)
+        return 0
+
+    if not docs:
+        return 0
+
+    generated = 0
+    for doc in docs:
+        run_id = doc.get("run_id", "unknown")
+        try:
+            content = _assemble_prd_from_doc(doc)
+            if not content:
+                logger.debug(
+                    "[StartupRecovery] Skipping run_id=%s — no content to assemble",
+                    run_id,
+                )
+                continue
+
+            # Determine version from section iterations
+            version = _max_iteration_from_doc(doc)
+
+            writer = PRDFileWriteTool()
+            save_result = writer._run(
+                content=content,
+                filename="",
+                version=max(version, 1),
+            )
+            # Extract path from "PRD saved to <path>"
+            prefix = "PRD saved to "
+            output_path = save_result[len(prefix):] if save_result.startswith(prefix) else save_result
+            save_output_file(run_id, output_path)
+            generated += 1
+            logger.info(
+                "[StartupRecovery] Generated missing output for run_id=%s: %s",
+                run_id, save_result,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[StartupRecovery] Failed to generate output for run_id=%s: %s",
+                run_id, exc,
+            )
+
+    if generated:
+        logger.info(
+            "[StartupRecovery] Generated %d missing output file(s)", generated,
+        )
+    return generated
+
+
+def _assemble_prd_from_doc(doc: dict) -> str:
+    """Reconstruct a PRD markdown string from a ``workingIdeas`` document.
+
+    Mirrors the structure used by ``PRDDraft.assemble()`` but works
+    directly from the raw MongoDB document.
+    """
+    parts: list[str] = []
+
+    # Executive summary — use the last iteration's content
+    raw_exec = doc.get("executive_summary", [])
+    if isinstance(raw_exec, list) and raw_exec:
+        latest = raw_exec[-1]
+        if isinstance(latest, dict) and latest.get("content"):
+            parts.append(f"## Executive Summary\n\n{latest['content']}")
+
+    # Regular sections
+    section_obj = doc.get("section", {})
+    if isinstance(section_obj, dict):
+        for key, title in SECTION_ORDER:
+            # Skip executive_summary — already handled above
+            if key == "executive_summary":
+                continue
+            iterations = section_obj.get(key, [])
+            if isinstance(iterations, list) and iterations:
+                latest = iterations[-1]
+                if isinstance(latest, dict) and latest.get("content"):
+                    parts.append(f"## {title}\n\n{latest['content']}")
+
+    if not parts:
+        return ""
+
+    return "# Product Requirements Document\n\n" + "\n\n---\n\n".join(parts)
+
+
+def _max_iteration_from_doc(doc: dict) -> int:
+    """Return the maximum iteration number found in a workingIdeas document."""
+    max_iter = 0
+    # Executive summary iterations
+    raw_exec = doc.get("executive_summary", [])
+    if isinstance(raw_exec, list):
+        max_iter = max(max_iter, len(raw_exec))
+    # Section iterations
+    section_obj = doc.get("section", {})
+    if isinstance(section_obj, dict):
+        for entries in section_obj.values():
+            if isinstance(entries, list):
+                for entry in entries:
+                    it = entry.get("iteration", 0) if isinstance(entry, dict) else 0
+                    max_iter = max(max_iter, it)
+    return max_iter
+
+
 def run():
     """
     Run the PRD generation flow with interactive approval.
@@ -587,6 +722,11 @@ def run():
             print(f"  Recovered {recovered} incomplete job(s) from previous run.")
     except Exception as exc:
         logger.debug("Startup recovery failed: %s", exc)
+
+    # Startup recovery: generate markdown for completed ideas missing output
+    generated = _generate_missing_outputs()
+    if generated:
+        print(f"  Generated {generated} missing output file(s) for completed idea(s).")
 
     # If idea was passed as CLI arg, run once and exit
     if len(sys.argv) >= 2:
@@ -747,7 +887,10 @@ def _run_single_flow(idea: str | None = None) -> None:
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
+        progress_file = flow.save_progress()
         print(f"\nProgress saved ({approved}/{total} sections approved).")
+        if progress_file:
+            print(f"  {progress_file}")
         print(f"Run 'crewai run' again to resume from where you left off.")
         logger.info("PRD flow paused by user (run_id=%s, %d/%d approved)",
                     flow.state.run_id, approved, total)
@@ -755,6 +898,7 @@ def _run_single_flow(idea: str | None = None) -> None:
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
+        progress_file = flow.save_progress()
         logger.error("PRD flow paused due to billing error (run_id=%s): %s",
                      flow.state.run_id, e)
         print(f"\n{'=' * 60}")
@@ -762,6 +906,8 @@ def _run_single_flow(idea: str | None = None) -> None:
         print(f"{'=' * 60}")
         print(f"  {e}")
         print(f"\n  Your progress has been saved ({approved}/{total} sections approved).")
+        if progress_file:
+            print(f"  {progress_file}")
         print(f"  Please fix your OpenAI billing or quota and then run")
         print(f"  'crewai run' to resume from where you left off.")
         print(f"{'=' * 60}")
@@ -769,6 +915,7 @@ def _run_single_flow(idea: str | None = None) -> None:
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
+        progress_file = flow.save_progress()
         logger.error("PRD flow paused due to LLM error (run_id=%s): %s",
                      flow.state.run_id, e)
         print(f"\n{'=' * 60}")
@@ -776,6 +923,8 @@ def _run_single_flow(idea: str | None = None) -> None:
         print(f"{'=' * 60}")
         print(f"  {e}")
         print(f"\n  Your progress has been saved ({approved}/{total} sections approved).")
+        if progress_file:
+            print(f"  {progress_file}")
         print(f"  Please check your OpenAI API configuration and then run")
         print(f"  'crewai run' to resume from where you left off.")
         print(f"{'=' * 60}")
@@ -783,9 +932,12 @@ def _run_single_flow(idea: str | None = None) -> None:
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
+        progress_file = flow.save_progress()
         logger.error("PRD flow failed (kept inprogress): %s", e)
         print(f"\nPRD flow failed: {e}")
         print(f"Your progress has been saved ({approved}/{total} sections approved).")
+        if progress_file:
+            print(f"  {progress_file}")
         print(f"Run 'crewai run' to resume from where you left off.")
 
 

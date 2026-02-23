@@ -1,14 +1,17 @@
 """Tests for CLI helper functions in main.py."""
 
 import pytest
-from unittest.mock import patch, call
+from unittest.mock import MagicMock, patch, call
 
 from crewai_productfeature_planner.main import (
     _approve_refined_idea,
     _approve_requirements,
+    _assemble_prd_from_doc,
     _choose_refinement_mode,
+    _generate_missing_outputs,
     _kill_stale_crew_processes,
     _manual_idea_refinement,
+    _max_iteration_from_doc,
     _restore_prd_state,
 )
 
@@ -843,6 +846,54 @@ class TestRestorePrdState:
 
         assert flow.state.requirements_broken_down is False
 
+    # ── section field missing edge case ─────────────────────────
+
+    @patch("crewai_productfeature_planner.main.ensure_section_field")
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_restore_reinitialises_missing_section_field(
+        self, mock_docs, mock_ensure,
+    ):
+        """When section field is missing, should call ensure_section_field and proceed."""
+        # Document intentionally lacks 'section' key
+        mock_docs.return_value = [{
+            "run_id": "run-no-sec",
+            "idea": "Test idea",
+            "executive_summary": [
+                {"content": "exec v1", "iteration": 1, "critique": None},
+            ],
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-no-sec", "idea": "Test idea"})
+
+        mock_ensure.assert_called_once_with("run-no-sec")
+        # All sections should be empty — nothing to restore
+        assert all(s.content == "" for s in flow.state.draft.sections)
+        assert all(s.iteration == 0 for s in flow.state.draft.sections)
+        # Executive summary should still be restored
+        assert len(flow.state.executive_summary.iterations) == 1
+
+    @patch("crewai_productfeature_planner.main.ensure_section_field")
+    @patch("crewai_productfeature_planner.main.get_run_documents")
+    def test_restore_does_not_call_ensure_when_section_present(
+        self, mock_docs, mock_ensure,
+    ):
+        """When section field exists, ensure_section_field should NOT be called."""
+        mock_docs.return_value = [{
+            "run_id": "run-with-sec",
+            "idea": "Test idea",
+            "section": {
+                "problem_statement": [
+                    {"content": "ps v1", "iteration": 1, "critique": "", "updated_date": ""},
+                ],
+            },
+        }]
+
+        flow = _restore_prd_state({"run_id": "run-with-sec", "idea": "Test idea"})
+
+        mock_ensure.assert_not_called()
+        ps = flow.state.draft.get_section("problem_statement")
+        assert ps.content == "ps v1"
+
 
 # ══════════════════════════════════════════════════════════════
 # _kill_stale_crew_processes
@@ -947,3 +998,228 @@ class TestKillStaleCrewProcesses:
         killed = _kill_stale_crew_processes()
         assert killed == 3
         assert mock_kill.call_count == 3
+
+
+# ══════════════════════════════════════════════════════════════
+# _assemble_prd_from_doc  /  _max_iteration_from_doc
+# ══════════════════════════════════════════════════════════════
+
+
+class TestAssemblePrdFromDoc:
+    """Tests for _assemble_prd_from_doc."""
+
+    def test_assembles_full_prd(self):
+        """Should assemble exec summary + sections into PRD markdown."""
+        doc = {
+            "run_id": "run-1",
+            "executive_summary": [
+                {"content": "exec v1", "iteration": 1},
+                {"content": "exec v2", "iteration": 2},
+            ],
+            "section": {
+                "problem_statement": [
+                    {"content": "Problem v1", "iteration": 1},
+                    {"content": "Problem v2", "iteration": 2},
+                ],
+                "user_personas": [
+                    {"content": "Personas v1", "iteration": 1},
+                ],
+            },
+        }
+        result = _assemble_prd_from_doc(doc)
+        assert "# Product Requirements Document" in result
+        assert "Executive Summary" in result
+        assert "exec v2" in result  # uses latest
+        assert "exec v1" not in result
+        assert "Problem Statement" in result
+        assert "Problem v2" in result  # uses latest
+        assert "User Personas" in result
+        assert "Personas v1" in result
+
+    def test_empty_doc_returns_empty(self):
+        """Should return empty string for empty document."""
+        assert _assemble_prd_from_doc({}) == ""
+
+    def test_only_executive_summary(self):
+        """Should work with only executive summary."""
+        doc = {
+            "executive_summary": [
+                {"content": "Summary content", "iteration": 1},
+            ],
+        }
+        result = _assemble_prd_from_doc(doc)
+        assert "Executive Summary" in result
+        assert "Summary content" in result
+
+    def test_skips_executive_summary_in_sections(self):
+        """Should not duplicate exec summary from both top-level and section."""
+        doc = {
+            "executive_summary": [
+                {"content": "Top-level exec", "iteration": 1},
+            ],
+            "section": {
+                "executive_summary": [
+                    {"content": "Section exec", "iteration": 1},
+                ],
+            },
+        }
+        result = _assemble_prd_from_doc(doc)
+        assert result.count("Executive Summary") == 1
+        assert "Top-level exec" in result
+
+    def test_empty_section_content_skipped(self):
+        """Sections with empty content should be skipped."""
+        doc = {
+            "section": {
+                "problem_statement": [
+                    {"content": "", "iteration": 1},
+                ],
+            },
+        }
+        result = _assemble_prd_from_doc(doc)
+        assert result == ""
+
+
+class TestMaxIterationFromDoc:
+    """Tests for _max_iteration_from_doc."""
+
+    def test_counts_executive_summary_iterations(self):
+        doc = {
+            "executive_summary": [
+                {"content": "v1", "iteration": 1},
+                {"content": "v2", "iteration": 2},
+                {"content": "v3", "iteration": 3},
+            ],
+        }
+        assert _max_iteration_from_doc(doc) == 3
+
+    def test_counts_section_iterations(self):
+        doc = {
+            "section": {
+                "problem_statement": [
+                    {"content": "v1", "iteration": 1},
+                    {"content": "v2", "iteration": 5},
+                ],
+            },
+        }
+        assert _max_iteration_from_doc(doc) == 5
+
+    def test_returns_zero_for_empty_doc(self):
+        assert _max_iteration_from_doc({}) == 0
+
+    def test_uses_highest_across_all_sources(self):
+        doc = {
+            "executive_summary": [
+                {"content": "v1", "iteration": 1},
+                {"content": "v2", "iteration": 2},
+            ],
+            "section": {
+                "problem_statement": [
+                    {"content": "v1", "iteration": 7},
+                ],
+            },
+        }
+        assert _max_iteration_from_doc(doc) == 7
+
+
+# ══════════════════════════════════════════════════════════════
+# _generate_missing_outputs
+# ══════════════════════════════════════════════════════════════
+
+
+class TestGenerateMissingOutputs:
+    """Tests for _generate_missing_outputs."""
+
+    @patch("crewai_productfeature_planner.main.save_output_file")
+    @patch("crewai_productfeature_planner.tools.file_write_tool.PRDFileWriteTool")
+    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    def test_generates_output_for_completed_docs(
+        self, mock_find, mock_writer_cls, mock_save_output,
+    ):
+        """Should write markdown for each completed doc without output."""
+        mock_find.return_value = [
+            {
+                "run_id": "run-1",
+                "executive_summary": [
+                    {"content": "Summary", "iteration": 1},
+                ],
+                "section": {
+                    "problem_statement": [
+                        {"content": "Problem", "iteration": 1},
+                    ],
+                },
+            },
+        ]
+        mock_writer = MagicMock()
+        mock_writer._run.return_value = "PRD saved to output/prds/2026/02/prd_v1.md"
+        mock_writer_cls.return_value = mock_writer
+
+        count = _generate_missing_outputs()
+
+        assert count == 1
+        mock_writer._run.assert_called_once()
+        mock_save_output.assert_called_once_with(
+            "run-1", "output/prds/2026/02/prd_v1.md",
+        )
+
+    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    def test_returns_zero_when_none_found(self, mock_find):
+        """Should return 0 when no completed docs are missing output."""
+        mock_find.return_value = []
+        assert _generate_missing_outputs() == 0
+
+    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    def test_returns_zero_on_db_error(self, mock_find):
+        """Should return 0 when DB query fails."""
+        mock_find.side_effect = Exception("connection refused")
+        assert _generate_missing_outputs() == 0
+
+    @patch("crewai_productfeature_planner.main.save_output_file")
+    @patch("crewai_productfeature_planner.tools.file_write_tool.PRDFileWriteTool")
+    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    def test_skips_docs_with_no_content(
+        self, mock_find, mock_writer_cls, mock_save_output,
+    ):
+        """Should skip docs that assemble to empty content."""
+        mock_find.return_value = [
+            {"run_id": "run-empty", "section": {}},
+        ]
+
+        count = _generate_missing_outputs()
+
+        assert count == 0
+        mock_writer_cls.assert_not_called()
+        mock_save_output.assert_not_called()
+
+    @patch("crewai_productfeature_planner.main.save_output_file")
+    @patch("crewai_productfeature_planner.tools.file_write_tool.PRDFileWriteTool")
+    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    def test_continues_on_individual_failure(
+        self, mock_find, mock_writer_cls, mock_save_output,
+    ):
+        """Should continue processing remaining docs when one fails."""
+        mock_find.return_value = [
+            {
+                "run_id": "run-bad",
+                "executive_summary": [
+                    {"content": "Summary", "iteration": 1},
+                ],
+            },
+            {
+                "run_id": "run-good",
+                "executive_summary": [
+                    {"content": "Summary 2", "iteration": 1},
+                ],
+            },
+        ]
+        mock_writer = MagicMock()
+        mock_writer._run.side_effect = [
+            OSError("disk full"),
+            "PRD saved to output/prds/2026/02/prd_v1.md",
+        ]
+        mock_writer_cls.return_value = mock_writer
+
+        count = _generate_missing_outputs()
+
+        assert count == 1
+        assert mock_writer._run.call_count == 2

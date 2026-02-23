@@ -197,3 +197,30 @@ def test_is_truthy_variants():
     assert lc._is_truthy("0") is False
     assert lc._is_truthy("") is False
     assert lc._is_truthy(None) is False
+
+
+# ── is_verbose tests ─────────────────────────────────────────
+
+
+def test_is_verbose_defaults_to_false(monkeypatch):
+    """Without CREWAI_VERBOSE set, is_verbose() returns False."""
+    monkeypatch.delenv("CREWAI_VERBOSE", raising=False)
+    assert lc.is_verbose() is False
+
+
+def test_is_verbose_true(monkeypatch):
+    """CREWAI_VERBOSE=true should return True."""
+    monkeypatch.setenv("CREWAI_VERBOSE", "true")
+    assert lc.is_verbose() is True
+
+
+def test_is_verbose_false_explicit(monkeypatch):
+    """CREWAI_VERBOSE=false should return False."""
+    monkeypatch.setenv("CREWAI_VERBOSE", "false")
+    assert lc.is_verbose() is False
+
+
+def test_is_verbose_one(monkeypatch):
+    """CREWAI_VERBOSE=1 should return True."""
+    monkeypatch.setenv("CREWAI_VERBOSE", "1")
+    assert lc.is_verbose() is True

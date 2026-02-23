@@ -23,19 +23,20 @@ SECTION_KEYS: list[str] = [key for key, _ in SECTION_ORDER]
 
 # Well-known agent identifiers used across the codebase.
 AGENT_OPENAI = "openai_pm"
+AGENT_GEMINI = "gemini_pm"
 
 # All recognised agent identifiers (order = display preference).
-VALID_AGENTS: list[str] = [AGENT_OPENAI]
+VALID_AGENTS: list[str] = [AGENT_GEMINI, AGENT_OPENAI]
 
 # Fallback when DEFAULT_AGENT env var is not set.
-DEFAULT_AGENT_FALLBACK = AGENT_OPENAI
+DEFAULT_AGENT_FALLBACK = AGENT_GEMINI
 
 
 def get_default_agent() -> str:
     """Return the configured default agent identifier.
 
     Reads ``DEFAULT_AGENT`` from the environment.  Falls back to
-    ``openai_pm`` when unset or invalid.
+    ``gemini_pm`` when unset or invalid.
     """
     import os
     agent = os.environ.get("DEFAULT_AGENT", DEFAULT_AGENT_FALLBACK)

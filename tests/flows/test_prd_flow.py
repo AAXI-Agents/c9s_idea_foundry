@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from crewai_productfeature_planner.apis.prd.models import (
+    AGENT_GEMINI,
     AGENT_OPENAI,
     DEFAULT_AGENT_FALLBACK,
     ExecutiveSummaryDraft,
@@ -217,9 +218,11 @@ def test_section_approval_loop_raises_pause(monkeypatch):
         flow._section_approval_loop(section, agents, {})
 
 
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
 @patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
 @patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-def test_finalize_saves_prd(mock_writer_cls, mock_mark_completed):
+def test_finalize_saves_prd(mock_writer_cls, mock_mark_completed, mock_save_output, _mock_get_output):
     """finalize() should persist the assembled PRD via file and mark completed."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/prd_v1.md"
@@ -242,8 +245,261 @@ def test_finalize_saves_prd(mock_writer_cls, mock_mark_completed):
     # Working ideas should be marked completed
     mock_mark_completed.assert_called_once_with("test-run-123")
 
+    # Output file path should be stored in MongoDB
+    mock_save_output.assert_called_once_with(
+        "test-run-123", "output/prds/prd_v1.md",
+    )
+
     # State should be flagged as ready
     assert flow.state.is_ready is True
+
+
+# ── save_progress ────────────────────────────────────────────
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+def test_save_progress_with_idea_and_requirements(mock_writer_cls, mock_save_output, _mock_get_output, mock_mark_paused):
+    """save_progress() should write a progress markdown with refined idea & requirements."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved to output/prds/2026/02/prd_v1.md"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    flow.state.idea = "Refined idea content here"
+    flow.state.requirements_breakdown = "Detailed requirements"
+    flow.state.requirements_broken_down = True
+    flow.state.iteration = 0
+
+    result = flow.save_progress()
+
+    mock_writer._run.assert_called_once()
+    call_args = mock_writer._run.call_args
+    content = call_args.kwargs.get("content") or call_args[1].get("content")
+    assert "In Progress" in content
+    assert "# Product Requirements Document" not in content.split("(In Progress)")[0] or "In Progress" in content
+    assert "Refined Idea" in content
+    assert "Refined idea content here" in content
+    assert "Requirements Breakdown" in content
+    assert "Detailed requirements" in content
+    assert "saved" in result.lower()
+
+    # Output file path stored in MongoDB
+    mock_save_output.assert_called_once_with(
+        flow.state.run_id, "output/prds/2026/02/prd_v1.md",
+    )
+
+    # Working idea status updated to paused
+    mock_mark_paused.assert_called_once_with(flow.state.run_id)
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+def test_save_progress_uses_final_header_when_all_approved(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+    """save_progress() should NOT include '(In Progress)' when all sections are approved."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved to output/prds/2026/02/prd_v10.md"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    flow.state.idea = "Complete idea"
+    flow.state.finalized_idea = "Complete finalized idea"
+    flow.state.requirements_breakdown = "Requirements"
+    flow.state.requirements_broken_down = True
+    flow.state.executive_summary = ExecutiveSummaryDraft(
+        iterations=[ExecutiveSummaryIteration(content="Exec summary final", iteration=1)],
+    )
+    flow.state.iteration = 10
+
+    # Approve ALL sections and give them content
+    for section in flow.state.draft.sections:
+        section.is_approved = True
+        section.content = f"Content for {section.title}"
+
+    result = flow.save_progress()
+
+    call_args = mock_writer._run.call_args
+    content = call_args.kwargs.get("content") or call_args[1].get("content")
+    assert content.startswith("# Product Requirements Document\n\n")
+    assert "(In Progress)" not in content
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+def test_save_progress_includes_executive_summary(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+    """save_progress() should include executive summary if available."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved to output/prds/2026/02/prd_v3.md"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    flow.state.idea = "Some idea"
+    flow.state.executive_summary = ExecutiveSummaryDraft(
+        iterations=[
+            ExecutiveSummaryIteration(content="Exec summary v1", iteration=1),
+            ExecutiveSummaryIteration(content="Exec summary v2", iteration=2),
+        ],
+    )
+    flow.state.iteration = 3
+
+    result = flow.save_progress()
+
+    call_args = mock_writer._run.call_args
+    content = call_args.kwargs.get("content") or call_args[1].get("content")
+    assert "Executive Summary" in content
+    assert "Exec summary v2" in content
+    assert call_args.kwargs.get("version") == 3 or call_args[1].get("version") == 3
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+def test_save_progress_includes_drafted_sections(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+    """save_progress() should include any sections that have content."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    flow.state.idea = "Some idea"
+
+    # Fill in a couple of sections
+    for section in flow.state.draft.sections:
+        if section.key == "problem_statement":
+            section.content = "Problem statement content here"
+        elif section.key == "user_personas":
+            section.content = "User personas content here"
+
+    result = flow.save_progress()
+
+    call_args = mock_writer._run.call_args
+    content = call_args.kwargs.get("content") or call_args[1].get("content")
+    assert "Problem Statement" in content
+    assert "Problem statement content here" in content
+    assert "User Personas" in content
+    assert "User personas content here" in content
+
+
+def test_save_progress_returns_empty_when_no_content():
+    """save_progress() should return empty string when there is nothing to save."""
+    flow = PRDFlow()
+    flow.state.idea = ""
+
+    result = flow.save_progress()
+
+    assert result == ""
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+def test_save_progress_uses_finalized_idea_over_raw(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+    """save_progress() should prefer finalized_idea over raw idea."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    flow.state.idea = "Raw idea"
+    flow.state.finalized_idea = "Polished finalized idea"
+
+    result = flow.save_progress()
+
+    call_args = mock_writer._run.call_args
+    content = call_args.kwargs.get("content") or call_args[1].get("content")
+    assert "Polished finalized idea" in content
+    assert "Raw idea" not in content
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+def test_save_progress_version_defaults_to_one(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+    """save_progress() should use version=1 when iteration is 0."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    flow.state.idea = "Some idea"
+    flow.state.iteration = 0
+
+    flow.save_progress()
+
+    call_args = mock_writer._run.call_args
+    version = call_args.kwargs.get("version") or call_args[1].get("version")
+    assert version == 1
+
+
+# ── _persist_output_path cleanup ─────────────────────────────
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file")
+def test_persist_output_path_deletes_previous_file(mock_get_output, mock_save_output, tmp_path):
+    """_persist_output_path should delete the old file when a new one is saved."""
+    old_file = tmp_path / "old_prd.md"
+    old_file.write_text("old content")
+    mock_get_output.return_value = str(old_file)
+
+    flow = PRDFlow()
+    flow.state.run_id = "run-cleanup"
+
+    new_path = str(tmp_path / "new_prd.md")
+    flow._persist_output_path(f"PRD saved to {new_path}")
+
+    assert not old_file.exists(), "Old file should have been deleted"
+    mock_save_output.assert_called_once_with("run-cleanup", new_path)
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+def test_persist_output_path_skips_cleanup_when_no_previous(_mock_get_output, mock_save_output):
+    """_persist_output_path should not attempt deletion when no previous file exists."""
+    flow = PRDFlow()
+    flow.state.run_id = "run-new"
+    flow._persist_output_path("PRD saved to output/prds/2026/02/prd_v1.md")
+
+    mock_save_output.assert_called_once_with("run-new", "output/prds/2026/02/prd_v1.md")
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file")
+def test_persist_output_path_skips_cleanup_when_same_path(mock_get_output, mock_save_output):
+    """_persist_output_path should not delete the file if old and new paths match."""
+    mock_get_output.return_value = "output/prds/2026/02/prd_v1.md"
+
+    flow = PRDFlow()
+    flow.state.run_id = "run-same"
+    flow._persist_output_path("PRD saved to output/prds/2026/02/prd_v1.md")
+
+    # Should still save but not try to delete the same file
+    mock_save_output.assert_called_once_with("run-same", "output/prds/2026/02/prd_v1.md")
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file")
+def test_persist_output_path_handles_missing_old_file(mock_get_output, mock_save_output, tmp_path):
+    """_persist_output_path should not error if the old file doesn't exist on disk."""
+    mock_get_output.return_value = str(tmp_path / "already_gone.md")
+
+    flow = PRDFlow()
+    flow.state.run_id = "run-gone"
+
+    new_path = str(tmp_path / "new_prd.md")
+    flow._persist_output_path(f"PRD saved to {new_path}")
+
+    # Should still succeed
+    mock_save_output.assert_called_once_with("run-gone", new_path)
 
 
 # ── Multi-agent helpers ──────────────────────────────────────
@@ -309,10 +565,21 @@ def test_parse_decision_legacy_string():
     assert action == "Needs more detail"
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
-def test_get_available_agents_openai_only(mock_create_pm, monkeypatch):
-    """Default agent should be OpenAI PM."""
+@patch("crewai_productfeature_planner.flows.prd_flow.create_gemini_product_manager")
+def test_get_available_agents_gemini_only(mock_create_gemini_pm, monkeypatch):
+    """Default agent should be Gemini PM."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
+    monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
+    mock_create_gemini_pm.return_value = MagicMock()
+    agents = PRDFlow._get_available_agents()
+    assert list(agents.keys()) == [AGENT_GEMINI]
+    mock_create_gemini_pm.assert_called_once()
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
+def test_get_available_agents_openai_explicit(mock_create_pm, monkeypatch):
+    """DEFAULT_AGENT=openai_pm should use the OpenAI agent."""
+    monkeypatch.setenv("DEFAULT_AGENT", "openai_pm")
     monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
     mock_create_pm.return_value = MagicMock()
     agents = PRDFlow._get_available_agents()
@@ -320,14 +587,14 @@ def test_get_available_agents_openai_only(mock_create_pm, monkeypatch):
     mock_create_pm.assert_called_once()
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
-def test_get_available_agents_multi_agents_1_limits_to_default(mock_create_pm, monkeypatch):
+@patch("crewai_productfeature_planner.flows.prd_flow.create_gemini_product_manager")
+def test_get_available_agents_multi_agents_1_limits_to_default(mock_create_gemini_pm, monkeypatch):
     """DEFAULT_MULTI_AGENTS=1 should use only the default agent."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
     monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
-    mock_create_pm.return_value = MagicMock()
+    mock_create_gemini_pm.return_value = MagicMock()
     agents = PRDFlow._get_available_agents()
-    assert list(agents.keys()) == [AGENT_OPENAI]
+    assert list(agents.keys()) == [AGENT_GEMINI]
 
 
 def test_run_agents_parallel_single():
@@ -644,9 +911,9 @@ def test_section_agent_results_after_approval():
 
 
 def test_get_default_agent_unset(monkeypatch):
-    """Without DEFAULT_AGENT env var, should return openai_pm."""
+    """Without DEFAULT_AGENT env var, should return gemini_pm."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
-    assert get_default_agent() == AGENT_OPENAI
+    assert get_default_agent() == AGENT_GEMINI
 
 
 def test_get_default_agent_openai(monkeypatch):
@@ -655,21 +922,22 @@ def test_get_default_agent_openai(monkeypatch):
     assert get_default_agent() == AGENT_OPENAI
 
 
-def test_get_default_agent_gemini_falls_back(monkeypatch):
-    """DEFAULT_AGENT=gemini_pm (removed agent) should fall back to openai_pm."""
+def test_get_default_agent_gemini(monkeypatch):
+    """DEFAULT_AGENT=gemini_pm should return gemini_pm."""
     monkeypatch.setenv("DEFAULT_AGENT", "gemini_pm")
-    assert get_default_agent() == DEFAULT_AGENT_FALLBACK
+    assert get_default_agent() == AGENT_GEMINI
 
 
 def test_get_default_agent_invalid(monkeypatch):
-    """Invalid DEFAULT_AGENT value should fall back to openai_pm."""
+    """Invalid DEFAULT_AGENT value should fall back to gemini_pm."""
     monkeypatch.setenv("DEFAULT_AGENT", "invalid_agent")
     assert get_default_agent() == DEFAULT_AGENT_FALLBACK
 
 
-def test_valid_agents_contains_openai():
-    """VALID_AGENTS should list the known agent."""
+def test_valid_agents_contains_both():
+    """VALID_AGENTS should list both known agents."""
     assert AGENT_OPENAI in VALID_AGENTS
+    assert AGENT_GEMINI in VALID_AGENTS
 
 
 # ── _maybe_refine_idea integration ───────────────────────────
@@ -1527,6 +1795,123 @@ def test_degenerate_output_exceeds_growth_factor(
 
     assert section.is_approved is True
     assert section.content == "A" * 1000  # reverted to original
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
+@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
+@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+def test_degenerate_refine_retries_below_min_iter(
+    _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
+    monkeypatch,
+):
+    """Degenerate refine at iteration < min_iter must retry, not force-approve."""
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "3")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "5")
+    monkeypatch.setenv("PRD_SECTION_MAX_CHARS", "5000")
+
+    refine_call = {"n": 0}
+
+    def _kickoff(crew, step_label=""):
+        result = MagicMock()
+        if "critique" in step_label:
+            result.raw = "Needs work — continue iterating"
+        else:
+            refine_call["n"] += 1
+            if refine_call["n"] <= 2:
+                # First two refines produce degenerate output (iterations 1 & 2)
+                result.raw = "X" * 50000
+            else:
+                # Third refine produces good output
+                result.raw = "Good refined content"
+        return result
+
+    mock_kickoff.side_effect = _kickoff
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-degen-retry"
+
+    section = flow.state.draft.sections[1]  # problem_statement
+    section.content = "Good initial draft"
+    section.agent_results = {AGENT_OPENAI: "Good initial draft"}
+    section.selected_agent = AGENT_OPENAI
+    section.iteration = 1
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "critique_section_task": {
+            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "A critique",
+        },
+        "refine_section_task": {
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    flow._section_approval_loop(section, agents, task_configs)
+
+    # Should NOT force-approve at iteration 1 or 2 (below min=3).
+    # Degenerate outputs at iterations 1 & 2 reverted, then good output at iteration 3.
+    assert section.is_approved is True
+    assert section.content == "Good refined content"
+    assert section.iteration >= 3  # reached min_iter before approval
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
+@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
+@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+def test_degenerate_refine_force_approves_at_min_iter(
+    _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
+    monkeypatch,
+):
+    """Degenerate refine at iteration >= min_iter should force-approve."""
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "2")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "5")
+    monkeypatch.setenv("PRD_SECTION_MAX_CHARS", "5000")
+
+    def _kickoff(crew, step_label=""):
+        result = MagicMock()
+        if "critique" in step_label:
+            result.raw = "Needs work — continue iterating"
+        else:
+            # Always produce degenerate output
+            result.raw = "X" * 50000
+        return result
+
+    mock_kickoff.side_effect = _kickoff
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-degen-pastmin"
+
+    section = flow.state.draft.sections[1]  # problem_statement
+    section.content = "Good initial draft"
+    section.agent_results = {AGENT_OPENAI: "Good initial draft"}
+    section.selected_agent = AGENT_OPENAI
+    section.iteration = 2  # already at min_iter
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "critique_section_task": {
+            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "A critique",
+        },
+        "refine_section_task": {
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    flow._section_approval_loop(section, agents, task_configs)
+
+    # At iteration=2, min=2 → past_min → should force-approve
+    assert section.is_approved is True
+    assert section.content == "Good initial draft"  # reverted
 
 
 @patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")

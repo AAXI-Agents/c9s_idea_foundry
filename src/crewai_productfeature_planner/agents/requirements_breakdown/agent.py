@@ -24,7 +24,7 @@ from pathlib import Path
 import yaml
 from crewai import Agent, Crew, Process, Task, LLM
 
-from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 
 logger = get_logger(__name__)
@@ -62,7 +62,7 @@ def _build_breakdown_llm() -> LLM:
     model_name = os.environ.get(
         "REQUIREMENTS_BREAKDOWN_MODEL",
         os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
-    )
+    ).strip()
     if "/" not in model_name:
         model_name = f"gemini/{model_name}"
 
@@ -102,7 +102,7 @@ def create_requirements_breakdown_agent() -> Agent:
         backstory=agent_config["backstory"].strip(),
         llm=_build_breakdown_llm(),
         tools=[],  # Pure reasoning — no external tools needed
-        verbose=True,
+        verbose=is_verbose(),
         allow_delegation=False,
     )
 
@@ -199,7 +199,7 @@ def breakdown_requirements(
             agents=[agent],
             tasks=[breakdown_task],
             process=Process.sequential,
-            verbose=True,
+            verbose=is_verbose(),
         )
         breakdown_result = crew_kickoff_with_retry(
             crew, step_label=f"req_breakdown_iter{iteration}",
@@ -230,7 +230,7 @@ def breakdown_requirements(
             agents=[agent],
             tasks=[evaluate_task],
             process=Process.sequential,
-            verbose=True,
+            verbose=is_verbose(),
         )
         eval_result = crew_kickoff_with_retry(
             crew, step_label=f"req_evaluate_iter{iteration}",

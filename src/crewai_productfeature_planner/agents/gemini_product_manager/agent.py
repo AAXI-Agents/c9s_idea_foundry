@@ -1,4 +1,16 @@
-"""Product Manager agent factory and configuration loader."""
+"""Gemini-powered Product Manager agent factory and configuration loader.
+
+Mirrors the OpenAI-based Product Manager but uses Google Gemini as the
+LLM backend.  Shares the same YAML configs (agent.yaml / tasks.yaml)
+for role, goal, backstory, and task definitions.
+
+Environment variables:
+
+* ``GEMINI_PM_MODEL`` — override the model (defaults to ``GEMINI_MODEL``
+  then ``gemini-3-flash-preview``).
+* ``GOOGLE_API_KEY`` or ``GOOGLE_CLOUD_PROJECT`` — at least one must be
+  set for Gemini authentication.
+"""
 
 import os
 from pathlib import Path
@@ -6,6 +18,10 @@ from pathlib import Path
 import yaml
 from crewai import Agent, LLM
 
+from crewai_productfeature_planner.agents.gemini_utils import (
+    DEFAULT_GEMINI_MODEL,
+    ensure_gemini_env,
+)
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.tools.search_tool import create_search_tool
 from crewai_productfeature_planner.tools.scrape_tool import create_scrape_tool
@@ -15,37 +31,25 @@ from crewai_productfeature_planner.tools.directory_read_tool import create_direc
 from crewai_productfeature_planner.tools.website_search_tool import create_website_search_tool
 
 logger = get_logger(__name__)
-CONFIG_DIR = Path(__file__).parent / "config"
 
-# Default reasoning model for the Product Manager agent.
-# Override via OPENAI_MODEL env var.
-DEFAULT_OPENAI_MODEL = "o3"
+# Re-use the same YAML configs as the OpenAI Product Manager.
+CONFIG_DIR = Path(__file__).parent.parent / "product_manager" / "config"
 
-# LLM timeout / retry defaults.  Reasoning models (o3) can take 60-120 s;
-# a generous default avoids premature timeouts while still failing eventually.
-DEFAULT_LLM_TIMEOUT = 300      # seconds
+# LLM timeout / retry defaults.
+DEFAULT_LLM_TIMEOUT = 300       # seconds
 DEFAULT_LLM_MAX_RETRIES = 3
 
 
 def _load_yaml(filename: str) -> dict:
-    """Load a YAML config file from the agent's config directory."""
+    """Load a YAML config file from the product_manager config directory."""
     logger.debug("Loading YAML config: %s", filename)
     with open(CONFIG_DIR / filename, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
 def _build_tools() -> list:
-    """Assemble the full toolkit for the Product Manager agent.
-
-    Tools included:
-        - SerperDevTool: Google search for market & competitor research
-        - ScrapeWebsiteTool: Extract content from competitor/product pages
-        - FileReadTool: Read knowledge files, existing PRDs, reference docs
-        - PRDFileWriteTool: Save PRD drafts with automatic versioning
-        - DirectoryReadTool: List output and knowledge directories
-        - WebsiteSearchTool: RAG-based semantic search within a website
-    """
-    logger.debug("Assembling Product Manager toolkit (6 tools)")
+    """Assemble the full toolkit for the Gemini Product Manager agent."""
+    logger.debug("Assembling Gemini Product Manager toolkit (6 tools)")
     return [
         create_search_tool(),
         create_scrape_tool(),
@@ -57,33 +61,51 @@ def _build_tools() -> list:
 
 
 def _build_llm() -> LLM:
-    """Build the OpenAI LLM for the Product Manager agent.
+    """Build the Gemini LLM for the Product Manager agent.
 
     Resolution order for model name:
-        1. ``OPENAI_MODEL`` env var  (project-level OpenAI model)
-        2. ``DEFAULT_OPENAI_MODEL``  (hard-coded fallback — o3)
+        1. ``GEMINI_PM_MODEL`` env var
+        2. ``GEMINI_MODEL`` env var
+        3. Hard-coded default (``gemini-3-flash-preview``)
 
     Timeout and retry behaviour are controlled via:
         - ``LLM_TIMEOUT``      — request timeout in seconds (default 300)
         - ``LLM_MAX_RETRIES``  — number of retries on transient errors (default 3)
     """
-    model_name = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip()
+    ensure_gemini_env()
+
+    model_name = os.environ.get(
+        "GEMINI_PM_MODEL",
+        os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+    ).strip()
     # Prefix with provider when not already qualified.
     if "/" not in model_name:
-        model_name = f"openai/{model_name}"
+        model_name = f"gemini/{model_name}"
 
     timeout = int(os.environ.get("LLM_TIMEOUT", str(DEFAULT_LLM_TIMEOUT)))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", str(DEFAULT_LLM_MAX_RETRIES)))
 
-    logger.info("Product Manager LLM: %s (timeout=%ds, max_retries=%d)",
+    logger.info("Gemini Product Manager LLM: %s (timeout=%ds, max_retries=%d)",
                 model_name, timeout, max_retries)
     return LLM(model=model_name, timeout=timeout, max_retries=max_retries)
 
 
-def create_product_manager() -> Agent:
-    """Create a fully configured Product Manager agent with tools."""
+def create_gemini_product_manager() -> Agent:
+    """Create a fully configured Product Manager agent powered by Gemini.
+
+    Raises ``EnvironmentError`` when neither ``GOOGLE_API_KEY`` nor
+    ``GOOGLE_CLOUD_PROJECT`` is set.
+    """
+    has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
+    has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+    if not has_api_key and not has_project:
+        raise EnvironmentError(
+            "Gemini Product Manager requires GOOGLE_API_KEY or "
+            "GOOGLE_CLOUD_PROJECT to be set."
+        )
+
     agent_config = _load_yaml("agent.yaml")["product_manager"]
-    logger.info("Creating Product Manager agent (role='%s')",
+    logger.info("Creating Gemini Product Manager agent (role='%s')",
                 agent_config["role"].strip())
 
     return Agent(
@@ -99,5 +121,5 @@ def create_product_manager() -> Agent:
 
 def get_task_configs() -> dict:
     """Load task configurations for the Product Manager."""
-    logger.debug("Loading Product Manager task configs")
+    logger.debug("Loading Gemini Product Manager task configs")
     return _load_yaml("tasks.yaml")
