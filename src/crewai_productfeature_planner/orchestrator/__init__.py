@@ -17,8 +17,11 @@ from crewai_productfeature_planner.orchestrator.orchestrator import (
     StageResult,
 )
 from crewai_productfeature_planner.orchestrator.stages import (
+    build_confluence_publish_stage,
     build_default_pipeline,
     build_idea_refinement_stage,
+    build_jira_ticketing_stage,
+    build_post_completion_pipeline,
     build_requirements_breakdown_stage,
 )
 
@@ -26,7 +29,10 @@ __all__ = [
     "AgentOrchestrator",
     "AgentStage",
     "StageResult",
+    "build_confluence_publish_stage",
     "build_default_pipeline",
     "build_idea_refinement_stage",
+    "build_jira_ticketing_stage",
+    "build_post_completion_pipeline",
     "build_requirements_breakdown_stage",
 ]

@@ -2740,3 +2740,50 @@ def test_resume_wipes_degenerate_restored_content(
         assert section.is_approved is True, (
             f"Section '{section.key}' was not approved"
         )
+
+
+# ══════════════════════════════════════════════════════════════
+# _run_post_completion
+# ══════════════════════════════════════════════════════════════
+
+
+class TestRunPostCompletion:
+    """Tests for PRDFlow._run_post_completion."""
+
+    @patch(
+        "crewai_productfeature_planner.orchestrator.build_post_completion_pipeline"
+    )
+    def test_calls_post_completion_pipeline(self, mock_build):
+        mock_orch = MagicMock()
+        mock_build.return_value = mock_orch
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        flow._run_post_completion()
+
+        mock_build.assert_called_once_with(flow)
+        mock_orch.run_pipeline.assert_called_once()
+
+    @patch(
+        "crewai_productfeature_planner.orchestrator.build_post_completion_pipeline"
+    )
+    def test_swallows_exceptions(self, mock_build):
+        """Pipeline errors should be logged but not raised."""
+        mock_build.side_effect = RuntimeError("Confluence down")
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        # Should not raise
+        flow._run_post_completion()
+
+
+def test_prd_state_confluence_url_default():
+    """PRDState should have empty confluence_url by default."""
+    state = PRDState()
+    assert state.confluence_url == ""
+
+
+def test_prd_state_jira_output_default():
+    """PRDState should have empty jira_output by default."""
+    state = PRDState()
+    assert state.jira_output == ""

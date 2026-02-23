@@ -24,6 +24,10 @@ from pathlib import Path
 import yaml
 from crewai import Agent, Crew, Process, Task, LLM
 
+from crewai_productfeature_planner.scripts.knowledge_sources import (
+    build_prd_knowledge_sources,
+    get_google_embedder_config,
+)
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 
@@ -104,6 +108,8 @@ def create_requirements_breakdown_agent() -> Agent:
         tools=[],  # Pure reasoning — no external tools needed
         verbose=is_verbose(),
         allow_delegation=False,
+        knowledge_sources=build_prd_knowledge_sources(),
+        embedder=get_google_embedder_config(),
     )
 
 

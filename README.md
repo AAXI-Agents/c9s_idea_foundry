@@ -1,6 +1,6 @@
 # CrewaiProductfeaturePlanner Crew
 
-Welcome to the CrewaiProductfeaturePlanner Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+Welcome to the Crewai Product Feature Planner Crew project, powered by [crewAI](https://crewai.com). This crew project design to take a simple idea and create a detail product requirement documentation and associated engineering tickets for development.
 
 ## Installation
 
@@ -105,13 +105,3 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 ## Understanding Your Crew
 
 The crewai_productfeature_planner Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
-
-## Support
-
-For support, questions, or feedback regarding the CrewaiProductfeaturePlanner Crew or crewAI.
-- Visit our [documentation](https://docs.crewai.com)
-- Reach out to us through our [GitHub repository](https://github.com/joaomdmoura/crewai)
-- [Join our Discord](https://discord.com/invite/X4JWnZnxPb)
-- [Chat with our docs](https://chatg.pt/DWjSBZn)
-
-Let's create wonders together with the power and simplicity of crewAI.

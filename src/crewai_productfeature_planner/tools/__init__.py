@@ -11,6 +11,8 @@ from crewai_productfeature_planner.tools.file_read_tool import create_file_read_
 from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 from crewai_productfeature_planner.tools.directory_read_tool import create_directory_read_tool
 from crewai_productfeature_planner.tools.website_search_tool import create_website_search_tool
+from crewai_productfeature_planner.tools.confluence_tool import ConfluencePublishTool
+from crewai_productfeature_planner.tools.jira_tool import JiraCreateIssueTool
 
 __all__ = [
     "create_search_tool",
@@ -19,4 +21,6 @@ __all__ = [
     "PRDFileWriteTool",
     "create_directory_read_tool",
     "create_website_search_tool",
+    "ConfluencePublishTool",
+    "JiraCreateIssueTool",
 ]

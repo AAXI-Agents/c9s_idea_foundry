@@ -1,4 +1,11 @@
-User name is John Doe.
-User is an AI Engineer.
-User is interested in AI Agents.
-User is based in San Francisco, California.
+User is an AI Engineer specialising in AI Agent systems.
+User is interested in AI Agents, LLM orchestration, and multi-agent workflows.
+User prefers concise, actionable PRD documents with concrete acceptance criteria.
+User values iterative refinement: each section should improve through critique cycles.
+User expects all requirements to be testable and implementation-ready.
+User prioritises developer clarity — PRD language should leave no room for ambiguity.
+User wants PRDs structured around the standard 10-section template used by this tool.
+User expects edge cases and error handling to be addressed explicitly, not deferred.
+User prefers Given/When/Then format for acceptance criteria where applicable.
+User targets modern cloud-native architectures: containerised services, REST/gRPC APIs, event-driven patterns.
+User expects non-functional requirements to include quantitative targets (latency, throughput, uptime).

@@ -6,6 +6,10 @@ from pathlib import Path
 import yaml
 from crewai import Agent, LLM
 
+from crewai_productfeature_planner.scripts.knowledge_sources import (
+    build_prd_knowledge_sources,
+    get_google_embedder_config,
+)
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.tools.search_tool import create_search_tool
 from crewai_productfeature_planner.tools.scrape_tool import create_scrape_tool
@@ -94,6 +98,8 @@ def create_product_manager() -> Agent:
         tools=_build_tools(),
         verbose=is_verbose(),
         allow_delegation=False,
+        knowledge_sources=build_prd_knowledge_sources(),
+        embedder=get_google_embedder_config(),
     )
 
 

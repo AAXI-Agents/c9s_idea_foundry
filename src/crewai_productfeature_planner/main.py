@@ -647,6 +647,88 @@ def _generate_missing_outputs() -> int:
     return generated
 
 
+def _publish_unpublished_prds() -> int:
+    """Publish completed PRDs to Confluence that haven't been published yet.
+
+    Scans MongoDB for completed working ideas whose ``confluence_url``
+    field is missing or empty.  For each, assembles the PRD from the
+    stored sections and publishes it to Confluence.
+
+    Called on server startup and after each completed flow.
+
+    Returns:
+        Number of PRDs successfully published.
+    """
+    from crewai_productfeature_planner.tools.confluence_tool import (
+        _has_confluence_credentials,
+        publish_to_confluence,
+    )
+
+    if not _has_confluence_credentials():
+        return 0
+
+    try:
+        from crewai_productfeature_planner.mongodb import (
+            find_completed_without_confluence,
+            save_confluence_url,
+        )
+        docs = find_completed_without_confluence()
+    except Exception as exc:
+        logger.debug(
+            "Could not check for unpublished PRDs: %s", exc,
+        )
+        return 0
+
+    if not docs:
+        return 0
+
+    published = 0
+    for doc in docs:
+        run_id = doc.get("run_id", "unknown")
+        try:
+            content = _assemble_prd_from_doc(doc)
+            if not content:
+                logger.debug(
+                    "[StartupRecovery] Skipping Confluence publish for "
+                    "run_id=%s — no content",
+                    run_id,
+                )
+                continue
+
+            idea = (doc.get("idea") or "PRD")[:80].strip()
+            title = f"PRD — {idea}"
+
+            result = publish_to_confluence(
+                title=title,
+                markdown_content=content,
+                run_id=run_id,
+            )
+            save_confluence_url(
+                run_id=run_id,
+                confluence_url=result["url"],
+                page_id=result["page_id"],
+            )
+            published += 1
+            logger.info(
+                "[StartupRecovery] Published PRD to Confluence for "
+                "run_id=%s: %s",
+                run_id, result["url"],
+            )
+        except Exception as exc:
+            logger.warning(
+                "[StartupRecovery] Failed to publish PRD for "
+                "run_id=%s: %s",
+                run_id, exc,
+            )
+
+    if published:
+        logger.info(
+            "[StartupRecovery] Published %d PRD(s) to Confluence",
+            published,
+        )
+    return published
+
+
 def _assemble_prd_from_doc(doc: dict) -> str:
     """Reconstruct a PRD markdown string from a ``workingIdeas`` document.
 
@@ -727,6 +809,11 @@ def run():
     generated = _generate_missing_outputs()
     if generated:
         print(f"  Generated {generated} missing output file(s) for completed idea(s).")
+
+    # Startup recovery: publish unpublished PRDs to Confluence
+    published = _publish_unpublished_prds()
+    if published:
+        print(f"  Published {published} PRD(s) to Confluence.")
 
     # If idea was passed as CLI arg, run once and exit
     if len(sys.argv) >= 2:

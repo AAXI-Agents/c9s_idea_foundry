@@ -187,6 +187,81 @@ def save_output_file(run_id: str, output_file: str) -> bool:
         return False
 
 
+def save_confluence_url(run_id: str, confluence_url: str, page_id: str = "") -> bool:
+    """Store the Confluence page URL on the working-idea document.
+
+    Called after a PRD is successfully published to Confluence.
+
+    Args:
+        run_id: The run identifier.
+        confluence_url: URL of the published Confluence page.
+        page_id: Optional Confluence page ID.
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        update_fields: dict[str, Any] = {
+            "confluence_url": confluence_url,
+            "confluence_published_at": now,
+            "update_date": now,
+        }
+        if page_id:
+            update_fields["confluence_page_id"] = page_id
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": update_fields},
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Saved confluence_url for run_id=%s: %s (matched=%d)",
+            run_id, confluence_url, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save confluence_url for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def find_completed_without_confluence() -> list[dict[str, Any]]:
+    """Find completed working ideas that have not been published to Confluence.
+
+    Queries ``workingIdeas`` for documents whose ``status`` is
+    ``"completed"`` and whose ``confluence_url`` field is either
+    missing, null, or empty.
+
+    Returns:
+        A list of full document dicts, or an empty list on failure.
+    """
+    try:
+        db = get_db()
+        query = {
+            "status": "completed",
+            "$or": [
+                {"confluence_url": {"$exists": False}},
+                {"confluence_url": None},
+                {"confluence_url": ""},
+            ],
+        }
+        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+        logger.info(
+            "[MongoDB] Found %d completed idea(s) without Confluence publish",
+            len(docs),
+        )
+        return docs
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to query completed ideas without Confluence: %s",
+            exc,
+        )
+        return []
+
+
 def find_completed_without_output() -> list[dict[str, Any]]:
     """Find completed working ideas that have no associated output file.
 

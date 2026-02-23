@@ -1,0 +1,179 @@
+================================================================================
+PROJECT ARCHITECTURE — CrewAI Product Feature Planner
+================================================================================
+
+This document describes the architecture, structure, and conventions of the
+CrewAI Product Feature Planner system.  Agents should reference this when
+making decisions about PRD content, technical feasibility, and output format.
+
+────────────────────────────────────────────────────────────────────────────────
+1. SYSTEM OVERVIEW
+────────────────────────────────────────────────────────────────────────────────
+
+The CrewAI Product Feature Planner is a multi-agent system that transforms
+raw product ideas into comprehensive, implementation-ready Product Requirements
+Documents (PRDs).  It runs as a FastAPI server with a REST API and uses
+MongoDB for persistence.
+
+Tech stack:
+  • Python 3.11
+  • CrewAI 1.9.3 (multi-agent orchestration framework)
+  • Google Gemini LLM (default model: gemini-3-flash-preview)
+  • OpenAI o3 (fallback / secondary PM agent)
+  • MongoDB (working ideas, finalized ideas, crew jobs)
+  • FastAPI (REST API)
+  • Atlassian Confluence + Jira (post-completion publishing)
+
+────────────────────────────────────────────────────────────────────────────────
+2. PROJECT STRUCTURE
+────────────────────────────────────────────────────────────────────────────────
+
+crewai_productfeature_planner/
+├── knowledge/                          # Knowledge files for agent context
+│   ├── user_preference.txt             # User profile and PRD preferences
+│   ├── project_architecture.txt        # This file — system architecture
+│   └── prd_guidelines.txt              # PRD writing standards and templates
+├── src/crewai_productfeature_planner/
+│   ├── main.py                         # FastAPI app entry, CLI, startup recovery
+│   ├── agents/                         # Agent factories (one subdir per agent)
+│   │   ├── gemini_utils.py             # Shared Gemini LLM configuration
+│   │   ├── gemini_product_manager/     # Gemini-powered PM agent
+│   │   ├── product_manager/            # OpenAI-powered PM agent
+│   │   ├── idea_refiner/               # Idea enrichment agent
+│   │   ├── requirements_breakdown/     # Requirements decomposition agent
+│   │   └── orchestrator/               # Atlassian publishing agent
+│   ├── apis/                           # REST API endpoints
+│   │   ├── health/                     # Health check endpoints
+│   │   └── prd/                        # PRD flow endpoints + models
+│   ├── flows/
+│   │   └── prd_flow.py                 # Core PRDFlow: state machine, iterative
+│   │                                   #   section generation, finalization
+│   ├── orchestrator/
+│   │   ├── orchestrator.py             # AgentOrchestrator + AgentStage framework
+│   │   └── stages.py                   # Pipeline stage factories
+│   ├── mongodb/                        # Database layer
+│   │   ├── client.py                   # MongoDB connection management
+│   │   ├── working_ideas/              # In-progress PRD persistence
+│   │   ├── finalized_ideas/            # Completed PRD storage
+│   │   └── crew_jobs/                  # Async job tracking
+│   ├── scripts/                        # Utilities
+│   │   ├── confluence_xhtml.py         # Markdown → Confluence XHTML converter
+│   │   ├── logging_config.py           # Structured logging setup
+│   │   ├── preflight.py                # Startup environment checks
+│   │   └── retry.py                    # Crew kickoff retry wrapper
+│   └── tools/                          # CrewAI tool wrappers
+│       ├── confluence_tool.py          # Confluence REST API publishing
+│       ├── jira_tool.py                # Jira REST API ticket creation
+│       ├── file_write_tool.py          # PRD file writer
+│       ├── file_read_tool.py           # File reader
+│       ├── directory_read_tool.py      # Directory listing
+│       ├── scrape_tool.py              # Web scraping
+│       ├── search_tool.py              # Web search
+│       └── website_search_tool.py      # Website-specific search
+├── tests/                              # Mirrors src/ structure, 640+ tests
+├── output/prds/                        # Generated PRD markdown files
+├── docs/openapi/                       # OpenAPI specification
+└── pyproject.toml                      # Project metadata and dependencies
+
+────────────────────────────────────────────────────────────────────────────────
+3. PRD GENERATION PIPELINE
+────────────────────────────────────────────────────────────────────────────────
+
+The PRD generation pipeline has five sequential phases:
+
+Phase 0 — Pre-completion Pipeline (AgentOrchestrator):
+  Stage 1: Idea Refinement (Gemini) — 3–10 iterative cycles
+    • Evaluates: audience clarity, problem definition, solution specificity,
+      competitive context, success criteria (scored 1–5)
+    • Continues until all scores ≥ 3 ("IDEA_READY")
+  Stage 2: Requirements Breakdown (Gemini) — iterative cycles
+    • Decomposes idea into: entities, state machines, API contracts,
+      acceptance criteria
+    • Evaluates: feature completeness, entity granularity, state machine
+      rigour, AI augmentation depth, API contract precision,
+      acceptance criteria coverage (scored 1–5, all must ≥ 4)
+
+Phase 1 — Executive Summary Iteration:
+  • Draft → Critique → Refine loop (min 2, max 10 cycles)
+  • Uses multi-agent setup: Gemini PM + OpenAI PM
+  • Critique scores: problem clarity, personas, functional reqs,
+    non-functional reqs, edge cases, analytics, dependencies (rated 1–10)
+  • Approved when all scores ≥ 8 ("READY_FOR_DEV")
+
+Phase 2 — Section-by-Section Generation:
+  • 9 remaining sections processed sequentially
+  • Each section: Draft → Critique → Refine (min 2, max 10 cycles)
+  • Critique scores: completeness, specificity, consistency, clarity,
+    actionability, no-duplication (rated 1–10, all must ≥ 8)
+  • Approved when "SECTION_READY"
+
+Phase 3 — Finalization:
+  • Assemble all 10 sections into markdown
+  • Write PRD file to output/prds/
+  • Mark run as completed in MongoDB
+
+Phase 4 — Post-completion Pipeline (AgentOrchestrator):
+  Stage 1: Confluence Publish — push final PRD to Confluence space
+  Stage 2: Jira Ticketing — create Epic + Stories from functional requirements
+
+────────────────────────────────────────────────────────────────────────────────
+4. AGENT ROLES
+────────────────────────────────────────────────────────────────────────────────
+
+• Idea Refiner (Gemini, no tools)
+  Purpose: Enrich raw ideas with domain expertise and stakeholder perspective.
+
+• Product Manager — Gemini variant (6 tools: search, scrape, file I/O)
+  Purpose: Draft and critique PRD sections with deep industry knowledge.
+
+• Product Manager — OpenAI variant (same 6 tools)
+  Purpose: Secondary PM for multi-agent diversity in critique cycles.
+
+• Requirements Breakdown Agent (Gemini, no tools)
+  Purpose: Decompose refined ideas into structured, granular requirements.
+
+• Orchestrator Agent (Gemini, 2 tools: Confluence + Jira)
+  Purpose: Publish completed PRDs and create tracking tickets.
+
+────────────────────────────────────────────────────────────────────────────────
+5. STATE MANAGEMENT
+────────────────────────────────────────────────────────────────────────────────
+
+PRDState tracks the full lifecycle of a PRD generation run:
+  • run_id — unique 12-char hex identifier
+  • idea — the feature idea text (enriched after refinement)
+  • original_idea — snapshot before refinement
+  • draft — PRDDraft containing 10 PRDSection objects
+  • executive_summary — iterative draft with version history
+  • requirements_breakdown — structured requirements text
+  • status — "new" → "inprogress" → "completed"
+  • confluence_url — URL of published Confluence page
+  • jira_output — summary of created Jira tickets
+
+Progress is saved to MongoDB on every iteration, enabling pause/resume.
+On server restart, incomplete runs are detected and can be resumed.
+
+────────────────────────────────────────────────────────────────────────────────
+6. OUTPUT FORMAT
+────────────────────────────────────────────────────────────────────────────────
+
+Final PRD format:
+  # Product Requirements Document
+
+  ## Executive Summary
+  {content}
+
+  ---
+
+  ## Problem Statement
+  {content}
+
+  ---
+
+  ... (8 more sections in SECTION_ORDER) ...
+
+  ## Assumptions
+  {content}
+
+Files are saved to: output/prds/prd_v{version}_{timestamp}.md
+Confluence pages are titled: "PRD — {idea_preview}"

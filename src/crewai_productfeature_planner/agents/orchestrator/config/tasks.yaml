@@ -1,0 +1,75 @@
+publish_to_confluence_task:
+  description: >
+    A completed PRD markdown document is available for publishing.
+
+    ## PRD Content
+    {prd_content}
+
+    ## Instructions
+    Publish this PRD to the Atlassian Confluence project space using
+    the confluence_publisher tool.
+
+    Use the following title for the page:
+      "{page_title}"
+
+    The run_id for tracking is: {run_id}
+
+    If the page already exists, it will be updated with the latest content.
+    If it does not exist, a new page will be created.
+  expected_output: >
+    Confirmation that the PRD was published to Confluence, including
+    the page ID and URL.  If the publish failed, include the error
+    details.
+
+create_jira_epic_task:
+  description: >
+    Create a Jira Epic to track the implementation of a newly published
+    PRD.
+
+    ## PRD Title
+    {page_title}
+
+    ## Executive Summary
+    {executive_summary}
+
+    ## Instructions
+    Create a Jira Epic using the jira_create_issue tool with:
+    - Summary: "{page_title}"
+    - Issue type: "Epic"
+    - Description: The executive summary content above
+    - Labels: "prd,auto-generated"
+    - Run ID: {run_id}
+
+    This Epic will serve as the parent for all Stories and Tasks
+    derived from the PRD requirements.
+  expected_output: >
+    The Jira Epic key and URL confirming successful creation.
+    If creation failed, include the error details.
+
+create_jira_tickets_task:
+  description: >
+    Create Jira Story tickets for each functional requirement
+    identified in the PRD.
+
+    ## PRD Functional Requirements
+    {functional_requirements}
+
+    ## Parent Epic
+    {epic_key}
+
+    ## Instructions
+    For each distinct functional requirement in the section above,
+    create a Jira Story using the jira_create_issue tool with:
+    - Issue type: "Story"
+    - Summary: A concise title for the requirement
+    - Description: The detailed requirement text
+    - Epic key: "{epic_key}"
+    - Labels: "prd,auto-generated"
+    - Run ID: {run_id}
+
+    Group closely related requirements into a single Story where
+    it makes sense, but keep each Story small enough to be estimated
+    and completed in one sprint.
+  expected_output: >
+    A list of all Jira Story keys and URLs created, one per line.
+    If any creation failed, include the error details.

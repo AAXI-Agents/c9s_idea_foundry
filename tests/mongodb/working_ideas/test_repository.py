@@ -9,12 +9,14 @@ from pymongo.errors import ServerSelectionTimeoutError
 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     WORKING_COLLECTION,
     ensure_section_field,
+    find_completed_without_confluence,
     find_completed_without_output,
     find_unfinalized,
     get_output_file,
     get_run_documents,
     mark_completed,
     mark_paused,
+    save_confluence_url,
     save_executive_summary,
     save_failed,
     save_finalized_idea,
@@ -1202,3 +1204,123 @@ def test_find_unfinalized_section_not_missing_when_present(mock_get_db):
     runs = find_unfinalized()
     assert len(runs) == 1
     assert runs[0]["section_missing"] is False
+
+
+# ── save_confluence_url ───────────────────────────────────────
+
+
+class TestSaveConfluenceUrl:
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_updates_document(self, mock_get_db):
+        mock_collection = MagicMock()
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        result = save_confluence_url(
+            run_id="run-1",
+            confluence_url="https://example.atlassian.net/wiki/pages/123",
+            page_id="123",
+        )
+
+        assert result is True
+        mock_collection.update_one.assert_called_once()
+        call_args = mock_collection.update_one.call_args
+        assert call_args[0][0] == {"run_id": "run-1"}
+        set_fields = call_args[0][1]["$set"]
+        assert set_fields["confluence_url"] == "https://example.atlassian.net/wiki/pages/123"
+        assert set_fields["confluence_page_id"] == "123"
+        assert "confluence_published_at" in set_fields
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_no_page_id(self, mock_get_db):
+        mock_collection = MagicMock()
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        save_confluence_url(
+            run_id="r2",
+            confluence_url="https://example.atlassian.net/wiki/pages/456",
+        )
+
+        set_fields = mock_collection.update_one.call_args[0][1]["$set"]
+        assert "confluence_page_id" not in set_fields
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_returns_false_on_no_match(self, mock_get_db):
+        mock_collection = MagicMock()
+        mock_collection.update_one.return_value = MagicMock(modified_count=0)
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        result = save_confluence_url(
+            run_id="unknown-run",
+            confluence_url="https://example.atlassian.net/wiki/pages/000",
+        )
+        assert result is False
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_returns_false_on_db_error(self, mock_get_db):
+        from pymongo.errors import PyMongoError
+        mock_get_db.side_effect = PyMongoError("connection failed")
+
+        result = save_confluence_url(
+            run_id="run-1",
+            confluence_url="https://example.atlassian.net/wiki/pages/123",
+        )
+        assert result is False
+
+
+# ── find_completed_without_confluence ────────────────────────────────
+
+
+class TestFindCompletedWithoutConfluence:
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_returns_matching_docs(self, mock_get_db):
+        docs = [
+            {"run_id": "r1", "status": "completed", "idea": "idea1"},
+            {"run_id": "r2", "status": "completed", "idea": "idea2"},
+        ]
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = docs
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        result = find_completed_without_confluence()
+
+        assert len(result) == 2
+        assert result[0]["run_id"] == "r1"
+        # Verify query has correct structure
+        query = mock_collection.find.call_args[0][0]
+        assert query["status"] == "completed"
+        assert "$or" in query
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_returns_empty_on_no_results(self, mock_get_db):
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = []
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        result = find_completed_without_confluence()
+        assert result == []
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_returns_empty_on_db_error(self, mock_get_db):
+        from pymongo.errors import PyMongoError
+        mock_get_db.side_effect = PyMongoError("connection failed")
+
+        result = find_completed_without_confluence()
+        assert result == []

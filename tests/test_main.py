@@ -12,6 +12,7 @@ from crewai_productfeature_planner.main import (
     _kill_stale_crew_processes,
     _manual_idea_refinement,
     _max_iteration_from_doc,
+    _publish_unpublished_prds,
     _restore_prd_state,
 )
 
@@ -1223,3 +1224,166 @@ class TestGenerateMissingOutputs:
 
         assert count == 1
         assert mock_writer._run.call_count == 2
+
+
+# ══════════════════════════════════════════════════════════════
+# _publish_unpublished_prds
+# ══════════════════════════════════════════════════════════════
+
+
+class TestPublishUnpublishedPrds:
+    """Tests for _publish_unpublished_prds startup recovery."""
+
+    def test_returns_zero_without_confluence_credentials(self, monkeypatch):
+        """Should return 0 when Confluence credentials are missing."""
+        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.delenv("CONFLUENCE_SPACE_KEY", raising=False)
+        monkeypatch.delenv("CONFLUENCE_USERNAME", raising=False)
+        assert _publish_unpublished_prds() == 0
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch(
+        "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
+        return_value=True,
+    )
+    def test_returns_zero_when_none_found(self, mock_has_cred, mock_get_db):
+        """Should return 0 when no unpublished PRDs exist."""
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = []
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+        assert _publish_unpublished_prds() == 0
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch(
+        "crewai_productfeature_planner.tools.confluence_tool.publish_to_confluence"
+    )
+    @patch(
+        "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
+        return_value=True,
+    )
+    def test_publishes_unpublished_prds(
+        self, mock_has_cred, mock_publish, mock_get_db,
+    ):
+        """Should publish each completed doc that hasn't been published."""
+        docs = [
+            {
+                "run_id": "run-1",
+                "idea": "Dark mode feature",
+                "executive_summary": [
+                    {"content": "Summary", "iteration": 1},
+                ],
+                "section": {
+                    "problem_statement": [
+                        {"content": "Problem", "iteration": 1},
+                    ],
+                },
+            },
+        ]
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = docs
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        mock_publish.return_value = {
+            "page_id": "12345",
+            "url": "https://example.atlassian.net/wiki/pages/12345",
+            "action": "created",
+        }
+
+        count = _publish_unpublished_prds()
+
+        assert count == 1
+        mock_publish.assert_called_once()
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch(
+        "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
+        return_value=True,
+    )
+    def test_skips_docs_with_no_content(
+        self, mock_has_cred, mock_get_db,
+    ):
+        """Should skip docs that assemble to empty content."""
+        docs = [{"run_id": "run-empty", "section": {}}]
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = docs
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        count = _publish_unpublished_prds()
+        assert count == 0
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch(
+        "crewai_productfeature_planner.tools.confluence_tool.publish_to_confluence"
+    )
+    @patch(
+        "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
+        return_value=True,
+    )
+    def test_continues_on_individual_failure(
+        self, mock_has_cred, mock_publish, mock_get_db,
+    ):
+        """Should continue when one publish fails."""
+        docs = [
+            {
+                "run_id": "run-bad",
+                "idea": "Failing idea",
+                "executive_summary": [
+                    {"content": "Summary", "iteration": 1},
+                ],
+            },
+            {
+                "run_id": "run-good",
+                "idea": "Good idea",
+                "executive_summary": [
+                    {"content": "Summary 2", "iteration": 1},
+                ],
+            },
+        ]
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = docs
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        mock_publish.side_effect = [
+            RuntimeError("API error 500"),
+            {
+                "page_id": "99",
+                "url": "https://example.atlassian.net/wiki/pages/99",
+                "action": "created",
+            },
+        ]
+
+        count = _publish_unpublished_prds()
+
+        assert count == 1
+        assert mock_publish.call_count == 2
+
+    @patch(
+        "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
+        return_value=True,
+    )
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.get_db",
+        side_effect=Exception("connection refused"),
+    )
+    def test_returns_zero_on_db_error(self, mock_get_db, mock_has_cred):
+        """Should return 0 when database query fails."""
+        assert _publish_unpublished_prds() == 0

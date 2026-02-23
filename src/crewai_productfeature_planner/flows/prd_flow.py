@@ -246,6 +246,14 @@ class PRDState(BaseModel):
         default="",
         description="Copy of the last iterated executive summary content once Phase 1 completes.",
     )
+    confluence_url: str = Field(
+        default="",
+        description="URL of the Confluence page where the PRD was published.",
+    )
+    jira_output: str = Field(
+        default="",
+        description="Summary of Jira tickets created from PRD requirements.",
+    )
 
 
 class PRDFlow(Flow[PRDState]):
@@ -1476,4 +1484,31 @@ class PRDFlow(Flow[PRDState]):
         self.state.completed_at = datetime.now(timezone.utc).isoformat()
         self.state.update_date = self.state.completed_at
         logger.info("[Step 4] %s", save_result)
+
+        # ── Post-completion: Confluence publish & Jira ticketing ──
+        self._run_post_completion()
+
         return save_result
+
+    # ------------------------------------------------------------------
+    # Post-completion pipeline (Confluence + Jira)
+    # ------------------------------------------------------------------
+    def _run_post_completion(self) -> None:
+        """Run the Atlassian publishing pipeline after PRD finalization.
+
+        Publishes the completed PRD to Confluence and creates Jira
+        tickets.  Failures are logged but do not fail the overall flow.
+        """
+        try:
+            from crewai_productfeature_planner.orchestrator import (
+                build_post_completion_pipeline,
+            )
+
+            pipeline = build_post_completion_pipeline(self)
+            pipeline.run_pipeline()
+        except Exception as exc:
+            logger.warning(
+                "[PostCompletion] Atlassian pipeline failed — "
+                "PRD is saved but not published: %s",
+                exc,
+            )

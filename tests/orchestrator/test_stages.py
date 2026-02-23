@@ -1,6 +1,6 @@
 """Tests for the orchestrator stage factory functions."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,9 +14,14 @@ from crewai_productfeature_planner.orchestrator.orchestrator import (
     StageResult,
 )
 from crewai_productfeature_planner.orchestrator.stages import (
+    _has_confluence_credentials,
     _has_gemini_credentials,
+    _has_jira_credentials,
+    build_confluence_publish_stage,
     build_default_pipeline,
     build_idea_refinement_stage,
+    build_jira_ticketing_stage,
+    build_post_completion_pipeline,
     build_requirements_breakdown_stage,
 )
 
@@ -458,4 +463,242 @@ class TestBuildDefaultPipeline:
         orch.run_pipeline()
 
         assert orch.skipped == ["idea_refinement", "requirements_breakdown"]
+        assert orch.completed == []
+
+
+# ── _has_confluence_credentials helper ──────────────────────────────
+
+
+class TestHasConfluenceCredentials:
+
+    def test_all_set(self, monkeypatch):
+        monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
+        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
+        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        assert _has_confluence_credentials() is True
+
+    def test_missing(self, monkeypatch):
+        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("CONFLUENCE_SPACE_KEY", raising=False)
+        monkeypatch.delenv("CONFLUENCE_USERNAME", raising=False)
+        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        assert _has_confluence_credentials() is False
+
+
+# ── _has_jira_credentials helper ────────────────────────────────────
+
+
+class TestHasJiraCredentials:
+
+    def test_all_set(self, monkeypatch):
+        monkeypatch.setenv("JIRA_BASE_URL", "https://example.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "PRD")
+        monkeypatch.setenv("JIRA_USERNAME", "user@example.com")
+        monkeypatch.setenv("JIRA_API_TOKEN", "secret")
+        assert _has_jira_credentials() is True
+
+    def test_missing(self, monkeypatch):
+        monkeypatch.delenv("JIRA_BASE_URL", raising=False)
+        monkeypatch.delenv("JIRA_PROJECT_KEY", raising=False)
+        monkeypatch.delenv("JIRA_USERNAME", raising=False)
+        monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+        assert _has_jira_credentials() is False
+
+
+# ── Confluence Publish Stage ─────────────────────────────────────────
+
+
+class TestConfluencePublishStage:
+
+    @pytest.fixture()
+    def _confluence_env(self, monkeypatch):
+        monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
+        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
+        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+
+    def test_stage_name(self):
+        flow = PRDFlow()
+        stage = build_confluence_publish_stage(flow)
+        assert stage.name == "confluence_publish"
+
+    def test_stage_description(self):
+        flow = PRDFlow()
+        stage = build_confluence_publish_stage(flow)
+        assert "confluence" in stage.description.lower()
+
+    def test_skips_without_confluence_credentials(self, monkeypatch):
+        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+        flow = PRDFlow()
+        stage = build_confluence_publish_stage(flow)
+        assert stage.should_skip() is True
+
+    def test_skips_without_gemini_credentials(self, monkeypatch, _confluence_env):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+        flow = PRDFlow()
+        stage = build_confluence_publish_stage(flow)
+        assert stage.should_skip() is True
+
+    def test_skips_when_already_published(self, _confluence_env):
+        flow = PRDFlow()
+        flow.state.confluence_url = "https://already.published/page"
+        flow.state.final_prd = "# PRD"
+        stage = build_confluence_publish_stage(flow)
+        assert stage.should_skip() is True
+
+    def test_skips_when_no_final_prd(self, _confluence_env):
+        flow = PRDFlow()
+        flow.state.final_prd = ""
+        stage = build_confluence_publish_stage(flow)
+        assert stage.should_skip() is True
+
+    def test_does_not_skip_with_credentials_and_content(self, _confluence_env):
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        flow.state.confluence_url = ""
+        stage = build_confluence_publish_stage(flow)
+        assert stage.should_skip() is False
+
+    @patch("crewai_productfeature_planner.tools.confluence_tool.publish_to_confluence")
+    def test_run_publishes(self, mock_publish, _confluence_env):
+        mock_publish.return_value = {
+            "action": "created",
+            "page_id": "12345",
+            "url": "https://example.atlassian.net/wiki/pages/12345",
+        }
+        flow = PRDFlow()
+        flow.state.idea = "Dark mode feature"
+        flow.state.final_prd = "# PRD\nDark mode"
+        flow.state.run_id = "run-1"
+        stage = build_confluence_publish_stage(flow)
+
+        result = stage.run()
+
+        assert "created" in result.output
+        assert "12345" in result.output
+        mock_publish.assert_called_once()
+
+    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    def test_apply_updates_state(self, mock_get_db, _confluence_env):
+        mock_collection = MagicMock()
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        mock_get_db.return_value = mock_db
+
+        flow = PRDFlow()
+        flow.state.run_id = "run-1"
+        stage = build_confluence_publish_stage(flow)
+
+        result = StageResult(
+            output="created|12345|https://example.atlassian.net/wiki/pages/12345"
+        )
+        stage.apply(result)
+
+        assert flow.state.confluence_url == "https://example.atlassian.net/wiki/pages/12345"
+
+
+# ── Jira Ticketing Stage ────────────────────────────────────────────
+
+
+class TestJiraTicketingStage:
+
+    @pytest.fixture()
+    def _jira_env(self, monkeypatch):
+        monkeypatch.setenv("JIRA_BASE_URL", "https://example.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "PRD")
+        monkeypatch.setenv("JIRA_USERNAME", "user@example.com")
+        monkeypatch.setenv("JIRA_API_TOKEN", "secret")
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+
+    def test_stage_name(self):
+        flow = PRDFlow()
+        stage = build_jira_ticketing_stage(flow)
+        assert stage.name == "jira_ticketing"
+
+    def test_stage_description(self):
+        flow = PRDFlow()
+        stage = build_jira_ticketing_stage(flow)
+        assert "jira" in stage.description.lower()
+
+    def test_skips_without_jira_credentials(self, monkeypatch):
+        monkeypatch.delenv("JIRA_BASE_URL", raising=False)
+        monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+        flow = PRDFlow()
+        stage = build_jira_ticketing_stage(flow)
+        assert stage.should_skip() is True
+
+    def test_skips_without_gemini_credentials(self, monkeypatch, _jira_env):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+        flow = PRDFlow()
+        stage = build_jira_ticketing_stage(flow)
+        assert stage.should_skip() is True
+
+    def test_skips_when_no_final_prd(self, _jira_env):
+        flow = PRDFlow()
+        flow.state.final_prd = ""
+        stage = build_jira_ticketing_stage(flow)
+        assert stage.should_skip() is True
+
+    def test_does_not_skip_with_credentials_and_prd(self, _jira_env):
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        stage = build_jira_ticketing_stage(flow)
+        assert stage.should_skip() is False
+
+    def test_apply_updates_state(self, _jira_env):
+        flow = PRDFlow()
+        stage = build_jira_ticketing_stage(flow)
+
+        result = StageResult(
+            output="Epic: key=PRD-100\nStories: PRD-101, PRD-102"
+        )
+        stage.apply(result)
+
+        assert flow.state.jira_output == "Epic: key=PRD-100\nStories: PRD-101, PRD-102"
+
+
+# ── build_post_completion_pipeline ───────────────────────────────────
+
+
+class TestBuildPostCompletionPipeline:
+
+    def test_returns_orchestrator(self):
+        flow = PRDFlow()
+        orch = build_post_completion_pipeline(flow)
+        assert isinstance(orch, AgentOrchestrator)
+
+    def test_has_two_stages(self):
+        flow = PRDFlow()
+        orch = build_post_completion_pipeline(flow)
+        assert len(orch.stages) == 2
+
+    def test_stage_order(self):
+        flow = PRDFlow()
+        orch = build_post_completion_pipeline(flow)
+        names = [s.name for s in orch.stages]
+        assert names == ["confluence_publish", "jira_ticketing"]
+
+    def test_skips_all_without_credentials(self, monkeypatch):
+        """Without Atlassian credentials, all stages skip."""
+        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.delenv("JIRA_BASE_URL", raising=False)
+        monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# Some PRD"
+        orch = build_post_completion_pipeline(flow)
+        orch.run_pipeline()
+
+        assert "confluence_publish" in orch.skipped
+        assert "jira_ticketing" in orch.skipped
         assert orch.completed == []
