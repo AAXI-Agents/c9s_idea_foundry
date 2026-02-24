@@ -85,6 +85,12 @@ def test_create_agent_no_delegation():
         agent = create_requirements_breakdown_agent()
     assert agent.allow_delegation is False
 
+def test_create_agent_reasoning_enabled():
+    """Agent should have reasoning enabled for plan-before-execute."""
+    with _mock_build_breakdown_llm():
+        agent = create_requirements_breakdown_agent()
+    assert agent.reasoning is True
+    assert agent.max_reasoning_attempts == 3
 
 # ── LLM configuration tests ──────────────────────────────────
 
@@ -246,16 +252,16 @@ def test_breakdown_stops_at_requirements_ready(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        # Set breakdown_task output on the crew's first task
+        breakdown_output = MagicMock()
+        breakdown_output.raw = f"## Feature {call_count}\nBreakdown v{call_count}"
+        crew.tasks[0].output = breakdown_output
+        # Return evaluation result (last task output)
         result = MagicMock()
-        # Odd calls = breakdown, even calls = evaluate
-        if call_count % 2 == 0:
-            iteration = call_count // 2
-            if iteration >= 3:
-                result.raw = "All criteria score 4+. REQUIREMENTS_READY"
-            else:
-                result.raw = "Needs more detail. NEEDS_MORE"
+        if call_count >= 3:
+            result.raw = "All criteria score 4+. REQUIREMENTS_READY"
         else:
-            result.raw = f"## Feature {call_count // 2 + 1}\nBreakdown v{call_count // 2 + 1}"
+            result.raw = "Needs more detail. NEEDS_MORE"
         return result
 
     with _mock_build_breakdown_llm(), \
@@ -264,8 +270,8 @@ def test_breakdown_stops_at_requirements_ready(monkeypatch):
         result, history = breakdown_requirements("Build a dashboard with AI")
 
     assert "Feature 3" in result
-    # 3 breakdown + 3 evaluate = 6 calls
-    assert call_count == 6
+    # 1 merged crew kickoff per iteration = 3 calls
+    assert call_count == 3
     assert len(history) == 3
     assert history[0]["iteration"] == 1
     assert history[2]["iteration"] == 3
@@ -283,11 +289,11 @@ def test_breakdown_runs_max_iterations(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        breakdown_output = MagicMock()
+        breakdown_output.raw = f"Requirements v{call_count}"
+        crew.tasks[0].output = breakdown_output
         result = MagicMock()
-        if call_count % 2 == 0:
-            result.raw = "Still needs work. NEEDS_MORE"
-        else:
-            result.raw = f"Requirements v{call_count // 2 + 1}"
+        result.raw = "Still needs work. NEEDS_MORE"
         return result
 
     with _mock_build_breakdown_llm(), \
@@ -295,8 +301,8 @@ def test_breakdown_runs_max_iterations(monkeypatch):
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("Build a feature")
 
-    # 4 breakdown + 4 evaluate = 8 calls
-    assert call_count == 8
+    # 1 merged crew kickoff per iteration = 4 calls (max 4 iterations)
+    assert call_count == 4
     assert len(history) == 4
 
 
@@ -310,11 +316,12 @@ def test_breakdown_ignores_ready_before_min(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        breakdown_output = MagicMock()
+        breakdown_output.raw = f"Requirements v{call_count}"
+        crew.tasks[0].output = breakdown_output
         result = MagicMock()
-        if call_count % 2 == 0:
-            result.raw = "Looks good. REQUIREMENTS_READY"
-        else:
-            result.raw = f"Requirements v{call_count // 2 + 1}"
+        # Always say REQUIREMENTS_READY — but should be ignored before iter 3
+        result.raw = "Looks good. REQUIREMENTS_READY"
         return result
 
     with _mock_build_breakdown_llm(), \
@@ -323,7 +330,7 @@ def test_breakdown_ignores_ready_before_min(monkeypatch):
         result, history = breakdown_requirements("Some idea")
 
     # Should run exactly 3 iterations (min), then stop
-    assert call_count == 6
+    assert call_count == 3
     assert len(history) == 3
 
 
@@ -333,11 +340,11 @@ def test_breakdown_returns_tuple(monkeypatch):
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS", "1")
 
     def mock_kickoff(crew, step_label=""):
+        breakdown_output = MagicMock()
+        breakdown_output.raw = "## Feature 1\nDetailed requirements"
+        crew.tasks[0].output = breakdown_output
         result = MagicMock()
-        if "evaluate" in step_label:
-            result.raw = "REQUIREMENTS_READY"
-        else:
-            result.raw = "## Feature 1\nDetailed requirements"
+        result.raw = "REQUIREMENTS_READY"
         return result
 
     with _mock_build_breakdown_llm(), \
@@ -364,11 +371,11 @@ def test_breakdown_saves_iterations_with_run_id(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        breakdown_output = MagicMock()
+        breakdown_output.raw = f"Requirements v{call_count}"
+        crew.tasks[0].output = breakdown_output
         result = MagicMock()
-        if call_count % 2 == 0:
-            result.raw = "NEEDS_MORE" if call_count < 4 else "REQUIREMENTS_READY"
-        else:
-            result.raw = f"Requirements v{call_count // 2 + 1}"
+        result.raw = "NEEDS_MORE" if call_count < 2 else "REQUIREMENTS_READY"
         return result
 
     with _mock_build_breakdown_llm(), \
@@ -391,8 +398,11 @@ def test_breakdown_no_run_id_skips_save(monkeypatch):
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS", "1")
 
     def mock_kickoff(crew, step_label=""):
+        breakdown_output = MagicMock()
+        breakdown_output.raw = "Requirements"
+        crew.tasks[0].output = breakdown_output
         result = MagicMock()
-        result.raw = "REQUIREMENTS_READY" if "evaluate" in step_label else "Requirements"
+        result.raw = "REQUIREMENTS_READY"
         return result
 
     with _mock_build_breakdown_llm(), \
@@ -417,15 +427,15 @@ def test_breakdown_passes_previous_requirements(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
-        # Capture the task description from breakdown tasks
-        if "breakdown" in step_label:
-            task_desc = crew.tasks[0].description
-            captured_descriptions.append(task_desc)
+        # Capture the breakdown task description (first task)
+        task_desc = crew.tasks[0].description
+        captured_descriptions.append(task_desc)
+        # Set breakdown_task output
+        breakdown_output = MagicMock()
+        breakdown_output.raw = f"## Feature {call_count}\nRequirements iteration {call_count}"
+        crew.tasks[0].output = breakdown_output
         result = MagicMock()
-        if call_count % 2 == 0:
-            result.raw = "NEEDS_MORE" if call_count < 4 else "REQUIREMENTS_READY"
-        else:
-            result.raw = f"## Feature {call_count // 2 + 1}\nRequirements iteration {call_count // 2 + 1}"
+        result.raw = "NEEDS_MORE" if call_count < 2 else "REQUIREMENTS_READY"
         return result
 
     with _mock_build_breakdown_llm(), \

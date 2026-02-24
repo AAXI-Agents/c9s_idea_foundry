@@ -108,6 +108,8 @@ def create_requirements_breakdown_agent() -> Agent:
         tools=[],  # Pure reasoning — no external tools needed
         verbose=is_verbose(),
         allow_delegation=False,
+        reasoning=True,
+        max_reasoning_attempts=3,
         knowledge_sources=build_prd_knowledge_sources(),
         embedder=get_google_embedder_config(),
     )
@@ -169,7 +171,9 @@ def breakdown_requirements(
     )
 
     for iteration in range(1, max_iterations + 1):
-        # ── Breakdown ─────────────────────────────────────────
+        # ── Build dual-task Crew: Breakdown → Evaluate ────────
+        # Uses context chaining so the evaluate task receives the
+        # breakdown output automatically via Process.sequential.
         feedback_section = (
             f"Previous evaluation feedback:\n{previous_feedback}"
             if previous_feedback
@@ -201,28 +205,12 @@ def breakdown_requirements(
             ],
             agent=agent,
         )
-        crew = Crew(
-            agents=[agent],
-            tasks=[breakdown_task],
-            process=Process.sequential,
-            verbose=is_verbose(),
-        )
-        breakdown_result = crew_kickoff_with_retry(
-            crew, step_label=f"req_breakdown_iter{iteration}",
-        )
-        current_requirements = breakdown_result.raw
-        logger.info(
-            "[RequirementsBreakdown] Iteration %d/%d — "
-            "requirements (%d chars)",
-            iteration, max_iterations, len(current_requirements),
-        )
 
-        # ── Evaluate ──────────────────────────────────────────
         evaluate_task = Task(
             description=task_configs["evaluate_requirements_task"][
                 "description"
             ].format(
-                requirements=current_requirements,
+                requirements="{Use the requirements from the previous task}",
                 iteration=iteration,
                 max_iterations=max_iterations,
                 min_iterations=min_iterations,
@@ -231,23 +219,37 @@ def breakdown_requirements(
                 "expected_output"
             ],
             agent=agent,
+            context=[breakdown_task],
         )
+
         crew = Crew(
             agents=[agent],
-            tasks=[evaluate_task],
+            tasks=[breakdown_task, evaluate_task],
             process=Process.sequential,
             verbose=is_verbose(),
         )
-        eval_result = crew_kickoff_with_retry(
-            crew, step_label=f"req_evaluate_iter{iteration}",
+        result = crew_kickoff_with_retry(
+            crew, step_label=f"req_breakdown_evaluate_iter{iteration}",
         )
-        evaluation = eval_result.raw
+
+        # Extract individual task outputs from the sequential crew.
+        # breakdown_task.output is populated after kickoff; the crew
+        # result itself is the last task's (evaluation) output.
+        if hasattr(breakdown_task, "output") and breakdown_task.output:
+            current_requirements = breakdown_task.output.raw
+        else:
+            # Fallback: use the raw result (evaluation) which contains
+            # context from the breakdown.
+            current_requirements = result.raw
+
+        evaluation = result.raw
         previous_feedback = evaluation
 
         logger.info(
             "[RequirementsBreakdown] Iteration %d/%d — "
-            "evaluation (%d chars)",
-            iteration, max_iterations, len(evaluation),
+            "requirements (%d chars), evaluation (%d chars)",
+            iteration, max_iterations,
+            len(current_requirements), len(evaluation),
         )
 
         # Record this iteration in history

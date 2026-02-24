@@ -479,3 +479,396 @@ def build_post_completion_pipeline(flow: "PRDFlow") -> AgentOrchestrator:
     orchestrator.register(build_confluence_publish_stage(flow))
     orchestrator.register(build_jira_ticketing_stage(flow))
     return orchestrator
+
+
+def build_post_completion_crew(
+    flow: "PRDFlow",
+    *,
+    progress_callback: "Callable[[str], None] | None" = None,
+) -> "Crew":
+    """Build a multi-agent CrewAI Crew for post-PRD Atlassian delivery.
+
+    Replaces the old :class:`AgentOrchestrator` pipeline with a proper
+    CrewAI Crew using **Process.sequential** and agent collaboration.
+
+    The Crew comprises two agents:
+
+    * **Delivery Manager** — coordinator, ``allow_delegation=True``,
+      assesses what needs to be delivered and delegates tool-bearing
+      work.
+    * **Orchestrator** — specialist with Confluence and Jira tools,
+      ``allow_delegation=False``.
+
+    Tasks are chained via ``context`` so each task receives the output
+    of its predecessors:
+
+    1. **Assess** — Delivery Manager summarises pending steps.
+    2. **Confluence publish** — Orchestrator publishes PRD (if needed).
+    3. **Jira Epic** — Orchestrator creates Epic (if applicable).
+    4. **Jira Stories** — Orchestrator creates Stories (if func reqs).
+
+    Args:
+        flow:  The :class:`PRDFlow` instance with a finalized PRD.
+        progress_callback:  Optional callable invoked with status
+               messages as each task completes.
+
+    Returns:
+        A configured :class:`Crew` instance ready for ``kickoff()``,
+        or ``None`` when no delivery steps are needed.
+    """
+    from crewai import Crew, Process, Task
+
+    from crewai_productfeature_planner.agents.orchestrator.agent import (
+        create_delivery_manager_agent,
+        create_orchestrator_agent,
+        get_task_configs,
+    )
+    from crewai_productfeature_planner.scripts.logging_config import is_verbose
+
+    idea_preview = (flow.state.idea or "PRD")[:80].strip()
+    page_title = f"PRD — {idea_preview}"
+    task_configs = get_task_configs()
+
+    # Determine what needs delivery
+    confluence_done = bool(getattr(flow.state, "confluence_url", ""))
+    jira_done = bool(getattr(flow.state, "jira_output", ""))
+    has_confluence = _has_confluence_credentials() and _has_gemini_credentials()
+    has_jira = _has_jira_credentials() and _has_gemini_credentials()
+
+    confluence_needed = has_confluence and not confluence_done and flow.state.final_prd
+    jira_needed = has_jira and not jira_done and flow.state.final_prd
+
+    if not confluence_needed and not jira_needed:
+        return None
+
+    delivery_manager = create_delivery_manager_agent()
+    orchestrator_agent = create_orchestrator_agent()
+
+    # ── Task 1: Assess delivery status ─────────────────────────
+    assess_task = Task(
+        description=(
+            f"Assess the delivery status for finalized PRD.\n\n"
+            f"## Current state\n"
+            f"- Confluence published: {'Yes' if confluence_done else 'No'}\n"
+            f"- Jira tickets created: {'Yes' if jira_done else 'No'}\n"
+            f"- PRD title: {page_title}\n\n"
+            f"## Instructions\n"
+            f"Summarise what delivery steps remain and confirm you will "
+            f"coordinate them. Do NOT ask the user — act autonomously."
+        ),
+        expected_output=(
+            "A brief summary of which delivery steps (Confluence / Jira) "
+            "are pending for this PRD, confirming autonomous execution."
+        ),
+        agent=delivery_manager,
+    )
+
+    tasks: list[Task] = [assess_task]
+
+    # ── Task 2: Confluence publish ─────────────────────────────
+    if confluence_needed:
+        confluence_task = Task(
+            description=task_configs["publish_to_confluence_task"]["description"].format(
+                prd_content=flow.state.final_prd,
+                page_title=page_title,
+                run_id=flow.state.run_id,
+            ),
+            expected_output=task_configs["publish_to_confluence_task"]["expected_output"],
+            agent=orchestrator_agent,
+            context=[assess_task],
+        )
+        tasks.append(confluence_task)
+    else:
+        confluence_task = None
+
+    # ── Task 3: Jira Epic ──────────────────────────────────────
+    if jira_needed:
+        exec_summary = flow.state.finalized_idea or flow.state.idea
+        epic_task = Task(
+            description=task_configs["create_jira_epic_task"]["description"].format(
+                page_title=page_title,
+                executive_summary=exec_summary,
+                run_id=flow.state.run_id,
+            ),
+            expected_output=task_configs["create_jira_epic_task"]["expected_output"],
+            agent=orchestrator_agent,
+            context=[confluence_task or assess_task],
+        )
+        tasks.append(epic_task)
+
+        # ── Task 4: Jira Stories ───────────────────────────────
+        func_req_section = flow.state.draft.get_section("functional_requirements")
+        func_reqs = func_req_section.content if func_req_section else ""
+        if func_reqs:
+            stories_task = Task(
+                description=task_configs["create_jira_tickets_task"]["description"].format(
+                    functional_requirements=func_reqs,
+                    epic_key="{epic_key from previous task}",
+                    run_id=flow.state.run_id,
+                ),
+                expected_output=task_configs["create_jira_tickets_task"]["expected_output"],
+                agent=orchestrator_agent,
+                context=[epic_task],
+            )
+            tasks.append(stories_task)
+
+    # ── Step callback for progress ─────────────────────────────
+    cb = progress_callback or _print_delivery_status
+    task_index = {"n": 0}
+
+    def _step_callback(output):
+        task_index["n"] += 1
+        step = task_index["n"]
+        total = len(tasks)
+        raw = getattr(output, "raw", str(output))
+        preview = raw[:120].replace("\n", " ").strip()
+        if preview:
+            cb(f"[{step}/{total}] {preview}")
+
+    return Crew(
+        agents=[delivery_manager, orchestrator_agent],
+        tasks=tasks,
+        process=Process.sequential,
+        verbose=is_verbose(),
+        step_callback=_step_callback,
+    )
+
+
+# ── Startup delivery crew ────────────────────────────────────────────
+
+DeliveryItem = dict  # type alias for readability
+
+
+def _discover_pending_deliveries() -> list[DeliveryItem]:
+    """Scan MongoDB for completed PRDs that still need delivery.
+
+    Returns a list of dicts, each containing the ``run_id``, assembled
+    ``content``, ``idea``, delivery flags, and the raw workingIdeas
+    document for downstream use.
+    """
+    from crewai_productfeature_planner.main import (
+        _assemble_prd_from_doc,
+        get_db,
+    )
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        get_delivery_record,
+    )
+
+    try:
+        db = get_db()
+        completed_docs = list(
+            db["workingIdeas"]
+            .find({"status": "completed"})
+            .sort("created_at", 1)
+        )
+    except Exception as exc:
+        logger.warning("[StartupDelivery] Failed to query completed ideas: %s", exc)
+        return []
+
+    items: list[DeliveryItem] = []
+    for doc in completed_docs:
+        run_id = doc.get("run_id", "")
+        if not run_id:
+            continue
+
+        record = get_delivery_record(run_id)
+        if record and record.get("status") == "completed":
+            continue
+
+        confluence_done = bool(
+            record and record.get("confluence_published")
+        ) or bool(doc.get("confluence_url"))
+        jira_done = bool(record and record.get("jira_completed"))
+
+        if confluence_done and jira_done:
+            # Mark as completed and skip
+            from crewai_productfeature_planner.mongodb.product_requirements import (
+                upsert_delivery_record,
+            )
+            upsert_delivery_record(
+                run_id,
+                confluence_published=True,
+                confluence_url=doc.get("confluence_url", ""),
+                jira_completed=True,
+            )
+            continue
+
+        content = _assemble_prd_from_doc(doc)
+        if not content:
+            continue
+
+        # Reconstruct useful fields
+        finalized_idea = ""
+        raw_exec = doc.get("executive_summary", [])
+        if isinstance(raw_exec, list) and raw_exec:
+            latest = raw_exec[-1]
+            if isinstance(latest, dict):
+                finalized_idea = latest.get("content", "")
+
+        func_reqs = ""
+        section_obj = doc.get("section", {})
+        if isinstance(section_obj, dict):
+            fr_iters = section_obj.get("functional_requirements", [])
+            if isinstance(fr_iters, list) and fr_iters:
+                latest_fr = fr_iters[-1]
+                if isinstance(latest_fr, dict):
+                    func_reqs = latest_fr.get("content", "")
+
+        items.append({
+            "run_id": run_id,
+            "idea": doc.get("idea", "PRD"),
+            "content": content,
+            "confluence_done": confluence_done,
+            "confluence_url": doc.get("confluence_url", ""),
+            "jira_done": jira_done,
+            "finalized_idea": finalized_idea,
+            "func_reqs": func_reqs,
+            "doc": doc,
+        })
+
+    return items
+
+
+def _print_delivery_status(message: str) -> None:
+    """Print a delivery status line to the CLI with an orchestrator prefix."""
+    print(f"  \033[36m[Orchestrator]\033[0m {message}")
+
+
+def build_startup_delivery_crew(
+    item: DeliveryItem,
+    *,
+    progress_callback: "Callable[[str], None] | None" = None,
+) -> "Crew":
+    """Build a CrewAI Crew for delivering a single pending PRD.
+
+    Uses a **sequential process** with collaboration between two agents:
+
+    * **Delivery Manager** — coordinates the delivery lifecycle,
+      decides which steps are needed, and delegates tool-bearing
+      work to the Orchestrator.
+    * **Orchestrator** — executes Confluence publishing and Jira
+      ticket creation using its tool suite.
+
+    The Crew runs three chained tasks (via ``context``):
+
+    1. **Assess delivery status** — Delivery Manager analyses what is
+       pending for this run_id.
+    2. **Publish to Confluence** — Orchestrator publishes the PRD
+       (skipped if already published).
+    3. **Create Jira tickets** — Orchestrator creates Epic + Stories
+       (skipped if already done or no functional requirements).
+
+    Args:
+        item:  A :data:`DeliveryItem` dict from
+               :func:`_discover_pending_deliveries`.
+        progress_callback:  Optional callable invoked with status
+               messages as each task completes.
+
+    Returns:
+        A configured :class:`Crew` instance ready for ``kickoff()``.
+    """
+    from crewai import Crew, Process, Task
+
+    from crewai_productfeature_planner.agents.orchestrator.agent import (
+        create_delivery_manager_agent,
+        create_orchestrator_agent,
+        get_task_configs,
+    )
+    from crewai_productfeature_planner.scripts.logging_config import is_verbose
+
+    run_id = item["run_id"]
+    idea_preview = (item["idea"] or "PRD")[:80].strip()
+    page_title = f"PRD — {idea_preview}"
+    task_configs = get_task_configs()
+
+    delivery_manager = create_delivery_manager_agent()
+    orchestrator_agent = create_orchestrator_agent()
+
+    # ── Task 1: Assess what needs delivery ─────────────────────
+    assess_task = Task(
+        description=(
+            f"Assess the delivery status for PRD run_id={run_id}.\n\n"
+            f"## Current state\n"
+            f"- Confluence published: {'Yes' if item['confluence_done'] else 'No'}\n"
+            f"- Jira tickets created: {'Yes' if item['jira_done'] else 'No'}\n"
+            f"- PRD title: {page_title}\n\n"
+            f"## Instructions\n"
+            f"Summarise what delivery steps remain and confirm you will "
+            f"coordinate them. Do NOT ask the user — act autonomously."
+        ),
+        expected_output=(
+            "A brief summary of which delivery steps (Confluence / Jira) "
+            "are pending for this PRD, confirming autonomous execution."
+        ),
+        agent=delivery_manager,
+    )
+
+    tasks: list[Task] = [assess_task]
+
+    # ── Task 2: Confluence publish (if needed) ─────────────────
+    if not item["confluence_done"]:
+        confluence_task = Task(
+            description=task_configs["publish_to_confluence_task"]["description"].format(
+                prd_content=item["content"],
+                page_title=page_title,
+                run_id=run_id,
+            ),
+            expected_output=task_configs["publish_to_confluence_task"]["expected_output"],
+            agent=orchestrator_agent,
+            context=[assess_task],
+        )
+        tasks.append(confluence_task)
+    else:
+        confluence_task = None
+
+    # ── Task 3: Jira ticketing (if needed) ─────────────────────
+    if not item["jira_done"] and item["finalized_idea"]:
+        epic_task = Task(
+            description=task_configs["create_jira_epic_task"]["description"].format(
+                page_title=page_title,
+                executive_summary=item["finalized_idea"],
+                run_id=run_id,
+            ),
+            expected_output=task_configs["create_jira_epic_task"]["expected_output"],
+            agent=orchestrator_agent,
+            context=[confluence_task or assess_task],
+        )
+        tasks.append(epic_task)
+
+        if item["func_reqs"]:
+            stories_task = Task(
+                description=task_configs["create_jira_tickets_task"]["description"].format(
+                    functional_requirements=item["func_reqs"],
+                    epic_key="{epic_key from previous task}",
+                    run_id=run_id,
+                ),
+                expected_output=task_configs["create_jira_tickets_task"]["expected_output"],
+                agent=orchestrator_agent,
+                context=[epic_task],
+            )
+            tasks.append(stories_task)
+
+    # ── Build step-callback for progress messages ──────────────
+    cb = progress_callback or _print_delivery_status
+    task_index = {"n": 0}
+
+    def _step_callback(output):
+        task_index["n"] += 1
+        step = task_index["n"]
+        total = len(tasks)
+        raw = getattr(output, "raw", str(output))
+        # Emit a concise progress line
+        preview = raw[:120].replace("\n", " ").strip()
+        if preview:
+            cb(f"[{step}/{total}] {preview}")
+
+    # ── Assemble Crew ──────────────────────────────────────────
+    crew = Crew(
+        agents=[delivery_manager, orchestrator_agent],
+        tasks=tasks,
+        process=Process.sequential,
+        verbose=is_verbose(),
+        step_callback=_step_callback,
+    )
+
+    return crew

@@ -108,6 +108,8 @@ def create_idea_refiner() -> Agent:
         tools=[],  # Pure reasoning — no external tools needed
         verbose=is_verbose(),
         allow_delegation=False,
+        reasoning=True,
+        max_reasoning_attempts=3,
         knowledge_sources=build_prd_knowledge_sources(),
         embedder=get_google_embedder_config(),
     )
@@ -164,7 +166,9 @@ def refine_idea(raw_idea: str, run_id: str = "") -> tuple[str, list[dict]]:
     )
 
     for iteration in range(1, max_iterations + 1):
-        # ── Refine ────────────────────────────────────────────
+        # ── Build dual-task Crew: Refine → Evaluate ───────────
+        # Uses context chaining so the evaluate task receives the
+        # refined idea automatically via Process.sequential.
         feedback_section = (
             f"Previous evaluation feedback:\n{previous_feedback}"
             if previous_feedback
@@ -181,47 +185,46 @@ def refine_idea(raw_idea: str, run_id: str = "") -> tuple[str, list[dict]]:
             expected_output=task_configs["refine_idea_task"]["expected_output"],
             agent=agent,
         )
-        crew = Crew(
-            agents=[agent],
-            tasks=[refine_task],
-            process=Process.sequential,
-            verbose=is_verbose(),
-        )
-        refine_result = crew_kickoff_with_retry(
-            crew, step_label=f"idea_refine_iter{iteration}",
-        )
-        current_idea = refine_result.raw
-        logger.info(
-            "[IdeaRefiner] Iteration %d/%d — refined idea (%d chars)",
-            iteration, max_iterations, len(current_idea),
-        )
 
-        # ── Evaluate ──────────────────────────────────────────
         evaluate_task = Task(
             description=task_configs["evaluate_quality_task"]["description"].format(
-                refined_idea=current_idea,
+                refined_idea="{Use the refined idea from the previous task}",
                 iteration=iteration,
                 max_iterations=max_iterations,
                 min_iterations=min_iterations,
             ),
             expected_output=task_configs["evaluate_quality_task"]["expected_output"],
             agent=agent,
+            context=[refine_task],
         )
+
         crew = Crew(
             agents=[agent],
-            tasks=[evaluate_task],
+            tasks=[refine_task, evaluate_task],
             process=Process.sequential,
             verbose=is_verbose(),
         )
-        eval_result = crew_kickoff_with_retry(
-            crew, step_label=f"idea_evaluate_iter{iteration}",
+        result = crew_kickoff_with_retry(
+            crew, step_label=f"idea_refine_evaluate_iter{iteration}",
         )
-        evaluation = eval_result.raw
+
+        # Extract individual task outputs from the sequential crew.
+        # refine_task.output is populated after kickoff; the crew
+        # result itself is the last task's (evaluation) output.
+        if hasattr(refine_task, "output") and refine_task.output:
+            current_idea = refine_task.output.raw
+        else:
+            # Fallback: if task output attribute is unavailable,
+            # the evaluation context includes the refined idea.
+            current_idea = result.raw
+
+        evaluation = result.raw
         previous_feedback = evaluation
 
         logger.info(
-            "[IdeaRefiner] Iteration %d/%d — evaluation (%d chars)",
-            iteration, max_iterations, len(evaluation),
+            "[IdeaRefiner] Iteration %d/%d — refined (%d chars), "
+            "evaluation (%d chars)",
+            iteration, max_iterations, len(current_idea), len(evaluation),
         )
 
         # Record this iteration in history

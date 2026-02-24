@@ -82,6 +82,12 @@ def test_create_idea_refiner_no_delegation():
         agent = create_idea_refiner()
     assert agent.allow_delegation is False
 
+def test_create_idea_refiner_reasoning_enabled():
+    """Agent should have reasoning enabled for plan-before-execute."""
+    with _mock_build_refiner_llm():
+        agent = create_idea_refiner()
+    assert agent.reasoning is True
+    assert agent.max_reasoning_attempts == 3
 
 # ── LLM configuration tests ──────────────────────────────────
 
@@ -215,17 +221,16 @@ def test_refine_idea_stops_at_idea_ready(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        # Set refine_task output on the crew's first task
+        refine_output = MagicMock()
+        refine_output.raw = f"Refined idea version {call_count}"
+        crew.tasks[0].output = refine_output
+        # Return evaluation result (last task output)
         result = MagicMock()
-        # Odd calls = refine, even calls = evaluate
-        if call_count % 2 == 0:
-            # iteration 3+ evaluate → IDEA_READY
-            iteration = call_count // 2
-            if iteration >= 3:
-                result.raw = "All criteria score 4+. IDEA_READY"
-            else:
-                result.raw = "Needs more detail. NEEDS_MORE"
+        if call_count >= 3:
+            result.raw = "All criteria score 4+. IDEA_READY"
         else:
-            result.raw = f"Refined idea version {call_count // 2 + 1}"
+            result.raw = "Needs more detail. NEEDS_MORE"
         return result
 
     with _mock_build_refiner_llm(), \
@@ -234,8 +239,8 @@ def test_refine_idea_stops_at_idea_ready(monkeypatch):
         result, history = refine_idea("Build a dashboard")
 
     assert "Refined idea version 3" in result
-    # 3 refine + 3 evaluate = 6 calls
-    assert call_count == 6
+    # 1 merged crew kickoff per iteration = 3 calls
+    assert call_count == 3
     assert len(history) == 3
     assert history[0]["iteration"] == 1
     assert history[2]["iteration"] == 3
@@ -253,11 +258,11 @@ def test_refine_idea_runs_max_iterations(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        refine_output = MagicMock()
+        refine_output.raw = f"Refined idea v{call_count}"
+        crew.tasks[0].output = refine_output
         result = MagicMock()
-        if call_count % 2 == 0:
-            result.raw = "Still needs work. NEEDS_MORE"
-        else:
-            result.raw = f"Refined idea v{call_count // 2 + 1}"
+        result.raw = "Still needs work. NEEDS_MORE"
         return result
 
     with _mock_build_refiner_llm(), \
@@ -265,8 +270,8 @@ def test_refine_idea_runs_max_iterations(monkeypatch):
                side_effect=mock_kickoff):
         result, history = refine_idea("Build a feature")
 
-    # 4 refine + 4 evaluate = 8 calls (max 4 iterations)
-    assert call_count == 8
+    # 1 merged crew kickoff per iteration = 4 calls (max 4 iterations)
+    assert call_count == 4
     assert len(history) == 4
 
 
@@ -280,12 +285,12 @@ def test_refine_idea_ignores_ready_before_min(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        refine_output = MagicMock()
+        refine_output.raw = f"Refined v{call_count}"
+        crew.tasks[0].output = refine_output
         result = MagicMock()
-        if call_count % 2 == 0:
-            # Always say IDEA_READY — but should be ignored before iter 3
-            result.raw = "Looks good. IDEA_READY"
-        else:
-            result.raw = f"Refined v{call_count // 2 + 1}"
+        # Always say IDEA_READY — but should be ignored before iter 3
+        result.raw = "Looks good. IDEA_READY"
         return result
 
     with _mock_build_refiner_llm(), \
@@ -294,8 +299,8 @@ def test_refine_idea_ignores_ready_before_min(monkeypatch):
         result, history = refine_idea("Some idea")
 
     # Should run exactly 3 iterations (min), then stop at IDEA_READY on iter 3
-    # 3 refine + 3 evaluate = 6
-    assert call_count == 6
+    # 1 merged crew kickoff per iteration = 3 calls
+    assert call_count == 3
     assert len(history) == 3
 
 
@@ -305,11 +310,11 @@ def test_refine_idea_returns_tuple(monkeypatch):
     monkeypatch.setenv("IDEA_REFINER_MAX_ITERATIONS", "1")
 
     def mock_kickoff(crew, step_label=""):
+        refine_output = MagicMock()
+        refine_output.raw = "Enriched idea content"
+        crew.tasks[0].output = refine_output
         result = MagicMock()
-        if "evaluate" in step_label:
-            result.raw = "IDEA_READY"
-        else:
-            result.raw = "Enriched idea content"
+        result.raw = "IDEA_READY"
         return result
 
     with _mock_build_refiner_llm(), \
@@ -336,11 +341,11 @@ def test_refine_idea_saves_iterations_with_run_id(monkeypatch):
     def mock_kickoff(crew, step_label=""):
         nonlocal call_count
         call_count += 1
+        refine_output = MagicMock()
+        refine_output.raw = f"Refined v{call_count}"
+        crew.tasks[0].output = refine_output
         result = MagicMock()
-        if call_count % 2 == 0:
-            result.raw = "Still improving. NEEDS_MORE" if call_count < 4 else "IDEA_READY"
-        else:
-            result.raw = f"Refined v{call_count // 2 + 1}"
+        result.raw = "Still improving. NEEDS_MORE" if call_count < 2 else "IDEA_READY"
         return result
 
     with _mock_build_refiner_llm(), \
@@ -364,8 +369,11 @@ def test_refine_idea_no_run_id_skips_save(monkeypatch):
     monkeypatch.setenv("IDEA_REFINER_MAX_ITERATIONS", "1")
 
     def mock_kickoff(crew, step_label=""):
+        refine_output = MagicMock()
+        refine_output.raw = "Refined"
+        crew.tasks[0].output = refine_output
         result = MagicMock()
-        result.raw = "IDEA_READY" if "evaluate" in step_label else "Refined"
+        result.raw = "IDEA_READY"
         return result
 
     with _mock_build_refiner_llm(), \

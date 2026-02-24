@@ -14,15 +14,19 @@ from crewai_productfeature_planner.orchestrator.orchestrator import (
     StageResult,
 )
 from crewai_productfeature_planner.orchestrator.stages import (
+    _discover_pending_deliveries,
     _has_confluence_credentials,
     _has_gemini_credentials,
     _has_jira_credentials,
+    _print_delivery_status,
     build_confluence_publish_stage,
     build_default_pipeline,
     build_idea_refinement_stage,
     build_jira_ticketing_stage,
+    build_post_completion_crew,
     build_post_completion_pipeline,
     build_requirements_breakdown_stage,
+    build_startup_delivery_crew,
 )
 
 
@@ -702,3 +706,485 @@ class TestBuildPostCompletionPipeline:
         assert "confluence_publish" in orch.skipped
         assert "jira_ticketing" in orch.skipped
         assert orch.completed == []
+
+
+# ── build_post_completion_crew ───────────────────────────────────────
+
+
+class TestBuildPostCompletionCrew:
+    """Tests for the CrewAI-based post-completion crew."""
+
+    _DM = "crewai_productfeature_planner.agents.orchestrator.agent.create_delivery_manager_agent"
+    _OA = "crewai_productfeature_planner.agents.orchestrator.agent.create_orchestrator_agent"
+    _TC = "crewai_productfeature_planner.agents.orchestrator.agent.get_task_configs"
+    _VERBOSE = "crewai_productfeature_planner.scripts.logging_config.is_verbose"
+    _CREW_CLS = "crewai.Crew"
+    _TASK_CLS = "crewai.Task"
+    _HAS_CONF = "crewai_productfeature_planner.orchestrator.stages._has_confluence_credentials"
+    _HAS_JIRA = "crewai_productfeature_planner.orchestrator.stages._has_jira_credentials"
+    _HAS_GEMINI = "crewai_productfeature_planner.orchestrator.stages._has_gemini_credentials"
+
+    _TASK_CONFIGS = {
+        "publish_to_confluence_task": {
+            "description": "Publish {prd_content} as '{page_title}' ({run_id})",
+            "expected_output": "Confluence page URL",
+        },
+        "create_jira_epic_task": {
+            "description": "Create epic '{page_title}' summary={executive_summary} ({run_id})",
+            "expected_output": "Epic key",
+        },
+        "create_jira_tickets_task": {
+            "description": "Create stories from {functional_requirements} under {epic_key} ({run_id})",
+            "expected_output": "Story keys",
+        },
+    }
+
+    def test_returns_none_without_credentials(self, monkeypatch):
+        """Without Atlassian credentials, should return None."""
+        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.delenv("JIRA_BASE_URL", raising=False)
+        monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# Some PRD"
+        result = build_post_completion_crew(flow)
+        assert result is None
+
+    @patch(_HAS_CONF, return_value=True)
+    @patch(_HAS_GEMINI, return_value=True)
+    def test_returns_none_without_final_prd(self, _mg, _mc):
+        """Without a finalized PRD, should return None."""
+        flow = PRDFlow()
+        flow.state.final_prd = ""  # no PRD
+        result = build_post_completion_crew(flow)
+        assert result is None
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    @patch(_HAS_CONF, return_value=True)
+    @patch(_HAS_GEMINI, return_value=True)
+    def test_returns_crew_with_confluence_credentials(
+        self, _mg, _mc, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """With Confluence credentials and a final PRD, should return a Crew."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# Some PRD"
+        flow.state.idea = "A cool feature"
+        result = build_post_completion_crew(flow)
+        mock_crew.assert_called_once()
+        assert result is not None
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    @patch(_HAS_CONF, return_value=True)
+    @patch(_HAS_GEMINI, return_value=True)
+    def test_crew_has_two_agents(
+        self, _mg, _mc, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Crew should contain Delivery Manager and Orchestrator agents."""
+        dm_agent = MagicMock(name="delivery_manager")
+        orch_agent = MagicMock(name="orchestrator")
+        mock_dm.return_value = dm_agent
+        mock_oa.return_value = orch_agent
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# Some PRD"
+        flow.state.idea = "A cool feature"
+        build_post_completion_crew(flow)
+        crew_kwargs = mock_crew.call_args[1]
+        assert dm_agent in crew_kwargs["agents"]
+        assert orch_agent in crew_kwargs["agents"]
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    @patch(_HAS_CONF, return_value=True)
+    @patch(_HAS_GEMINI, return_value=True)
+    def test_crew_has_assess_task_plus_delivery_tasks(
+        self, _mg, _mc, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Crew should have at least 2 tasks (assess + confluence)."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# Some PRD"
+        flow.state.idea = "A cool feature"
+        build_post_completion_crew(flow)
+        # At minimum: assess + confluence = 2 tasks
+        crew_kwargs = mock_crew.call_args[1]
+        assert len(crew_kwargs["tasks"]) >= 2
+
+    @patch(_HAS_JIRA, return_value=True)
+    @patch(_HAS_CONF, return_value=True)
+    @patch(_HAS_GEMINI, return_value=True)
+    def test_returns_none_when_already_published(self, _mg, _mc, _mj):
+        """If confluence_url and jira_output already set, nothing to do."""
+        flow = PRDFlow()
+        flow.state.final_prd = "# Some PRD"
+        flow.state.confluence_url = "https://test.atlassian.net/wiki/page/123"
+        flow.state.jira_output = "PROJ-42"
+        result = build_post_completion_crew(flow)
+        assert result is None
+
+
+# ── _print_delivery_status ───────────────────────────────────────────
+
+
+class TestPrintDeliveryStatus:
+    """Tests for _print_delivery_status."""
+
+    def test_prints_with_orchestrator_prefix(self, capsys):
+        _print_delivery_status("Hello world")
+        captured = capsys.readouterr().out
+        assert "[Orchestrator]" in captured
+        assert "Hello world" in captured
+
+    def test_prints_newline(self, capsys):
+        _print_delivery_status("msg")
+        assert capsys.readouterr().out.endswith("\n")
+
+
+# ── _discover_pending_deliveries ─────────────────────────────────────
+
+
+_STAGES = "crewai_productfeature_planner.orchestrator.stages"
+_GET_DB = "crewai_productfeature_planner.main.get_db"
+_ASSEMBLE = "crewai_productfeature_planner.main._assemble_prd_from_doc"
+_GET_REC = "crewai_productfeature_planner.mongodb.product_requirements.get_delivery_record"
+_UPSERT_REC = "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
+
+
+def _mock_db_with_docs(docs):
+    """Helper: return a MagicMock get_db whose workingIdeas.find → *docs*."""
+    cursor = MagicMock()
+    cursor.sort.return_value = docs
+    col = MagicMock()
+    col.find.return_value = cursor
+    db = MagicMock()
+    db.__getitem__ = MagicMock(return_value=col)
+    return db
+
+
+class TestDiscoverPendingDeliveries:
+    """Tests for _discover_pending_deliveries."""
+
+    @patch(_ASSEMBLE, return_value="")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_returns_empty_when_no_completed(self, mock_db, _rec, _asm):
+        mock_db.return_value = _mock_db_with_docs([])
+        assert _discover_pending_deliveries() == []
+
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_returns_item_for_pending_delivery(self, mock_db, _rec, _asm):
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Dark mode",
+                "executive_summary": [
+                    {"content": "ES content", "iteration": 1},
+                ],
+            },
+        ])
+
+        items = _discover_pending_deliveries()
+        assert len(items) == 1
+        assert items[0]["run_id"] == "r1"
+        assert items[0]["idea"] == "Dark mode"
+        assert items[0]["content"] == "# PRD content"
+        assert items[0]["confluence_done"] is False
+        assert items[0]["jira_done"] is False
+        assert items[0]["finalized_idea"] == "ES content"
+
+    @patch(_ASSEMBLE, return_value="# PRD")
+    @patch(_GET_REC)
+    @patch(_GET_DB)
+    def test_skips_already_completed_record(self, mock_db, mock_rec, _asm):
+        mock_db.return_value = _mock_db_with_docs([
+            {"run_id": "r1", "status": "completed", "idea": "Done"},
+        ])
+        mock_rec.return_value = {"status": "completed"}
+
+        assert _discover_pending_deliveries() == []
+
+    @patch(_UPSERT_REC, return_value=True)
+    @patch(_ASSEMBLE, return_value="# PRD")
+    @patch(_GET_REC)
+    @patch(_GET_DB)
+    def test_marks_both_done_and_skips(self, mock_db, mock_rec, _asm, mock_upsert):
+        """When confluence_url in doc and jira_completed in record → mark complete."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Both done",
+                "confluence_url": "https://wiki.test.com/p/1",
+            },
+        ])
+        mock_rec.return_value = {
+            "status": "partial",
+            "confluence_published": False,
+            "jira_completed": True,
+        }
+
+        items = _discover_pending_deliveries()
+        assert items == []
+        mock_upsert.assert_called_once_with(
+            "r1",
+            confluence_published=True,
+            confluence_url="https://wiki.test.com/p/1",
+            jira_completed=True,
+        )
+
+    @patch(_ASSEMBLE, return_value="")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_skips_empty_content(self, mock_db, _rec, _asm):
+        mock_db.return_value = _mock_db_with_docs([
+            {"run_id": "r1", "status": "completed", "idea": "Empty"},
+        ])
+        assert _discover_pending_deliveries() == []
+
+    @patch(_GET_DB, side_effect=Exception("mongo down"))
+    def test_returns_empty_on_db_failure(self, _db):
+        assert _discover_pending_deliveries() == []
+
+    @patch(_ASSEMBLE, return_value="# PRD")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_extracts_functional_requirements(self, mock_db, _rec, _asm):
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "With FR",
+                "section": {
+                    "functional_requirements": [
+                        {"content": "FR1: Login", "iteration": 1},
+                        {"content": "FR1: Login\nFR2: Settings", "iteration": 2},
+                    ],
+                },
+            },
+        ])
+
+        items = _discover_pending_deliveries()
+        assert len(items) == 1
+        assert "FR2: Settings" in items[0]["func_reqs"]
+
+    @patch(_ASSEMBLE, return_value="# PRD")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_skips_docs_without_run_id(self, mock_db, _rec, _asm):
+        mock_db.return_value = _mock_db_with_docs([
+            {"status": "completed", "idea": "No run id"},
+        ])
+        assert _discover_pending_deliveries() == []
+
+
+# ── build_startup_delivery_crew ──────────────────────────────────────
+
+
+class TestBuildStartupDeliveryCrew:
+    """Tests for build_startup_delivery_crew."""
+
+    _DM = "crewai_productfeature_planner.agents.orchestrator.agent.create_delivery_manager_agent"
+    _OA = "crewai_productfeature_planner.agents.orchestrator.agent.create_orchestrator_agent"
+    _TC = "crewai_productfeature_planner.agents.orchestrator.agent.get_task_configs"
+    _VERBOSE = "crewai_productfeature_planner.scripts.logging_config.is_verbose"
+    _CREW_CLS = "crewai.Crew"
+    _TASK_CLS = "crewai.Task"
+
+    _TASK_CONFIGS = {
+        "publish_to_confluence_task": {
+            "description": "Publish {prd_content} as '{page_title}' ({run_id})",
+            "expected_output": "Confluence page URL",
+        },
+        "create_jira_epic_task": {
+            "description": "Create epic '{page_title}' summary={executive_summary} ({run_id})",
+            "expected_output": "Epic key",
+        },
+        "create_jira_tickets_task": {
+            "description": "Create stories from {functional_requirements} under {epic_key} ({run_id})",
+            "expected_output": "Story keys",
+        },
+    }
+
+    def _make_item(self, **overrides):
+        base = {
+            "run_id": "r1",
+            "idea": "Test idea",
+            "content": "# PRD content",
+            "confluence_done": False,
+            "confluence_url": "",
+            "jira_done": False,
+            "finalized_idea": "ES summary",
+            "func_reqs": "FR1: Login",
+            "doc": {"run_id": "r1"},
+        }
+        base.update(overrides)
+        return base
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    def test_creates_crew_with_all_tasks(
+        self, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Should create 4 tasks when both Confluence and Jira are pending."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        build_startup_delivery_crew(self._make_item())
+
+        assert mock_task.call_count == 4  # assess + confluence + epic + stories
+        crew_kwargs = mock_crew.call_args[1]
+        assert len(crew_kwargs["agents"]) == 2
+        assert len(crew_kwargs["tasks"]) == 4
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    def test_skips_confluence_when_already_done(
+        self, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Should create 3 tasks when Confluence is already published."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        build_startup_delivery_crew(self._make_item(confluence_done=True))
+
+        assert mock_task.call_count == 3  # assess + epic + stories
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    def test_skips_jira_when_already_done(
+        self, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Should create 2 tasks when Jira is done but Confluence pending."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        build_startup_delivery_crew(self._make_item(jira_done=True))
+
+        assert mock_task.call_count == 2  # assess + confluence
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    def test_skips_stories_when_no_func_reqs(
+        self, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Should create 3 tasks when no functional_requirements provided."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        build_startup_delivery_crew(self._make_item(func_reqs=""))
+
+        assert mock_task.call_count == 3  # assess + confluence + epic
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    def test_progress_callback_invoked(
+        self, mock_task, mock_crew_cls, mock_dm, mock_oa, _tc, _v,
+    ):
+        """step_callback should invoke the progress_callback."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        cb = MagicMock()
+        build_startup_delivery_crew(self._make_item(), progress_callback=cb)
+
+        # Extract the step_callback passed to Crew
+        crew_kwargs = mock_crew_cls.call_args[1]
+        step_callback = crew_kwargs["step_callback"]
+
+        # Simulate step_callback invocation
+        step_output = MagicMock()
+        step_output.raw = "Published page_id=123"
+        step_callback(step_output)
+
+        cb.assert_called_once()
+        assert "[1/4]" in cb.call_args[0][0]
+
+    @patch(_VERBOSE, return_value=True)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    def test_respects_verbose_setting(
+        self, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Crew verbose flag should match is_verbose()."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        build_startup_delivery_crew(self._make_item())
+
+        crew_kwargs = mock_crew.call_args[1]
+        assert crew_kwargs["verbose"] is True
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    def test_skips_jira_when_no_finalized_idea(
+        self, mock_task, mock_crew, mock_dm, mock_oa, _tc, _v,
+    ):
+        """Should not create Jira tasks when finalized_idea is empty."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        build_startup_delivery_crew(self._make_item(finalized_idea=""))
+
+        assert mock_task.call_count == 2  # assess + confluence only

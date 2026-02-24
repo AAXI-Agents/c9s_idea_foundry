@@ -77,6 +77,22 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Startup recovery (publish unpublished PRDs) failed: %s", exc)
 
+    # 5. Autonomous delivery: CrewAI crew-based Confluence + Jira pipeline
+    #    Runs in a background thread so the server starts accepting requests
+    #    immediately while the delivery agents work autonomously.
+    try:
+        import threading
+        from crewai_productfeature_planner.main import _run_startup_delivery_background
+        delivery_thread = threading.Thread(
+            target=_run_startup_delivery_background,
+            name="startup-delivery",
+            daemon=True,
+        )
+        delivery_thread.start()
+        _logger.info("Startup delivery: background thread launched")
+    except Exception as exc:
+        _logger.warning("Startup delivery failed to launch: %s", exc)
+
     yield
 
 

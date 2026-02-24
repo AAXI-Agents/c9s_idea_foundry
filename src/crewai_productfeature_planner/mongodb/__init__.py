@@ -8,6 +8,7 @@ Sub-modules:
     - ``mongodb.client``               — connection management
     - ``mongodb.working_ideas``        — ``workingIdeas`` collection
     - ``mongodb.crew_jobs``            — ``crewJobs`` collection (job tracking)
+    - ``mongodb.product_requirements`` — ``productRequirements`` collection
 """
 
 from crewai_productfeature_planner.mongodb.client import (
@@ -32,6 +33,12 @@ from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
     update_job_failed,
     update_job_started,
     update_job_status,
+)
+from crewai_productfeature_planner.mongodb.product_requirements.repository import (
+    PRODUCT_REQUIREMENTS_COLLECTION,
+    find_pending_delivery,
+    get_delivery_record,
+    upsert_delivery_record,
 )
 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     WORKING_COLLECTION,
@@ -59,6 +66,7 @@ __all__ = [
     "DEFAULT_DB_NAME",
     "DEFAULT_HOST",
     "DEFAULT_PORT",
+    "PRODUCT_REQUIREMENTS_COLLECTION",
     "WORKING_COLLECTION",
     "_build_uri",
     "_get_db_name",
@@ -69,7 +77,9 @@ __all__ = [
     "find_completed_without_confluence",
     "find_completed_without_output",
     "find_job",
+    "find_pending_delivery",
     "find_unfinalized",
+    "get_delivery_record",
     "get_client",
     "get_db",
     "get_output_file",
@@ -92,4 +102,5 @@ __all__ = [
     "update_job_started",
     "update_job_status",
     "update_section_critique",
+    "upsert_delivery_record",
 ]

@@ -1,11 +1,15 @@
-"""Tests for the Product Manager agent configuration and factory."""
+"""Tests for the unified Product Manager agent (OpenAI + Gemini backends)."""
 
+import contextlib
 from unittest.mock import MagicMock, patch
 
+import pytest
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.agents.product_manager.agent import (
+    PROVIDER_GEMINI,
+    PROVIDER_OPENAI,
     create_product_manager,
     get_task_configs,
     _build_tools,
@@ -46,13 +50,14 @@ def _mock_build_llm():
     )
 
 
-import pytest
-
-
 @pytest.fixture(autouse=True)
-def _set_openai_key(monkeypatch):
-    """Provide a dummy OPENAI_API_KEY so Agent() doesn't fail on LLM init."""
+def _set_api_keys(monkeypatch):
+    """Provide dummy API keys so Agent() doesn't fail on LLM init."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy-key-for-unit-tests")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIzaSy-test-dummy-key")
+
+
+# ── Agent factory tests (OpenAI — default) ───────────────────
 
 
 def test_create_product_manager_role():
@@ -87,10 +92,74 @@ def test_create_product_manager_no_delegation():
     assert agent.allow_delegation is False
 
 
+def test_create_product_manager_reasoning_enabled():
+    """Agent should have reasoning enabled for plan-before-execute."""
+    with _mock_build_tools(), _mock_build_llm():
+        agent = create_product_manager()
+
+    assert agent.reasoning is True
+    assert agent.max_reasoning_attempts == 3
+
+
+# ── Agent factory tests (Gemini provider) ─────────────────────
+
+
+def test_create_product_manager_gemini_role():
+    """Gemini-backed agent should have the same role."""
+    with _mock_build_tools(), _mock_build_llm():
+        agent = create_product_manager(provider=PROVIDER_GEMINI)
+
+    assert agent.role == "Senior Product Manager"
+
+
+def test_create_product_manager_gemini_backstory_mentions_smart():
+    """Gemini-backed backstory should reference SMART criteria."""
+    with _mock_build_tools(), _mock_build_llm():
+        agent = create_product_manager(provider=PROVIDER_GEMINI)
+
+    assert "SMART" in agent.backstory
+
+
+def test_create_product_manager_gemini_has_six_tools():
+    """Gemini-backed agent should carry all six tools."""
+    with _mock_build_tools(), _mock_build_llm():
+        agent = create_product_manager(provider=PROVIDER_GEMINI)
+
+    assert len(agent.tools) == 6
+
+
+def test_create_product_manager_gemini_no_delegation():
+    """Gemini-backed agent should not delegate."""
+    with _mock_build_tools(), _mock_build_llm():
+        agent = create_product_manager(provider=PROVIDER_GEMINI)
+
+    assert agent.allow_delegation is False
+
+
+def test_create_product_manager_gemini_reasoning_enabled():
+    """Gemini-backed agent should have reasoning enabled."""
+    with _mock_build_tools(), _mock_build_llm():
+        agent = create_product_manager(provider=PROVIDER_GEMINI)
+
+    assert agent.reasoning is True
+    assert agent.max_reasoning_attempts == 3
+
+
+def test_create_product_manager_gemini_requires_key(monkeypatch):
+    """Should raise EnvironmentError when no Google credentials are set."""
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    with _mock_build_tools(), _mock_build_llm():
+        with pytest.raises(EnvironmentError, match="GOOGLE_API_KEY"):
+            create_product_manager(provider=PROVIDER_GEMINI)
+
+
+# ── Tool assembly tests ──────────────────────────────────────
+
+
 def test_build_tools_returns_six_items():
     """_build_tools should assemble exactly six tools."""
-    import contextlib
-
     patches = [
         patch(
             "crewai_productfeature_planner.agents.product_manager.agent.create_search_tool",
@@ -122,6 +191,9 @@ def test_build_tools_returns_six_items():
         tools = _build_tools()
 
     assert len(tools) == 6
+
+
+# ── Task configuration tests ─────────────────────────────────
 
 
 def test_get_task_configs_has_all_tasks():
@@ -165,26 +237,26 @@ def test_draft_task_references_executive_summary():
     assert "{executive_summary}" in draft["description"]
 
 
-# ── LLM configuration tests ──────────────────────────────────
+# ── OpenAI LLM configuration tests ───────────────────────────
 
 def test_build_llm_uses_openai_model_env(monkeypatch):
     """OPENAI_MODEL env var should set the model."""
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1")
-    llm = _build_llm()
+    llm = _build_llm(provider=PROVIDER_OPENAI)
     assert "gpt-4.1" in llm.model
 
 
 def test_build_llm_defaults_to_o3(monkeypatch):
     """Without OPENAI_MODEL env var, should default to o3."""
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
-    llm = _build_llm()
+    llm = _build_llm(provider=PROVIDER_OPENAI)
     assert "o3" in llm.model
 
 
 def test_build_llm_adds_openai_prefix(monkeypatch):
     """Model names without a provider prefix get 'openai/' prepended."""
     monkeypatch.setenv("OPENAI_MODEL", "o3")
-    llm = _build_llm()
+    llm = _build_llm(provider=PROVIDER_OPENAI)
     # CrewAI normalises the model name; verify it resolved to an OpenAI provider.
     assert llm.model == "o3"
 
@@ -192,9 +264,49 @@ def test_build_llm_adds_openai_prefix(monkeypatch):
 def test_build_llm_skips_prefix_when_qualified(monkeypatch):
     """Model names already containing '/' should not be double-prefixed."""
     monkeypatch.setenv("OPENAI_MODEL", "openai/gpt-4.1")
-    llm = _build_llm()
+    llm = _build_llm(provider=PROVIDER_OPENAI)
     # CrewAI strips the provider prefix internally.
     assert llm.model == "gpt-4.1"
+
+
+# ── Gemini LLM configuration tests ───────────────────────────
+
+
+def test_build_llm_gemini_uses_gemini_pm_model_env(monkeypatch):
+    """GEMINI_PM_MODEL env var should set the model for Gemini provider."""
+    monkeypatch.setenv("GEMINI_PM_MODEL", "gemini-2.0-flash")
+    llm = _build_llm(provider=PROVIDER_GEMINI)
+    assert "gemini-2.0-flash" in llm.model
+
+
+def test_build_llm_gemini_falls_back_to_gemini_model_env(monkeypatch):
+    """Without GEMINI_PM_MODEL, should fall back to GEMINI_MODEL."""
+    monkeypatch.delenv("GEMINI_PM_MODEL", raising=False)
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash-preview-04-17")
+    llm = _build_llm(provider=PROVIDER_GEMINI)
+    assert "gemini-2.5-flash-preview-04-17" in llm.model
+
+
+def test_build_llm_gemini_defaults_to_gemini_3_flash(monkeypatch):
+    """Without any model env vars, should default to gemini-3-flash-preview."""
+    monkeypatch.delenv("GEMINI_PM_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    llm = _build_llm(provider=PROVIDER_GEMINI)
+    assert "gemini-3-flash-preview" in llm.model
+
+
+def test_build_llm_gemini_adds_gemini_prefix(monkeypatch):
+    """Model names without provider prefix get 'gemini/' prepended."""
+    monkeypatch.setenv("GEMINI_PM_MODEL", "gemini-3-flash-preview")
+    llm = _build_llm(provider=PROVIDER_GEMINI)
+    assert "gemini" in llm.model.lower()
+
+
+def test_build_llm_gemini_skips_prefix_when_qualified(monkeypatch):
+    """Model names already containing '/' should not be double-prefixed."""
+    monkeypatch.setenv("GEMINI_PM_MODEL", "gemini/gemini-2.0-flash")
+    llm = _build_llm(provider=PROVIDER_GEMINI)
+    assert "gemini-2.0-flash" in llm.model
 
 
 # ── LLM timeout & retry configuration ────────────────────────

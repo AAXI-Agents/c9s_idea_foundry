@@ -127,3 +127,33 @@ def get_task_configs() -> dict:
     """Load task configurations for the Orchestrator agent."""
     logger.debug("Loading Orchestrator task configs")
     return _load_yaml("tasks.yaml")
+
+
+def create_delivery_manager_agent() -> Agent:
+    """Create the Delivery Manager agent for startup orchestration.
+
+    This agent coordinates the delivery lifecycle — it decides which
+    PRDs need publishing or Jira ticketing and delegates the actual
+    work to the Orchestrator agent via CrewAI collaboration.
+
+    Uses the same Gemini backend as the Orchestrator agent but carries
+    no tools of its own — it delegates tool-bearing work to the
+    Orchestrator specialist.
+    """
+    agent_config = _load_yaml("delivery_manager.yaml")["delivery_manager"]
+    logger.info(
+        "Creating Delivery Manager agent (role='%s')",
+        agent_config["role"].strip(),
+    )
+
+    return Agent(
+        role=agent_config["role"].strip(),
+        goal=agent_config["goal"].strip(),
+        backstory=agent_config["backstory"].strip(),
+        llm=_build_llm(),
+        tools=[],
+        verbose=is_verbose(),
+        allow_delegation=True,
+        knowledge_sources=[build_project_knowledge_source()],
+        embedder=get_google_embedder_config(),
+    )

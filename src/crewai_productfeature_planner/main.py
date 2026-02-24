@@ -7,7 +7,7 @@ import warnings
 
 from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryDraft, ExecutiveSummaryIteration, PRDDraft, SECTION_ORDER
 from crewai_productfeature_planner.flows.prd_flow import IdeaFinalized, PauseRequested, PRDFlow, RequirementsFinalized
-from crewai_productfeature_planner.mongodb import find_completed_without_output, find_unfinalized, get_run_documents, mark_completed, save_executive_summary, save_iteration, save_output_file, save_pipeline_step, ensure_section_field
+from crewai_productfeature_planner.mongodb import find_completed_without_output, find_unfinalized, get_db, get_run_documents, mark_completed, save_executive_summary, save_iteration, save_output_file, save_pipeline_step, ensure_section_field
 from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
 from crewai_productfeature_planner.mongodb.crew_jobs import (
     create_job,
@@ -582,6 +582,235 @@ def _prompt_next_action() -> str | None:
             print("Please enter 'n' for a new idea or 'q' to exit.")
 
 
+# ── Startup delivery orchestrator ────────────────────────────────────
+
+
+def _run_startup_delivery() -> int:
+    """Autonomously deliver completed PRDs via CrewAI crew collaboration.
+
+    Scans ``workingIdeas`` for completed runs, checks each against the
+    ``productRequirements`` collection, and uses a **CrewAI Crew** with
+    sequential process and agent collaboration to execute the delivery
+    pipeline (Confluence publish + Jira ticketing).
+
+    The crew comprises two agents:
+
+    * **Delivery Manager** — coordinates the lifecycle, decides which
+      steps are needed.  ``allow_delegation=True`` lets it hand off
+      tool-bearing work.
+    * **Orchestrator** — the specialist equipped with Confluence and
+      Jira tools.
+
+    Uses ``productRequirements`` to persist per-run delivery state so
+    the agent can resume where it left off on subsequent restarts.
+
+    Prints user-facing progress messages prefixed with ``[Orchestrator]``
+    so the user can see what the agent is doing before the interactive
+    CLI takes over.
+
+    This is fully autonomous — no user involvement required.
+
+    Returns:
+        The number of runs that were fully delivered (Confluence + Jira).
+    """
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        get_delivery_record,
+        upsert_delivery_record,
+    )
+    from crewai_productfeature_planner.orchestrator.stages import (
+        _discover_pending_deliveries,
+        _has_confluence_credentials,
+        _has_jira_credentials,
+        _print_delivery_status,
+        build_startup_delivery_crew,
+    )
+    from crewai_productfeature_planner.scripts.retry import (
+        crew_kickoff_with_retry,
+    )
+
+    if not (_has_confluence_credentials() or _has_jira_credentials()):
+        logger.debug(
+            "[StartupDelivery] Skipped — neither Confluence nor Jira configured"
+        )
+        return 0
+
+    # Discover pending deliveries from MongoDB
+    try:
+        items = _discover_pending_deliveries()
+    except Exception as exc:
+        logger.warning(
+            "[StartupDelivery] Discovery failed: %s", exc,
+        )
+        return 0
+    if not items:
+        return 0
+
+    _print_delivery_status(
+        f"Found {len(items)} completed PRD(s) pending delivery"
+    )
+
+    delivered = 0
+    for item in items:
+        run_id = item["run_id"]
+        idea_preview = (item["idea"] or "PRD")[:60].strip()
+
+        # --- Print what we're about to do ---
+        pending_parts = []
+        if not item["confluence_done"]:
+            pending_parts.append("Confluence publish")
+        if not item["jira_done"]:
+            pending_parts.append("Jira ticketing")
+        steps_label = " + ".join(pending_parts) or "finalising record"
+
+        _print_delivery_status(
+            f"Processing \"{idea_preview}\" — {steps_label}"
+        )
+
+        # Seed delivery record so we can resume on crash
+        record = get_delivery_record(run_id)
+        if not record:
+            upsert_delivery_record(
+                run_id,
+                confluence_published=item["confluence_done"],
+                jira_completed=item["jira_done"],
+            )
+
+        try:
+            # Build the CrewAI crew with sequential process & collaboration
+            crew = build_startup_delivery_crew(
+                item, progress_callback=_print_delivery_status,
+            )
+
+            _print_delivery_status(
+                f"Crew assembled — {len(crew.tasks)} task(s), "
+                f"{len(crew.agents)} agent(s) collaborating"
+            )
+
+            # Kick off the crew (with retry for transient LLM failures)
+            result = crew_kickoff_with_retry(
+                crew, step_label=f"startup_delivery_{run_id}",
+            )
+
+            # Parse result to determine what was accomplished
+            raw_output = result.raw if hasattr(result, "raw") else str(result)
+
+            # Update delivery record from crew output
+            new_conf_done = item["confluence_done"] or _confluence_completed_in_output(raw_output)
+            new_jira_done = item["jira_done"] or _jira_completed_in_output(raw_output)
+
+            upsert_delivery_record(
+                run_id,
+                confluence_published=new_conf_done,
+                confluence_url=_extract_confluence_url(raw_output) or item.get("confluence_url", ""),
+                jira_completed=new_jira_done,
+                jira_output=raw_output if new_jira_done else None,
+                error=None,
+            )
+
+            # Persist jira_output to workingIdeas if new
+            if new_jira_done and not item["doc"].get("jira_output"):
+                try:
+                    import datetime
+                    db = get_db()
+                    db["workingIdeas"].update_one(
+                        {"run_id": run_id},
+                        {"$set": {
+                            "jira_output": raw_output,
+                            "update_date": datetime.datetime.now(
+                                datetime.timezone.utc,
+                            ).isoformat(),
+                        }},
+                    )
+                except Exception:
+                    pass
+
+            # Persist confluence_url to workingIdeas if new
+            if new_conf_done and not item["doc"].get("confluence_url"):
+                conf_url = _extract_confluence_url(raw_output)
+                if conf_url:
+                    try:
+                        from crewai_productfeature_planner.mongodb import save_confluence_url
+                        save_confluence_url(
+                            run_id=run_id,
+                            confluence_url=conf_url,
+                            page_id="",
+                        )
+                    except Exception:
+                        pass
+
+            if new_conf_done and new_jira_done:
+                delivered += 1
+                _print_delivery_status(
+                    f"✓ Fully delivered \"{idea_preview}\""
+                )
+            else:
+                status_parts = []
+                if new_conf_done:
+                    status_parts.append("Confluence ✓")
+                if new_jira_done:
+                    status_parts.append("Jira ✓")
+                _print_delivery_status(
+                    f"Partial delivery for \"{idea_preview}\" — "
+                    + ", ".join(status_parts or ["awaiting next restart"])
+                )
+
+            logger.info(
+                "[StartupDelivery] Delivery crew completed for "
+                "run_id=%s (confluence=%s, jira=%s)",
+                run_id,
+                "done" if new_conf_done else "pending",
+                "done" if new_jira_done else "pending",
+            )
+        except Exception as exc:
+            logger.warning(
+                "[StartupDelivery] Delivery crew failed for "
+                "run_id=%s: %s",
+                run_id, exc,
+            )
+            upsert_delivery_record(run_id, error=str(exc))
+            _print_delivery_status(
+                f"✗ Delivery failed for \"{idea_preview}\": {exc}"
+            )
+
+    if delivered:
+        logger.info(
+            "[StartupDelivery] Fully delivered %d PRD(s) on startup",
+            delivered,
+        )
+    return delivered
+
+
+def _confluence_completed_in_output(output: str) -> bool:
+    """Heuristically detect Confluence publish success in crew output."""
+    lower = output.lower()
+    return any(kw in lower for kw in [
+        "published", "created", "updated",
+        "confluence", "page_id", "page id",
+    ]) and "fail" not in lower[:200]
+
+
+def _jira_completed_in_output(output: str) -> bool:
+    """Heuristically detect Jira ticket creation in crew output."""
+    lower = output.lower()
+    return any(kw in lower for kw in [
+        "epic", "story", "stories", "jira",
+        "issue_key", "issue key",
+    ]) and "fail" not in lower[:200]
+
+
+def _extract_confluence_url(output: str) -> str:
+    """Extract a Confluence URL from crew output text."""
+    import re
+    match = re.search(r"https?://[^\s]+atlassian[^\s]*wiki[^\s]*", output)
+    if match:
+        return match.group(0).rstrip(".,;:()\"'")
+    # Fallback: any URL with /wiki/ in it
+    match = re.search(r"https?://[^\s]+/wiki/[^\s]*", output)
+    if match:
+        return match.group(0).rstrip(".,;:()\"'")
+    return ""
+
+
 def _generate_missing_outputs() -> int:
     """Generate markdown files for completed ideas that are missing output.
 
@@ -815,6 +1044,17 @@ def run():
     if published:
         print(f"  Published {published} PRD(s) to Confluence.")
 
+    # Startup delivery: autonomously run Confluence + Jira pipeline
+    # in a background thread so the user can start working immediately.
+    import threading
+
+    delivery_thread = threading.Thread(
+        target=_run_startup_delivery_background,
+        name="startup-delivery",
+        daemon=True,
+    )
+    delivery_thread.start()
+
     # If idea was passed as CLI arg, run once and exit
     if len(sys.argv) >= 2:
         _run_single_flow(idea=sys.argv[1])
@@ -829,6 +1069,25 @@ def run():
             print("\nGoodbye!")
             return
         idea = next_idea
+
+
+def _run_startup_delivery_background() -> None:
+    """Wrapper for ``_run_startup_delivery`` that runs in a daemon thread.
+
+    Catches all exceptions so the background thread never crashes the
+    main process.  Prints a summary line when delivery completes.
+    """
+    try:
+        delivered = _run_startup_delivery()
+        if delivered:
+            from crewai_productfeature_planner.orchestrator.stages import (
+                _print_delivery_status,
+            )
+            _print_delivery_status(
+                f"Background delivery complete — {delivered} PRD(s) fully delivered"
+            )
+    except Exception as exc:
+        logger.warning("[StartupDelivery] Background thread failed: %s", exc)
 
 
 def _run_single_flow(idea: str | None = None) -> None:

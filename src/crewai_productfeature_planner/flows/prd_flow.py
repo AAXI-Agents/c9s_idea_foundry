@@ -28,10 +28,9 @@ from crewai import Agent, Crew, Process, Task
 from crewai.flow.flow import Flow, start
 from pydantic import BaseModel, Field
 
-from crewai_productfeature_planner.agents.gemini_product_manager.agent import (
-    create_gemini_product_manager,
-)
 from crewai_productfeature_planner.agents.product_manager import (
+    PROVIDER_GEMINI,
+    PROVIDER_OPENAI,
     create_product_manager,
     get_task_configs,
 )
@@ -342,10 +341,10 @@ class PRDFlow(Flow[PRDState]):
 
         # --- factories keyed by agent identifier ---
         def _openai() -> Agent:
-            return create_product_manager()
+            return create_product_manager(provider=PROVIDER_OPENAI)
 
         def _gemini() -> Agent:
-            return create_gemini_product_manager()
+            return create_product_manager(provider=PROVIDER_GEMINI)
 
         factories: dict[str, tuple[callable, str | list[str] | None]] = {
             AGENT_OPENAI: (_openai, "OPENAI_API_KEY"),
@@ -854,6 +853,10 @@ class PRDFlow(Flow[PRDState]):
         ``critique_prd_task`` up to min/max iterations.  Each iteration
         both critiques the current summary and produces a refined version.
 
+        When multiple PM agents are available, the secondary agent
+        critiques the primary agent's work — enabling genuine
+        **cross-agent collaboration** via CrewAI's sequential process.
+
         The executive summary is stored at the top-level
         ``executive_summary`` array in ``workingIdeas`` (not under ``draft``).
         """
@@ -861,6 +864,21 @@ class PRDFlow(Flow[PRDState]):
         # Pick the default agent for the executive summary phase
         default_name = get_default_agent()
         pm = agents.get(default_name) or next(iter(agents.values()))
+
+        # Pick a secondary agent for cross-agent critique collaboration.
+        # When only one agent is available, the primary agent self-critiques.
+        critic = pm
+        critic_name = default_name
+        for name, agent_obj in agents.items():
+            if name != default_name:
+                critic = agent_obj
+                critic_name = name
+                logger.info(
+                    "[ExecSummary] Cross-agent collaboration: "
+                    "'%s' will critique '%s' drafts",
+                    critic_name, default_name,
+                )
+                break
 
         # Always persist the original user-inputted idea, not the refined one
         user_idea = self.state.original_idea or self.state.idea
@@ -919,11 +937,14 @@ class PRDFlow(Flow[PRDState]):
         )
 
         # ── Critique → iterate loop ──────────────────────────
+        # Assembles a unique agent list for multi-agent Crews.
+        crew_agents = [pm] if critic is pm else [pm, critic]
         iteration = 1
         while iteration < max_iter:
-            # --- Critique ---
+            # --- Critique (uses secondary agent when available) ---
             logger.info(
-                "[ExecSummary] Critique iteration %d/%d", iteration, max_iter,
+                "[ExecSummary] Critique iteration %d/%d (agent=%s)",
+                iteration, max_iter, critic_name,
             )
             critique_task = Task(
                 description=task_configs["critique_prd_task"]["description"].format(
@@ -933,10 +954,10 @@ class PRDFlow(Flow[PRDState]):
                 expected_output=task_configs["critique_prd_task"][
                     "expected_output"
                 ],
-                agent=pm,
+                agent=critic,
             )
             crew = Crew(
-                agents=[pm],
+                agents=crew_agents,
                 tasks=[critique_task],
                 process=Process.sequential,
                 verbose=is_verbose(),
@@ -985,11 +1006,9 @@ class PRDFlow(Flow[PRDState]):
                 self.state.executive_summary.is_approved = True
                 break
 
-            # --- Produce refined version (the critique task output
-            #     already contains the refined executive summary per
-            #     the task description; but we run the draft task
-            #     again with the critique as context to get a clean
-            #     refined version) ---
+            # --- Produce refined version — primary PM addresses
+            #     critique from the secondary agent (cross-agent
+            #     collaboration: one agent critiques, another refines) ---
             iteration += 1
             refine_desc = task_configs["draft_prd_task"]["description"].format(
                 idea=self.state.idea,
@@ -1009,7 +1028,7 @@ class PRDFlow(Flow[PRDState]):
                 agent=pm,
             )
             crew = Crew(
-                agents=[pm],
+                agents=crew_agents,
                 tasks=[refine_task],
                 process=Process.sequential,
                 verbose=is_verbose(),
@@ -1080,6 +1099,11 @@ class PRDFlow(Flow[PRDState]):
 
     def _section_approval_loop(self, section, agents: dict[str, Agent], task_configs) -> None:
         """Iterate a single section through critique→refine cycles.
+
+        When multiple PM agents are available, the critique is performed
+        by a **different agent** from the one that drafted/refined —
+        enabling genuine cross-agent collaboration via CrewAI's
+        sequential process.
 
         Each section is automatically iterated between *min* and *max*
         iterations (controlled by ``PRD_SECTION_MIN_ITERATIONS`` /
@@ -1152,19 +1176,31 @@ class PRDFlow(Flow[PRDState]):
                         section.title, agent_name, len(user_feedback),
                     )
 
-            # Resolve agent for critique / refine
+            # Resolve agent for critique / refine.
+            # Cross-agent collaboration: use a different agent for
+            # critique when multiple PM agents are available.
             selected = section.selected_agent or available[0]
             pm = agents.get(selected) or next(iter(agents.values()))
 
-            # ── Critique (user feedback or agent) ─────────────
+            # Pick a secondary agent for cross-agent critique
+            critic = pm
+            for name, agent_obj in agents.items():
+                if name != selected:
+                    critic = agent_obj
+                    break
+            crew_agents = [pm] if critic is pm else [pm, critic]
+
+            # ── Critique (cross-agent when available) ─────────
             if user_feedback is not None:
                 self.state.critique = user_feedback
                 section.critique = user_feedback
             else:
                 logger.info(
-                    "[Critique] Step %d/%d — Section '%s' — iteration %d",
+                    "[Critique] Step %d/%d — Section '%s' — iteration %d "
+                    "(agent=%s)",
                     section.step, total_steps, section.title,
                     section.iteration,
+                    next((n for n, a in agents.items() if a is critic), selected),
                 )
                 critique_task = Task(
                     description=task_configs["critique_section_task"][
@@ -1178,10 +1214,10 @@ class PRDFlow(Flow[PRDState]):
                     expected_output=task_configs["critique_section_task"][
                         "expected_output"
                     ],
-                    agent=pm,
+                    agent=critic,
                 )
                 crew = Crew(
-                    agents=[pm],
+                    agents=crew_agents,
                     tasks=[critique_task],
                     process=Process.sequential,
                     verbose=is_verbose(),
@@ -1239,7 +1275,7 @@ class PRDFlow(Flow[PRDState]):
                 )
                 break
 
-            # ── Refine ────────────────────────────────────────
+            # ── Refine (primary PM addresses cross-agent critique) ─
             prev_content = section.content  # snapshot for degenerate guard
             logger.info(
                 "[Refine] Step %d/%d — Section '%s' — iteration %d",
@@ -1265,7 +1301,7 @@ class PRDFlow(Flow[PRDState]):
                 agent=pm,
             )
             crew = Crew(
-                agents=[pm],
+                agents=crew_agents,
                 tasks=[refine_task],
                 process=Process.sequential,
                 verbose=is_verbose(),
@@ -1497,21 +1533,31 @@ class PRDFlow(Flow[PRDState]):
     # Post-completion pipeline (Confluence + Jira)
     # ------------------------------------------------------------------
     def _run_post_completion(self) -> None:
-        """Run the Atlassian publishing pipeline after PRD finalization.
+        """Run the Atlassian delivery crew after PRD finalization.
 
-        Publishes the completed PRD to Confluence and creates Jira
-        tickets.  Failures are logged but do not fail the overall flow.
+        Uses a multi-agent CrewAI Crew (Delivery Manager + Orchestrator)
+        with Process.sequential and context-chained tasks.  Falls back
+        to the legacy AgentOrchestrator pipeline if the crew cannot be
+        built.  Failures are logged but do not fail the overall flow.
         """
         try:
             from crewai_productfeature_planner.orchestrator import (
-                build_post_completion_pipeline,
+                build_post_completion_crew,
+            )
+            from crewai_productfeature_planner.scripts.retry import (
+                crew_kickoff_with_retry,
             )
 
-            pipeline = build_post_completion_pipeline(self)
-            pipeline.run_pipeline()
+            crew = build_post_completion_crew(self)
+            if crew is None:
+                logger.info(
+                    "[PostCompletion] No delivery steps needed — skipping."
+                )
+                return
+            crew_kickoff_with_retry(crew, step_label="post_completion")
         except Exception as exc:
             logger.warning(
-                "[PostCompletion] Atlassian pipeline failed — "
+                "[PostCompletion] Atlassian delivery crew failed — "
                 "PRD is saved but not published: %s",
                 exc,
             )

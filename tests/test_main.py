@@ -8,12 +8,17 @@ from crewai_productfeature_planner.main import (
     _approve_requirements,
     _assemble_prd_from_doc,
     _choose_refinement_mode,
+    _confluence_completed_in_output,
+    _extract_confluence_url,
     _generate_missing_outputs,
+    _jira_completed_in_output,
     _kill_stale_crew_processes,
     _manual_idea_refinement,
     _max_iteration_from_doc,
     _publish_unpublished_prds,
     _restore_prd_state,
+    _run_startup_delivery,
+    _run_startup_delivery_background,
 )
 
 
@@ -1387,3 +1392,303 @@ class TestPublishUnpublishedPrds:
     def test_returns_zero_on_db_error(self, mock_get_db, mock_has_cred):
         """Should return 0 when database query fails."""
         assert _publish_unpublished_prds() == 0
+
+
+# ── _run_startup_delivery ────────────────────────────────────
+
+
+class TestRunStartupDelivery:
+    """Tests for the autonomous startup delivery orchestrator (crew-based)."""
+
+    # Convenience aliases for the patch targets.
+    _CONF = "crewai_productfeature_planner.orchestrator.stages._has_confluence_credentials"
+    _JIRA = "crewai_productfeature_planner.orchestrator.stages._has_jira_credentials"
+    _DISCOVER = "crewai_productfeature_planner.orchestrator.stages._discover_pending_deliveries"
+    _BUILD_CREW = "crewai_productfeature_planner.orchestrator.stages.build_startup_delivery_crew"
+    _KICKOFF = "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry"
+    _GET_REC = "crewai_productfeature_planner.mongodb.product_requirements.get_delivery_record"
+    _UPSERT = "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
+    _STATUS = "crewai_productfeature_planner.orchestrator.stages._print_delivery_status"
+
+    # ── credential gating ─────────────────────────────────────
+
+    @patch(_CONF, return_value=False)
+    @patch(_JIRA, return_value=False)
+    def test_skips_when_no_credentials(self, _j, _c):
+        """Should return 0 when neither Confluence nor Jira is configured."""
+        assert _run_startup_delivery() == 0
+
+    # ── no pending items ──────────────────────────────────────
+
+    @patch(_STATUS)
+    @patch(_DISCOVER, return_value=[])
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_returns_zero_when_no_pending_items(self, _j, _c, _disc, _status):
+        """Should return 0 when _discover_pending_deliveries returns empty."""
+        assert _run_startup_delivery() == 0
+
+    # ── crew execution for pending delivery ───────────────────
+
+    @patch(_STATUS)
+    @patch(_UPSERT, return_value=True)
+    @patch(_GET_REC, return_value=None)
+    @patch(_KICKOFF)
+    @patch(_BUILD_CREW)
+    @patch(_DISCOVER)
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_runs_crew_for_pending_delivery(
+        self, _j, _c, mock_disc, mock_build, mock_kickoff,
+        _rec, _ups, _status,
+    ):
+        """Should build a CrewAI crew and kickoff for each pending item."""
+        mock_disc.return_value = [
+            {
+                "run_id": "r1",
+                "idea": "Dark mode",
+                "content": "# PRD\n\n## ES\n\nContent",
+                "confluence_done": False,
+                "confluence_url": "",
+                "jira_done": False,
+                "finalized_idea": "Exec summary",
+                "func_reqs": "FR1: Login",
+                "doc": {"run_id": "r1"},
+            },
+        ]
+
+        mock_crew = MagicMock()
+        mock_build.return_value = mock_crew
+        mock_result = MagicMock()
+        mock_result.raw = "Published page_id=123 to Confluence. Created Epic PROJ-1."
+        mock_kickoff.return_value = mock_result
+
+        result = _run_startup_delivery()
+
+        mock_build.assert_called_once()
+        mock_kickoff.assert_called_once_with(
+            mock_crew, step_label="startup_delivery_r1",
+        )
+        # Should have upserted delivery record
+        assert _ups.call_count >= 1
+
+    # ── crew error handling ───────────────────────────────────
+
+    @patch(_STATUS)
+    @patch(_UPSERT, return_value=True)
+    @patch(_GET_REC, return_value=None)
+    @patch(_KICKOFF)
+    @patch(_BUILD_CREW)
+    @patch(_DISCOVER)
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_records_error_on_crew_failure(
+        self, _j, _c, mock_disc, mock_build, mock_kickoff,
+        _rec, mock_upsert, _status,
+    ):
+        """Should record error in productRequirements when crew fails."""
+        mock_disc.return_value = [
+            {
+                "run_id": "r1",
+                "idea": "Broken",
+                "content": "# PRD",
+                "confluence_done": False,
+                "confluence_url": "",
+                "jira_done": False,
+                "finalized_idea": "ES",
+                "func_reqs": "",
+                "doc": {"run_id": "r1"},
+            },
+        ]
+
+        mock_crew = MagicMock()
+        mock_build.return_value = mock_crew
+        mock_kickoff.side_effect = RuntimeError("LLM timeout")
+
+        result = _run_startup_delivery()
+
+        assert result == 0
+        # Should have called upsert with error
+        last_call = mock_upsert.call_args_list[-1]
+        assert "LLM timeout" in str(last_call)
+
+    # ── prints status messages ────────────────────────────────
+
+    @patch(_UPSERT, return_value=True)
+    @patch(_GET_REC, return_value=None)
+    @patch(_KICKOFF)
+    @patch(_BUILD_CREW)
+    @patch(_DISCOVER)
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_prints_progress_messages(
+        self, _j, _c, mock_disc, mock_build, mock_kickoff,
+        _rec, _ups,
+    ):
+        """Should print user-facing status messages during delivery."""
+        mock_disc.return_value = [
+            {
+                "run_id": "r1",
+                "idea": "Test idea",
+                "content": "# PRD content",
+                "confluence_done": False,
+                "confluence_url": "",
+                "jira_done": False,
+                "finalized_idea": "ES",
+                "func_reqs": "",
+                "doc": {"run_id": "r1"},
+            },
+        ]
+
+        mock_crew = MagicMock()
+        mock_crew.tasks = [MagicMock(), MagicMock()]
+        mock_crew.agents = [MagicMock(), MagicMock()]
+        mock_build.return_value = mock_crew
+        mock_result = MagicMock()
+        mock_result.raw = "Published to Confluence"
+        mock_kickoff.return_value = mock_result
+
+        with patch("builtins.print") as mock_print:
+            _run_startup_delivery()
+
+        # Should have printed at least the status messages
+        printed_lines = [str(c) for c in mock_print.call_args_list]
+        printed_text = " ".join(printed_lines)
+        assert "Orchestrator" in printed_text
+        assert "1 completed PRD" in printed_text
+
+    # ── database failure ──────────────────────────────────────
+
+    @patch(_DISCOVER, side_effect=Exception("connection refused"))
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_handles_discovery_failure(self, _j, _c, _disc):
+        """Should return 0 when discovery fails."""
+        assert _run_startup_delivery() == 0
+
+    # ── persists jira_output to workingIdeas ──────────────────
+
+    @patch(_STATUS)
+    @patch("crewai_productfeature_planner.main.get_db")
+    @patch(_UPSERT, return_value=True)
+    @patch(_GET_REC, return_value=None)
+    @patch(_KICKOFF)
+    @patch(_BUILD_CREW)
+    @patch(_DISCOVER)
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_persists_jira_output_to_working_ideas(
+        self, _j, _c, mock_disc, mock_build, mock_kickoff,
+        _rec, _ups, mock_get_db, _status,
+    ):
+        """Should save jira_output back to the workingIdeas document."""
+        mock_disc.return_value = [
+            {
+                "run_id": "r1",
+                "idea": "Jira test",
+                "content": "# PRD content",
+                "confluence_done": True,
+                "confluence_url": "https://wiki.test.com/page/1",
+                "jira_done": False,
+                "finalized_idea": "ES",
+                "func_reqs": "FR1",
+                "doc": {"run_id": "r1"},
+            },
+        ]
+
+        mock_crew = MagicMock()
+        mock_build.return_value = mock_crew
+        mock_result = MagicMock()
+        mock_result.raw = "Created Epic PROJ-1. Created Story PROJ-2."
+        mock_kickoff.return_value = mock_result
+
+        wi_col = MagicMock()
+        wi_db = MagicMock()
+        wi_db.__getitem__ = MagicMock(return_value=wi_col)
+        mock_get_db.return_value = wi_db
+
+        _run_startup_delivery()
+
+        # Should have persisted jira output to workingIdeas
+        wi_col.update_one.assert_called()
+        update_args = wi_col.update_one.call_args
+        assert update_args[0][0] == {"run_id": "r1"}
+        assert "jira_output" in update_args[0][1]["$set"]
+
+    # ── background wrapper ────────────────────────────────────
+
+    @patch("crewai_productfeature_planner.main._run_startup_delivery")
+    def test_background_wrapper_catches_exceptions(self, mock_delivery):
+        """_run_startup_delivery_background should not raise on failure."""
+        mock_delivery.side_effect = Exception("boom")
+        # Should not raise
+        _run_startup_delivery_background()
+
+    @patch(_STATUS)
+    @patch("crewai_productfeature_planner.main._run_startup_delivery", return_value=3)
+    def test_background_wrapper_reports_count(self, mock_delivery, mock_status):
+        """_run_startup_delivery_background should print count on success."""
+        _run_startup_delivery_background()
+        mock_status.assert_called_once()
+        assert "3" in mock_status.call_args[0][0]
+
+
+# ── Output helper functions ──────────────────────────────────
+
+
+class TestConfluenceCompletedInOutput:
+    """Tests for _confluence_completed_in_output."""
+
+    def test_detects_published(self):
+        assert _confluence_completed_in_output("Page published successfully")
+
+    def test_detects_created(self):
+        assert _confluence_completed_in_output("Created confluence page")
+
+    def test_detects_updated(self):
+        assert _confluence_completed_in_output("Updated page_id=123")
+
+    def test_false_on_failure(self):
+        assert not _confluence_completed_in_output("Failed to publish to Confluence")
+
+    def test_false_on_unrelated(self):
+        assert not _confluence_completed_in_output("Nothing happened")
+
+
+class TestJiraCompletedInOutput:
+    """Tests for _jira_completed_in_output."""
+
+    def test_detects_epic(self):
+        assert _jira_completed_in_output("Created Epic PROJ-1")
+
+    def test_detects_story(self):
+        assert _jira_completed_in_output("Created Story PROJ-2")
+
+    def test_detects_issue_key(self):
+        assert _jira_completed_in_output("issue_key: PROJ-3")
+
+    def test_false_on_failure(self):
+        assert not _jira_completed_in_output("Failed to create Jira Epic")
+
+    def test_false_on_unrelated(self):
+        assert not _jira_completed_in_output("Nothing happened")
+
+
+class TestExtractConfluenceUrl:
+    """Tests for _extract_confluence_url."""
+
+    def test_extracts_atlassian_url(self):
+        text = "Published to https://myco.atlassian.net/wiki/pages/123 successfully"
+        assert "atlassian.net/wiki/pages/123" in _extract_confluence_url(text)
+
+    def test_extracts_wiki_url(self):
+        text = "Page at https://conf.example.com/wiki/spaces/PRD/page/456"
+        assert "/wiki/" in _extract_confluence_url(text)
+
+    def test_returns_empty_when_no_url(self):
+        assert _extract_confluence_url("No URL here") == ""
+
+    def test_strips_trailing_punctuation(self):
+        text = "See https://co.atlassian.net/wiki/page/1."
+        url = _extract_confluence_url(text)
+        assert not url.endswith(".")

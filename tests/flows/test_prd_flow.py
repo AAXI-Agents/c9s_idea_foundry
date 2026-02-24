@@ -565,15 +565,15 @@ def test_parse_decision_legacy_string():
     assert action == "Needs more detail"
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.create_gemini_product_manager")
-def test_get_available_agents_gemini_only(mock_create_gemini_pm, monkeypatch):
+@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
+def test_get_available_agents_gemini_only(mock_create_pm, monkeypatch):
     """Default agent should be Gemini PM."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
     monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
-    mock_create_gemini_pm.return_value = MagicMock()
+    mock_create_pm.return_value = MagicMock()
     agents = PRDFlow._get_available_agents()
     assert list(agents.keys()) == [AGENT_GEMINI]
-    mock_create_gemini_pm.assert_called_once()
+    mock_create_pm.assert_called_once()
 
 
 @patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
@@ -587,12 +587,12 @@ def test_get_available_agents_openai_explicit(mock_create_pm, monkeypatch):
     mock_create_pm.assert_called_once()
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.create_gemini_product_manager")
-def test_get_available_agents_multi_agents_1_limits_to_default(mock_create_gemini_pm, monkeypatch):
+@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
+def test_get_available_agents_multi_agents_1_limits_to_default(mock_create_pm, monkeypatch):
     """DEFAULT_MULTI_AGENTS=1 should use only the default agent."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
     monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
-    mock_create_gemini_pm.return_value = MagicMock()
+    mock_create_pm.return_value = MagicMock()
     agents = PRDFlow._get_available_agents()
     assert list(agents.keys()) == [AGENT_GEMINI]
 
@@ -2751,24 +2751,40 @@ class TestRunPostCompletion:
     """Tests for PRDFlow._run_post_completion."""
 
     @patch(
-        "crewai_productfeature_planner.orchestrator.build_post_completion_pipeline"
+        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry"
     )
-    def test_calls_post_completion_pipeline(self, mock_build):
-        mock_orch = MagicMock()
-        mock_build.return_value = mock_orch
+    @patch(
+        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
+    )
+    def test_calls_post_completion_crew(self, mock_build, mock_kickoff):
+        mock_crew = MagicMock()
+        mock_build.return_value = mock_crew
 
         flow = PRDFlow()
         flow.state.final_prd = "# PRD Content"
         flow._run_post_completion()
 
         mock_build.assert_called_once_with(flow)
-        mock_orch.run_pipeline.assert_called_once()
+        mock_kickoff.assert_called_once_with(mock_crew, step_label="post_completion")
 
     @patch(
-        "crewai_productfeature_planner.orchestrator.build_post_completion_pipeline"
+        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
+    )
+    def test_skips_when_crew_is_none(self, mock_build):
+        """When no delivery steps needed, crew returns None — should skip."""
+        mock_build.return_value = None
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        flow._run_post_completion()
+
+        mock_build.assert_called_once_with(flow)
+
+    @patch(
+        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
     )
     def test_swallows_exceptions(self, mock_build):
-        """Pipeline errors should be logged but not raised."""
+        """Crew errors should be logged but not raised."""
         mock_build.side_effect = RuntimeError("Confluence down")
 
         flow = PRDFlow()

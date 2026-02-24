@@ -37,8 +37,7 @@ crewai_productfeature_planner/
 │   ├── main.py                         # FastAPI app entry, CLI, startup recovery
 │   ├── agents/                         # Agent factories (one subdir per agent)
 │   │   ├── gemini_utils.py             # Shared Gemini LLM configuration
-│   │   ├── gemini_product_manager/     # Gemini-powered PM agent
-│   │   ├── product_manager/            # OpenAI-powered PM agent
+│   │   ├── product_manager/            # PM agent (OpenAI + Gemini backends)
 │   │   ├── idea_refiner/               # Idea enrichment agent
 │   │   ├── requirements_breakdown/     # Requirements decomposition agent
 │   │   └── orchestrator/               # Atlassian publishing agent
