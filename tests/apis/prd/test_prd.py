@@ -17,6 +17,7 @@ from crewai_productfeature_planner.apis.shared import (
     pause_requested,
     runs,
 )
+from crewai_productfeature_planner.apis.prd.models import AGENT_GEMINI, AGENT_OPENAI
 
 
 @pytest.fixture(autouse=True)
@@ -277,17 +278,17 @@ def test_approval_callback_syncs_agent_state():
     result = callback(
         1,
         "executive_summary",
-        {"openai_pm": "draft content"},
+        {AGENT_OPENAI: "draft content"},
         PRDDraft.create_empty(),
-        active_agents=["openai_pm"],
-        dropped_agents=["gemini_pm"],
-        agent_errors={"gemini_pm": "RuntimeError: model not found"},
+        active_agents=[AGENT_OPENAI],
+        dropped_agents=[AGENT_GEMINI],
+        agent_errors={AGENT_GEMINI: "RuntimeError: model not found"},
     )
     t.join()
 
-    assert run.active_agents == ["openai_pm"]
-    assert run.dropped_agents == ["gemini_pm"]
-    assert run.agent_errors == {"gemini_pm": "RuntimeError: model not found"}
+    assert run.active_agents == [AGENT_OPENAI]
+    assert run.dropped_agents == [AGENT_GEMINI]
+    assert run.agent_errors == {AGENT_GEMINI: "RuntimeError: model not found"}
 
     # Cleanup
     approval_events.pop("test-sync", None)
@@ -447,11 +448,11 @@ def test_approve_with_selected_agent(client):
         json={
             "run_id": "r6",
             "approve": True,
-            "selected_agent": "gemini_pm",
+            "selected_agent": AGENT_GEMINI,
         },
     )
     assert resp.status_code == 200
-    assert approval_selected.get("r6") == "gemini_pm"
+    assert approval_selected.get("r6") == AGENT_GEMINI
 
 
 def test_approve_without_selected_agent(client):
@@ -481,7 +482,7 @@ def test_approve_response_includes_active_agents(client):
         run_id="r-agents", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
     )
     run.current_section_key = "executive_summary"
-    run.active_agents = ["openai_pm", "gemini_pm"]
+    run.active_agents = [AGENT_OPENAI, AGENT_GEMINI]
     run.dropped_agents = []
     run.agent_errors = {}
     runs["r-agents"] = run
@@ -494,7 +495,7 @@ def test_approve_response_includes_active_agents(client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["active_agents"] == ["openai_pm", "gemini_pm"]
+    assert body["active_agents"] == [AGENT_OPENAI, AGENT_GEMINI]
     assert body["dropped_agents"] == []
     assert body["agent_errors"] == {}
 
@@ -505,9 +506,9 @@ def test_approve_response_shows_dropped_agents(client):
         run_id="r-dropped", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
     )
     run.current_section_key = "problem_statement"
-    run.active_agents = ["openai_pm"]
-    run.dropped_agents = ["gemini_pm"]
-    run.agent_errors = {"gemini_pm": "RuntimeError: model not found"}
+    run.active_agents = [AGENT_OPENAI]
+    run.dropped_agents = [AGENT_GEMINI]
+    run.agent_errors = {AGENT_GEMINI: "RuntimeError: model not found"}
     runs["r-dropped"] = run
     event = threading.Event()
     approval_events["r-dropped"] = event
@@ -518,25 +519,25 @@ def test_approve_response_shows_dropped_agents(client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["active_agents"] == ["openai_pm"]
-    assert body["dropped_agents"] == ["gemini_pm"]
-    assert body["agent_errors"] == {"gemini_pm": "RuntimeError: model not found"}
+    assert body["active_agents"] == [AGENT_OPENAI]
+    assert body["dropped_agents"] == [AGENT_GEMINI]
+    assert body["agent_errors"] == {AGENT_GEMINI: "RuntimeError: model not found"}
 
 
 def test_run_status_includes_agent_tracking(client):
     """GET /flow/runs/{run_id} should include agent tracking fields."""
     run = FlowRun(run_id="r-status-agents", flow_name="prd")
-    run.active_agents = ["openai_pm"]
-    run.dropped_agents = ["gemini_pm"]
-    run.agent_errors = {"gemini_pm": "RuntimeError: boom"}
+    run.active_agents = [AGENT_OPENAI]
+    run.dropped_agents = [AGENT_GEMINI]
+    run.agent_errors = {AGENT_GEMINI: "RuntimeError: boom"}
     runs["r-status-agents"] = run
 
     resp = client.get("/flow/runs/r-status-agents")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["active_agents"] == ["openai_pm"]
-    assert body["dropped_agents"] == ["gemini_pm"]
-    assert body["agent_errors"] == {"gemini_pm": "RuntimeError: boom"}
+    assert body["active_agents"] == [AGENT_OPENAI]
+    assert body["dropped_agents"] == [AGENT_GEMINI]
+    assert body["agent_errors"] == {AGENT_GEMINI: "RuntimeError: boom"}
 
 
 def test_run_status_empty_agents_by_default(client):
@@ -562,9 +563,9 @@ def test_pause_response_includes_agents(client):
         run_id="r-pause-agents", flow_name="prd", status=FlowStatus.AWAITING_APPROVAL
     )
     run.current_section_key = "executive_summary"
-    run.active_agents = ["openai_pm"]
-    run.dropped_agents = ["gemini_pm"]
-    run.agent_errors = {"gemini_pm": "RuntimeError: timeout"}
+    run.active_agents = [AGENT_OPENAI]
+    run.dropped_agents = [AGENT_GEMINI]
+    run.agent_errors = {AGENT_GEMINI: "RuntimeError: timeout"}
     runs["r-pause-agents"] = run
     event = threading.Event()
     approval_events["r-pause-agents"] = event
@@ -572,9 +573,9 @@ def test_pause_response_includes_agents(client):
     resp = client.post("/flow/prd/pause", json={"run_id": "r-pause-agents"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["active_agents"] == ["openai_pm"]
-    assert body["dropped_agents"] == ["gemini_pm"]
-    assert body["agent_errors"] == {"gemini_pm": "RuntimeError: timeout"}
+    assert body["active_agents"] == [AGENT_OPENAI]
+    assert body["dropped_agents"] == [AGENT_GEMINI]
+    assert body["agent_errors"] == {AGENT_GEMINI: "RuntimeError: timeout"}
 
 
 # ── API naming convention ────────────────────────────────────
@@ -1126,9 +1127,9 @@ def test_sync_flow_state_copies_all_fields():
     mock_flow.state.draft = MagicMock()
     mock_flow.state.current_section_key = "user_personas"
     mock_flow.state.iteration = 5
-    mock_flow.state.active_agents = ["gemini_pm"]
-    mock_flow.state.dropped_agents = ["openai_pm"]
-    mock_flow.state.agent_errors = {"openai_pm": "timeout"}
+    mock_flow.state.active_agents = [AGENT_GEMINI]
+    mock_flow.state.dropped_agents = [AGENT_OPENAI]
+    mock_flow.state.agent_errors = {AGENT_OPENAI: "timeout"}
     mock_flow.state.original_idea = "original idea text"
     mock_flow.state.idea_refined = True
     mock_flow.state.finalized_idea = "refined executive summary"
@@ -1144,9 +1145,9 @@ def test_sync_flow_state_copies_all_fields():
 
     assert run.current_section_key == "user_personas"
     assert run.iteration == 5
-    assert run.active_agents == ["gemini_pm"]
-    assert run.dropped_agents == ["openai_pm"]
-    assert run.agent_errors == {"openai_pm": "timeout"}
+    assert run.active_agents == [AGENT_GEMINI]
+    assert run.dropped_agents == [AGENT_OPENAI]
+    assert run.agent_errors == {AGENT_OPENAI: "timeout"}
     assert run.original_idea == "original idea text"
     assert run.idea_refined is True
     assert run.finalized_idea == "refined executive summary"
@@ -1303,9 +1304,9 @@ def test_approval_callback_syncs_new_kwargs():
     callback(
         1,
         "executive_summary",
-        {"gemini_pm": "draft"},
+        {AGENT_GEMINI: "draft"},
         PRDDraft.create_empty(),
-        active_agents=["gemini_pm"],
+        active_agents=[AGENT_GEMINI],
         finalized_idea="refined idea",
         requirements_breakdown="## Requirements list",
         executive_summary=exec_summary,
@@ -1348,9 +1349,9 @@ def test_approval_callback_preserves_existing_when_kwargs_absent():
     callback(
         1,
         "problem_statement",
-        {"gemini_pm": "draft"},
+        {AGENT_GEMINI: "draft"},
         PRDDraft.create_empty(),
-        active_agents=["gemini_pm"],
+        active_agents=[AGENT_GEMINI],
     )
     t.join()
 

@@ -6,9 +6,9 @@ LLM agents running in parallel:
   0. Idea Refinement — A Gemini-powered agent adopts an industry-expert
      persona and iteratively enriches the raw idea (3-10 cycles) before
      PRD drafting begins.
-  1. Initial Draft — Multiple agents (OpenAI PM + Gemini PM when available)
-     each draft the section simultaneously.  The user picks which result
-     to use.
+  1. Initial Draft — Multiple agents (one per LLM provider, e.g. OpenAI + Gemini
+     when available) each draft the section simultaneously.  The user picks
+     which result to use.
   2. Self-Critique — The selected agent evaluates the chosen draft.
   3. Refinement — The selected agent addresses every gap found.
   4. Final Assembly — Once all sections are approved, the full PRD is assembled.
@@ -29,8 +29,6 @@ from crewai.flow.flow import Flow, start
 from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.agents.product_manager import (
-    PROVIDER_GEMINI,
-    PROVIDER_OPENAI,
     create_product_manager,
     get_task_configs,
 )
@@ -271,7 +269,7 @@ class PRDFlow(Flow[PRDState]):
             (iteration, section_key, agent_results, draft) -> ApprovalDecision
 
         *agent_results* is ``dict[str, str]`` mapping agent names
-        (``"openai_pm"``) to their draft content.
+        (``"openai"``) to their draft content.
 
         Return values:
 
@@ -322,7 +320,7 @@ class PRDFlow(Flow[PRDState]):
         """Return a dict of agent-name → Agent for all available LLMs.
 
         The *default* agent (``DEFAULT_AGENT`` env var, falls back to
-        ``openai_pm``) is always created first and is required.
+        ``openai``) is always created first and is required.
 
         ``DEFAULT_MULTI_AGENTS`` controls how many PM agents run in
         parallel:
@@ -341,10 +339,10 @@ class PRDFlow(Flow[PRDState]):
 
         # --- factories keyed by agent identifier ---
         def _openai() -> Agent:
-            return create_product_manager(provider=PROVIDER_OPENAI)
+            return create_product_manager(provider=AGENT_OPENAI)
 
         def _gemini() -> Agent:
-            return create_product_manager(provider=PROVIDER_GEMINI)
+            return create_product_manager(provider=AGENT_GEMINI)
 
         factories: dict[str, tuple[callable, str | list[str] | None]] = {
             AGENT_OPENAI: (_openai, "OPENAI_API_KEY"),

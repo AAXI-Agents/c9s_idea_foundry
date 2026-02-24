@@ -2,6 +2,11 @@
 
 from pydantic import BaseModel, Field
 
+from crewai_productfeature_planner.agents.product_manager.agent import (
+    PROVIDER_GEMINI,
+    PROVIDER_OPENAI,
+)
+
 
 # ── PRD Section definitions ──────────────────────────────────
 
@@ -21,11 +26,13 @@ SECTION_ORDER: list[tuple[str, str]] = [
 SECTION_KEYS: list[str] = [key for key, _ in SECTION_ORDER]
 
 
-# Well-known agent identifiers used across the codebase.
-AGENT_OPENAI = "openai_pm"
-AGENT_GEMINI = "gemini_pm"
+# Well-known agent provider identifiers used across the codebase.
+# These match the ``provider`` parameter accepted by
+# ``create_product_manager(provider=...)``.
+AGENT_OPENAI = PROVIDER_OPENAI   # "openai"
+AGENT_GEMINI = PROVIDER_GEMINI   # "gemini"
 
-# All recognised agent identifiers (order = display preference).
+# All recognised provider identifiers (order = display preference).
 VALID_AGENTS: list[str] = [AGENT_GEMINI, AGENT_OPENAI]
 
 # Fallback when DEFAULT_AGENT env var is not set.
@@ -33,10 +40,10 @@ DEFAULT_AGENT_FALLBACK = AGENT_GEMINI
 
 
 def get_default_agent() -> str:
-    """Return the configured default agent identifier.
+    """Return the configured default agent provider identifier.
 
     Reads ``DEFAULT_AGENT`` from the environment.  Falls back to
-    ``gemini_pm`` when unset or invalid.
+    ``gemini`` when unset or invalid.
     """
     import os
     agent = os.environ.get("DEFAULT_AGENT", DEFAULT_AGENT_FALLBACK)
@@ -116,8 +123,8 @@ class PRDSection(BaseModel):
     agent_results: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Per-agent draft results for this section. Keys are agent "
-            "identifiers (e.g. 'openai_pm'), values are "
+            "Per-agent draft results for this section. Keys are provider "
+            "identifiers (e.g. 'openai'), values are "
             "the markdown content each agent produced."
         ),
     )
@@ -231,11 +238,11 @@ class PRDApproveRequest(BaseModel):
     selected_agent: str | None = Field(
         default=None,
         description=(
-            "Which agent's result to use (e.g. 'openai_pm'). "
+            "Which agent's result to use (e.g. 'openai'). "
             "Required when multiple agents produced results for the current "
             "section. Defaults to the first available agent when omitted."
         ),
-        examples=["openai_pm"],
+        examples=["openai"],
     )
 
 
@@ -320,21 +327,21 @@ class PRDActionResponse(BaseModel):
     active_agents: list[str] = Field(
         default_factory=list,
         description=(
-            "Agent identifiers currently participating in the flow "
-            "(e.g. ['openai_pm'])."
+            "Provider identifiers currently participating in the flow "
+            "(e.g. ['openai'])."
         ),
     )
     dropped_agents: list[str] = Field(
         default_factory=list,
         description=(
-            "Agent identifiers that were removed from the flow after "
+            "Provider identifiers that were removed from the flow after "
             "failing during parallel drafting."
         ),
     )
     agent_errors: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Map of dropped agent name to its error message."
+            "Map of dropped provider name to its error message."
         ),
     )
     message: str = Field(..., description="Human-readable result message.")
@@ -357,8 +364,8 @@ class PRDSectionDetail(BaseModel):
     agent_results: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Per-agent draft results. Keys are agent identifiers "
-            "(e.g. 'openai_pm'), values are the markdown "
+            "Per-agent draft results. Keys are provider identifiers "
+            "(e.g. 'openai'), values are the markdown "
             "content each agent produced for this section."
         ),
     )
@@ -435,14 +442,14 @@ class PRDRunStatusResponse(BaseModel):
     active_agents: list[str] = Field(
         default_factory=list,
         description=(
-            "Agent identifiers currently participating in the flow "
-            "(e.g. ['openai_pm'])."
+            "Provider identifiers currently participating in the flow "
+            "(e.g. ['openai'])."
         ),
     )
     dropped_agents: list[str] = Field(
         default_factory=list,
         description=(
-            "Agent identifiers that were removed after failing during "
+            "Provider identifiers that were removed after failing during "
             "parallel drafting."
         ),
     )

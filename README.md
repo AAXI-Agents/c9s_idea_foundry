@@ -22,11 +22,6 @@ crewai install
 
 **Add your `OPENAI_API_KEY` into the `.env` file.** Optionally set `GOOGLE_API_KEY` (or `GOOGLE_CLOUD_PROJECT` for Vertex AI) to enable Gemini-powered idea refinement and requirements breakdown.
 
-- Modify `src/crewai_productfeature_planner/config/agents.yaml` to define your agents
-- Modify `src/crewai_productfeature_planner/config/tasks.yaml` to define your tasks
-- Modify `src/crewai_productfeature_planner/crew.py` to add your own logic, tools and specific args
-- Modify `src/crewai_productfeature_planner/main.py` to add custom inputs for your agents and tasks
-
 ## Running the Project
 
 To kickstart your crew of AI agents and begin task execution, run this from the root folder of your project:
@@ -75,10 +70,10 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `OPENAI_API_KEY` | **Yes**\* | — | OpenAI API key (required when `DEFAULT_AGENT=openai_pm` or `DEFAULT_MULTI_AGENTS=2`) |
+| `OPENAI_API_KEY` | **Yes**\* | — | OpenAI API key (required when `DEFAULT_AGENT=openai` or `DEFAULT_MULTI_AGENTS=2`) |
 | `OPENAI_MODEL` | No | `o3` | OpenAI model for the Product Manager agent |
-| `DEFAULT_AGENT` | No | `openai_pm` | Primary agent for all LLM tasks (`openai_pm`). |
-| `DEFAULT_MULTI_AGENTS` | No | `1` | Number of PM agents to run in parallel. |
+| `DEFAULT_AGENT` | No | `gemini` | Primary LLM provider for the Product Manager agent (`openai` or `gemini`). |
+| `DEFAULT_MULTI_AGENTS` | No | `1` | Number of PM agents to run in parallel (one per provider). |
 | `GOOGLE_API_KEY` | **Yes**\* | — | Google API key ([get one here](https://aistudio.google.com/apikey)). Required for Gemini-powered idea refinement and requirements breakdown. Either this or `GOOGLE_CLOUD_PROJECT` must be set. |
 | `GOOGLE_CLOUD_PROJECT` | **Yes**\* | — | Google Cloud project ID with Vertex AI API enabled. Alternative to `GOOGLE_API_KEY`. Authenticate via `gcloud auth application-default login`. |
 | `GOOGLE_CLOUD_LOCATION` | No | `asia-southeast1` | Google Cloud region for Vertex AI ([available regions](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations)) |

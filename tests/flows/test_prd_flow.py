@@ -578,8 +578,8 @@ def test_get_available_agents_gemini_only(mock_create_pm, monkeypatch):
 
 @patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
 def test_get_available_agents_openai_explicit(mock_create_pm, monkeypatch):
-    """DEFAULT_AGENT=openai_pm should use the OpenAI agent."""
-    monkeypatch.setenv("DEFAULT_AGENT", "openai_pm")
+    """DEFAULT_AGENT=openai should use the OpenAI agent."""
+    monkeypatch.setenv("DEFAULT_AGENT", AGENT_OPENAI)
     monkeypatch.setenv("DEFAULT_MULTI_AGENTS", "1")
     mock_create_pm.return_value = MagicMock()
     agents = PRDFlow._get_available_agents()
@@ -911,25 +911,25 @@ def test_section_agent_results_after_approval():
 
 
 def test_get_default_agent_unset(monkeypatch):
-    """Without DEFAULT_AGENT env var, should return gemini_pm."""
+    """Without DEFAULT_AGENT env var, should return gemini."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
     assert get_default_agent() == AGENT_GEMINI
 
 
 def test_get_default_agent_openai(monkeypatch):
-    """DEFAULT_AGENT=openai_pm should return openai_pm."""
-    monkeypatch.setenv("DEFAULT_AGENT", "openai_pm")
+    """DEFAULT_AGENT=openai should return openai."""
+    monkeypatch.setenv("DEFAULT_AGENT", AGENT_OPENAI)
     assert get_default_agent() == AGENT_OPENAI
 
 
 def test_get_default_agent_gemini(monkeypatch):
-    """DEFAULT_AGENT=gemini_pm should return gemini_pm."""
-    monkeypatch.setenv("DEFAULT_AGENT", "gemini_pm")
+    """DEFAULT_AGENT=gemini should return gemini."""
+    monkeypatch.setenv("DEFAULT_AGENT", AGENT_GEMINI)
     assert get_default_agent() == AGENT_GEMINI
 
 
 def test_get_default_agent_invalid(monkeypatch):
-    """Invalid DEFAULT_AGENT value should fall back to gemini_pm."""
+    """Invalid DEFAULT_AGENT value should fall back to gemini."""
     monkeypatch.setenv("DEFAULT_AGENT", "invalid_agent")
     assert get_default_agent() == DEFAULT_AGENT_FALLBACK
 
@@ -2076,7 +2076,7 @@ def test_iterate_exec_summary_ready_at_min(_mock_task, _mock_crew, mock_kickoff,
     flow = PRDFlow()
     flow.state.idea = "Test idea"
     flow.state.run_id = "test-exec-1"
-    agents = {"openai_pm": MagicMock()}
+    agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "draft_prd_task": {
             "description": "Draft for {idea}. Summary: {executive_summary}",
@@ -2126,7 +2126,7 @@ def test_iterate_exec_summary_force_approve_at_max(_mock_task, _mock_crew, mock_
     flow = PRDFlow()
     flow.state.idea = "Test idea"
     flow.state.run_id = "test-exec-max"
-    agents = {"openai_pm": MagicMock()}
+    agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "draft_prd_task": {
             "description": "Draft: {idea} {executive_summary}",
@@ -2169,7 +2169,7 @@ def test_iterate_exec_summary_ready_before_min_continues(_mock_task, _mock_crew,
     flow = PRDFlow()
     flow.state.idea = "Test idea"
     flow.state.run_id = "test-exec-min"
-    agents = {"openai_pm": MagicMock()}
+    agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "draft_prd_task": {
             "description": "Draft: {idea} {executive_summary}",
@@ -2208,7 +2208,7 @@ def test_iterate_exec_summary_critique_text_persisted(_mock_task, _mock_crew, mo
     flow = PRDFlow()
     flow.state.idea = "Test idea"
     flow.state.run_id = "test-crit-store"
-    agents = {"openai_pm": MagicMock()}
+    agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "draft_prd_task": {
             "description": "Draft: {idea} {executive_summary}",
@@ -2250,7 +2250,7 @@ def test_callback_false_raises_completed(
     monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "1")
     monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "1")
 
-    mock_agents.return_value = {"openai_pm": MagicMock()}
+    mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
     mock_task_configs.return_value = {
         "draft_prd_task": {
             "description": "Draft: {idea} {executive_summary}",
@@ -2297,7 +2297,7 @@ def test_callback_true_continues_to_sections(
     monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "1")
     monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "1")
 
-    mock_agents.return_value = {"openai_pm": MagicMock()}
+    mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/prd_v1.md"
     mock_writer_cls.return_value = mock_writer
@@ -2383,7 +2383,7 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
     monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "1")
     monkeypatch.setenv("PRD_EXEC_RESUME_THRESHOLD", "3")
 
-    mock_agents.return_value = {"openai_pm": MagicMock()}
+    mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved"
     mock_writer_cls.return_value = mock_writer
@@ -2475,7 +2475,7 @@ def test_phase1_runs_when_below_threshold(
     monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "1")
     monkeypatch.setenv("PRD_EXEC_RESUME_THRESHOLD", "3")
 
-    mock_agents.return_value = {"openai_pm": MagicMock()}
+    mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved"
     mock_writer_cls.return_value = mock_writer
@@ -2564,7 +2564,7 @@ def test_resume_skips_draft_for_in_progress_section(
     monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "3")
     monkeypatch.setenv("PRD_EXEC_RESUME_THRESHOLD", "3")
 
-    mock_agents.return_value = {"openai_pm": MagicMock()}
+    mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved"
     mock_writer_cls.return_value = mock_writer
@@ -2669,7 +2669,7 @@ def test_resume_wipes_degenerate_restored_content(
     monkeypatch.setenv("PRD_EXEC_RESUME_THRESHOLD", "3")
     monkeypatch.setenv("PRD_SECTION_MAX_CHARS", "5000")
 
-    mock_agents.return_value = {"openai_pm": MagicMock()}
+    mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved"
     mock_writer_cls.return_value = mock_writer

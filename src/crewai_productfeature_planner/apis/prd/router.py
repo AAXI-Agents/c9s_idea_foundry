@@ -60,7 +60,7 @@ _ERROR_RESPONSES = {
     },
     503: {
         "description": (
-            "LLM / OpenAI service unavailable. The `error_code` field "
+            "LLM / OpenAI / Gemini service unavailable. The `error_code` field "
             "will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` "
             "(billing / quota issue). The affected flow run is "
             "automatically paused — resume it after resolving the issue."

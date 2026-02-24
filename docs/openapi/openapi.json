@@ -417,7 +417,7 @@
             },
             "type": "array",
             "title": "Active Agents",
-            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm'])."
+            "description": "Provider identifiers currently participating in the flow (e.g. ['openai'])."
           },
           "dropped_agents": {
             "items": {
@@ -493,9 +493,9 @@
               }
             ],
             "title": "Selected Agent",
-            "description": "Which agent's result to use (e.g. 'openai_pm'). Required when multiple agents produced results for the current section. Defaults to the first available agent when omitted.",
+            "description": "Which agent's result to use (e.g. 'openai'). Required when multiple agents produced results for the current section. Defaults to the first available agent when omitted.",
             "examples": [
-              "openai_pm"
+              "openai"
             ]
           }
         },
@@ -885,7 +885,7 @@
             },
             "type": "array",
             "title": "Active Agents",
-            "description": "Agent identifiers currently participating in the flow (e.g. ['openai_pm'])."
+            "description": "Provider identifiers currently participating in the flow (e.g. ['openai'])."
           },
           "dropped_agents": {
             "items": {
@@ -1018,7 +1018,7 @@
             },
             "type": "object",
             "title": "Agent Results",
-            "description": "Per-agent draft results. Keys are agent identifiers (e.g. 'openai_pm'), values are the markdown content each agent produced for this section."
+            "description": "Per-agent draft results. Keys are provider identifiers (e.g. 'openai'), values are the markdown content each agent produced for this section."
           },
           "selected_agent": {
             "type": "string",
