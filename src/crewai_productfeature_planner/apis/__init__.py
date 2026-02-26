@@ -26,6 +26,9 @@ from fastapi.responses import JSONResponse
 from crewai_productfeature_planner.apis.health.router import router as health_router
 from crewai_productfeature_planner.apis.prd.router import router as prd_router
 from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus  # noqa: F401 (re-export)
+from crewai_productfeature_planner.apis.slack.events_router import router as slack_events_router
+from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
+from crewai_productfeature_planner.apis.slack.router import router as slack_router
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -139,11 +142,38 @@ app = FastAPI(
                 "Track flow run lifecycle, queue time, and running time."
             ),
         },
+        {
+            "name": "Slack Messenger",
+            "description": (
+                "Interact with the PRD Planner through Slack. "
+                "Post a product idea and the bot will generate a full PRD. "
+                "Supports ``webhook_url`` for push-based result delivery."
+            ),
+        },
+        {
+            "name": "Slack Events",
+            "description": (
+                "Handles inbound Slack Events API callbacks. "
+                "Responds to bot channel joins with an intro message and "
+                "processes @mentions and thread replies via OpenAI interpretation."
+            ),
+        },
+        {
+            "name": "Slack OAuth",
+            "description": (
+                "Handles the Slack OAuth v2 install/reinstall callback. "
+                "Exchanges the authorization code for bot tokens and persists "
+                "them to ``.env`` and ``.slack_tokens.json``."
+            ),
+        },
     ],
 )
 
 app.include_router(health_router)
 app.include_router(prd_router)
+app.include_router(slack_router)
+app.include_router(slack_events_router)
+app.include_router(slack_oauth_router)
 
 
 # ── Global exception handler ─────────────────────────────────
