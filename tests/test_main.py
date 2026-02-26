@@ -174,7 +174,7 @@ class TestManualIdeaRefinement:
         assert first_call["idea"] == "Original"
         assert first_call["content"] == "Revised v1"
 
-    @patch("crewai_productfeature_planner.main.save_executive_summary")
+    @patch("crewai_productfeature_planner.components.cli.save_executive_summary")
     def test_no_run_id_skips_save(self, mock_save):
         """Without run_id, no save_executive_summary calls should be made."""
         inputs = ["e", "Revised", "", "", "y"]
@@ -747,7 +747,7 @@ class TestRestorePrdState:
         assert flow.state.finalized_idea == "v3"
         assert flow.state.idea_refined is True
 
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
     def test_empty_executive_summary(self, mock_docs):
         """No executive_summary in doc should produce empty iterations."""
         mock_docs.return_value = [{
@@ -763,7 +763,7 @@ class TestRestorePrdState:
         assert flow.state.finalized_idea == ""
         assert flow.state.idea_refined is False
 
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
     def test_no_docs_returns_empty_exec_summary(self, mock_docs):
         """No documents at all should produce empty executive summary."""
         mock_docs.return_value = []
@@ -821,7 +821,7 @@ class TestRestorePrdState:
         assert flow.state.breakdown_history[0]["evaluation"] == "needs work"
         assert flow.state.breakdown_history[2]["requirements"] == "reqs v3"
 
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
     def test_empty_requirements_breakdown(self, mock_docs):
         """No requirements_breakdown should leave flag False."""
         mock_docs.return_value = [{
@@ -836,7 +836,7 @@ class TestRestorePrdState:
         assert flow.state.requirements_breakdown == ""
         assert flow.state.breakdown_history == []
 
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
     def test_requirements_breakdown_with_empty_content(self, mock_docs):
         """Iteration records with no content should not set flag."""
         mock_docs.return_value = [{
@@ -909,9 +909,9 @@ class TestRestorePrdState:
 class TestKillStaleCrewProcesses:
     """Tests for _kill_stale_crew_processes."""
 
-    @patch("crewai_productfeature_planner.main.subprocess.run")
-    @patch("crewai_productfeature_planner.main.os.kill")
-    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
+    @patch("crewai_productfeature_planner.components.startup.os.kill")
+    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
     def test_kills_stale_run_crew_process(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -922,9 +922,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 1
         mock_kill.assert_called_once_with(200, __import__("signal").SIGTERM)
 
-    @patch("crewai_productfeature_planner.main.subprocess.run")
-    @patch("crewai_productfeature_planner.main.os.kill")
-    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
+    @patch("crewai_productfeature_planner.components.startup.os.kill")
+    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
     def test_does_not_kill_self(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -934,9 +934,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 0
         mock_kill.assert_not_called()
 
-    @patch("crewai_productfeature_planner.main.subprocess.run")
-    @patch("crewai_productfeature_planner.main.os.kill")
-    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
+    @patch("crewai_productfeature_planner.components.startup.os.kill")
+    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
     def test_does_not_kill_ancestor_processes(self, _getpid, mock_kill, mock_ps):
         """crewai run → uv run run_crew → our process.
 
@@ -956,9 +956,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 1
         mock_kill.assert_called_once_with(999, __import__("signal").SIGTERM)
 
-    @patch("crewai_productfeature_planner.main.subprocess.run")
-    @patch("crewai_productfeature_planner.main.os.kill")
-    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
+    @patch("crewai_productfeature_planner.components.startup.os.kill")
+    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
     def test_ignores_unrelated_processes(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -970,9 +970,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 0
         mock_kill.assert_not_called()
 
-    @patch("crewai_productfeature_planner.main.subprocess.run")
-    @patch("crewai_productfeature_planner.main.os.kill")
-    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
+    @patch("crewai_productfeature_planner.components.startup.os.kill")
+    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
     def test_handles_already_gone_process(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -983,16 +983,16 @@ class TestKillStaleCrewProcesses:
         killed = _kill_stale_crew_processes()
         assert killed == 0
 
-    @patch("crewai_productfeature_planner.main.subprocess.run",
+    @patch("crewai_productfeature_planner.components.startup.subprocess.run",
            side_effect=Exception("ps not available"))
-    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
     def test_handles_ps_failure_gracefully(self, _getpid, mock_ps):
         killed = _kill_stale_crew_processes()
         assert killed == 0
 
-    @patch("crewai_productfeature_planner.main.subprocess.run")
-    @patch("crewai_productfeature_planner.main.os.kill")
-    @patch("crewai_productfeature_planner.main.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
+    @patch("crewai_productfeature_planner.components.startup.os.kill")
+    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
     def test_kills_multiple_stale_processes(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -1085,6 +1085,26 @@ class TestAssemblePrdFromDoc:
         result = _assemble_prd_from_doc(doc)
         assert result == ""
 
+    def test_strips_iteration_tags_from_content(self):
+        """Iteration markers like '(Iteration 3)' should be removed."""
+        doc = {
+            "executive_summary": [
+                {
+                    "content": "### Strategic Probing (Iteration 3)\n\nBody.",
+                    "iteration": 3,
+                },
+            ],
+            "section": {
+                "problem_statement": [
+                    {"content": "Problem (Iteration 2) text.", "iteration": 2},
+                ],
+            },
+        }
+        result = _assemble_prd_from_doc(doc)
+        assert "(Iteration" not in result
+        assert "### Strategic Probing" in result
+        assert "Problem text." in result
+
 
 class TestMaxIterationFromDoc:
     """Tests for _max_iteration_from_doc."""
@@ -1168,21 +1188,21 @@ class TestGenerateMissingOutputs:
             "run-1", "output/prds/2026/02/prd_v1.md",
         )
 
-    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    @patch("crewai_productfeature_planner.components.startup.find_completed_without_output")
     def test_returns_zero_when_none_found(self, mock_find):
         """Should return 0 when no completed docs are missing output."""
         mock_find.return_value = []
         assert _generate_missing_outputs() == 0
 
-    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    @patch("crewai_productfeature_planner.components.startup.find_completed_without_output")
     def test_returns_zero_on_db_error(self, mock_find):
         """Should return 0 when DB query fails."""
         mock_find.side_effect = Exception("connection refused")
         assert _generate_missing_outputs() == 0
 
-    @patch("crewai_productfeature_planner.main.save_output_file")
+    @patch("crewai_productfeature_planner.components.startup.save_output_file")
     @patch("crewai_productfeature_planner.tools.file_write_tool.PRDFileWriteTool")
-    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    @patch("crewai_productfeature_planner.components.startup.find_completed_without_output")
     def test_skips_docs_with_no_content(
         self, mock_find, mock_writer_cls, mock_save_output,
     ):
@@ -1241,10 +1261,10 @@ class TestPublishUnpublishedPrds:
 
     def test_returns_zero_without_confluence_credentials(self, monkeypatch):
         """Should return 0 when Confluence credentials are missing."""
-        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
-        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.delenv("ATLASSIAN_BASE_URL", raising=False)
+        monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
         monkeypatch.delenv("CONFLUENCE_SPACE_KEY", raising=False)
-        monkeypatch.delenv("CONFLUENCE_USERNAME", raising=False)
+        monkeypatch.delenv("ATLASSIAN_USERNAME", raising=False)
         assert _publish_unpublished_prds() == 0
 
     @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
@@ -1460,7 +1480,10 @@ class TestRunStartupDelivery:
         mock_crew = MagicMock()
         mock_build.return_value = mock_crew
         mock_result = MagicMock()
-        mock_result.raw = "Published page_id=123 to Confluence. Created Epic PROJ-1."
+        mock_result.raw = (
+            "Published page_id=123 https://co.atlassian.net/wiki/pages/123. "
+            "Created Epic PROJ-1."
+        )
         mock_kickoff.return_value = mock_result
 
         result = _run_startup_delivery()
@@ -1471,6 +1494,108 @@ class TestRunStartupDelivery:
         )
         # Should have upserted delivery record
         assert _ups.call_count >= 1
+
+    # ── ticket type resolution ────────────────────────────────
+
+    _SEARCH = "crewai_productfeature_planner.tools.jira_tool.search_jira_issues"
+
+    @patch(_STATUS)
+    @patch(_UPSERT, return_value=True)
+    @patch(_GET_REC, return_value=None)
+    @patch(_KICKOFF)
+    @patch(_BUILD_CREW)
+    @patch(_DISCOVER)
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_persists_ticket_type_from_jira_lookup(
+        self, _j, _c, mock_disc, mock_build, mock_kickoff,
+        _rec, _ups, _status,
+    ):
+        """Ticket type should come from search_jira_issues, not 'unknown'."""
+        mock_disc.return_value = [
+            {
+                "run_id": "r1",
+                "idea": "Type test",
+                "content": "# PRD",
+                "confluence_done": True,
+                "confluence_url": "https://co.atlassian.net/wiki/pages/1",
+                "jira_done": False,
+                "finalized_idea": "ES",
+                "func_reqs": "FR1",
+                "doc": {"run_id": "r1"},
+            },
+        ]
+
+        mock_crew = MagicMock()
+        mock_build.return_value = mock_crew
+        mock_result = MagicMock()
+        mock_result.raw = "Created Epic PROJ-1. Story PROJ-2. Task PROJ-3."
+        mock_kickoff.return_value = mock_result
+
+        search_return = [
+            {"issue_key": "PROJ-1", "summary": "Epic", "issue_type": "Epic"},
+            {"issue_key": "PROJ-2", "summary": "Story", "issue_type": "Story"},
+            {"issue_key": "PROJ-3", "summary": "Task", "issue_type": "Task"},
+        ]
+
+        with patch(self._SEARCH, return_value=search_return) as mock_search, \
+             patch("crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket") as mock_append:
+            _run_startup_delivery()
+
+            mock_search.assert_called_once_with("r1")
+
+            # Collect appended types
+            appended = {
+                c[0][1]["key"]: c[0][1]["type"]
+                for c in mock_append.call_args_list
+            }
+            assert appended.get("PROJ-1") == "Epic"
+            assert appended.get("PROJ-2") == "Story"
+            assert appended.get("PROJ-3") == "Task"
+
+    @patch(_STATUS)
+    @patch(_UPSERT, return_value=True)
+    @patch(_GET_REC, return_value=None)
+    @patch(_KICKOFF)
+    @patch(_BUILD_CREW)
+    @patch(_DISCOVER)
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_falls_back_to_unknown_when_search_fails(
+        self, _j, _c, mock_disc, mock_build, mock_kickoff,
+        _rec, _ups, _status,
+    ):
+        """When search_jira_issues raises, type should fall back to 'unknown'."""
+        mock_disc.return_value = [
+            {
+                "run_id": "r1",
+                "idea": "Fallback test",
+                "content": "# PRD",
+                "confluence_done": True,
+                "confluence_url": "https://co.atlassian.net/wiki/pages/1",
+                "jira_done": False,
+                "finalized_idea": "ES",
+                "func_reqs": "FR1",
+                "doc": {"run_id": "r1"},
+            },
+        ]
+
+        mock_crew = MagicMock()
+        mock_build.return_value = mock_crew
+        mock_result = MagicMock()
+        mock_result.raw = "Created Epic PROJ-1."
+        mock_kickoff.return_value = mock_result
+
+        with patch(self._SEARCH, side_effect=Exception("timeout")) as _ms, \
+             patch("crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket") as mock_append:
+            _run_startup_delivery()
+
+            # Should still persist, with unknown type
+            appended = {
+                c[0][1]["key"]: c[0][1]["type"]
+                for c in mock_append.call_args_list
+            }
+            assert appended.get("PROJ-1") == "unknown"
 
     # ── crew error handling ───────────────────────────────────
 
@@ -1545,7 +1670,9 @@ class TestRunStartupDelivery:
         mock_crew.agents = [MagicMock(), MagicMock()]
         mock_build.return_value = mock_crew
         mock_result = MagicMock()
-        mock_result.raw = "Published to Confluence"
+        mock_result.raw = (
+            "Published page_id=1 https://co.atlassian.net/wiki/pages/1"
+        )
         mock_kickoff.return_value = mock_result
 
         with patch("builtins.print") as mock_print:
@@ -1566,10 +1693,9 @@ class TestRunStartupDelivery:
         """Should return 0 when discovery fails."""
         assert _run_startup_delivery() == 0
 
-    # ── persists jira_output to workingIdeas ──────────────────
+    # ── jira_output must NOT leak into workingIdeas ─────────────
 
     @patch(_STATUS)
-    @patch("crewai_productfeature_planner.main.get_db")
     @patch(_UPSERT, return_value=True)
     @patch(_GET_REC, return_value=None)
     @patch(_KICKOFF)
@@ -1577,11 +1703,11 @@ class TestRunStartupDelivery:
     @patch(_DISCOVER)
     @patch(_CONF, return_value=True)
     @patch(_JIRA, return_value=True)
-    def test_persists_jira_output_to_working_ideas(
+    def test_jira_output_not_written_to_working_ideas(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
-        _rec, _ups, mock_get_db, _status,
+        _rec, mock_upsert, _status, _no_real_mongodb,
     ):
-        """Should save jira_output back to the workingIdeas document."""
+        """jira_output belongs in productRequirements only, not workingIdeas."""
         mock_disc.return_value = [
             {
                 "run_id": "r1",
@@ -1602,22 +1728,31 @@ class TestRunStartupDelivery:
         mock_result.raw = "Created Epic PROJ-1. Created Story PROJ-2."
         mock_kickoff.return_value = mock_result
 
-        wi_col = MagicMock()
-        wi_db = MagicMock()
-        wi_db.__getitem__ = MagicMock(return_value=wi_col)
-        mock_get_db.return_value = wi_db
-
         _run_startup_delivery()
 
-        # Should have persisted jira output to workingIdeas
-        wi_col.update_one.assert_called()
-        update_args = wi_col.update_one.call_args
-        assert update_args[0][0] == {"run_id": "r1"}
-        assert "jira_output" in update_args[0][1]["$set"]
+        # jira_output should be persisted via upsert_delivery_record
+        # (productRequirements), NOT via db["workingIdeas"].update_one
+        mock_upsert.assert_called()
+        upsert_kwargs = mock_upsert.call_args
+        assert upsert_kwargs[1].get("jira_output") is not None or (
+            len(upsert_kwargs[0]) > 0
+        )
+
+        # Ensure no raw write to workingIdeas for jira_output
+        mock_db = _no_real_mongodb
+        for call in mock_db.__getitem__.call_args_list:
+            col_name = call[0][0] if call[0] else ""
+            if col_name == "workingIdeas":
+                wi_col = mock_db[col_name]
+                for uc in wi_col.update_one.call_args_list:
+                    set_doc = uc[0][1].get("$set", {}) if len(uc[0]) > 1 else {}
+                    assert "jira_output" not in set_doc, (
+                        "jira_output must not be written to workingIdeas"
+                    )
 
     # ── background wrapper ────────────────────────────────────
 
-    @patch("crewai_productfeature_planner.main._run_startup_delivery")
+    @patch("crewai_productfeature_planner.components.startup._run_startup_delivery")
     def test_background_wrapper_catches_exceptions(self, mock_delivery):
         """_run_startup_delivery_background should not raise on failure."""
         mock_delivery.side_effect = Exception("boom")
@@ -1637,26 +1772,58 @@ class TestRunStartupDelivery:
 
 
 class TestConfluenceCompletedInOutput:
-    """Tests for _confluence_completed_in_output."""
+    """Tests for _confluence_completed_in_output.
 
-    def test_detects_published(self):
-        assert _confluence_completed_in_output("Page published successfully")
+    The function now requires BOTH a success keyword AND a recognisable
+    Confluence URL to prevent false positives from assessment text.
+    """
 
-    def test_detects_created(self):
-        assert _confluence_completed_in_output("Created confluence page")
+    def test_detects_published_with_url(self):
+        assert _confluence_completed_in_output(
+            "Page published at https://co.atlassian.net/wiki/pages/123"
+        )
 
-    def test_detects_updated(self):
-        assert _confluence_completed_in_output("Updated page_id=123")
+    def test_detects_created_with_url(self):
+        assert _confluence_completed_in_output(
+            "Created page https://co.atlassian.net/wiki/pages/456"
+        )
+
+    def test_detects_updated_with_url(self):
+        assert _confluence_completed_in_output(
+            "Updated page_id=123 https://co.atlassian.net/wiki/pages/123"
+        )
+
+    def test_false_on_keyword_without_url(self):
+        """Keyword alone is not enough — must have a URL."""
+        assert not _confluence_completed_in_output("Page published successfully")
+
+    def test_false_on_url_without_keyword(self):
+        """URL alone is not enough — must have a success keyword."""
+        assert not _confluence_completed_in_output(
+            "See https://co.atlassian.net/wiki/pages/123"
+        )
+
+    def test_false_on_assessment_mention(self):
+        """Mere mention of 'Confluence' in assessment should not match."""
+        assert not _confluence_completed_in_output(
+            "Confluence needs to be published next"
+        )
 
     def test_false_on_failure(self):
-        assert not _confluence_completed_in_output("Failed to publish to Confluence")
+        assert not _confluence_completed_in_output(
+            "Failed to publish to https://co.atlassian.net/wiki/pages/1"
+        )
 
     def test_false_on_unrelated(self):
         assert not _confluence_completed_in_output("Nothing happened")
 
 
 class TestJiraCompletedInOutput:
-    """Tests for _jira_completed_in_output."""
+    """Tests for _jira_completed_in_output.
+
+    The function now requires BOTH a keyword AND a Jira issue-key
+    pattern (e.g. PROJ-123) to prevent false positives.
+    """
 
     def test_detects_epic(self):
         assert _jira_completed_in_output("Created Epic PROJ-1")
@@ -1667,8 +1834,16 @@ class TestJiraCompletedInOutput:
     def test_detects_issue_key(self):
         assert _jira_completed_in_output("issue_key: PROJ-3")
 
+    def test_false_on_keyword_without_issue_key(self):
+        """Keyword alone is not enough — must have an issue key."""
+        assert not _jira_completed_in_output("Created Epic for the project")
+
+    def test_false_on_assessment_mention(self):
+        """Mere mention of 'Jira' should not match."""
+        assert not _jira_completed_in_output("Jira tickets need to be created")
+
     def test_false_on_failure(self):
-        assert not _jira_completed_in_output("Failed to create Jira Epic")
+        assert not _jira_completed_in_output("Failed to create Jira Epic PROJ-1")
 
     def test_false_on_unrelated(self):
         assert not _jira_completed_in_output("Nothing happened")

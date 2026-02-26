@@ -222,7 +222,8 @@ def test_section_approval_loop_raises_pause(monkeypatch):
 @patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
 @patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
 @patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-def test_finalize_saves_prd(mock_writer_cls, mock_mark_completed, mock_save_output, _mock_get_output):
+@patch.object(PRDFlow, "_run_post_completion")
+def test_finalize_saves_prd(_mock_post, mock_writer_cls, mock_mark_completed, mock_save_output, _mock_get_output):
     """finalize() should persist the assembled PRD via file and mark completed."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/prd_v1.md"
@@ -1146,61 +1147,6 @@ def test_prd_state_requirements_fields():
     assert state.requirements_breakdown == ""
     assert state.breakdown_history == []
     assert state.requirements_broken_down is False
-
-
-def test_maybe_breakdown_requirements_skips_without_credentials(monkeypatch):
-    """Should skip breakdown when no Google credentials are set."""
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
-    flow = PRDFlow()
-    flow.state.idea = "Test idea"
-    flow._maybe_breakdown_requirements()
-    assert flow.state.requirements_broken_down is False
-
-
-def test_maybe_breakdown_requirements_runs_with_credentials(monkeypatch):
-    """Should run breakdown when credentials are present."""
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    flow = PRDFlow()
-    flow.state.idea = "Test idea"
-
-    with patch(
-        "crewai_productfeature_planner.agents.requirements_breakdown.breakdown_requirements",
-        return_value=("## Feature 1\nDetailed reqs", [{"iteration": 1}]),
-    ):
-        flow._maybe_breakdown_requirements()
-
-    assert flow.state.requirements_broken_down is True
-    assert "Feature 1" in flow.state.requirements_breakdown
-    assert len(flow.state.breakdown_history) == 1
-
-
-def test_maybe_breakdown_requirements_skips_when_already_done(monkeypatch):
-    """Should not breakdown again if already done."""
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    flow = PRDFlow()
-    flow.state.idea = "Test idea"
-    flow.state.requirements_broken_down = True
-
-    flow._maybe_breakdown_requirements()
-    # Should not have changed anything
-    assert flow.state.requirements_breakdown == ""
-
-
-def test_maybe_breakdown_requirements_continues_on_failure(monkeypatch):
-    """Should continue without requirements if breakdown fails."""
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    flow = PRDFlow()
-    flow.state.idea = "Test idea"
-
-    with patch(
-        "crewai_productfeature_planner.agents.requirements_breakdown.breakdown_requirements",
-        side_effect=RuntimeError("LLM unavailable"),
-    ):
-        flow._maybe_breakdown_requirements()
-
-    assert flow.state.requirements_broken_down is False
-    assert flow.state.requirements_breakdown == ""
 
 
 def test_requirements_approval_callback_finalize_raises(monkeypatch):
@@ -2287,8 +2233,9 @@ def test_callback_false_raises_completed(
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
+@patch.object(PRDFlow, "_run_post_completion")
 def test_callback_true_continues_to_sections(
-    mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2372,8 +2319,9 @@ def test_callback_true_continues_to_sections(
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
+@patch.object(PRDFlow, "_run_post_completion")
 def test_skip_phase1_when_exec_summary_has_enough_iterations(
-    mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2464,8 +2412,9 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
+@patch.object(PRDFlow, "_run_post_completion")
 def test_phase1_runs_when_below_threshold(
-    mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2552,8 +2501,9 @@ def test_phase1_runs_when_below_threshold(
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
+@patch.object(PRDFlow, "_run_post_completion")
 def test_resume_skips_draft_for_in_progress_section(
-    mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2656,8 +2606,9 @@ def test_resume_skips_draft_for_in_progress_section(
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
+@patch.object(PRDFlow, "_run_post_completion")
 def test_resume_wipes_degenerate_restored_content(
-    mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2759,9 +2710,13 @@ class TestRunPostCompletion:
     def test_calls_post_completion_crew(self, mock_build, mock_kickoff):
         mock_crew = MagicMock()
         mock_build.return_value = mock_crew
+        mock_result = MagicMock()
+        mock_result.raw = "Assessment complete."
+        mock_kickoff.return_value = mock_result
 
         flow = PRDFlow()
         flow.state.final_prd = "# PRD Content"
+        flow.state.run_id = "test-run"
         flow._run_post_completion()
 
         mock_build.assert_called_once_with(flow)
@@ -2791,6 +2746,90 @@ class TestRunPostCompletion:
         flow.state.final_prd = "# PRD Content"
         # Should not raise
         flow._run_post_completion()
+
+
+class TestPersistPostCompletion:
+    """Tests for PRDFlow._persist_post_completion."""
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
+    )
+    def test_updates_delivery_record_on_jira_success(self, mock_upsert):
+        """Should set jira_completed=True when output has keywords + key."""
+        flow = PRDFlow()
+        flow.state.run_id = "r1"
+        flow.state.confluence_url = "https://co.atlassian.net/wiki/pages/1"
+
+        result = MagicMock()
+        result.raw = "Created Epic PROJ-1. Story PROJ-2."
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket"
+        ):
+            flow._persist_post_completion(result)
+
+        mock_upsert.assert_called_once()
+        call_kwargs = mock_upsert.call_args
+        assert call_kwargs[1]["jira_completed"] is True
+        assert call_kwargs[1]["confluence_published"] is True
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
+    )
+    def test_confluence_only_no_jira(self, mock_upsert):
+        """Should mark jira_completed=False when no Jira keys in output."""
+        flow = PRDFlow()
+        flow.state.run_id = "r2"
+        flow.state.confluence_url = ""
+
+        result = MagicMock()
+        result.raw = (
+            "Published page https://co.atlassian.net/wiki/pages/42"
+        )
+
+        flow._persist_post_completion(result)
+
+        mock_upsert.assert_called_once()
+        call_kwargs = mock_upsert.call_args
+        assert call_kwargs[1]["jira_completed"] is False
+        assert call_kwargs[1]["confluence_published"] is True
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
+    )
+    def test_persists_jira_ticket_keys(self, mock_upsert):
+        """Should call append_jira_ticket for each key in output."""
+        flow = PRDFlow()
+        flow.state.run_id = "r3"
+        flow.state.confluence_url = "https://co.atlassian.net/wiki/pages/1"
+
+        result = MagicMock()
+        result.raw = "Created Epic PROJ-10. Story PROJ-11."
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket"
+        ) as mock_append, patch(
+            "crewai_productfeature_planner.tools.jira_tool.search_jira_issues",
+            return_value=[
+                {"issue_key": "PROJ-10", "summary": "E", "issue_type": "Epic"},
+                {"issue_key": "PROJ-11", "summary": "S", "issue_type": "Story"},
+            ],
+        ):
+            flow._persist_post_completion(result)
+
+        appended = {
+            c[0][1]["key"]: c[0][1]["type"]
+            for c in mock_append.call_args_list
+        }
+        assert appended.get("PROJ-10") == "Epic"
+        assert appended.get("PROJ-11") == "Story"
+
+    def test_does_not_raise_on_bad_result(self):
+        """Should silently handle results without .raw."""
+        flow = PRDFlow()
+        flow.state.run_id = "r4"
+        flow._persist_post_completion(None)  # type: ignore[arg-type]
+        # No exception is fine
 
 
 def test_prd_state_confluence_url_default():

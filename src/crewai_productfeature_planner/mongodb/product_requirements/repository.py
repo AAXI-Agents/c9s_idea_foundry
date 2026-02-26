@@ -13,6 +13,7 @@ Document schema::
         "confluence_page_id":    str | "",   # Confluence page ID
         "jira_completed":        bool,      # True once Jira tickets exist
         "jira_output":           str | "",   # Agent summary of created tickets
+        "jira_tickets":          list[dict], # [{key, type, summary, reused?}]
         "status":                str,       # "pending" | "partial" | "completed"
         "created_at":            str,       # ISO-8601
         "updated_at":            str,       # ISO-8601
@@ -100,6 +101,7 @@ def upsert_delivery_record(
     confluence_page_id: str | None = None,
     jira_completed: bool | None = None,
     jira_output: str | None = None,
+    jira_tickets: list[dict] | None = None,
     error: str | None = None,
 ) -> bool:
     """Create or update the delivery record for *run_id*.
@@ -107,6 +109,10 @@ def upsert_delivery_record(
     Only the fields explicitly passed (not ``None``) are updated.
     The ``status`` field is recomputed from the current values of
     ``confluence_published`` and ``jira_completed``.
+
+    Args:
+        jira_tickets: Optional full replacement for the ``jira_tickets``
+            list.  Use :func:`append_jira_ticket` for incremental adds.
 
     Returns:
         ``True`` if the document was upserted, ``False`` on error.
@@ -143,6 +149,8 @@ def upsert_delivery_record(
             set_fields["jira_completed"] = jira_completed
         if jira_output is not None:
             set_fields["jira_output"] = jira_output
+        if jira_tickets is not None:
+            set_fields["jira_tickets"] = jira_tickets
         if error is not None:
             set_fields["error"] = error
 
@@ -166,3 +174,67 @@ def upsert_delivery_record(
             run_id, exc,
         )
         return False
+
+
+def append_jira_ticket(
+    run_id: str,
+    ticket: dict[str, str],
+) -> bool:
+    """Append a single ticket dict to the ``jira_tickets`` array.
+
+    Uses ``$push`` for an atomic, incremental append — safe across
+    restarts.  The *ticket* dict should have at least ``key`` and
+    ``type``; other fields (``summary``, ``url``, ``reused``) are
+    optional but encouraged.
+
+    Duplicate keys are silently ignored (checked client-side before
+    pushing).
+
+    Returns:
+        ``True`` on success, ``False`` on error.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        col = db[PRODUCT_REQUIREMENTS_COLLECTION]
+
+        # Skip if this key is already recorded.
+        existing = col.find_one(
+            {"run_id": run_id, "jira_tickets.key": ticket.get("key")},
+        )
+        if existing:
+            logger.debug(
+                "[MongoDB] Jira ticket %s already recorded for run_id=%s",
+                ticket.get("key"), run_id,
+            )
+            return True
+
+        result = col.update_one(
+            {"run_id": run_id},
+            {
+                "$push": {"jira_tickets": ticket},
+                "$set": {"updated_at": now},
+                "$setOnInsert": {"run_id": run_id, "created_at": now},
+            },
+            upsert=True,
+        )
+        modified = result.upserted_id is not None or result.modified_count > 0
+        logger.info(
+            "[MongoDB] Appended Jira ticket %s (%s) for run_id=%s",
+            ticket.get("key"), ticket.get("type"), run_id,
+        )
+        return modified
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to append Jira ticket for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def get_jira_tickets(run_id: str) -> list[dict]:
+    """Return the ``jira_tickets`` list for *run_id*, or ``[]``."""
+    record = get_delivery_record(run_id)
+    if record is None:
+        return []
+    return record.get("jira_tickets") or []

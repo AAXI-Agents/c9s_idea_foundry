@@ -5,10 +5,10 @@ page via the Confluence REST API.
 
 Environment variables:
 
-* ``CONFLUENCE_BASE_URL``  — e.g. ``https://yourcompany.atlassian.net/wiki``
+* ``ATLASSIAN_BASE_URL``   — e.g. ``https://yourcompany.atlassian.net``
+* ``ATLASSIAN_USERNAME``   — Atlassian account email
+* ``ATLASSIAN_API_TOKEN``  — API token (https://id.atlassian.com/manage-profile/security/api-tokens)
 * ``CONFLUENCE_SPACE_KEY`` — target space key (e.g. ``PRD``)
-* ``CONFLUENCE_USERNAME``  — Atlassian account email
-* ``CONFLUENCE_API_TOKEN`` — API token (https://id.atlassian.com/manage-profile/security/api-tokens)
 * ``CONFLUENCE_PARENT_ID`` — (optional) parent page id to nest new pages under
 """
 
@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 from typing import Type
 
-import urllib.request
+import certifi
 import urllib.error
+import urllib.parse
+import urllib.request
 import base64
 
 from crewai.tools import BaseTool
@@ -43,25 +46,31 @@ def _get_confluence_env() -> dict[str, str]:
     Raises:
         EnvironmentError: If required vars are missing.
     """
-    base_url = os.environ.get("CONFLUENCE_BASE_URL", "").rstrip("/")
+    base_url = os.environ.get("ATLASSIAN_BASE_URL", "").rstrip("/")
     space_key = os.environ.get("CONFLUENCE_SPACE_KEY", "")
-    username = os.environ.get("CONFLUENCE_USERNAME", "")
-    api_token = os.environ.get("CONFLUENCE_API_TOKEN", "")
+    username = os.environ.get("ATLASSIAN_USERNAME", "")
+    api_token = os.environ.get("ATLASSIAN_API_TOKEN", "")
 
     missing: list[str] = []
     if not base_url:
-        missing.append("CONFLUENCE_BASE_URL")
+        missing.append("ATLASSIAN_BASE_URL")
     if not space_key:
         missing.append("CONFLUENCE_SPACE_KEY")
     if not username:
-        missing.append("CONFLUENCE_USERNAME")
+        missing.append("ATLASSIAN_USERNAME")
     if not api_token:
-        missing.append("CONFLUENCE_API_TOKEN")
+        missing.append("ATLASSIAN_API_TOKEN")
 
     if missing:
         raise EnvironmentError(
             f"Confluence tool requires: {', '.join(missing)}"
         )
+
+    # Confluence Cloud REST API lives under /wiki.  If the shared
+    # ATLASSIAN_BASE_URL does not already include the /wiki prefix,
+    # append it so that all Confluence API calls hit the correct path.
+    if not base_url.endswith("/wiki"):
+        base_url = f"{base_url}/wiki"
 
     return {
         "base_url": base_url,
@@ -123,8 +132,10 @@ def _confluence_request(
         },
     )
 
+    ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode() if exc.fp else ""
@@ -155,8 +166,6 @@ def find_page_by_title(
         f"&title={encoded_title}"
         f"&expand=version"
     )
-    import urllib.parse  # noqa: F811 — already used above
-
     result = _confluence_request("GET", url, auth_header=auth_header)
     results = result.get("results", [])
     return results[0] if results else None

@@ -643,6 +643,7 @@ def _run_startup_delivery() -> int:
         )
         return 0
     if not items:
+        logger.info("[StartupDelivery] No pending deliveries found")
         return 0
 
     _print_delivery_status(
@@ -658,7 +659,7 @@ def _run_startup_delivery() -> int:
         pending_parts = []
         if not item["confluence_done"]:
             pending_parts.append("Confluence publish")
-        if not item["jira_done"]:
+        if not item["jira_done"] and _has_jira_credentials():
             pending_parts.append("Jira ticketing")
         steps_label = " + ".join(pending_parts) or "finalising record"
 
@@ -696,7 +697,39 @@ def _run_startup_delivery() -> int:
 
             # Update delivery record from crew output
             new_conf_done = item["confluence_done"] or _confluence_completed_in_output(raw_output)
-            new_jira_done = item["jira_done"] or _jira_completed_in_output(raw_output)
+
+            # Jira must wait for Confluence to be verified first.
+            # Only check Jira completion when Confluence is confirmed.
+            if new_conf_done:
+                new_jira_done = item["jira_done"] or _jira_completed_in_output(raw_output)
+            else:
+                new_jira_done = item["jira_done"]
+
+            # Extract ticket keys from output and persist incrementally
+            if new_jira_done or _jira_completed_in_output(raw_output):
+                try:
+                    import re as _re
+                    from crewai_productfeature_planner.mongodb.product_requirements import (
+                        append_jira_ticket,
+                    )
+                    from crewai_productfeature_planner.tools.jira_tool import (
+                        search_jira_issues,
+                    )
+                    # Build key→type map from Jira so tickets are
+                    # stored with the correct issue type (Epic/Story/Task).
+                    _type_map: dict[str, str] = {}
+                    try:
+                        for _iss in search_jira_issues(run_id):
+                            _type_map[_iss["issue_key"]] = _iss["issue_type"]
+                    except Exception:  # noqa: BLE001
+                        pass  # lookup is best-effort
+                    for key in _re.findall(r"[A-Z]{2,10}-\d+", raw_output):
+                        append_jira_ticket(run_id, {
+                            "key": key,
+                            "type": _type_map.get(key, "unknown"),
+                        })
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort
 
             upsert_delivery_record(
                 run_id,
@@ -706,23 +739,6 @@ def _run_startup_delivery() -> int:
                 jira_output=raw_output if new_jira_done else None,
                 error=None,
             )
-
-            # Persist jira_output to workingIdeas if new
-            if new_jira_done and not item["doc"].get("jira_output"):
-                try:
-                    import datetime
-                    db = get_db()
-                    db["workingIdeas"].update_one(
-                        {"run_id": run_id},
-                        {"$set": {
-                            "jira_output": raw_output,
-                            "update_date": datetime.datetime.now(
-                                datetime.timezone.utc,
-                            ).isoformat(),
-                        }},
-                    )
-                except Exception:
-                    pass
 
             # Persist confluence_url to workingIdeas if new
             if new_conf_done and not item["doc"].get("confluence_url"):
@@ -781,21 +797,39 @@ def _run_startup_delivery() -> int:
 
 
 def _confluence_completed_in_output(output: str) -> bool:
-    """Heuristically detect Confluence publish success in crew output."""
+    """Detect Confluence publish success in crew output.
+
+    Requires **both** a success keyword AND a recognisable Confluence URL
+    so that mere mentions of "Confluence" in assessment text do not
+    trigger a false positive.
+    """
     lower = output.lower()
-    return any(kw in lower for kw in [
-        "published", "created", "updated",
-        "confluence", "page_id", "page id",
-    ]) and "fail" not in lower[:200]
+    if "fail" in lower[:200]:
+        return False
+    has_keyword = any(kw in lower for kw in [
+        "published", "created", "updated", "page_id", "page id",
+    ])
+    has_url = bool(_extract_confluence_url(output))
+    return has_keyword and has_url
 
 
 def _jira_completed_in_output(output: str) -> bool:
-    """Heuristically detect Jira ticket creation in crew output."""
+    """Detect Jira ticket creation in crew output.
+
+    Requires **both** a Jira keyword AND a recognisable issue key
+    pattern (e.g. ``PROJ-123``) to avoid false positives from
+    assessment text that merely mentions "Jira".
+    """
+    import re
     lower = output.lower()
-    return any(kw in lower for kw in [
-        "epic", "story", "stories", "jira",
+    if "fail" in lower[:200]:
+        return False
+    has_keyword = any(kw in lower for kw in [
+        "epic", "story", "stories",
         "issue_key", "issue key",
-    ]) and "fail" not in lower[:200]
+    ])
+    has_issue_key = bool(re.search(r"[A-Z]{2,10}-\d+", output))
+    return has_keyword and has_issue_key
 
 
 def _extract_confluence_url(output: str) -> str:
@@ -964,6 +998,10 @@ def _assemble_prd_from_doc(doc: dict) -> str:
     Mirrors the structure used by ``PRDDraft.assemble()`` but works
     directly from the raw MongoDB document.
     """
+    from crewai_productfeature_planner.components.document import (
+        strip_iteration_tags,
+    )
+
     parts: list[str] = []
 
     # Executive summary — use the last iteration's content
@@ -971,7 +1009,7 @@ def _assemble_prd_from_doc(doc: dict) -> str:
     if isinstance(raw_exec, list) and raw_exec:
         latest = raw_exec[-1]
         if isinstance(latest, dict) and latest.get("content"):
-            parts.append(f"## Executive Summary\n\n{latest['content']}")
+            parts.append(f"## Executive Summary\n\n{strip_iteration_tags(latest['content'])}")
 
     # Regular sections
     section_obj = doc.get("section", {})
@@ -984,7 +1022,7 @@ def _assemble_prd_from_doc(doc: dict) -> str:
             if isinstance(iterations, list) and iterations:
                 latest = iterations[-1]
                 if isinstance(latest, dict) and latest.get("content"):
-                    parts.append(f"## {title}\n\n{latest['content']}")
+                    parts.append(f"## {title}\n\n{strip_iteration_tags(latest['content'])}")
 
     if not parts:
         return ""
@@ -1039,10 +1077,25 @@ def run():
     if generated:
         print(f"  Generated {generated} missing output file(s) for completed idea(s).")
 
-    # Startup recovery: publish unpublished PRDs to Confluence
-    published = _publish_unpublished_prds()
-    if published:
-        print(f"  Published {published} PRD(s) to Confluence.")
+    # Startup pipeline: review markdown PRDs and publish to Confluence
+    try:
+        from crewai_productfeature_planner.orchestrator.stages import (
+            build_startup_pipeline,
+        )
+        startup_pipeline = build_startup_pipeline()
+        startup_pipeline.run_pipeline()
+        if startup_pipeline.completed:
+            print(
+                f"  Startup pipeline: completed stage(s) "
+                f"{startup_pipeline.completed}"
+            )
+        if startup_pipeline.skipped:
+            logger.info(
+                "Startup pipeline: skipped stage(s) %s",
+                startup_pipeline.skipped,
+            )
+    except Exception as exc:
+        logger.warning("Startup pipeline (markdown review) failed: %s", exc)
 
     # Startup delivery: autonomously run Confluence + Jira pipeline
     # in a background thread so the user can start working immediately.

@@ -21,10 +21,10 @@ from crewai_productfeature_planner.tools.confluence_tool import (
 class TestGetConfluenceEnv:
 
     def test_all_vars_set(self, monkeypatch):
-        monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki")
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
-        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
-        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
         monkeypatch.setenv("CONFLUENCE_PARENT_ID", "12345")
 
         env = _get_confluence_env()
@@ -35,38 +35,68 @@ class TestGetConfluenceEnv:
         assert env["parent_id"] == "12345"
 
     def test_missing_base_url(self, monkeypatch):
-        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("ATLASSIAN_BASE_URL", raising=False)
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
-        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
-        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
 
-        with pytest.raises(EnvironmentError, match="CONFLUENCE_BASE_URL"):
+        with pytest.raises(EnvironmentError, match="ATLASSIAN_BASE_URL"):
             _get_confluence_env()
 
     def test_missing_multiple_vars(self, monkeypatch):
-        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("ATLASSIAN_BASE_URL", raising=False)
         monkeypatch.delenv("CONFLUENCE_SPACE_KEY", raising=False)
-        monkeypatch.delenv("CONFLUENCE_USERNAME", raising=False)
-        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.delenv("ATLASSIAN_USERNAME", raising=False)
+        monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
 
         with pytest.raises(EnvironmentError) as exc_info:
             _get_confluence_env()
-        assert "CONFLUENCE_BASE_URL" in str(exc_info.value)
+        assert "ATLASSIAN_BASE_URL" in str(exc_info.value)
 
     def test_strips_trailing_slash(self, monkeypatch):
-        monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://example.atlassian.net/wiki/")
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki/")
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
-        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
-        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        env = _get_confluence_env()
+        assert env["base_url"] == "https://example.atlassian.net/wiki"
+
+    def test_appends_wiki_when_missing(self, monkeypatch):
+        """ATLASSIAN_BASE_URL without /wiki should auto-append it."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        env = _get_confluence_env()
+        assert env["base_url"] == "https://example.atlassian.net/wiki"
+
+    def test_appends_wiki_after_trailing_slash_strip(self, monkeypatch):
+        """Trailing slash stripped first, then /wiki appended."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        env = _get_confluence_env()
+        assert env["base_url"] == "https://example.atlassian.net/wiki"
+
+    def test_does_not_double_wiki(self, monkeypatch):
+        """ATLASSIAN_BASE_URL already ending with /wiki should stay unchanged."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
 
         env = _get_confluence_env()
         assert env["base_url"] == "https://example.atlassian.net/wiki"
 
     def test_parent_id_default_empty(self, monkeypatch):
-        monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki")
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
-        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
-        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
         monkeypatch.delenv("CONFLUENCE_PARENT_ID", raising=False)
 
         env = _get_confluence_env()
@@ -79,17 +109,17 @@ class TestGetConfluenceEnv:
 class TestHasConfluenceCredentials:
 
     def test_all_set(self, monkeypatch):
-        monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki")
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
-        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
-        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
         assert _has_confluence_credentials() is True
 
     def test_missing(self, monkeypatch):
-        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
+        monkeypatch.delenv("ATLASSIAN_BASE_URL", raising=False)
         monkeypatch.delenv("CONFLUENCE_SPACE_KEY", raising=False)
-        monkeypatch.delenv("CONFLUENCE_USERNAME", raising=False)
-        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.delenv("ATLASSIAN_USERNAME", raising=False)
+        monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
         assert _has_confluence_credentials() is False
 
 
@@ -111,10 +141,10 @@ class TestPublishToConfluence:
 
     @pytest.fixture(autouse=True)
     def _set_env(self, monkeypatch):
-        monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki")
         monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
-        monkeypatch.setenv("CONFLUENCE_USERNAME", "user@example.com")
-        monkeypatch.setenv("CONFLUENCE_API_TOKEN", "secret")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
 
     @patch("crewai_productfeature_planner.tools.confluence_tool._confluence_request")
     @patch("crewai_productfeature_planner.tools.confluence_tool.find_page_by_title")
@@ -175,8 +205,8 @@ class TestPublishToConfluence:
         assert payload["ancestors"] == [{"id": "99999"}]
 
     def test_missing_credentials(self, monkeypatch):
-        monkeypatch.delenv("CONFLUENCE_API_TOKEN")
-        with pytest.raises(EnvironmentError, match="CONFLUENCE_API_TOKEN"):
+        monkeypatch.delenv("ATLASSIAN_API_TOKEN")
+        with pytest.raises(EnvironmentError, match="ATLASSIAN_API_TOKEN"):
             publish_to_confluence(title="Test", markdown_content="# Fail")
 
 
@@ -205,8 +235,8 @@ class TestConfluencePublishTool:
         assert "111" in result
 
     def test_run_missing_credentials(self, monkeypatch):
-        monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
-        monkeypatch.delenv("CONFLUENCE_API_TOKEN", raising=False)
+        monkeypatch.delenv("ATLASSIAN_BASE_URL", raising=False)
+        monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
 
         tool = ConfluencePublishTool()
         result = tool._run(title="Test", markdown_content="# Fail")

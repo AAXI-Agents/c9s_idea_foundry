@@ -183,7 +183,15 @@ class PRDDraft(BaseModel):
 
     def assemble(self) -> str:
         """Assemble all sections into a single markdown PRD document."""
-        parts = [f"## {s.title}\n\n{s.content}" for s in self.sections if s.content]
+        from crewai_productfeature_planner.components.document import (
+            strip_iteration_tags,
+        )
+
+        parts = [
+            f"## {strip_iteration_tags(s.title)}\n\n{strip_iteration_tags(s.content)}"
+            for s in self.sections
+            if s.content
+        ]
         return "# Product Requirements Document\n\n" + "\n\n---\n\n".join(parts)
 
 

@@ -157,3 +157,61 @@ def create_delivery_manager_agent() -> Agent:
         knowledge_sources=[build_project_knowledge_source()],
         embedder=get_google_embedder_config(),
     )
+
+
+def create_jira_product_manager_agent() -> Agent:
+    """Create a Product Manager agent for Jira Epic & Story creation.
+
+    This agent applies product-management reasoning when creating
+    Jira Epics and Stories — writing concise executive summaries,
+    decomposing requirements into discipline-specific work streams,
+    and encoding SMART acceptance criteria.
+
+    Equipped with the Jira tool for creating issues.
+    """
+    agent_config = _load_yaml("product_manager_jira.yaml")["product_manager_jira"]
+    logger.info(
+        "Creating Jira Product Manager agent (role='%s')",
+        agent_config["role"].strip(),
+    )
+
+    return Agent(
+        role=agent_config["role"].strip(),
+        goal=agent_config["goal"].strip(),
+        backstory=agent_config["backstory"].strip(),
+        llm=_build_llm(),
+        tools=[JiraCreateIssueTool()],
+        verbose=is_verbose(),
+        allow_delegation=False,
+        knowledge_sources=[build_project_knowledge_source()],
+        embedder=get_google_embedder_config(),
+    )
+
+
+def create_jira_architect_tech_lead_agent() -> Agent:
+    """Create an Architect & Tech Lead agent for Jira Task creation.
+
+    This agent applies architectural and technical-lead reasoning
+    when decomposing Stories into Tasks — defining data schemas,
+    API contracts, Frontend/Backend splits, dependency ordering,
+    and unit-test mapping.
+
+    Equipped with the Jira tool for creating issues.
+    """
+    agent_config = _load_yaml("architect_tech_lead.yaml")["architect_tech_lead"]
+    logger.info(
+        "Creating Jira Architect/Tech Lead agent (role='%s')",
+        agent_config["role"].strip(),
+    )
+
+    return Agent(
+        role=agent_config["role"].strip(),
+        goal=agent_config["goal"].strip(),
+        backstory=agent_config["backstory"].strip(),
+        llm=_build_llm(),
+        tools=[JiraCreateIssueTool()],
+        verbose=is_verbose(),
+        allow_delegation=False,
+        knowledge_sources=[build_project_knowledge_source()],
+        embedder=get_google_embedder_config(),
+    )

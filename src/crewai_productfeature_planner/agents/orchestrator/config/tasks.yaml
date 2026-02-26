@@ -32,13 +32,18 @@ create_jira_epic_task:
     ## Executive Summary
     {executive_summary}
 
+    ## Confluence Page
+    {confluence_url}
+
     ## Instructions
     Create a Jira Epic using the jira_create_issue tool with:
     - Summary: "{page_title}"
     - Issue type: "Epic"
-    - Description: The executive summary content above
+    - Description: The executive summary content above.  The Confluence
+      page link will be automatically appended.
     - Labels: "prd,auto-generated"
     - Run ID: {run_id}
+    - Confluence URL: "{confluence_url}"
 
     This Epic will serve as the parent for all Stories and Tasks
     derived from the PRD requirements.
@@ -46,10 +51,11 @@ create_jira_epic_task:
     The Jira Epic key and URL confirming successful creation.
     If creation failed, include the error details.
 
-create_jira_tickets_task:
+create_jira_stories_task:
   description: >
-    Create Jira Story tickets for each functional requirement
-    identified in the PRD.
+    Create Jira Story tickets for each functional requirement, organised
+    by role (UX, Engineering, QE).  Each Story represents a work stream
+    for a specific discipline under the parent Epic.
 
     ## PRD Functional Requirements
     {functional_requirements}
@@ -57,19 +63,229 @@ create_jira_tickets_task:
     ## Parent Epic
     {epic_key}
 
+    ## Confluence Page
+    {confluence_url}
+
     ## Instructions
-    For each distinct functional requirement in the section above,
-    create a Jira Story using the jira_create_issue tool with:
+
+    Analyse the functional requirements above and create **one Story per
+    role per major requirement area**.  Use the following four roles
+    and create them **in the order listed** — UX first, then
+    Architecture, then Engineering, then QE:
+
+    ### 1. UX Stories (create these FIRST)
+    UX stories must be completed before any other work can begin.
+    Each UX story should produce concrete design deliverables:
+    - Detailed **wireframes** for every screen / interaction flow
+    - High-fidelity **design mockups** and a clickable **prototype**
+    - Component specifications and design-system tokens
+    - Interaction states (loading, error, empty, success)
+    - Accessibility annotations (contrast, focus order, ARIA)
+    Component: "UX"
+
+    ### 2. Architecture Stories (depend on UX)
+    Architecture stories define the **data definitions** that both
+    Backend and Frontend engineering depend on.  Each Architecture
+    story **is blocked by** the corresponding UX story — set
+    ``is_blocked_by_key`` to the UX story key.
+    Architecture stories cover:
+    - **MongoDB data schema** — define new collections, document
+      structures, indexes, and validation rules for every entity
+      the feature introduces.  If no existing schema fits, design
+      a new collection and document format.
+    - **API contract definition** — specify every REST / GraphQL
+      endpoint (path, method, query parameters, request body,
+      success response, error responses with status codes and
+      messages).
+    All definitions must be documented in Confluence so Backend and
+    Frontend engineers can reference them during implementation.
+    Component: "Architecture"
+
+    ### 3. Engineering Stories (depend on UX and Architecture)
+    Engineering stories describe the full-stack implementation work
+    that is derived from the UX designs and Architecture data
+    definitions.  Each Engineering story **is blocked by** the
+    corresponding Architecture story — set ``is_blocked_by_key``
+    to the Architecture story key (which itself depends on UX).
+    Component: "Engineering"
+
+    ### 4. QE Stories (depend on UX)
+    QE stories cover unit-test coverage for every Engineering task
+    to verify that each user story and the overall Epic are fully
+    satisfied.  Each QE story **is blocked by** the corresponding
+    UX story — set ``is_blocked_by_key`` to the UX story key.
+    Component: "QE"
+
+    For each Story, call the jira_create_issue tool with:
     - Issue type: "Story"
-    - Summary: A concise title for the requirement
-    - Description: The detailed requirement text
+    - Summary: A concise title prefixed with the role, e.g.
+      "[UX] Design onboarding flow" or
+      "[Architecture] Data definitions for onboarding" or
+      "[Engineering] Implement onboarding backend & frontend" or
+      "[QE] Unit tests for onboarding"
+    - Description: Detailed acceptance criteria and scope for this role.
+      UX stories must specify wireframe and design deliverables.
+      Architecture stories must list every collection, document schema,
+      and API contract to be defined.
+      Engineering stories must describe frontend and backend scope.
+      QE stories must describe unit-test coverage goals per Engineering
+      task.
     - Epic key: "{epic_key}"
     - Labels: "prd,auto-generated"
     - Run ID: {run_id}
+    - Confluence URL: "{confluence_url}"
+    - Component: The role name ("UX", "Architecture", "Engineering",
+      or "QE")
+    - is_blocked_by_key: For Architecture stories, set this to the
+      corresponding UX story key.  For Engineering stories, set this
+      to the corresponding Architecture story key.  For QE stories,
+      set this to the corresponding UX story key.
 
-    Group closely related requirements into a single Story where
-    it makes sense, but keep each Story small enough to be estimated
-    and completed in one sprint.
+    ### Dependency summary
+    UX stories have **no blockers** — they are the starting point.
+    Architecture stories are **blocked by** the matching UX story.
+    Engineering stories are **blocked by** the matching Architecture story.
+    QE stories are **blocked by** the matching UX story.
+
+    Keep each Story small enough to be estimated and completed in one
+    sprint.
+
+    **IMPORTANT**: Record every Story key you create — you will need them
+    for the next step where sub-tasks are created.
   expected_output: >
-    A list of all Jira Story keys and URLs created, one per line.
+    A structured list of all Jira Story keys created, grouped by role,
+    with their URLs.  Format each as:
+      [ROLE] STORY_KEY: Summary — URL
+    followed by a summary of dependency links created.
+    If any creation failed, include the error details.
+
+create_jira_tasks_task:
+  description: >
+    Create Jira Task tickets as sub-tasks under the Stories created in
+    the previous step.  Tasks are the atomic units of work that team
+    members pick up during sprint planning.
+
+    ## Stories Created
+    {stories_output}
+
+    ## PRD Functional Requirements
+    {functional_requirements}
+
+    ## Confluence Page
+    {confluence_url}
+
+    ## Instructions
+
+    For each Story created in the previous step, break it down into
+    **2-5 specific Tasks**.  Each Task should be a concrete, actionable
+    work item that one person can complete.
+
+    ### UX Tasks (under UX Stories)
+    UX tasks produce the design artefacts that Architecture and
+    Engineering depend on:
+    - User research / persona validation
+    - Wireframe creation for each screen and interaction flow
+    - High-fidelity mockup / clickable prototype
+    - Design-system component specification
+    - Usability testing plan and accessibility annotations
+
+    ### Architecture Tasks (under Architecture Stories)
+    Architecture tasks define the **data definitions** that both
+    Backend and Frontend engineering tasks depend on.  Every
+    definition must be documented in the Confluence page so that
+    engineers can reference it during implementation.
+
+    **MongoDB Schema tasks**:
+    - Identify whether an existing MongoDB collection covers the
+      feature's data needs.  If not, define a **new collection**
+      with its document structure, field types, indexes, and
+      validation rules.
+    - Document the schema in Confluence (collection name, fields,
+      types, required/optional, example document, indexes).
+
+    **API Definition tasks**:
+    - Define every REST / GraphQL endpoint the feature requires:
+      path, HTTP method, query parameters, request body schema,
+      success response schema, and error responses (status codes,
+      error codes, messages).
+    - Include authentication requirements and rate-limit notes.
+    - Document the full API contract in Confluence.
+
+    Prefix each task summary with its category:
+      "[Data Schema] …" or "[API Definition] …"
+
+    Architecture tasks have **no internal blockers** — they can be
+    worked in parallel under their Architecture story.
+
+    ### Engineering Tasks (under Engineering Stories)
+    Engineering tasks are split into **Frontend** and **Backend**
+    categories.  Create tasks from both categories for each
+    Engineering story.
+
+    **IMPORTANT**: Every Frontend and Backend task **is blocked by**
+    the relevant Architecture task(s) — set ``is_blocked_by_key``
+    to the corresponding Architecture task key so that engineers
+    cannot begin implementation until the data schema and API
+    contract are defined.
+
+    **Frontend tasks** — implement the UI from the UX designs:
+    - Frontend component implementation (referencing UX wireframes)
+    - Client-side state management and routing
+    - Responsive / adaptive layout implementation
+    - Frontend integration with backend APIs (referencing the
+      Architecture API definition)
+
+    **Backend tasks** — build the server-side services:
+    - Database schema implementation and migrations (referencing
+      the Architecture MongoDB schema definition)
+    - API endpoint implementation (REST / GraphQL) per the
+      Architecture API contract
+    - Webhook integration and event handling
+    - Business-logic / service-layer implementation
+    - Authentication, authorisation, and security hardening
+    - Third-party service integration
+
+    Prefix each task summary with its category:
+      "[Frontend] …" or "[Backend] …"
+
+    Where tasks have natural ordering (e.g. "[Backend] Implement DB
+    schema" must complete before "[Backend] Implement API endpoint"),
+    use the ``is_blocked_by_key`` parameter to link them **in addition
+    to** the Architecture dependency.
+
+    ### QE Tasks (under QE Stories)
+    QE tasks are **unit-test tickets** — one for every Engineering task.
+    Each QE task verifies the correctness of its corresponding
+    Engineering task so that the user story and the overall Epic are
+    fully satisfied:
+    - Unit test suite for each Backend task (API, webhook, service layer)
+    - Unit test suite for each Frontend task (component, state, routing)
+    - Each QE task must reference the Engineering task it covers in its
+      description
+    - Set ``is_blocked_by_key`` to the corresponding Engineering task
+      key so the QE task cannot start until the implementation exists
+
+    Prefix each QE task summary with the layer it covers:
+      "[Unit Test — Backend] …" or "[Unit Test — Frontend] …"
+
+    For each Task, call the jira_create_issue tool with:
+    - Issue type: "Task"
+    - Summary: Specific, actionable title with the appropriate prefix
+    - Description: Clear definition of done, implementation notes,
+      reference to the Architecture data definition (for Engineering
+      tasks), and the Engineering task key it relates to (for QE tasks)
+    - Parent key: The Story key this Task belongs under
+    - Labels: "prd,auto-generated"
+    - Run ID: {run_id}
+    - Confluence URL: "{confluence_url}"
+    - Component: Same component as the parent Story ("UX",
+      "Architecture", "Engineering", or "QE")
+
+  expected_output: >
+    A structured list of all Jira Task keys created, grouped by
+    parent Story, with their URLs.  Format:
+      Story STORY_KEY:
+        - TASK_KEY: Summary — URL
+        - TASK_KEY: Summary — URL
+    followed by a summary of dependency links created.
     If any creation failed, include the error details.

@@ -46,7 +46,8 @@ class TestLoadYaml:
         data = _load_yaml("tasks.yaml")
         assert "publish_to_confluence_task" in data
         assert "create_jira_epic_task" in data
-        assert "create_jira_tickets_task" in data
+        assert "create_jira_stories_task" in data
+        assert "create_jira_tasks_task" in data
 
     def test_config_dir_exists(self):
         assert CONFIG_DIR.is_dir()
@@ -164,7 +165,12 @@ class TestGetTaskConfigs:
         assert "create_jira_epic_task" in configs
         assert "description" in configs["create_jira_epic_task"]
 
-    def test_has_create_jira_tickets_task(self):
+    def test_has_create_jira_stories_task(self):
         configs = get_task_configs()
-        assert "create_jira_tickets_task" in configs
-        assert "description" in configs["create_jira_tickets_task"]
+        assert "create_jira_stories_task" in configs
+        assert "description" in configs["create_jira_stories_task"]
+
+    def test_has_create_jira_tasks_task(self):
+        configs = get_task_configs()
+        assert "create_jira_tasks_task" in configs
+        assert "description" in configs["create_jira_tasks_task"]

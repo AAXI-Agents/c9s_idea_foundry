@@ -538,59 +538,6 @@ class PRDFlow(Flow[PRDState]):
     # ------------------------------------------------------------------
     # Step 0c — Requirements Breakdown (Gemini-only, optional)
     # ------------------------------------------------------------------
-    def _maybe_breakdown_requirements(self) -> None:
-        """Run the Gemini-powered requirements breakdown agent.
-
-        Decomposes the (optionally refined) idea into structured product
-        requirements with data entities, state machines, AI augmentation
-        points, and API contract sketches.
-
-        Skipped when Gemini credentials are missing or when the
-        requirements were already broken down (e.g. resumed run).
-        """
-        if self.state.requirements_broken_down:
-            logger.info(
-                "[RequirementsBreakdown] Skipping — already broken down"
-            )
-            return
-
-        # Only run when Gemini credentials are present
-        has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
-        has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
-        if not has_api_key and not has_project:
-            logger.info(
-                "[RequirementsBreakdown] Skipping — no GOOGLE_API_KEY "
-                "or GOOGLE_CLOUD_PROJECT set"
-            )
-            return
-
-        logger.info(
-            "[RequirementsBreakdown] Breaking down idea into requirements"
-        )
-        try:
-            from crewai_productfeature_planner.agents.requirements_breakdown import (
-                breakdown_requirements,
-            )
-
-            requirements, history = breakdown_requirements(
-                self.state.idea, run_id=self.state.run_id,
-            )
-            self.state.requirements_breakdown = requirements
-            self.state.requirements_broken_down = True
-            self.state.breakdown_history = history
-            logger.info(
-                "[RequirementsBreakdown] Breakdown complete "
-                "(%d chars, %d iterations)",
-                len(requirements), len(history),
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[RequirementsBreakdown] Breakdown failed: %s — "
-                "continuing without requirements",
-                exc,
-            )
-
-    # ------------------------------------------------------------------
     # Step 1 — Executive Summary iteration → then section drafting
     # ------------------------------------------------------------------
     @start()
@@ -1537,6 +1484,10 @@ class PRDFlow(Flow[PRDState]):
         with Process.sequential and context-chained tasks.  Falls back
         to the legacy AgentOrchestrator pipeline if the crew cannot be
         built.  Failures are logged but do not fail the overall flow.
+
+        After the crew finishes, the delivery record in
+        ``productRequirements`` is updated so subsequent startups do
+        not re-attempt work that already succeeded.
         """
         try:
             from crewai_productfeature_planner.orchestrator import (
@@ -1552,10 +1503,114 @@ class PRDFlow(Flow[PRDState]):
                     "[PostCompletion] No delivery steps needed — skipping."
                 )
                 return
-            crew_kickoff_with_retry(crew, step_label="post_completion")
+            result = crew_kickoff_with_retry(crew, step_label="post_completion")
+
+            # ── Persist delivery outcome ──────────────────────
+            self._persist_post_completion(result)
         except Exception as exc:
             logger.warning(
                 "[PostCompletion] Atlassian delivery crew failed — "
                 "PRD is saved but not published: %s",
                 exc,
             )
+
+    # ------------------------------------------------------------------
+    # Post-completion output persistence
+    # ------------------------------------------------------------------
+    def _persist_post_completion(self, result: object) -> None:
+        """Parse crew *result* and update the delivery record.
+
+        Detects Confluence publish and Jira ticket creation from the
+        raw crew output, then upserts the ``productRequirements``
+        record so the startup orchestrator knows what has already been
+        delivered.
+        """
+        import re as _re
+
+        try:
+            raw_output = result.raw if hasattr(result, "raw") else str(result)
+        except Exception:  # noqa: BLE001
+            return
+
+        try:
+            from crewai_productfeature_planner.mongodb.product_requirements import (
+                append_jira_ticket,
+                upsert_delivery_record,
+            )
+
+            # Detect Confluence publish
+            conf_url = self._extract_confluence_url(raw_output) or getattr(
+                self.state, "confluence_url", "",
+            )
+            conf_done = bool(conf_url)
+
+            # Detect Jira completion (keyword + issue key pattern)
+            jira_done = self._jira_detected_in_output(raw_output)
+
+            upsert_delivery_record(
+                self.state.run_id,
+                confluence_published=conf_done,
+                confluence_url=conf_url,
+                jira_completed=jira_done,
+                jira_output=raw_output if jira_done else None,
+            )
+            logger.info(
+                "[PostCompletion] Delivery record updated for "
+                "run_id=%s (confluence=%s, jira=%s)",
+                self.state.run_id,
+                "done" if conf_done else "pending",
+                "done" if jira_done else "pending",
+            )
+
+            # Persist individual ticket keys
+            if jira_done:
+                _type_map: dict[str, str] = {}
+                try:
+                    from crewai_productfeature_planner.tools.jira_tool import (
+                        search_jira_issues,
+                    )
+                    for _iss in search_jira_issues(self.state.run_id):
+                        _type_map[_iss["issue_key"]] = _iss["issue_type"]
+                except Exception:  # noqa: BLE001
+                    pass
+                for key in _re.findall(r"[A-Z]{2,10}-\d+", raw_output):
+                    try:
+                        append_jira_ticket(self.state.run_id, {
+                            "key": key,
+                            "type": _type_map.get(key, "unknown"),
+                        })
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[PostCompletion] Failed to persist delivery record: %s",
+                exc,
+            )
+
+    # ------------------------------------------------------------------
+    # Output detection helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_confluence_url(output: str) -> str:
+        """Extract a Confluence URL from crew output text."""
+        import re
+        match = re.search(r"https?://[^\s]+atlassian[^\s]*wiki[^\s]*", output)
+        if match:
+            return match.group(0).rstrip(".,;:()\"\'")
+        match = re.search(r"https?://[^\s]+/wiki/[^\s]*", output)
+        if match:
+            return match.group(0).rstrip(".,;:()\"\'")
+        return ""
+
+    @staticmethod
+    def _jira_detected_in_output(output: str) -> bool:
+        """Detect Jira ticket creation in crew output."""
+        import re
+        lower = output.lower()
+        if "fail" in lower[:200]:
+            return False
+        has_keyword = any(kw in lower for kw in [
+            "epic", "story", "stories", "issue_key", "issue key",
+        ])
+        has_issue_key = bool(re.search(r"[A-Z]{2,10}-\d+", output))
+        return has_keyword and has_issue_key

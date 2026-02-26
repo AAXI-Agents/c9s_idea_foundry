@@ -44,7 +44,7 @@ async def _lifespan(application: FastAPI):
     """
     # 1. Kill stale processes
     try:
-        from crewai_productfeature_planner.main import _kill_stale_crew_processes
+        from crewai_productfeature_planner.components.startup import _kill_stale_crew_processes
         killed = _kill_stale_crew_processes()
         if killed:
             _logger.info("Startup recovery: killed %d stale process(es)", killed)
@@ -61,28 +61,40 @@ async def _lifespan(application: FastAPI):
 
     # 3. Generate missing output files
     try:
-        from crewai_productfeature_planner.main import _generate_missing_outputs
+        from crewai_productfeature_planner.components.startup import _generate_missing_outputs
         generated = _generate_missing_outputs()
         if generated:
             _logger.info("Startup recovery: generated %d missing output file(s)", generated)
     except Exception as exc:
         _logger.warning("Startup recovery (generate missing outputs) failed: %s", exc)
 
-    # 4. Publish unpublished PRDs to Confluence
+    # 4. Startup pipeline: review markdown PRDs and publish to Confluence
+    #    Uses the orchestrator stage pattern for structured execution.
     try:
-        from crewai_productfeature_planner.main import _publish_unpublished_prds
-        published = _publish_unpublished_prds()
-        if published:
-            _logger.info("Startup recovery: published %d PRD(s) to Confluence", published)
+        from crewai_productfeature_planner.orchestrator.stages import (
+            build_startup_pipeline,
+        )
+        startup_pipeline = build_startup_pipeline()
+        startup_pipeline.run_pipeline()
+        if startup_pipeline.completed:
+            _logger.info(
+                "Startup pipeline: completed stage(s) %s",
+                startup_pipeline.completed,
+            )
+        if startup_pipeline.skipped:
+            _logger.info(
+                "Startup pipeline: skipped stage(s) %s",
+                startup_pipeline.skipped,
+            )
     except Exception as exc:
-        _logger.warning("Startup recovery (publish unpublished PRDs) failed: %s", exc)
+        _logger.warning("Startup pipeline (markdown review) failed: %s", exc)
 
     # 5. Autonomous delivery: CrewAI crew-based Confluence + Jira pipeline
     #    Runs in a background thread so the server starts accepting requests
     #    immediately while the delivery agents work autonomously.
     try:
         import threading
-        from crewai_productfeature_planner.main import _run_startup_delivery_background
+        from crewai_productfeature_planner.components.startup import _run_startup_delivery_background
         delivery_thread = threading.Thread(
             target=_run_startup_delivery_background,
             name="startup-delivery",

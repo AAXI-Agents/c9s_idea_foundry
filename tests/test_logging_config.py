@@ -12,12 +12,18 @@ import crewai_productfeature_planner.scripts.logging_config as lc
 
 @pytest.fixture(autouse=True)
 def _reset_logging_state():
-    """Reset the module-level _configured flag before each test."""
+    """Reset the module-level _configured flag before each test.
+
+    Teardown sets ``_configured = True`` so that ``setup_logging()``
+    is a no-op for any subsequent test module that triggers
+    ``get_logger()`` — preventing a new ``TimedRotatingFileHandler``
+    from being added to the production log file.
+    """
     lc._configured = False
     logger = logging.getLogger("crewai_productfeature_planner")
     logger.handlers.clear()
     yield
-    lc._configured = False
+    lc._configured = True
     logger.handlers.clear()
 
 
