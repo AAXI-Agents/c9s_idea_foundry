@@ -1,0 +1,44 @@
+{
+  "get": {
+    "tags": ["Slack OAuth"],
+    "summary": "Slack OAuth v2 callback",
+    "operationId": "slack_oauth_callback",
+    "description": "Handles the Slack OAuth v2 redirect after app installation or reinstallation.\n\n**Flow:**\n\n1. Slack redirects to this URL with a `code` query parameter.\n2. The server exchanges the `code` for bot and user tokens via `oauth.v2.access`.\n3. Tokens are persisted to the process environment, `.slack_tokens.json`, and `.env`.\n4. A confirmation HTML page is returned to the browser.\n\n**Required environment variables:**\n\n| Variable | Description |\n|---|---|\n| `SLACK_CLIENT_ID` | Slack app client ID |\n| `SLACK_CLIENT_SECRET` | Slack app client secret |\n\n**Redirect URL** (must match the manifest): `https://<ngrok-domain>/slack/oauth/callback`",
+    "parameters": [
+      {
+        "name": "code",
+        "in": "query",
+        "required": false,
+        "description": "Authorization code from Slack.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "error",
+        "in": "query",
+        "required": false,
+        "description": "Error code if the user denied access.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "App installed successfully — HTML confirmation page.",
+        "content": {
+          "text/html": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "<html><body><h1>✔ Slack App Installed Successfully</h1><table>...</table></body></html>"
+          }
+        }
+      },
+      "400": {
+        "description": "OAuth error, missing authorization code, or token exchange failure. Returns an HTML error page."
+      }
+    }
+  }
+}

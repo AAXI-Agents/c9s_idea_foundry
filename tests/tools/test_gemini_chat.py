@@ -116,6 +116,36 @@ def test_interpret_greeting(monkeypatch):
     assert result["intent"] == "greeting"
 
 
+def test_interpret_publish(monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    gemini_result = {"intent": "publish", "idea": None, "reply": "Publishing all pending PRDs now!"}
+
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_mock_urlopen_factory(gemini_result),
+    ):
+        result = interpret_message("publish all PRDs to confluence")
+
+    assert result["intent"] == "publish"
+    assert result["idea"] is None
+
+
+def test_interpret_check_publish(monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    gemini_result = {"intent": "check_publish", "idea": None, "reply": "Checking status now…"}
+
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_mock_urlopen_factory(gemini_result),
+    ):
+        result = interpret_message("what PRDs are pending?")
+
+    assert result["intent"] == "check_publish"
+    assert result["idea"] is None
+
+
 def test_interpret_with_history(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 

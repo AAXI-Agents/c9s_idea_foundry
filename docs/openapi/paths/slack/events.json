@@ -1,0 +1,121 @@
+{
+  "post": {
+    "tags": ["Slack Events"],
+    "summary": "Slack Events API endpoint",
+    "operationId": "slack_events",
+    "description": "Handles inbound event payloads from the Slack Events API.\n\n**Supported event types:**\n\n| Event | Description |\n|---|---|\n| `url_verification` | Slack setup handshake — returns the challenge token |\n| `member_joined_channel` | Bot joined a channel — posts an introductory message |\n| `app_mention` | User @mentioned the bot — interprets the message via OpenAI and kicks off a PRD flow or asks follow-up questions |\n| `message` (threaded) | Follow-up message in a thread — continues multi-turn conversation or routes manual-refinement input |\n\n**Interactive mode detection**: keywords like *\"interactive\"*, *\"step by step\"*, or *\"guided\"* in @mentions trigger Block Kit interactive mode.\n\n**Deduplication**: events are deduplicated by `event_id` with a 5-minute TTL.\n\n**Thread state**: tracked in memory with a 10-minute TTL and 20-message limit.\n\nAll events receive an immediate `{\"ok\": true}` response; processing is async.\n\n**Authentication**: requires HMAC-SHA256 signature via `SLACK_SIGNING_SECRET`.",
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "description": "Slack Events API payload. Structure varies by event type.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Payload type: `url_verification` or `event_callback`.",
+                "example": "event_callback"
+              },
+              "challenge": {
+                "type": "string",
+                "description": "Challenge token (only for `url_verification`)."
+              },
+              "event_id": {
+                "type": "string",
+                "description": "Unique event identifier for deduplication."
+              },
+              "event": {
+                "type": "object",
+                "description": "The event data (for `event_callback` payloads).",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "Event subtype: `member_joined_channel`, `app_mention`, or `message`."
+                  },
+                  "channel": {
+                    "type": "string",
+                    "description": "Channel ID where the event occurred."
+                  },
+                  "user": {
+                    "type": "string",
+                    "description": "User ID who triggered the event."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Message text (for `app_mention` and `message` events)."
+                  },
+                  "ts": {
+                    "type": "string",
+                    "description": "Event timestamp."
+                  },
+                  "thread_ts": {
+                    "type": "string",
+                    "description": "Thread timestamp (present for threaded messages)."
+                  }
+                }
+              }
+            }
+          },
+          "examples": {
+            "url_verification": {
+              "summary": "URL verification handshake",
+              "value": {
+                "type": "url_verification",
+                "challenge": "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P"
+              }
+            },
+            "app_mention": {
+              "summary": "User mentions the bot",
+              "value": {
+                "type": "event_callback",
+                "event_id": "Ev061ZGHKTA5",
+                "event": {
+                  "type": "app_mention",
+                  "channel": "C01ABCDEF",
+                  "user": "U01ABCDEF",
+                  "text": "<@U0BOT> create a PRD for a fitness app",
+                  "ts": "1708000000.000100"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Event acknowledged.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "boolean"
+                },
+                "challenge": {
+                  "type": "string",
+                  "description": "Returned only for `url_verification` payloads."
+                }
+              }
+            },
+            "examples": {
+              "event_ack": {
+                "summary": "Standard acknowledgement",
+                "value": {"ok": true}
+              },
+              "url_verification": {
+                "summary": "Challenge response",
+                "value": {"challenge": "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P"}
+              }
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Invalid JSON payload."
+      }
+    }
+  }
+}

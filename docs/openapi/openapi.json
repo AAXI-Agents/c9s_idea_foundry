@@ -2,12 +2,21 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CrewAI Product Feature Planner API",
-    "description": "HTTP interface for the CrewAI PRD generation flow. The flow uses a two-phase architecture: Phase 1 iterates an Executive Summary, Phase 2 auto-iterates 9 remaining PRD sections with configurable min/max iterations. Includes degenerate output guards, error-to-paused recovery, resume-from-last-iteration support, Confluence publishing, and Jira ticketing.",
-    "version": "0.3.0"
+    "description": "HTTP interface for the CrewAI PRD generation flow. The flow uses a two-phase architecture: Phase 1 iterates an Executive Summary, Phase 2 auto-iterates 9 remaining PRD sections with configurable min/max iterations. Includes degenerate output guards, error-to-paused recovery, resume-from-last-iteration support, Confluence publishing, Jira ticketing, and full Slack integration (Events API, interactive Block Kit flows, OAuth v2).",
+    "version": "0.5.0"
   },
   "paths": {
     "/health": {
       "$ref": "./paths/health.json"
+    },
+    "/health/slack-token": {
+      "$ref": "./paths/health/slack_token.json"
+    },
+    "/health/slack-token/exchange": {
+      "$ref": "./paths/health/slack_token_exchange.json"
+    },
+    "/health/slack-token/refresh": {
+      "$ref": "./paths/health/slack_token_refresh.json"
     },
     "/flow/runs/{run_id}": {
       "$ref": "./paths/flow/runs_{run_id}.json"
@@ -35,6 +44,21 @@
     },
     "/flow/jobs/{job_id}": {
       "$ref": "./paths/flow/jobs_{job_id}.json"
+    },
+    "/slack/kickoff": {
+      "$ref": "./paths/slack/kickoff.json"
+    },
+    "/slack/kickoff/sync": {
+      "$ref": "./paths/slack/kickoff_sync.json"
+    },
+    "/slack/events": {
+      "$ref": "./paths/slack/events.json"
+    },
+    "/slack/interactions": {
+      "$ref": "./paths/slack/interactions.json"
+    },
+    "/slack/oauth/callback": {
+      "$ref": "./paths/slack/oauth_callback.json"
     }
   },
   "components": {

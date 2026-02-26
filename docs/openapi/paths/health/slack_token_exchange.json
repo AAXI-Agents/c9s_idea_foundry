@@ -1,0 +1,42 @@
+{
+  "post": {
+    "tags": ["Health"],
+    "summary": "Exchange long-lived Slack token for rotating tokens",
+    "operationId": "slack_token_exchange",
+    "description": "One-time exchange of a long-lived `xoxb-` bot token for rotating tokens via Slack's `tooling.tokens.rotate` API.\n\n**Required environment variables:**\n\n| Variable | Description |\n|---|---|\n| `SLACK_CLIENT_ID` | Slack app client ID |\n| `SLACK_CLIENT_SECRET` | Slack app client secret |\n| `SLACK_ACCESS_TOKEN` | Existing long-lived `xoxb-` token |\n\nAfter a successful exchange, the new rotating access token, refresh token, and expiry are persisted to `.slack_tokens.json` and updated in the process environment.",
+    "responses": {
+      "200": {
+        "description": "Token exchanged successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "example": "Token exchanged successfully"
+                },
+                "token_type": {
+                  "type": "string",
+                  "example": "bot"
+                },
+                "expires_in": {
+                  "type": "integer",
+                  "description": "Token TTL in seconds.",
+                  "example": 43200
+                },
+                "scope": {
+                  "type": "string",
+                  "example": "chat:write,channels:read"
+                }
+              }
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Missing required env vars or exchange failed."
+      }
+    }
+  }
+}

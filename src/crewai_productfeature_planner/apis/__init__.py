@@ -25,8 +25,10 @@ from fastapi.responses import JSONResponse
 
 from crewai_productfeature_planner.apis.health.router import router as health_router
 from crewai_productfeature_planner.apis.prd.router import router as prd_router
+from crewai_productfeature_planner.apis.publishing.router import router as publishing_router
 from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus  # noqa: F401 (re-export)
 from crewai_productfeature_planner.apis.slack.events_router import router as slack_events_router
+from crewai_productfeature_planner.apis.slack.interactions_router import router as slack_interactions_router
 from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
 from crewai_productfeature_planner.apis.slack.router import router as slack_router
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
@@ -108,7 +110,35 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Startup delivery failed to launch: %s", exc)
 
+    # 6. File watcher: auto-publish new PRD files dropped into output/prds/
+    try:
+        from crewai_productfeature_planner.apis.publishing.watcher import start_watcher
+        if start_watcher():
+            _logger.info("File watcher: started")
+    except Exception as exc:
+        _logger.warning("File watcher failed to start: %s", exc)
+
+    # 7. Cron scheduler: periodic scan for interrupted deliveries
+    try:
+        from crewai_productfeature_planner.apis.publishing.scheduler import start_scheduler
+        if start_scheduler():
+            _logger.info("Publish scheduler: started")
+    except Exception as exc:
+        _logger.warning("Publish scheduler failed to start: %s", exc)
+
     yield
+
+    # ── Shutdown ──────────────────────────────────────────────────
+    try:
+        from crewai_productfeature_planner.apis.publishing.watcher import stop_watcher
+        stop_watcher()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from crewai_productfeature_planner.apis.publishing.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 app = FastAPI(
@@ -159,11 +189,29 @@ app = FastAPI(
             ),
         },
         {
+            "name": "Slack Interactions",
+            "description": (
+                "Handles inbound Slack interactive payloads (button clicks, "
+                "menu selections, modal submissions). Mirrors the CLI "
+                "interactive experience — refinement mode choice, idea "
+                "approval, and requirements approval — entirely within Slack."
+            ),
+        },
+        {
             "name": "Slack OAuth",
             "description": (
                 "Handles the Slack OAuth v2 install/reinstall callback. "
                 "Exchanges the authorization code for bot tokens and persists "
                 "them to ``.env`` and ``.slack_tokens.json``."
+            ),
+        },
+        {
+            "name": "Publishing",
+            "description": (
+                "Manage Confluence publishing and Jira ticket creation. "
+                "List pending PRDs, batch-publish to Confluence, create "
+                "Jira Epics/Stories/Tasks, and monitor the file watcher "
+                "and cron scheduler that automate delivery."
             ),
         },
     ],
@@ -173,7 +221,9 @@ app.include_router(health_router)
 app.include_router(prd_router)
 app.include_router(slack_router)
 app.include_router(slack_events_router)
+app.include_router(slack_interactions_router)
 app.include_router(slack_oauth_router)
+app.include_router(publishing_router)
 
 
 # ── Global exception handler ─────────────────────────────────

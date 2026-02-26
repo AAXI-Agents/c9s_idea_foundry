@@ -9,3 +9,13 @@ User expects edge cases and error handling to be addressed explicitly, not defer
 User prefers Given/When/Then format for acceptance criteria where applicable.
 User targets modern cloud-native architectures: containerised services, REST/gRPC APIs, event-driven patterns.
 User expects non-functional requirements to include quantitative targets (latency, throughput, uptime).
+User uses Slack as the primary collaboration platform for PRD generation and review.
+User expects Slack interactive mode to mirror the CLI experience with Block Kit buttons.
+User values comprehensive API documentation: all endpoints must have OpenAPI/Swagger descriptions, typed response schemas, and examples.
+User expects webhook callbacks with structured JSON payloads for async flow results.
+User prefers hand-maintained OpenAPI specs alongside auto-generated Swagger for documentation accuracy.
+User expects automated publishing: new PRD markdown files should be auto-published to Confluence without manual intervention.
+User values resilient delivery: a cron-based scheduler should resume incomplete Confluence/Jira tasks after server restarts or transient failures.
+User prefers environment-variable-driven feature toggles for background automation (file watcher, cron scheduler).
+User expects all agent interactions (Slack and CLI) to be logged to MongoDB for LLM fine-tuning data collection.
+User values non-intrusive tracking: interaction logging must never disrupt the user-facing flow on failure.

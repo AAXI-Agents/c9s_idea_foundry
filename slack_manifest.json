@@ -41,6 +41,10 @@
     "token_management_enabled": true
   },
   "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://YOUR_NGROK_DOMAIN/slack/interactions"
+    },
     "event_subscriptions": {
       "request_url": "https://YOUR_NGROK_DOMAIN/slack/events",
       "bot_events": [

@@ -57,6 +57,16 @@ class SlackPRDKickoffRequest(BaseModel):
         default=True,
         description="Run the full flow without pausing for manual approval.",
     )
+    interactive: bool = Field(
+        default=False,
+        description=(
+            "Enable interactive mode — mirrors the CLI experience in Slack. "
+            "Prompts the user to choose refinement mode (agent/manual), "
+            "approve the refined idea, and approve the requirements "
+            "breakdown using Block Kit buttons before auto-generating "
+            "all PRD sections.  Overrides ``auto_approve`` when ``True``."
+        ),
+    )
     notify: bool = Field(
         default=True,
         description="Post status updates and results back to the Slack channel.",
@@ -73,6 +83,7 @@ class SlackPRDKickoffRequest(BaseModel):
                 "channel": "crewai-prd-planner",
                 "text": "create a PRD for a mobile fitness tracking app",
                 "auto_approve": True,
+                "interactive": False,
                 "notify": True,
             }
         }
@@ -222,7 +233,43 @@ def _run_slack_prd_flow(
     tags=["Slack Messenger"],
     summary="Start a Slack-triggered PRD flow (async)",
     response_description="Job accepted – poll ``/flow/runs/{run_id}`` for progress",
+    description=(
+        "Accepts a natural-language product idea from Slack and kicks off the "
+        "full PRD generation flow asynchronously. The API responds immediately "
+        "with the ``run_id``; the flow runs in a background thread.\n\n"
+        "**Flow phases:**\n\n"
+        "1. **Idea Refinement** — A Gemini-powered agent enriches the raw idea "
+        "(3–10 cycles).\n"
+        "2. **Requirements Breakdown** — The enriched idea is decomposed into "
+        "structured requirements.\n"
+        "3. **Phase 1: Executive Summary** — Iterative drafting and critique.\n"
+        "4. **Phase 2: Sections** — 9 remaining PRD sections are drafted, "
+        "critiqued, and auto-approved.\n"
+        "5. **Post-completion** — Publishes to Confluence, creates Jira tickets, "
+        "and posts a summary back to the Slack channel (when ``notify=true``).\n\n"
+        "**Interactive mode** (``interactive=true``): mirrors the CLI experience "
+        "inside Slack using Block Kit buttons — the user chooses refinement mode, "
+        "approves the idea, and approves requirements before auto-generating "
+        "sections. Overrides ``auto_approve`` when enabled.\n\n"
+        "**Webhook callback** (``webhook_url``): when provided, the server sends "
+        "a ``POST`` with a JSON payload on completion or failure:\n\n"
+        "```json\n"
+        "{\n"
+        '  "run_id": "a1b2c3d4e5f6",\n'
+        '  "status": "completed",\n'
+        '  "result": { ... },\n'
+        '  "error": null\n'
+        "}\n"
+        "```\n\n"
+        "**Authentication**: requires a valid Slack signing secret "
+        "(``SLACK_SIGNING_SECRET``) via HMAC-SHA256 header verification.\n\n"
+        "Poll ``GET /flow/runs/{run_id}`` for progress updates."
+    ),
     dependencies=[Depends(verify_slack_request)],
+    responses={
+        200: {"description": "PRD flow accepted and running in background."},
+        422: {"description": "No idea text provided."},
+    },
 )
 async def slack_kickoff(req: SlackPRDKickoffRequest) -> SlackPRDKickoffResponse:
     """Parse a natural-language Slack command and kick off the PRD flow.
@@ -242,18 +289,35 @@ async def slack_kickoff(req: SlackPRDKickoffRequest) -> SlackPRDKickoffResponse:
     req.channel = channel
     run_id = uuid.uuid4().hex[:12]
 
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(
-        None,
-        _run_slack_prd_flow,
-        run_id,
-        req.text,
-        channel,
-        None,  # thread_ts
-        req.notify,
-        req.auto_approve,
-        req.webhook_url,
-    )
+    if req.interactive:
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            run_interactive_slack_flow,
+        )
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            None,
+            run_interactive_slack_flow,
+            run_id,
+            req.text,
+            channel,
+            None,  # thread_ts
+            "",   # user (unknown from API call)
+            req.notify,
+            req.webhook_url,
+        )
+    else:
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            None,
+            _run_slack_prd_flow,
+            run_id,
+            req.text,
+            channel,
+            None,  # thread_ts
+            req.notify,
+            req.auto_approve,
+            req.webhook_url,
+        )
 
     return SlackPRDKickoffResponse(
         run_id=run_id,
@@ -268,7 +332,27 @@ async def slack_kickoff(req: SlackPRDKickoffRequest) -> SlackPRDKickoffResponse:
     tags=["Slack Messenger"],
     summary="Start a Slack-triggered PRD flow (synchronous)",
     response_description="Completed PRD flow result",
+    description=(
+        "Synchronous variant of ``POST /slack/kickoff``. Runs the full PRD "
+        "flow and blocks until completion before returning the result.\n\n"
+        "The response includes the final ``status`` (``completed`` or "
+        "``paused``), the generated ``result`` content, and any ``error`` "
+        "message.\n\n"
+        "**Warning**: this endpoint may take several minutes to respond "
+        "depending on the complexity of the idea and LLM response times. "
+        "Use the async ``POST /slack/kickoff`` endpoint for production "
+        "workloads.\n\n"
+        "Supports the same request body as the async endpoint, including "
+        "``webhook_url`` for result delivery and ``notify`` for Slack "
+        "channel updates.\n\n"
+        "**Authentication**: requires a valid Slack signing secret "
+        "(``SLACK_SIGNING_SECRET``) via HMAC-SHA256 header verification."
+    ),
     dependencies=[Depends(verify_slack_request)],
+    responses={
+        200: {"description": "PRD flow completed; result returned inline."},
+        422: {"description": "No idea text provided."},
+    },
 )
 async def slack_kickoff_sync(req: SlackPRDKickoffRequest) -> dict:
     """Synchronous Slack-triggered PRD kickoff.

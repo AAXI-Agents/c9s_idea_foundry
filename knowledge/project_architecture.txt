@@ -21,7 +21,9 @@ Tech stack:
   • Google Gemini LLM (default model: gemini-3-flash-preview)
   • OpenAI o3 (fallback / secondary PM agent)
   • MongoDB (working ideas, finalized ideas, crew jobs)
-  • FastAPI (REST API)
+  • FastAPI (REST API + Slack webhooks)
+  • Slack (Bot integration: Events API, Interactions API, OAuth v2,
+    Block Kit interactive messages, token rotation)
   • Atlassian Confluence + Jira (post-completion publishing)
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -41,9 +43,33 @@ crewai_productfeature_planner/
 │   │   ├── idea_refiner/               # Idea enrichment agent
 │   │   ├── requirements_breakdown/     # Requirements decomposition agent
 │   │   └── orchestrator/               # Atlassian publishing agent
-│   ├── apis/                           # REST API endpoints
-│   │   ├── health/                     # Health check endpoints
-│   │   └── prd/                        # PRD flow endpoints + models
+│   ├── apis/                           # REST API + webhook endpoints
+│   │   ├── __init__.py                 # FastAPI app factory, router registration,
+│   │   │                               #   lifespan hooks, global error handler
+│   │   ├── shared.py                   # FlowRun, FlowStatus, approval state
+│   │   ├── health/                     # Health & token management endpoints
+│   │   │   └── router.py               # /health, /health/slack-token,
+│   │   │                               #   /health/slack-token/exchange,
+│   │   │                               #   /health/slack-token/refresh
+│   │   ├── prd/                        # PRD flow endpoints + models
+│   │   │   ├── router.py               # /flow/prd/kickoff, /approve, /pause,
+│   │   │   │                           #   /resume, /resumable, /runs, /jobs
+│   │   │   ├── models.py               # Pydantic request/response schemas
+│   │   │   └── service.py              # Flow execution helpers
+│   │   ├── slack/                      # Slack integration endpoints
+│   │   │   ├── router.py               # /slack/kickoff, /slack/kickoff/sync
+│   │   │   ├── events_router.py        # /slack/events (Events API webhook)
+│   │   │   ├── interactions_router.py  # /slack/interactions (Block Kit webhook)
+│   │   │   ├── oauth_router.py         # /slack/oauth/callback (OAuth v2)
+│   │   │   ├── blocks.py               # Block Kit message builders
+│   │   │   ├── interactive_handlers.py # Interactive flow state & callbacks
+│   │   │   └── verify.py               # HMAC-SHA256 request verification
+│   │   └── publishing/                 # Publishing automation endpoints
+│   │       ├── router.py               # /publishing/* (10 endpoints)
+│   │       ├── models.py               # Pydantic response schemas
+│   │       ├── service.py              # Business logic (discover, publish)
+│   │       ├── watcher.py              # File watcher (auto-publish on new .md)
+│   │       └── scheduler.py            # Cron scheduler (periodic delivery scan)
 │   ├── flows/
 │   │   └── prd_flow.py                 # Core PRDFlow: state machine, iterative
 │   │                                   #   section generation, finalization
@@ -54,7 +80,13 @@ crewai_productfeature_planner/
 │   │   ├── client.py                   # MongoDB connection management
 │   │   ├── working_ideas/              # In-progress PRD persistence
 │   │   ├── finalized_ideas/            # Completed PRD storage
-│   │   └── crew_jobs/                  # Async job tracking
+│   │   ├── crew_jobs/                  # Async job tracking
+│   │   └── agent_interactions/         # Agent interaction logging (fine-tuning)
+│   ├── components/                     # CLI and startup components
+│   │   ├── cli.py                      # Interactive CLI flow runner
+│   │   ├── startup.py                  # Server startup recovery tasks
+│   │   ├── resume.py                   # Resume paused runs
+│   │   └── document.py                 # Document formatting utilities
 │   ├── scripts/                        # Utilities
 │   │   ├── confluence_xhtml.py         # Markdown → Confluence XHTML converter
 │   │   ├── logging_config.py           # Structured logging setup
@@ -63,15 +95,26 @@ crewai_productfeature_planner/
 │   └── tools/                          # CrewAI tool wrappers
 │       ├── confluence_tool.py          # Confluence REST API publishing
 │       ├── jira_tool.py                # Jira REST API ticket creation
+│       ├── slack_tools.py              # Slack tools: send message, read,
+│       │                               #   post PRD result, interpret message
+│       ├── slack_token_manager.py      # Token rotation, exchange, persistence
 │       ├── file_write_tool.py          # PRD file writer
 │       ├── file_read_tool.py           # File reader
 │       ├── directory_read_tool.py      # Directory listing
 │       ├── scrape_tool.py              # Web scraping
 │       ├── search_tool.py              # Web search
 │       └── website_search_tool.py      # Website-specific search
-├── tests/                              # Mirrors src/ structure, 640+ tests
+├── tests/                              # Mirrors src/ structure, 1130 tests
 ├── output/prds/                        # Generated PRD markdown files
-├── docs/openapi/                       # OpenAPI specification
+├── docs/openapi/                       # OpenAPI specification ($ref-based paths)
+│   ├── openapi.json                    # Root spec (v0.5.0)
+│   └── paths/                          # Per-endpoint specs
+│       ├── health.json                 # GET /health
+│       ├── health/                     # Health sub-endpoints
+│       ├── flow/                       # PRD flow endpoints
+│       └── slack/                      # Slack endpoints (kickoff, events,
+│                                       #   interactions, oauth_callback)
+├── slack_manifest.json                 # Slack app manifest for installation
 └── pyproject.toml                      # Project metadata and dependencies
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -116,6 +159,56 @@ Phase 4 — Post-completion Pipeline (AgentOrchestrator):
   Stage 2: Jira Ticketing — create Epic + Stories from functional requirements
 
 ────────────────────────────────────────────────────────────────────────────────
+3a. SLACK INTERACTIVE FLOW
+────────────────────────────────────────────────────────────────────────────────
+
+The system supports a full Slack-native interactive flow that mirrors the CLI
+experience inside Slack using Block Kit buttons and threaded conversations.
+
+Entry points:
+  • POST /slack/kickoff with interactive=true (API call)
+  • @mention the bot with keywords: "interactive", "step by step", "guided"
+
+Interactive flow phases:
+
+  1. Refinement Mode Choice — Block Kit buttons ask the user:
+     • "Agent" — Gemini Idea Refiner runs automatically (3–10 cycles)
+     • "Manual" — user types refinements in the thread, clicks Approve
+       when satisfied (thread-based loop with approve/cancel buttons)
+
+  2. Idea Approval — Block Kit buttons show refined idea:
+     • "Approve" — proceed to requirements breakdown
+     • "Cancel" — stop the flow, post cancellation notice
+
+  3. Requirements Approval — Block Kit buttons show structured requirements:
+     • "Approve" — proceed to auto-generate PRD sections
+     • "Cancel" — stop the flow
+
+  4. Auto-Generation — phases 1–4 of the standard pipeline run with
+     auto_approve=true, posting results back to the Slack channel/thread.
+
+Block Kit action IDs:
+  • refinement_agent, refinement_manual — refinement mode choice
+  • idea_approve, idea_cancel — idea approval gate
+  • requirements_approve, requirements_cancel — requirements gate
+  • flow_cancel — cancel at any point
+
+State management:
+  • _interactive_runs dict tracks per-run state with threading.Event
+    for blocking until user makes a decision
+  • 30-minute TTL for stale entries; 10-minute timeout per decision
+  • Resolved by interactions_router → resolve_interaction() which
+    signals the waiting thread
+
+Slack webhooks:
+  • POST /slack/events — receives Events API callbacks (url_verification,
+    member_joined_channel, app_mention, threaded message)
+  • POST /slack/interactions — receives Block Kit button clicks
+    (block_actions, view_submission)
+  • GET /slack/oauth/callback — OAuth v2 install/reinstall callback
+  • All requests verified via HMAC-SHA256 signing secret
+
+────────────────────────────────────────────────────────────────────────────────
 4. AGENT ROLES
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -135,6 +228,27 @@ Phase 4 — Post-completion Pipeline (AgentOrchestrator):
   Purpose: Publish completed PRDs and create tracking tickets.
 
 ────────────────────────────────────────────────────────────────────────────────
+4a. SLACK TOOLS
+────────────────────────────────────────────────────────────────────────────────
+
+Slack integration uses four CrewAI tool wrappers (not agents — called
+directly by flow logic):
+
+  • SlackSendMessageTool — Post plain text to a channel/thread.
+  • SlackReadMessagesTool — Read recent messages from a channel.
+  • SlackPostPRDResultTool — Format and post a completed PRD summary
+    with output file, Confluence URL, and Jira ticket links.
+  • SlackInterpretMessageTool — Send message text + conversation history
+    to Gemini for intent classification (create_prd, publish,
+    check_publish, help, greeting, unknown) and idea extraction.
+
+Token management (slack_token_manager.py):
+  • Supports both static (xoxb-) and rotating (xoxe.) bot tokens.
+  • Automatic refresh when token is near expiry.
+  • Persists tokens to .slack_tokens.json for restart resilience.
+  • Health endpoints: GET /health/slack-token, POST …/exchange, …/refresh.
+
+────────────────────────────────────────────────────────────────────────────────
 5. STATE MANAGEMENT
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -151,6 +265,31 @@ PRDState tracks the full lifecycle of a PRD generation run:
 
 Progress is saved to MongoDB on every iteration, enabling pause/resume.
 On server restart, incomplete runs are detected and can be resumed.
+
+────────────────────────────────────────────────────────────────────────────────
+5a. SLACK INTERACTIVE STATE
+────────────────────────────────────────────────────────────────────────────────
+
+Slack interactive flows maintain additional in-memory state:
+
+  _interactive_runs[run_id] → {
+    channel, thread_ts, user, idea,     # Slack context
+    created_at,                          # TTL tracking (30 min)
+    pending_action,                      # Current wait type
+    event (threading.Event),             # Signals user decision
+    decision,                            # Action ID from button click
+    cancelled,                           # Boolean cancellation flag
+  }
+
+Thread conversations:
+  • Events router maintains _thread_conversations per (channel, thread_ts)
+  • 10-minute TTL, 20-message rolling window
+  • Deduplication by event_id with 5-minute TTL
+
+Manual refinement:
+  • _manual_refinement_text[run_id] stores latest thread reply
+  • Thread messages route to submit_manual_refinement() when
+    pending_action == "manual_refinement"
 
 ────────────────────────────────────────────────────────────────────────────────
 6. OUTPUT FORMAT
@@ -176,3 +315,156 @@ Final PRD format:
 
 Files are saved to: output/prds/prd_v{version}_{timestamp}.md
 Confluence pages are titled: "PRD — {idea_preview}"
+
+────────────────────────────────────────────────────────────────────────────────
+7. API ENDPOINTS
+────────────────────────────────────────────────────────────────────────────────
+
+FastAPI server with auto-generated Swagger UI at /docs and OpenAPI JSON
+at /openapi.json.  Hand-maintained OpenAPI spec in docs/openapi/ with
+$ref-based path splitting (v0.5.0).
+
+Health:
+  GET  /health                        — Liveness probe
+  GET  /health/slack-token             — Token rotation diagnostics
+  POST /health/slack-token/exchange    — Exchange static → rotating token
+  POST /health/slack-token/refresh     — Force token refresh
+
+Flow Runs:
+  POST /flow/prd/kickoff               — Start PRD generation (async, 202)
+  POST /flow/prd/approve               — Approve / refine section
+  POST /flow/prd/pause                 — Pause and save progress
+  GET  /flow/prd/resumable             — List paused / unfinalized runs
+  POST /flow/prd/resume                — Resume a paused run
+  GET  /flow/runs/{run_id}             — Run status + draft content
+  GET  /flow/runs                      — List all in-memory runs
+
+Jobs:
+  GET  /flow/jobs                      — List persistent job records
+  GET  /flow/jobs/{job_id}             — Single job record
+
+Slack Messenger:
+  POST /slack/kickoff                  — Slack-triggered PRD (async)
+  POST /slack/kickoff/sync             — Slack-triggered PRD (synchronous)
+
+Slack Webhooks:
+  POST /slack/events                   — Events API (mentions, joins, threads)
+  POST /slack/interactions             — Block Kit button clicks
+  GET  /slack/oauth/callback           — OAuth v2 install callback
+
+Authentication:
+  • Slack endpoints use HMAC-SHA256 request signing (SLACK_SIGNING_SECRET)
+  • PRD flow endpoints are unauthenticated (internal network only)
+
+Webhook callback (POST to webhook_url when provided on /slack/kickoff):
+  { "run_id": "…", "status": "completed"|"failed", "result": {…}, "error": null }
+
+Publishing & Delivery:
+  GET  /publishing/pending             — List PRDs needing Confluence/Jira delivery
+  POST /publishing/confluence/all      — Batch-publish all pending to Confluence
+  POST /publishing/confluence/{run_id} — Publish a single PRD to Confluence
+  POST /publishing/jira/all            — Batch-create Jira tickets for all pending
+  POST /publishing/jira/{run_id}       — Create Jira tickets for a single run
+  POST /publishing/all                 — Full batch: Confluence + Jira for everything
+  POST /publishing/all/{run_id}        — Full pipeline for a single run
+  GET  /publishing/status/{run_id}     — Delivery status for a run
+  GET  /publishing/automation/status   — File watcher & cron scheduler status
+
+────────────────────────────────────────────────────────────────────────────────
+9. PUBLISHING AUTOMATION
+────────────────────────────────────────────────────────────────────────────────
+
+Three complementary mechanisms ensure PRDs are reliably delivered to
+Confluence and Jira:
+
+a) API + Slack Intent (manual trigger):
+   Users can say "publish all" or "check publishing status" in Slack,
+   or call the /publishing/* REST endpoints directly.  Gemini classifies
+   these as "publish" or "check_publish" intents.
+
+b) File Watcher (auto-trigger on file create):
+   A polling-based background thread watches output/prds/ for new .md
+   files.  When a file stabilises (size unchanged across two polls),
+   it auto-publishes to Confluence.  Configurable via env vars:
+     PUBLISH_WATCHER_ENABLED     — "0"/"false" to disable (default: on)
+     PUBLISH_WATCHER_POLL_SECONDS — polling interval (default: 10)
+
+c) Cron Scheduler (periodic scan for resilience):
+   A background thread sweeps for incomplete deliveries on a timer,
+   resuming any Confluence or Jira work that was interrupted by server
+   restarts or transient failures.  Configurable via env vars:
+     PUBLISH_SCHEDULER_ENABLED          — "0"/"false" to disable
+     PUBLISH_SCAN_INTERVAL_SECONDS      — sweep interval (default: 300 = 5 min)
+
+Both watcher and scheduler start automatically in the FastAPI lifespan
+when Confluence credentials are configured and are cleanly stopped
+on server shutdown.
+
+────────────────────────────────────────────────────────────────────────────────
+10. AGENT INTERACTION TRACKING
+────────────────────────────────────────────────────────────────────────────────
+
+Every user↔agent interaction from Slack and CLI is logged to the MongoDB
+`agentInteraction` collection for future LLM fine-tuning data.
+
+Collection: agentInteraction
+Module:     mongodb/agent_interactions/repository.py
+
+Document schema:
+  interaction_id          — UUID hex (primary key)
+  source                  — "slack" | "slack_interactive" | "cli"
+  user_message            — Original user input text
+  intent                  — Classified intent (create_prd, help, greeting,
+                            publish, check_publish, unknown, refinement_mode,
+                            manual_refinement, manual_refinement_approve,
+                            manual_refinement_edit, idea_approval,
+                            requirements_approval)
+  agent_response          — Agent reply text
+  idea                    — Extracted product idea (if applicable)
+  run_id                  — Associated PRD flow run ID (if applicable)
+  channel                 — Slack channel ID (Slack sources only)
+  thread_ts               — Slack thread timestamp (Slack sources only)
+  user_id                 — Slack user ID or "cli_user"
+  conversation_history    — Thread conversation context (Slack only)
+  metadata                — Freeform dict (iteration counts, revised text, etc.)
+  created_at              — UTC datetime
+
+Tracking integration points:
+  • apis/slack/events_router.py — _interpret_and_act() logs after each
+    Gemini intent classification (6 intents)
+  • apis/slack/interactive_handlers.py — resolve_interaction() logs button
+    clicks; submit_manual_refinement() logs thread replies
+  • components/cli.py — _track_cli() helper logs at every CLI decision
+    point (idea input, refinement mode, manual edits, approvals)
+
+All tracking calls are wrapped in try/except to ensure tracking failures
+never disrupt the main user flow.
+
+Repository functions:
+  log_interaction(…)              — Insert a new interaction document
+  get_interaction(id)             — Fetch single interaction by ID
+  find_interactions_by_source(…)  — Filter by source, newest first
+  find_interactions_by_intent(…)  — Filter by intent, newest first
+  find_interactions(…)            — Flexible multi-filter query
+  list_interactions(…)            — All recent interactions
+
+────────────────────────────────────────────────────────────────────────────────
+8. OPENAPI DOCUMENTATION
+────────────────────────────────────────────────────────────────────────────────
+
+All endpoints have comprehensive OpenAPI documentation:
+  • description — detailed multi-paragraph explanation with flow phases,
+    error handling, authentication requirements, and table-formatted
+    reference data (action IDs, env vars, event types)
+  • summary — concise one-line description
+  • responses — typed response schemas with examples for all status codes
+  • request/response models — Pydantic models with per-field descriptions
+
+Hand-maintained spec lives in docs/openapi/ with $ref-based path splitting:
+  docs/openapi/
+  ├── openapi.json              # Root spec with $ref to paths/
+  └── paths/
+      ├── health.json            # GET /health
+      ├── health/                # Slack token management endpoints
+      ├── flow/                  # PRD flow + jobs endpoints
+      └── slack/                 # Slack integration endpoints

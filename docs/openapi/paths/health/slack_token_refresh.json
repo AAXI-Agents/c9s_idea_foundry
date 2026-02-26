@@ -1,0 +1,40 @@
+{
+  "post": {
+    "tags": ["Health"],
+    "summary": "Force-refresh the Slack access token",
+    "operationId": "slack_token_refresh",
+    "description": "Invalidates the cached Slack access token and immediately acquires a fresh one using the stored refresh token.\n\nUse this after rotating credentials or when Slack API calls return `token_revoked` / `invalid_auth` errors.\n\nRequires `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, and a valid `SLACK_REFRESH_TOKEN`.",
+    "responses": {
+      "200": {
+        "description": "Token refreshed successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "example": "Token refreshed successfully"
+                },
+                "token_type": {
+                  "type": "string",
+                  "example": "rotating"
+                },
+                "rotation_configured": {
+                  "type": "boolean"
+                },
+                "expires_in_seconds": {
+                  "type": "integer",
+                  "example": 43200
+                }
+              }
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Refresh failed — check credentials and refresh token."
+      }
+    }
+  }
+}

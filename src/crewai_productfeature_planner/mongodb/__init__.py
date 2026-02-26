@@ -9,8 +9,18 @@ Sub-modules:
     - ``mongodb.working_ideas``        — ``workingIdeas`` collection
     - ``mongodb.crew_jobs``            — ``crewJobs`` collection (job tracking)
     - ``mongodb.product_requirements`` — ``productRequirements`` collection
+    - ``mongodb.agent_interactions``   — ``agentInteraction`` collection (fine-tuning data)
 """
 
+from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
+    AGENT_INTERACTIONS_COLLECTION,
+    find_interactions,
+    find_interactions_by_intent,
+    find_interactions_by_source,
+    get_interaction,
+    list_interactions,
+    log_interaction,
+)
 from crewai_productfeature_planner.mongodb.client import (
     DEFAULT_DB_NAME,
     DEFAULT_HOST,
@@ -62,6 +72,7 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (
 )
 
 __all__ = [
+    "AGENT_INTERACTIONS_COLLECTION",
     "CREW_JOBS_COLLECTION",
     "DEFAULT_DB_NAME",
     "DEFAULT_HOST",
@@ -76,15 +87,21 @@ __all__ = [
     "find_active_job",
     "find_completed_without_confluence",
     "find_completed_without_output",
+    "find_interactions",
+    "find_interactions_by_intent",
+    "find_interactions_by_source",
     "find_job",
     "find_pending_delivery",
     "find_unfinalized",
     "get_delivery_record",
     "get_client",
     "get_db",
+    "get_interaction",
     "get_output_file",
     "get_run_documents",
+    "list_interactions",
     "list_jobs",
+    "log_interaction",
     "mark_completed",
     "mark_paused",
     "reactivate_job",

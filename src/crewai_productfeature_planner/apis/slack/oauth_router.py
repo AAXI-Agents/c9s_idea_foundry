@@ -167,7 +167,45 @@ def _update_env_file(access_token: str, refresh_token: str) -> None:
     tags=["Slack OAuth"],
     summary="Slack OAuth v2 callback",
     response_description="HTML page confirming app installation",
-    responses={400: {"description": "OAuth error or missing code"}},
+    description=(
+        "Handles the Slack OAuth v2 redirect after a user clicks **Install** "
+        "or **Reinstall** on the Slack app management page.\n\n"
+        "**Flow:**\n\n"
+        "1. Slack redirects to this URL with a ``code`` query parameter.\n"
+        "2. The server exchanges the ``code`` for bot and user tokens via "
+        "``oauth.v2.access`` using HTTP Basic auth (client ID + secret).\n"
+        "3. Tokens are persisted to:\n"
+        "   - **Process environment** (``SLACK_ACCESS_TOKEN``, "
+        "``SLACK_REFRESH_TOKEN``)\n"
+        "   - **``.slack_tokens.json``** (for rotating token persistence)\n"
+        "   - **``.env`` file** (best-effort update for restarts)\n"
+        "4. A confirmation HTML page is returned to the user's browser.\n\n"
+        "**Required environment variables:**\n\n"
+        "| Variable | Description |\n"
+        "|---|---|\n"
+        "| ``SLACK_CLIENT_ID`` | Slack app client ID |\n"
+        "| ``SLACK_CLIENT_SECRET`` | Slack app client secret |\n\n"
+        "**Redirect URL** (must match the manifest):\n"
+        "``https://<ngrok-domain>/slack/oauth/callback``\n\n"
+        "If the ``code`` exchange fails or Slack passes an ``error`` "
+        "parameter, an error HTML page is returned with HTTP 400."
+    ),
+    responses={
+        200: {
+            "description": "App installed successfully — HTML confirmation page.",
+            "content": {
+                "text/html": {
+                    "example": "<html><body><h1>✔ Slack App Installed Successfully</h1>...</body></html>"
+                }
+            },
+        },
+        400: {
+            "description": (
+                "OAuth error, missing authorization code, or token exchange failure. "
+                "Returns an HTML error page with the specific error message."
+            ),
+        },
+    },
 )
 async def slack_oauth_callback(request: Request) -> HTMLResponse:
     """Handle the Slack OAuth v2 redirect after app installation."""

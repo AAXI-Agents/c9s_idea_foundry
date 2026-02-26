@@ -191,6 +191,9 @@ def _interpret_and_act(
     event_ts: str,
 ) -> None:
     """Interpret the message via OpenAI and respond or kick off a PRD flow."""
+    from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
+        log_interaction,
+    )
     from crewai_productfeature_planner.tools.slack_tools import (
         SlackInterpretMessageTool,
         SlackSendMessageTool,
@@ -216,6 +219,11 @@ def _interpret_and_act(
         intent, idea, reply_text[:80] if reply_text else "",
     )
 
+    # Collect the agent response for tracking
+    tracked_response: str = ""
+    tracked_run_id: str | None = None
+    tracked_metadata: dict | None = None
+
     if intent == "help":
         help_msg = (
             f"<@{user}> Here's how to use me:\n\n"
@@ -229,6 +237,7 @@ def _interpret_and_act(
         )
         send_tool.run(channel=channel, text=help_msg, thread_ts=thread_ts)
         _append_to_thread(channel, thread_ts, "assistant", help_msg)
+        tracked_response = help_msg
 
     elif intent == "greeting":
         greeting = reply_text or (
@@ -240,6 +249,7 @@ def _interpret_and_act(
             greeting = f"<@{user}> {greeting}"
         send_tool.run(channel=channel, text=greeting, thread_ts=thread_ts)
         _append_to_thread(channel, thread_ts, "assistant", greeting)
+        tracked_response = greeting
 
     elif intent == "create_prd":
         if not idea:
@@ -251,21 +261,48 @@ def _interpret_and_act(
                 ask_text = f"<@{user}> {ask_text}"
             send_tool.run(channel=channel, text=ask_text, thread_ts=thread_ts)
             _append_to_thread(channel, thread_ts, "assistant", ask_text)
+            tracked_response = ask_text
         else:
-            ack_text = (
-                f"<@{user}> Got it! :rocket: I'm starting a PRD generation "
-                f"flow for:\n> _{idea}_\n\n"
-                "I'll post the results here when done."
+            # Check if the user wants interactive mode (mirrors CLI)
+            lower_text = clean_text.lower()
+            interactive = any(
+                kw in lower_text
+                for kw in ("interactive", "step by step", "step-by-step", "guided")
             )
+
+            if interactive:
+                ack_text = (
+                    f"<@{user}> Got it! :gear: Starting an *interactive* PRD flow for:\n"
+                    f"> _{idea}_\n\n"
+                    "I'll walk you through each step — refinement, approval, "
+                    "and requirements — right here in this thread."
+                )
+            else:
+                ack_text = (
+                    f"<@{user}> Got it! :rocket: I'm starting a PRD generation "
+                    f"flow for:\n> _{idea}_\n\n"
+                    "I'll post the results here when done."
+                )
             send_tool.run(channel=channel, text=ack_text, thread_ts=thread_ts)
             _append_to_thread(channel, thread_ts, "assistant", ack_text)
+            tracked_response = ack_text
+            tracked_metadata = {"interactive": interactive}
             _kick_off_prd_flow(
                 channel=channel,
                 thread_ts=thread_ts,
                 user=user,
                 idea=idea,
                 event_ts=event_ts,
+                interactive=interactive,
             )
+
+    elif intent == "publish":
+        _handle_publish_intent(channel, thread_ts, user, send_tool)
+        tracked_response = "(publish pipeline triggered)"
+
+    elif intent == "check_publish":
+        _handle_check_publish_intent(channel, thread_ts, user, send_tool)
+        tracked_response = "(check_publish status reported)"
 
     else:
         fallback = reply_text or (
@@ -279,6 +316,127 @@ def _interpret_and_act(
             fallback = f"<@{user}> {fallback}"
         send_tool.run(channel=channel, text=fallback, thread_ts=thread_ts)
         _append_to_thread(channel, thread_ts, "assistant", fallback)
+        tracked_response = fallback
+
+    # ── Track this interaction for fine-tuning data ──
+    try:
+        log_interaction(
+            source="slack",
+            user_message=clean_text,
+            intent=intent,
+            agent_response=tracked_response,
+            idea=idea,
+            run_id=tracked_run_id,
+            channel=channel,
+            thread_ts=thread_ts,
+            user_id=user,
+            conversation_history=history or None,
+            metadata=tracked_metadata,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("Failed to log agent interaction", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Publish intent handlers
+# ---------------------------------------------------------------------------
+
+
+def _handle_publish_intent(channel: str, thread_ts: str, user: str, send_tool) -> None:
+    """Publish all pending PRDs to Confluence and create Jira tickets."""
+    ack = (
+        f"<@{user}> :gear: Publishing all pending PRDs to Confluence and "
+        "creating Jira tickets… I'll post the results shortly."
+    )
+    send_tool.run(channel=channel, text=ack, thread_ts=thread_ts)
+    _append_to_thread(channel, thread_ts, "assistant", ack)
+
+    try:
+        from crewai_productfeature_planner.apis.publishing.service import (
+            publish_all_and_create_tickets,
+        )
+
+        result = publish_all_and_create_tickets()
+
+        conf = result.get("confluence", {})
+        jira = result.get("jira", {})
+
+        lines = [f"<@{user}> :white_check_mark: *Publishing complete!*\n"]
+
+        # Confluence summary
+        pub_count = conf.get("published", 0)
+        pub_fail = conf.get("failed", 0)
+        if pub_count or pub_fail:
+            lines.append(f"*Confluence:* {pub_count} published, {pub_fail} failed")
+            for r in conf.get("results", []):
+                lines.append(f"  • _{r.get('title', '')}_ → <{r.get('url', '')}|View>")
+        else:
+            msg = conf.get("message", "No pending PRDs to publish")
+            lines.append(f"*Confluence:* {msg}")
+
+        # Jira summary
+        jira_count = jira.get("completed", 0)
+        jira_fail = jira.get("failed", 0)
+        if jira_count or jira_fail:
+            lines.append(f"*Jira:* {jira_count} completed, {jira_fail} failed")
+            for r in jira.get("results", []):
+                keys = r.get("ticket_keys", [])
+                if keys:
+                    lines.append(f"  • run `{r.get('run_id', '')[:8]}…` → {', '.join(keys)}")
+        else:
+            msg = jira.get("message", "No pending Jira deliveries")
+            lines.append(f"*Jira:* {msg}")
+
+        summary = "\n".join(lines)
+        send_tool.run(channel=channel, text=summary, thread_ts=thread_ts)
+        _append_to_thread(channel, thread_ts, "assistant", summary)
+
+    except Exception as exc:
+        err_msg = f"<@{user}> :x: Publishing failed: {exc}"
+        send_tool.run(channel=channel, text=err_msg, thread_ts=thread_ts)
+        _append_to_thread(channel, thread_ts, "assistant", err_msg)
+        logger.error("Publish intent failed: %s", exc)
+
+
+def _handle_check_publish_intent(channel: str, thread_ts: str, user: str, send_tool) -> None:
+    """Check and report the publishing status of pending PRDs."""
+    try:
+        from crewai_productfeature_planner.apis.publishing.service import (
+            list_pending_prds,
+        )
+
+        items = list_pending_prds()
+
+        if not items:
+            msg = (
+                f"<@{user}> :white_check_mark: All clear! "
+                "No PRDs pending Confluence publishing or Jira ticket creation."
+            )
+            send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
+            _append_to_thread(channel, thread_ts, "assistant", msg)
+            return
+
+        lines = [f"<@{user}> :clipboard: *Pending PRD Deliveries* ({len(items)} total)\n"]
+        for item in items:
+            rid = item.get("run_id", "disk")[:8]
+            title = item.get("title", "Untitled")
+            conf = ":white_check_mark:" if item.get("confluence_published") else ":x:"
+            jira = ":white_check_mark:" if item.get("jira_completed") else ":x:"
+            lines.append(f"  • `{rid}…` _{title}_ — Confluence {conf}  Jira {jira}")
+
+        lines.append(
+            "\n_Say *publish* to publish all pending PRDs and create Jira tickets._"
+        )
+
+        msg = "\n".join(lines)
+        send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
+        _append_to_thread(channel, thread_ts, "assistant", msg)
+
+    except Exception as exc:
+        err_msg = f"<@{user}> :x: Failed to check publishing status: {exc}"
+        send_tool.run(channel=channel, text=err_msg, thread_ts=thread_ts)
+        _append_to_thread(channel, thread_ts, "assistant", err_msg)
+        logger.error("Check publish intent failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -293,8 +451,18 @@ def _kick_off_prd_flow(
     user: str,
     idea: str,
     event_ts: str,
+    interactive: bool = False,
 ) -> None:
-    """Start a PRD flow from a Slack interaction."""
+    """Start a PRD flow from a Slack interaction.
+
+    When *interactive* is ``True``, the flow mirrors the CLI experience:
+    refinement mode choice, idea approval, and requirements approval are
+    all presented as Block Kit button prompts in the thread before
+    sections are auto-generated.
+
+    When ``False`` (the default), the flow runs with ``auto_approve=True``
+    as before.
+    """
     from crewai_productfeature_planner.apis.slack.router import _run_slack_prd_flow
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
@@ -306,13 +474,24 @@ def _kick_off_prd_flow(
             pass
 
     run_id = uuid.uuid4().hex[:12]
-    import threading
-    t = threading.Thread(
-        target=_run_slack_prd_flow,
-        args=(run_id, idea, channel, thread_ts),
-        name=f"slack-prd-{run_id}",
-        daemon=True,
-    )
+
+    if interactive:
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            run_interactive_slack_flow,
+        )
+        t = threading.Thread(
+            target=run_interactive_slack_flow,
+            args=(run_id, idea, channel, thread_ts, user),
+            name=f"slack-prd-interactive-{run_id}",
+            daemon=True,
+        )
+    else:
+        t = threading.Thread(
+            target=_run_slack_prd_flow,
+            args=(run_id, idea, channel, thread_ts),
+            name=f"slack-prd-{run_id}",
+            daemon=True,
+        )
     t.start()
 
 
@@ -348,6 +527,24 @@ def _handle_thread_message(event: dict) -> None:
     if not clean_text:
         return
 
+    # Check if this thread has an active manual-refinement session.
+    # If so, route the message there instead of the general interpreter.
+    from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+        _interactive_runs,
+        _lock as _ih_lock,
+        submit_manual_refinement,
+    )
+    with _ih_lock:
+        for run_id, info in _interactive_runs.items():
+            if (
+                info.get("channel") == channel
+                and info.get("thread_ts") == thread_ts
+                and info.get("pending_action") == "manual_refinement"
+            ):
+                submit_manual_refinement(run_id, clean_text)
+                _append_to_thread(channel, thread_ts, "user", clean_text)
+                return
+
     _interpret_and_act(channel, thread_ts, user, clean_text, event_ts)
 
 
@@ -361,7 +558,52 @@ def _handle_thread_message(event: dict) -> None:
     tags=["Slack Events"],
     summary="Slack Events API endpoint",
     response_description="Event acknowledged",
+    description=(
+        "Handles inbound event payloads from the Slack Events API.\n\n"
+        "This is the **Request URL** configured in the Slack app under "
+        "*Event Subscriptions*. All payloads are verified using "
+        "``verify_slack_request`` (HMAC-SHA256 signing secret or "
+        "deprecated verification-token fallback).\n\n"
+        "**Supported event types:**\n\n"
+        "| Event | Description |\n"
+        "|---|---|\n"
+        "| ``url_verification`` | Slack setup handshake — returns the challenge token |\n"
+        "| ``member_joined_channel`` | Bot joined a channel — posts an introductory message |\n"
+        "| ``app_mention`` | User @mentioned the bot — interprets the message via OpenAI and either kicks off a PRD flow or asks follow-up questions |\n"
+        "| ``message`` (threaded) | Follow-up message in a thread the bot is part of — continues multi-turn conversation or routes manual-refinement input |\n\n"
+        "**Interactive mode detection**: when an @mention contains keywords "
+        "like *\"interactive\"*, *\"step by step\"*, or *\"guided\"*, the PRD "
+        "flow starts in interactive mode with Block Kit button prompts "
+        "for each decision point.\n\n"
+        "**Deduplication**: Slack may retry delivery of the same event. "
+        "Events are deduplicated by ``event_id`` with a 5-minute TTL "
+        "to prevent duplicate processing.\n\n"
+        "**Thread state**: multi-turn conversations are tracked in memory "
+        "with a 10-minute TTL and a maximum of 20 messages per thread.\n\n"
+        "All event callbacks receive an immediate ``{\"ok\": true}`` "
+        "response; processing happens asynchronously in a thread pool."
+    ),
     dependencies=[Depends(verify_slack_request)],
+    responses={
+        200: {
+            "description": "Event acknowledged.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "event_ack": {
+                            "summary": "Standard event acknowledgement",
+                            "value": {"ok": True},
+                        },
+                        "url_verification": {
+                            "summary": "URL verification challenge response",
+                            "value": {"challenge": "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P"},
+                        },
+                    }
+                }
+            },
+        },
+        400: {"description": "Invalid JSON payload."},
+    },
 )
 async def slack_events(request: Request) -> JSONResponse:
     """Handle inbound events from the Slack Events API.
@@ -417,13 +659,28 @@ async def slack_events(request: Request) -> JSONResponse:
             channel = event.get("channel", "")
             thread_ts = event.get("thread_ts", "")
             key = (channel, thread_ts)
+
+            # Check for active interactive flow in this thread
+            from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+                _interactive_runs,
+                _lock as _ih_lock,
+            )
+            has_interactive = False
+            with _ih_lock:
+                for info in _interactive_runs.values():
+                    if info.get("channel") == channel and info.get("thread_ts") == thread_ts:
+                        has_interactive = True
+                        break
+
             with _thread_lock:
                 _expire_threads()
                 has_conversation = key in _thread_conversations
-            if has_conversation:
+
+            if has_conversation or has_interactive:
                 logger.info(
-                    "Thread follow-up in %s/%s from %s",
+                    "Thread follow-up in %s/%s from %s%s",
                     channel, thread_ts, event.get("user"),
+                    " (interactive)" if has_interactive else "",
                 )
                 loop = asyncio.get_event_loop()
                 loop.run_in_executor(None, _handle_thread_message, event)

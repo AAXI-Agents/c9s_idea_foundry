@@ -25,6 +25,7 @@ import crewai_productfeature_planner.mongodb as _mongo_pkg
 import crewai_productfeature_planner.mongodb.working_ideas.repository as _wi_repo
 import crewai_productfeature_planner.mongodb.crew_jobs.repository as _cj_repo
 import crewai_productfeature_planner.mongodb.product_requirements.repository as _pr_repo
+import crewai_productfeature_planner.mongodb.agent_interactions.repository as _ai_repo
 import crewai_productfeature_planner.main as _main_mod
 import crewai_productfeature_planner.scripts.logging_config as _lc_mod
 
@@ -100,6 +101,7 @@ def _no_real_mongodb():
         patch.object(_wi_repo, "get_db", return_value=mock_db),
         patch.object(_cj_repo, "get_db", return_value=mock_db),
         patch.object(_pr_repo, "get_db", return_value=mock_db),
+        patch.object(_ai_repo, "get_db", return_value=mock_db),
         patch.object(_main_mod, "get_db", return_value=mock_db),
     ):
         yield mock_db

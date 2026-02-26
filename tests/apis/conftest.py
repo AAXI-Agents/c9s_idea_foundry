@@ -33,5 +33,19 @@ def _mock_lifespan_heavy_ops():
         patch(
             "crewai_productfeature_planner.orchestrator.stages.build_startup_pipeline",
         ),
+        patch(
+            "crewai_productfeature_planner.apis.publishing.watcher.start_watcher",
+            return_value=False,
+        ),
+        patch(
+            "crewai_productfeature_planner.apis.publishing.scheduler.start_scheduler",
+            return_value=False,
+        ),
+        patch(
+            "crewai_productfeature_planner.apis.publishing.watcher.stop_watcher",
+        ),
+        patch(
+            "crewai_productfeature_planner.apis.publishing.scheduler.stop_scheduler",
+        ),
     ):
         yield

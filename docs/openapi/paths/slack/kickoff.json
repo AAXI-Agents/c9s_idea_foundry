@@ -1,0 +1,94 @@
+{
+  "post": {
+    "tags": ["Slack Messenger"],
+    "summary": "Start a Slack-triggered PRD flow (async)",
+    "operationId": "slack_kickoff",
+    "description": "Accepts a natural-language product idea from Slack and kicks off the full PRD generation flow asynchronously. The API responds immediately with the `run_id`; the flow runs in a background thread.\n\n**Flow phases:**\n\n1. **Idea Refinement** — A Gemini-powered agent enriches the raw idea (3–10 cycles).\n2. **Requirements Breakdown** — The enriched idea is decomposed into structured requirements.\n3. **Phase 1: Executive Summary** — Iterative drafting and critique.\n4. **Phase 2: Sections** — 9 remaining PRD sections are drafted, critiqued, and auto-approved.\n5. **Post-completion** — Publishes to Confluence, creates Jira tickets, and posts a summary back to the Slack channel.\n\n**Interactive mode** (`interactive=true`): mirrors the CLI experience inside Slack using Block Kit buttons.\n\n**Webhook callback** (`webhook_url`): POSTs `{run_id, status, result, error}` on completion or failure.\n\n**Authentication**: requires HMAC-SHA256 signature via `SLACK_SIGNING_SECRET`.",
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "channel": {
+                "type": "string",
+                "description": "Slack channel name or ID. Defaults to `SLACK_DEFAULT_CHANNEL` env var.",
+                "example": "crewai-prd-planner"
+              },
+              "text": {
+                "type": "string",
+                "description": "Natural-language product idea / feature description.",
+                "example": "create a PRD for a mobile fitness app"
+              },
+              "auto_approve": {
+                "type": "boolean",
+                "description": "Run the full flow without pausing for manual approval.",
+                "default": true
+              },
+              "interactive": {
+                "type": "boolean",
+                "description": "Enable interactive mode — Block Kit button prompts for each decision. Overrides `auto_approve`.",
+                "default": false
+              },
+              "notify": {
+                "type": "boolean",
+                "description": "Post status updates and results back to the Slack channel.",
+                "default": true
+              },
+              "webhook_url": {
+                "type": "string",
+                "description": "Optional callback URL for result delivery.",
+                "example": "https://example.com/webhooks/prd-result"
+              }
+            },
+            "required": ["text"]
+          },
+          "example": {
+            "channel": "crewai-prd-planner",
+            "text": "create a PRD for a mobile fitness tracking app",
+            "auto_approve": true,
+            "interactive": false,
+            "notify": true
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "PRD flow accepted and running in background.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "run_id": {
+                  "type": "string",
+                  "description": "Unique identifier for the PRD flow run."
+                },
+                "status": {
+                  "type": "string",
+                  "description": "Current job status.",
+                  "example": "pending"
+                },
+                "idea": {
+                  "type": "string",
+                  "description": "The extracted product idea."
+                }
+              },
+              "required": ["run_id", "status"]
+            },
+            "example": {
+              "run_id": "a1b2c3d4e5f6",
+              "status": "pending",
+              "idea": "create a PRD for a mobile fitness tracking app"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "No idea text provided."
+      }
+    }
+  }
+}

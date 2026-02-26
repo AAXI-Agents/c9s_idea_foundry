@@ -4,14 +4,25 @@
       "Health"
     ],
     "summary": "Health check",
-    "description": "Returns a simple ok payload to confirm the service is running.",
-    "operationId": "health_health_get",
+    "operationId": "health",
+    "description": "Returns a simple `{\"status\": \"ok\"}` payload to confirm the service is running.\n\nUse this as a **liveness probe** for container orchestration (Docker, Kubernetes) or uptime monitoring. The endpoint performs no database or external service checks — use `GET /health/slack-token` to verify Slack token health.",
     "responses": {
       "200": {
-        "description": "Successful Response",
+        "description": "Service is alive.",
         "content": {
           "application/json": {
-            "schema": {}
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "example": "ok"
+                }
+              }
+            },
+            "example": {
+              "status": "ok"
+            }
           }
         }
       }

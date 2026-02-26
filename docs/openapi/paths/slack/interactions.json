@@ -1,0 +1,45 @@
+{
+  "post": {
+    "tags": ["Slack Interactions"],
+    "summary": "Slack Interactivity webhook",
+    "description": "Handles inbound interactive payloads from Slack — button clicks, menu selections, and modal submissions.\n\nThis is the **Request URL** configured under *Interactivity & Shortcuts* in the Slack app settings.\n\nSlack sends `application/x-www-form-urlencoded` with a `payload` field containing a JSON string.\n\n**Supported payload types:**\n\n- `block_actions` — Button clicks on Block Kit messages. Routes decisions (refinement mode, idea approval, requirements approval, cancellation) to the interactive flow handler.\n- `view_submission` — Modal submissions (reserved for future use).\n\n**Action IDs:**\n\n| Action ID | Description |\n|---|---|\n| `refinement_agent` | Choose agent-driven idea refinement |\n| `refinement_manual` | Choose manual idea refinement |\n| `idea_approve` | Approve the refined idea |\n| `idea_cancel` | Cancel after idea refinement |\n| `requirements_approve` | Approve requirements breakdown |\n| `requirements_cancel` | Cancel after requirements breakdown |\n| `flow_cancel` | Cancel the flow at any point |\n\nAll payloads are verified using `verify_slack_request` (HMAC-SHA256 or deprecated verification token).",
+    "operationId": "slack_interactions",
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/x-www-form-urlencoded": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "payload": {
+                "type": "string",
+                "description": "JSON-encoded Slack interaction payload."
+              }
+            },
+            "required": ["payload"]
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Interaction acknowledged.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Invalid or unparseable payload."
+      }
+    }
+  }
+}

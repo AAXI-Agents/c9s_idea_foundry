@@ -1,0 +1,89 @@
+{
+  "post": {
+    "tags": ["Slack Messenger"],
+    "summary": "Start a Slack-triggered PRD flow (synchronous)",
+    "operationId": "slack_kickoff_sync",
+    "description": "Synchronous variant of `POST /slack/kickoff`. Runs the full PRD flow and blocks until completion before returning the result.\n\n**Warning**: this endpoint may take several minutes to respond depending on the complexity of the idea and LLM response times. Use the async `POST /slack/kickoff` endpoint for production workloads.\n\nSupports the same request body as the async endpoint, including `webhook_url` and `notify`.\n\n**Authentication**: requires HMAC-SHA256 signature via `SLACK_SIGNING_SECRET`.",
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "channel": {
+                "type": "string",
+                "description": "Slack channel name or ID.",
+                "example": "crewai-prd-planner"
+              },
+              "text": {
+                "type": "string",
+                "description": "Natural-language product idea / feature description.",
+                "example": "create a PRD for a mobile fitness app"
+              },
+              "auto_approve": {
+                "type": "boolean",
+                "description": "Run the full flow without pausing for manual approval.",
+                "default": true
+              },
+              "interactive": {
+                "type": "boolean",
+                "description": "Enable interactive mode.",
+                "default": false
+              },
+              "notify": {
+                "type": "boolean",
+                "description": "Post status updates to Slack.",
+                "default": true
+              },
+              "webhook_url": {
+                "type": "string",
+                "description": "Optional callback URL for result delivery.",
+                "example": "https://example.com/webhooks/prd-result"
+              }
+            },
+            "required": ["text"]
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "PRD flow completed; result returned inline.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "run_id": {
+                  "type": "string",
+                  "description": "Unique run identifier."
+                },
+                "status": {
+                  "type": "string",
+                  "description": "Terminal status: `completed` or `paused`.",
+                  "example": "completed"
+                },
+                "idea": {
+                  "type": "string",
+                  "description": "The product idea."
+                },
+                "result": {
+                  "description": "Flow result content (when completed)."
+                },
+                "error": {
+                  "type": "string",
+                  "description": "Error message (when paused due to failure)."
+                }
+              },
+              "required": ["run_id", "status"]
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "No idea text provided."
+      }
+    }
+  }
+}
