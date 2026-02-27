@@ -52,6 +52,36 @@ class TestLoadYaml:
     def test_config_dir_exists(self):
         assert CONFIG_DIR.is_dir()
 
+    def test_pm_jira_role_mentions_agent_ready(self):
+        data = _load_yaml("product_manager_jira.yaml")
+        role = data["product_manager_jira"]["role"].lower()
+        assert "agent-ready" in role
+
+    def test_pm_jira_goal_mentions_sample_data(self):
+        data = _load_yaml("product_manager_jira.yaml")
+        goal = data["product_manager_jira"]["goal"].lower()
+        assert "sample data" in goal
+
+    def test_architect_role_mentions_agent_ready(self):
+        data = _load_yaml("architect_tech_lead.yaml")
+        role = data["architect_tech_lead"]["role"].lower()
+        assert "agent-ready" in role
+
+    def test_architect_goal_has_five_sections(self):
+        data = _load_yaml("architect_tech_lead.yaml")
+        goal = data["architect_tech_lead"]["goal"].lower()
+        assert "reasoning" in goal
+        assert "instructions" in goal
+        assert "sample data" in goal or "sample" in goal
+        assert "guard rail" in goal
+        assert "definition of done" in goal or "done" in goal
+
+    def test_architect_backstory_mentions_vibe_coding(self):
+        data = _load_yaml("architect_tech_lead.yaml")
+        backstory = data["architect_tech_lead"]["backstory"].lower()
+        assert "sample document" in backstory or "sample data" in backstory
+        assert "test scenario" in backstory or "test cases" in backstory
+
 
 # ── Tool assembly ────────────────────────────────────────────────────
 
@@ -174,3 +204,106 @@ class TestGetTaskConfigs:
         configs = get_task_configs()
         assert "create_jira_tasks_task" in configs
         assert "description" in configs["create_jira_tasks_task"]
+
+    # ── Agent-ready prompt content assertions ────────────────────
+
+    def test_stories_prompt_has_agent_ready_marker(self):
+        """Stories prompt must instruct agents to produce agent-ready tickets."""
+        desc = get_task_configs()["create_jira_stories_task"]["description"]
+        assert "agent-ready" in desc.lower() or "Agent-Ready" in desc
+
+    def test_stories_prompt_requires_sample_data(self):
+        """Stories prompt must ask for sample data in Architecture stories."""
+        desc = get_task_configs()["create_jira_stories_task"]["description"]
+        assert "sample" in desc.lower()
+
+    def test_stories_prompt_requires_guard_rails(self):
+        """Engineering stories must include guard rails."""
+        desc = get_task_configs()["create_jira_stories_task"]["description"]
+        assert "guard rail" in desc.lower() or "Guard rail" in desc
+
+    def test_stories_prompt_requires_edge_cases_for_qe(self):
+        """QE stories must include edge-case and negative test scenarios."""
+        desc = get_task_configs()["create_jira_stories_task"]["description"]
+        assert "edge-case" in desc.lower() or "edge case" in desc.lower()
+        assert "negative test" in desc.lower()
+
+    def test_tasks_prompt_has_agent_ready_marker(self):
+        """Tasks prompt must instruct agents to produce agent-ready tickets."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        assert "agent-ready" in desc.lower() or "Agent-Ready" in desc
+
+    def test_tasks_prompt_requires_five_sections(self):
+        """Every task must include Reasoning, Instructions, Sample data,
+        Guard rails, and Definition of done."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        desc_lower = desc.lower()
+        assert "reasoning" in desc_lower
+        assert "step-by-step" in desc_lower or "instructions" in desc_lower
+        assert "sample data" in desc_lower
+        assert "guard rail" in desc_lower
+        assert "definition of done" in desc_lower
+
+    def test_tasks_prompt_architecture_has_schema_spec(self):
+        """Architecture tasks must include full schema specification."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        desc_lower = desc.lower()
+        assert "collection name" in desc_lower
+        assert "document structure" in desc_lower or "field" in desc_lower
+        assert "sample document" in desc_lower
+        assert "index" in desc_lower
+
+    def test_tasks_prompt_architecture_has_api_spec(self):
+        """Architecture tasks must include full API specification."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        desc_lower = desc.lower()
+        assert "request schema" in desc_lower or "request body" in desc_lower
+        assert "success response" in desc_lower
+        assert "error response" in desc_lower
+
+    def test_tasks_prompt_backend_has_vibe_coding_instructions(self):
+        """Backend tasks must be vibe-coding ready with file paths and
+        function signatures."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        desc_lower = desc.lower()
+        assert "vibe-coding" in desc_lower or "vibe coding" in desc_lower
+        assert "file path" in desc_lower
+        assert "function signature" in desc_lower or "class/function" in desc_lower
+
+    def test_tasks_prompt_backend_has_sample_io(self):
+        """Backend tasks must include sample input/output."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        assert "sample input/output" in desc.lower() or "input/output" in desc.lower()
+
+    def test_tasks_prompt_frontend_has_component_spec(self):
+        """Frontend tasks must include component specs and UI states."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        desc_lower = desc.lower()
+        assert "component" in desc_lower
+        assert "responsive" in desc_lower or "breakpoint" in desc_lower
+        assert "accessibility" in desc_lower or "aria" in desc_lower
+
+    def test_tasks_prompt_qe_has_happy_path(self):
+        """QE tasks must include happy-path test scenarios."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        assert "happy-path" in desc.lower() or "happy path" in desc.lower()
+
+    def test_tasks_prompt_qe_has_edge_cases(self):
+        """QE tasks must include edge-case test scenarios."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        assert "edge-case" in desc.lower() or "edge case" in desc.lower()
+
+    def test_tasks_prompt_qe_has_negative_tests(self):
+        """QE tasks must include negative test scenarios."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        assert "negative test" in desc.lower() or "negative scenario" in desc.lower()
+
+    def test_tasks_prompt_qe_has_test_fixtures(self):
+        """QE tasks must include sample test data fixtures."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        assert "fixture" in desc.lower() or "test data" in desc.lower()
+
+    def test_tasks_prompt_range_3_to_7(self):
+        """Tasks should be 3-7 per story (not the old 2-5)."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"]
+        assert "3-7" in desc
