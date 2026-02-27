@@ -65,6 +65,8 @@ create_jira_stories_task:
     ## PRD Functional Requirements
     {functional_requirements}
 
+    {additional_prd_context}
+
     ## Parent Epic
     {epic_key}
 
@@ -73,7 +75,9 @@ create_jira_stories_task:
 
     ## Instructions
 
-    Analyse the functional requirements above and create **one Story per
+    Analyse the functional requirements and the additional PRD context
+    above (non-functional requirements, edge cases, error handling,
+    user personas, dependencies) and create **one Story per
     role per major requirement area**.  Use the following four roles
     and create them **in the order listed** — UX first, then
     Architecture, then Engineering, then QE:
@@ -220,11 +224,16 @@ create_jira_tasks_task:
     ## PRD Functional Requirements
     {functional_requirements}
 
+    {additional_prd_context}
+
     ## Confluence Page
     {confluence_url}
 
     ## Instructions
 
+    Use BOTH the functional requirements AND the additional PRD
+    context above (especially non-functional requirements, edge cases,
+    error handling scenarios) to produce maximally detailed tasks.
     For each Story created in the previous step, break it down into
     **3-7 specific Tasks**.  Each Task should be a concrete, atomic,
     agent-executable work item.

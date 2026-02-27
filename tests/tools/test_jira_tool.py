@@ -13,6 +13,7 @@ from crewai_productfeature_planner.tools.jira_tool import (
     _fetch_priority_scheme,
     _get_jira_env,
     _has_jira_credentials,
+    _markdown_to_wiki,
     _normalize_priority,
     _project_key_ctx,
     _resolve_priority_field,
@@ -641,6 +642,65 @@ class TestStripEmails:
 
     def test_empty_string(self):
         assert _strip_emails("") == ""
+
+
+# ── _markdown_to_wiki ────────────────────────────────────────────────
+
+
+class TestMarkdownToWiki:
+    """Tests for _markdown_to_wiki helper — Markdown→Jira wiki markup."""
+
+    def test_h1_heading(self):
+        assert _markdown_to_wiki("# Title") == "h1. Title"
+
+    def test_h2_heading(self):
+        assert _markdown_to_wiki("## Section") == "h2. Section"
+
+    def test_h3_heading(self):
+        assert _markdown_to_wiki("### Subsection") == "h3. Subsection"
+
+    def test_bold(self):
+        assert _markdown_to_wiki("This is **bold** text") == "This is *bold* text"
+
+    def test_inline_code(self):
+        assert _markdown_to_wiki("Use `my_func()`") == "Use {{my_func()}}"
+
+    def test_link(self):
+        assert _markdown_to_wiki("[Click here](https://example.com)") == \
+            "[Click here|https://example.com]"
+
+    def test_unordered_list(self):
+        assert _markdown_to_wiki("- Item one") == "* Item one"
+
+    def test_nested_list(self):
+        assert _markdown_to_wiki("  - Nested") == "** Nested"
+
+    def test_fenced_code_block(self):
+        md = "```python\nprint('hello')\n```"
+        result = _markdown_to_wiki(md)
+        assert "{code:python}" in result
+        assert "print('hello')" in result
+        assert "{code}" in result
+
+    def test_fenced_code_block_no_lang(self):
+        md = "```\nsome code\n```"
+        result = _markdown_to_wiki(md)
+        assert result.startswith("{code}")
+        assert "some code" in result
+
+    def test_preserves_plain_text(self):
+        assert _markdown_to_wiki("Just plain text.") == "Just plain text."
+
+    def test_combined_formatting(self):
+        md = "## Heading\n\n**Bold** and `code`\n\n- Item"
+        result = _markdown_to_wiki(md)
+        assert "h2. Heading" in result
+        assert "*Bold*" in result
+        assert "{{code}}" in result
+        assert "* Item" in result
+
+    def test_empty_string(self):
+        assert _markdown_to_wiki("") == ""
 
 
 # ── create_jira_issue email sanitisation ─────────────────────────────

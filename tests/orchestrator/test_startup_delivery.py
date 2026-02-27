@@ -263,11 +263,11 @@ class TestBuildStartupDeliveryCrew:
             "expected_output": "Epic key",
         },
         "create_jira_stories_task": {
-            "description": "Create stories from {functional_requirements} under {epic_key} ({run_id}) confluence={confluence_url}",
+            "description": "Create stories from {functional_requirements} {additional_prd_context} under {epic_key} ({run_id}) confluence={confluence_url}",
             "expected_output": "Story keys",
         },
         "create_jira_tasks_task": {
-            "description": "Create tasks from {stories_output} reqs={functional_requirements} ({run_id}) confluence={confluence_url}",
+            "description": "Create tasks from {stories_output} reqs={functional_requirements} {additional_prd_context} ({run_id}) confluence={confluence_url}",
             "expected_output": "Task keys",
         },
     }

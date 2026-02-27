@@ -13,6 +13,7 @@ from crewai_productfeature_planner.orchestrator._helpers import (
     _has_gemini_credentials,
     _has_jira_credentials,
     _print_delivery_status,
+    build_additional_prd_context_from_draft,
     logger,
 )
 
@@ -74,6 +75,21 @@ def build_post_completion_crew(
     idea_preview = (flow.state.idea or "PRD")[:80].strip()
     page_title = f"PRD — {idea_preview}"
     task_configs = get_task_configs()
+
+    # ── Set project-level Jira key override (if configured) ────
+    from crewai_productfeature_planner.mongodb.project_config import (
+        get_project_for_run,
+    )
+    from crewai_productfeature_planner.tools.jira_tool import set_jira_project_key
+
+    pc = get_project_for_run(flow.state.run_id) or {}
+    ctx_key = pc.get("jira_project_key", "")
+    if ctx_key:
+        set_jira_project_key(ctx_key)
+        logger.info(
+            "[PostCompletion] Using project-level JIRA_PROJECT_KEY=%s",
+            ctx_key,
+        )
 
     # Determine what needs delivery
     confluence_done = bool(getattr(flow.state, "confluence_url", ""))
@@ -160,10 +176,12 @@ def build_post_completion_crew(
         # ── Task 4: Jira Stories (role-specific) ───────────────
         func_req_section = flow.state.draft.get_section("functional_requirements")
         func_reqs = func_req_section.content if func_req_section else ""
+        additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
         if func_reqs:
             stories_task = Task(
                 description=task_configs["create_jira_stories_task"]["description"].format(
                     functional_requirements=func_reqs,
+                    additional_prd_context=additional_ctx,
                     epic_key="{epic_key from previous task}",
                     run_id=flow.state.run_id,
                     confluence_url=confluence_url,
@@ -179,6 +197,7 @@ def build_post_completion_crew(
                 description=task_configs["create_jira_tasks_task"]["description"].format(
                     stories_output="{stories output from previous task}",
                     functional_requirements=func_reqs,
+                    additional_prd_context=additional_ctx,
                     confluence_url=confluence_url,
                     run_id=flow.state.run_id,
                 ),

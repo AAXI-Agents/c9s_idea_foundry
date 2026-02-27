@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Callable
 from crewai_productfeature_planner.orchestrator._helpers import (
     _has_jira_credentials,
     _print_delivery_status,
+    build_additional_prd_context_from_doc,
     logger,
 )
 
@@ -197,6 +198,21 @@ def build_startup_delivery_crew(
     page_title = f"PRD — {idea_preview}"
     task_configs = get_task_configs()
 
+    # ── Set project-level Jira key override (if configured) ────
+    from crewai_productfeature_planner.mongodb.project_config import (
+        get_project_for_run,
+    )
+    from crewai_productfeature_planner.tools.jira_tool import set_jira_project_key
+
+    pc = get_project_for_run(run_id) or {}
+    ctx_key = pc.get("jira_project_key", "")
+    if ctx_key:
+        set_jira_project_key(ctx_key)
+        logger.info(
+            "[StartupDelivery] Using project-level JIRA_PROJECT_KEY=%s",
+            ctx_key,
+        )
+
     delivery_manager = create_delivery_manager_agent()
     orchestrator_agent = create_orchestrator_agent()
 
@@ -321,6 +337,10 @@ def build_startup_delivery_crew(
         # can still infer requirements from the Confluence page.
         effective_func_reqs = item["func_reqs"] or item.get("content", "")
 
+        # Enrich Jira tickets with extra PRD sections (non-functional
+        # requirements, edge cases, error handling, etc.)
+        additional_ctx = build_additional_prd_context_from_doc(item.get("doc") or {})
+
         if effective_func_reqs:
             stories_extra = ""
             if existing_story_keys:
@@ -335,6 +355,7 @@ def build_startup_delivery_crew(
             stories_task = Task(
                 description=task_configs["create_jira_stories_task"]["description"].format(
                     functional_requirements=effective_func_reqs,
+                    additional_prd_context=additional_ctx,
                     epic_key=existing_epic_key or "{epic_key from previous task}",
                     run_id=run_id,
                     confluence_url=confluence_url,
@@ -359,6 +380,7 @@ def build_startup_delivery_crew(
                 description=task_configs["create_jira_tasks_task"]["description"].format(
                     stories_output="{stories output from previous task}",
                     functional_requirements=effective_func_reqs,
+                    additional_prd_context=additional_ctx,
                     confluence_url=confluence_url,
                     run_id=run_id,
                 ) + tasks_extra,

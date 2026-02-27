@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from crewai_productfeature_planner.orchestrator._helpers import (
     _has_gemini_credentials,
     _has_jira_credentials,
+    build_additional_prd_context_from_draft,
     logger,
 )
 from crewai_productfeature_planner.orchestrator.orchestrator import (
@@ -146,11 +147,16 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
         func_req_section = flow.state.draft.get_section("functional_requirements")
         func_reqs = func_req_section.content if func_req_section else ""
 
+        # Enrich Jira tickets with extra PRD sections (non-functional
+        # requirements, edge cases, error handling, user personas, etc.)
+        additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
+
         stories_output = ""
         if func_reqs and epic_key:
             stories_task = Task(
                 description=task_configs["create_jira_stories_task"]["description"].format(
                     functional_requirements=func_reqs,
+                    additional_prd_context=additional_ctx,
                     epic_key=epic_key,
                     run_id=flow.state.run_id,
                     confluence_url=confluence_url,
@@ -188,6 +194,7 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
                 description=task_configs["create_jira_tasks_task"]["description"].format(
                     stories_output=stories_output,
                     functional_requirements=func_reqs,
+                    additional_prd_context=additional_ctx,
                     confluence_url=confluence_url,
                     run_id=flow.state.run_id,
                 ),

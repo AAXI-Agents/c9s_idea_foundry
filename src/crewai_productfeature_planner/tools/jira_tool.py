@@ -206,6 +206,72 @@ def _strip_emails(text: str) -> str:
     return re.sub(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", "[redacted]", text)
 
 
+def _markdown_to_wiki(text: str) -> str:
+    """Convert common Markdown formatting to Jira wiki markup.
+
+    Jira REST API v2 interprets the ``description`` field as wiki
+    markup, not Markdown.  This function performs best-effort
+    conversion of the most common Markdown constructs so that
+    agent-generated descriptions render correctly in Jira.
+
+    Converted patterns:
+    - ``### Heading`` → ``h3. Heading``
+    - ``## Heading``  → ``h2. Heading``
+    - ``# Heading``   → ``h1. Heading``
+    - ``**bold**``    → ``*bold*``
+    - `` `code` ``      → ``{{code}}``
+    - ``````` code blocks → ``{code}…{code}``
+    - ``- item``      → ``* item``
+    - ``[text](url)`` → ``[text|url]``
+    """
+    import re
+
+    # Fenced code blocks: ```lang\n...\n``` → {code:lang}...{code}
+    def _replace_code_block(m: re.Match) -> str:
+        lang = m.group(1) or ""
+        code = m.group(2)
+        if lang:
+            return f"{{code:{lang}}}\n{code}\n{{code}}"
+        return f"{{code}}\n{code}\n{{code}}"
+
+    text = re.sub(
+        r"```(\w*)\n(.*?)```",
+        _replace_code_block,
+        text,
+        flags=re.DOTALL,
+    )
+
+    lines = text.split("\n")
+    result: list[str] = []
+    for line in lines:
+        # Headings: ### → h3. , ## → h2. , # → h1.
+        heading_match = re.match(r"^(#{1,6})\s+(.*)", line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            line = f"h{level}. {heading_match.group(2)}"
+        else:
+            # Unordered list items: - item → * item
+            list_match = re.match(r"^(\s*)- (.*)", line)
+            if list_match:
+                indent = list_match.group(1)
+                # Nested indentation: each 2 spaces = another *
+                depth = len(indent) // 2 + 1
+                line = f"{'*' * depth} {list_match.group(2)}"
+
+        # Bold: **text** → *text*  (only outside code blocks)
+        line = re.sub(r"\*\*(.+?)\*\*", r"*\1*", line)
+
+        # Inline code: `code` → {{code}}
+        line = re.sub(r"`([^`]+)`", r"{{\1}}", line)
+
+        # Links: [text](url) → [text|url]
+        line = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"[\1|\2]", line)
+
+        result.append(line)
+
+    return "\n".join(result)
+
+
 # Fields that may be safely stripped on a 400 retry.  If Jira reports
 # an error for one of these, we remove it and retry once rather than
 # failing the whole request.
@@ -515,6 +581,8 @@ def create_jira_issue(
 
     # Build full description with Confluence link when provided
     full_description = _strip_emails(description) if description else ""
+    if full_description:
+        full_description = _markdown_to_wiki(full_description)
     if confluence_url:
         conf_line = f"PRD Confluence page: {confluence_url}"
         if full_description:
