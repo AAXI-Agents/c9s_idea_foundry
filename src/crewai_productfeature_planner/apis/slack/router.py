@@ -140,8 +140,13 @@ def _run_slack_prd_flow(
     notify: bool = True,
     auto_approve: bool = True,
     webhook_url: str | None = None,
+    project_id: str | None = None,
 ) -> None:
-    """Execute the PRD flow and post results to Slack."""
+    """Execute the PRD flow and post results to Slack.
+
+    If *project_id* is provided, the working-idea document is linked
+    to the project after the flow completes.
+    """
     from crewai_productfeature_planner.apis.prd.service import run_prd_flow
     from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus, runs
     from crewai_productfeature_planner.mongodb.crew_jobs import create_job
@@ -166,6 +171,16 @@ def _run_slack_prd_flow(
 
         # Run the PRD flow (blocks until complete)
         run_prd_flow(run_id, idea, auto_approve=auto_approve)
+
+        # Link working idea to project (doc exists after flow completes)
+        if project_id:
+            try:
+                from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                    save_project_ref,
+                )
+                save_project_ref(run_id, project_id)
+            except Exception:  # noqa: BLE001
+                logger.debug("save_project_ref failed for %s", run_id, exc_info=True)
 
         run = runs.get(run_id)
         if run and run.status == FlowStatus.COMPLETED:

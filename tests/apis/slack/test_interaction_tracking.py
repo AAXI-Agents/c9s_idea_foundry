@@ -38,13 +38,25 @@ def _clean_state():
 
 _EVENTS_MODULE = "crewai_productfeature_planner.apis.slack.events_router"
 _TOOLS_MODULE = "crewai_productfeature_planner.tools.slack_tools"
+_SESSION_MODULE = "crewai_productfeature_planner.apis.slack.session_manager"
+
+# Default active session dict used by most tests
+_ACTIVE_SESSION = {
+    "project_id": "proj-default",
+    "project_name": "Default Project",
+    "active": True,
+}
 
 
 class TestInterpretAndActTracking:
     """Verify log_interaction is called from _interpret_and_act."""
 
     def _run_interpret(self, intent, idea=None, reply="", *, mock_log):
-        """Helper: call _interpret_and_act with a mocked interpreter."""
+        """Helper: call _interpret_and_act with a mocked interpreter.
+
+        Patches an active project session by default so that the global
+        session gate does not intercept the request.
+        """
         interpretation = json.dumps({"intent": intent, "idea": idea, "reply": reply})
         mock_interpret_tool = MagicMock()
         mock_interpret_tool.run.return_value = interpretation
@@ -59,6 +71,10 @@ class TestInterpretAndActTracking:
                 "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
                 mock_log,
             ),
+            patch(f"{_SESSION_MODULE}.ensure_session_loaded",
+                  return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.get_project_id_for_user",
+                  return_value="proj-default"),
         ):
             er._interpret_and_act("C1", "T1", "U1", "hello", "E1")
 
@@ -104,6 +120,13 @@ class TestInterpretAndActTracking:
         mock_interpret_tool.run.return_value = interpretation
         mock_send_tool = MagicMock()
 
+        # Provide an active project session so the PRD flow path is taken
+        active_session = {
+            "project_id": "proj-1",
+            "project_name": "Test Project",
+            "active": True,
+        }
+
         with (
             patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
                   return_value=mock_interpret_tool),
@@ -112,6 +135,14 @@ class TestInterpretAndActTracking:
             patch(
                 "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
                 mock_log,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.slack.session_manager.ensure_session_loaded",
+                return_value=active_session,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.slack.session_manager.get_project_id_for_user",
+                return_value="proj-1",
             ),
         ):
             er._interpret_and_act("C1", "T1", "U1", "create prd for fitness app", "E1")
@@ -122,6 +153,43 @@ class TestInterpretAndActTracking:
         assert kw["idea"] == "fitness app"
         assert kw["metadata"] is not None
         assert "interactive" in kw["metadata"]
+        assert kw["project_id"] == "proj-1"
+
+    def test_tracking_no_session_defers_any_intent(self):
+        """When no project session exists, the global gate defers the request."""
+        mock_log = MagicMock()
+        interpretation = json.dumps({
+            "intent": "create_prd",
+            "idea": "fitness app",
+            "reply": "",
+        })
+        mock_interpret_tool = MagicMock()
+        mock_interpret_tool.run.return_value = interpretation
+        mock_send_tool = MagicMock()
+
+        with (
+            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
+                  return_value=mock_interpret_tool),
+            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
+                  return_value=mock_send_tool),
+            patch(
+                "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
+                mock_log,
+            ),
+            patch(f"{_SESSION_MODULE}.ensure_session_loaded",
+                  return_value=None),
+            patch(f"{_SESSION_MODULE}.get_project_id_for_user",
+                  return_value=None),
+            patch(f"{_EVENTS_MODULE}._prompt_project_selection") as mock_prompt,
+        ):
+            er._interpret_and_act("C1", "T1", "U1", "create prd for fitness app", "E1")
+
+        mock_prompt.assert_called_once_with("C1", "T1", "U1")
+        mock_log.assert_called_once()
+        kw = mock_log.call_args[1]
+        assert kw["intent"] == "create_prd"
+        assert kw["agent_response"] == "(project selection required)"
+        assert kw["metadata"] == {"deferred_idea": "fitness app"}
 
     def test_tracking_unknown_intent(self):
         mock_log = MagicMock()
@@ -151,6 +219,10 @@ class TestInterpretAndActTracking:
                 "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
                 mock_log,
             ),
+            patch(f"{_SESSION_MODULE}.ensure_session_loaded",
+                  return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.get_project_id_for_user",
+                  return_value="proj-default"),
         ):
             er._interpret_and_act("C1", "T1", "U1", "publish all", "E1")
 
@@ -179,6 +251,10 @@ class TestInterpretAndActTracking:
                 "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
                 mock_log,
             ),
+            patch(f"{_SESSION_MODULE}.ensure_session_loaded",
+                  return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.get_project_id_for_user",
+                  return_value="proj-default"),
         ):
             er._interpret_and_act("C1", "T1", "U1", "check publish status", "E1")
 
@@ -206,12 +282,98 @@ class TestInterpretAndActTracking:
                 "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
                 side_effect=RuntimeError("DB down"),
             ),
+            patch(f"{_SESSION_MODULE}.ensure_session_loaded",
+                  return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.get_project_id_for_user",
+                  return_value="proj-default"),
         ):
             # Should NOT raise
             er._interpret_and_act("C1", "T1", "U1", "help", "E1")
 
         # If we get here, the test passes — no exception bubbled up
         mock_send_tool.run.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Global project-session gate
+# ---------------------------------------------------------------------------
+
+
+class TestGlobalSessionGate:
+    """Verify that _interpret_and_act requires a project session for all intents."""
+
+    def _call_with_intent(self, intent, *, session=None, idea=None):
+        """Call _interpret_and_act with the given intent and optional session."""
+        interpretation = json.dumps({
+            "intent": intent,
+            "idea": idea,
+            "reply": "some reply",
+        })
+        mock_interpret_tool = MagicMock()
+        mock_interpret_tool.run.return_value = interpretation
+        mock_send_tool = MagicMock()
+        mock_log = MagicMock()
+        mock_prompt = MagicMock()
+
+        with (
+            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
+                  return_value=mock_interpret_tool),
+            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
+                  return_value=mock_send_tool),
+            patch(
+                "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
+                mock_log,
+            ),
+            patch(f"{_SESSION_MODULE}.ensure_session_loaded",
+                  return_value=session),
+            patch(f"{_SESSION_MODULE}.get_project_id_for_user",
+                  return_value=session.get("project_id") if session else None),
+            patch(f"{_EVENTS_MODULE}._prompt_project_selection", mock_prompt),
+        ):
+            er._interpret_and_act("C1", "T1", "U1", "test message", "E1")
+
+        return mock_log, mock_prompt, mock_send_tool
+
+    @pytest.mark.parametrize("intent", [
+        "help", "greeting", "create_prd", "publish", "check_publish", "unknown",
+    ])
+    def test_no_session_prompts_project_selection(self, intent):
+        """All intents trigger project-selection prompt when no session exists."""
+        mock_log, mock_prompt, mock_send = self._call_with_intent(
+            intent, session=None,
+        )
+        mock_prompt.assert_called_once_with("C1", "T1", "U1")
+        mock_log.assert_called_once()
+        kw = mock_log.call_args[1]
+        assert kw["intent"] == intent
+        assert kw["agent_response"] == "(project selection required)"
+
+    def test_no_session_preserves_deferred_idea(self):
+        """When blocking create_prd without session, the idea is tracked."""
+        mock_log, mock_prompt, _ = self._call_with_intent(
+            "create_prd", session=None, idea="fitness app",
+        )
+        mock_prompt.assert_called_once()
+        kw = mock_log.call_args[1]
+        assert kw["metadata"] == {"deferred_idea": "fitness app"}
+
+    def test_no_session_no_deferred_idea_when_absent(self):
+        """When blocking help without session, no deferred_idea metadata."""
+        mock_log, _, _ = self._call_with_intent("help", session=None)
+        kw = mock_log.call_args[1]
+        assert kw["metadata"] is None
+
+    @pytest.mark.parametrize("intent", [
+        "help", "greeting", "unknown",
+    ])
+    def test_with_session_reaches_intent_handler(self, intent):
+        """With an active session, intent handlers execute normally."""
+        mock_log, mock_prompt, mock_send = self._call_with_intent(
+            intent, session=_ACTIVE_SESSION,
+        )
+        mock_prompt.assert_not_called()
+        # The send_tool should have been called for the actual response
+        mock_send.run.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

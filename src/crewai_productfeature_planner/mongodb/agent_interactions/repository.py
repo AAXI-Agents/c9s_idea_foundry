@@ -14,6 +14,7 @@ Standard document schema
         "agent_response":     str,              # the agent's reply / response text
         "idea":               str | None,       # extracted idea (if any)
         "run_id":             str | None,       # associated flow run_id (if any)
+        "project_id":         str | None,       # FK → projectConfig.project_id
         "channel":            str | None,       # Slack channel (if from Slack)
         "thread_ts":          str | None,       # Slack thread timestamp (if from Slack)
         "user_id":            str | None,       # Slack user ID or "cli_user"
@@ -50,6 +51,7 @@ def log_interaction(
     agent_response: str,
     idea: str | None = None,
     run_id: str | None = None,
+    project_id: str | None = None,
     channel: str | None = None,
     thread_ts: str | None = None,
     user_id: str | None = None,
@@ -69,6 +71,7 @@ def log_interaction(
         agent_response: The text the agent sent back to the user.
         idea: Extracted product/feature idea, if any.
         run_id: Associated flow run identifier, if any.
+        project_id: Associated project configuration ID, if any.
         channel: Slack channel ID (Slack interactions only).
         thread_ts: Slack thread timestamp (Slack interactions only).
         user_id: Slack user ID or ``"cli_user"``.
@@ -89,6 +92,7 @@ def log_interaction(
         "agent_response": agent_response,
         "idea": idea,
         "run_id": run_id,
+        "project_id": project_id,
         "channel": channel,
         "thread_ts": thread_ts,
         "user_id": user_id,

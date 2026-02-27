@@ -3,16 +3,26 @@
 Creates issues (Stories, Tasks, Epics, Bugs) in a Jira project via the
 Jira REST API v2.
 
+Key resolution order (highest priority first):
+
+1. Explicit ``project_key`` parameter on :func:`create_jira_issue` /
+   :func:`search_jira_issues`
+2. ``_project_key_ctx`` context variable (set by orchestrator stages
+   with project-level configuration)
+3. ``JIRA_PROJECT_KEY`` environment variable (integration / testing
+   fallback)
+
 Environment variables:
 
 * ``ATLASSIAN_BASE_URL``  — e.g. ``https://yourcompany.atlassian.net``
 * ``ATLASSIAN_USERNAME``  — Atlassian account email
 * ``ATLASSIAN_API_TOKEN`` — API token (https://id.atlassian.com/manage-profile/security/api-tokens)
-* ``JIRA_PROJECT_KEY``    — target project key (e.g. ``PRD``)
+* ``JIRA_PROJECT_KEY``    — fallback project key for testing / integration
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import ssl
@@ -20,6 +30,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import base64
+from contextlib import contextmanager
+from typing import Generator, Type
 
 import certifi
 from typing import Type
@@ -31,9 +43,51 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# ── Context-variable overrides (set by orchestrator with project config) ──
 
-def _get_jira_env() -> dict[str, str]:
-    """Read Jira config from environment.
+_project_key_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "jira_project_key_override", default="",
+)
+
+
+def set_jira_project_key(key: str) -> contextvars.Token[str]:
+    """Set the Jira project key for the current context.
+
+    Returns a reset token for use with :meth:`contextvars.ContextVar.reset`.
+    """
+    return _project_key_ctx.set(key)
+
+
+@contextmanager
+def jira_project_context(
+    *,
+    project_key: str = "",
+) -> Generator[None, None, None]:
+    """Context manager that sets a project-level Jira project key override.
+
+    Usage::
+
+        with jira_project_context(project_key="MYPROJ"):
+            create_jira_issue(summary="...", run_id=rid)
+    """
+    token: contextvars.Token | None = None
+    if project_key:
+        token = _project_key_ctx.set(project_key)
+    try:
+        yield
+    finally:
+        if token is not None:
+            _project_key_ctx.reset(token)
+
+
+def _get_jira_env(*, project_key: str | None = None) -> dict[str, str]:
+    """Read Jira config from environment with optional overrides.
+
+    Resolution order for ``project_key``:
+
+    1. Explicit *project_key* parameter
+    2. ``_project_key_ctx`` context variable
+    3. ``JIRA_PROJECT_KEY`` environment variable
 
     Returns:
         Dict with keys ``base_url``, ``project_key``, ``username``,
@@ -43,14 +97,18 @@ def _get_jira_env() -> dict[str, str]:
         EnvironmentError: If required vars are missing.
     """
     base_url = os.environ.get("ATLASSIAN_BASE_URL", "").rstrip("/")
-    project_key = os.environ.get("JIRA_PROJECT_KEY", "")
+    resolved_project_key = (
+        project_key
+        or _project_key_ctx.get()
+        or os.environ.get("JIRA_PROJECT_KEY", "")
+    )
     username = os.environ.get("ATLASSIAN_USERNAME", "")
     api_token = os.environ.get("ATLASSIAN_API_TOKEN", "")
 
     missing: list[str] = []
     if not base_url:
         missing.append("ATLASSIAN_BASE_URL")
-    if not project_key:
+    if not resolved_project_key:
         missing.append("JIRA_PROJECT_KEY")
     if not username:
         missing.append("ATLASSIAN_USERNAME")
@@ -64,7 +122,7 @@ def _get_jira_env() -> dict[str, str]:
 
     return {
         "base_url": base_url,
-        "project_key": project_key,
+        "project_key": resolved_project_key,
         "username": username,
         "api_token": api_token,
     }

@@ -224,6 +224,12 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 | `SLACK_DEFAULT_CHANNEL` | No | `crewai-prd-planner` | Default Slack channel for posting results |
 | `SLACK_TOKEN_STORE` | No | `.slack_tokens.json` | Path to JSON file for persisting rotated tokens |
 | `SLACK_BYPASS` | No | `false` | Set to `1`/`true` to skip actual Slack API calls (dry-run) |
+| `ATLASSIAN_BASE_URL` | **Yes**\* | — | Atlassian Cloud base URL (e.g. `https://mysite.atlassian.net`) |
+| `ATLASSIAN_USERNAME` | **Yes**\* | — | Atlassian account email |
+| `ATLASSIAN_API_TOKEN` | **Yes**\* | — | Atlassian API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens)) |
+| `CONFLUENCE_SPACE_KEY` | No | — | Fallback Confluence space key. Project-level `confluence_space_key` (from `projectConfig`) takes priority |
+| `CONFLUENCE_PARENT_ID` | No | — | Fallback parent page ID. Project-level `confluence_parent_id` takes priority |
+| `JIRA_PROJECT_KEY` | No | — | Fallback Jira project key. Project-level `jira_project_key` (from `projectConfig`) takes priority |
 | `NGROK_AUTHTOKEN` | No | — | Required for ngrok remote access |
 | `LLM_TIMEOUT` | No | `300` | LLM request timeout in seconds |
 | `LLM_MAX_RETRIES` | No | `3` | Retries on transient LLM errors |

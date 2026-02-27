@@ -14,6 +14,12 @@ Action ID conventions (used in :mod:`interactions_router`):
     requirements_approve – Approve requirements breakdown
     requirements_cancel  – Cancel the flow after requirements breakdown
     flow_cancel        – Cancel an in-progress flow at any point
+
+    project_select_<project_id> – Continue with an existing project
+    project_create     – Create a new project
+    project_switch     – Switch away from the current project
+    project_continue   – Continue with the current project
+    session_end        – Explicitly end the current session
 """
 
 from __future__ import annotations
@@ -336,5 +342,183 @@ def manual_refinement_prompt_blocks(run_id: str, current_idea: str, iteration: i
                     "value": run_id,
                 },
             ],
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Project session — selection & status
+# ---------------------------------------------------------------------------
+
+
+def project_selection_blocks(
+    projects: list[dict],
+    user_id: str,
+) -> list[dict]:
+    """Prompt the user to select an existing project or create a new one.
+
+    *projects* is a list of project-config dicts (from
+    ``list_projects()``).  Up to 5 are shown as buttons; the rest are
+    mentioned in a context line.
+    """
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": ":file_folder: Select a Project",
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "Which project would you like to work on?\n"
+                    "Choose an existing project or create a new one."
+                ),
+            },
+        },
+        {"type": "divider"},
+    ]
+
+    # Show up to 5 project buttons
+    buttons: list[dict] = []
+    shown = projects[:5]
+    for proj in shown:
+        pid = proj.get("project_id", "")
+        pname = proj.get("name", "Unnamed")
+        buttons.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": f":bookmark: {pname}"[:75]},
+            "action_id": f"project_select_{pid}",
+            "value": pid,
+        })
+
+    # Always offer "Create New"
+    buttons.append({
+        "type": "button",
+        "text": {"type": "plain_text", "text": ":heavy_plus_sign: Create New Project"},
+        "style": "primary",
+        "action_id": "project_create",
+        "value": user_id,
+    })
+
+    blocks.append({
+        "type": "actions",
+        "block_id": f"project_select_{user_id}",
+        "elements": buttons,
+    })
+
+    if len(projects) > 5:
+        blocks.append({
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": f"_Showing 5 of {len(projects)} projects. "
+                        "Type the project name to search._",
+            }],
+        })
+
+    return blocks
+
+
+def active_session_blocks(
+    project_name: str,
+    project_id: str,
+    user_id: str,
+) -> list[dict]:
+    """Remind the user of their active project session.
+
+    Offers to continue with the current project or switch to a
+    different one.
+    """
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f":file_folder: You're currently working on "
+                    f"*{project_name}*.\n\n"
+                    "Continue with this project or switch to a different one."
+                ),
+            },
+        },
+        {
+            "type": "actions",
+            "block_id": f"session_status_{user_id}",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":arrow_forward: Continue"},
+                    "style": "primary",
+                    "action_id": "project_continue",
+                    "value": project_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":twisted_rightwards_arrows: Switch Project"},
+                    "action_id": "project_switch",
+                    "value": user_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":stop_button: End Session"},
+                    "style": "danger",
+                    "action_id": "session_end",
+                    "value": user_id,
+                },
+            ],
+        },
+    ]
+
+
+def project_create_prompt_blocks(user_id: str) -> list[dict]:
+    """Tell the user to type the new project name."""
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    ":pencil: *Create a New Project*\n\n"
+                    "Reply in this thread with the project name and I'll "
+                    "set it up for you."
+                ),
+            },
+        },
+    ]
+
+
+def session_started_blocks(project_name: str) -> list[dict]:
+    """Confirm that a project session has been activated."""
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f":white_check_mark: *Project session started:* {project_name}\n\n"
+                    "All PRD flows will be linked to this project. "
+                    "Say *switch project* or *end session* when you're done."
+                ),
+            },
+        },
+    ]
+
+
+def session_ended_blocks() -> list[dict]:
+    """Confirm that the project session has been ended."""
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    ":stop_button: *Project session ended.*\n\n"
+                    "Mention me again to start a new session with a project."
+                ),
+            },
         },
     ]

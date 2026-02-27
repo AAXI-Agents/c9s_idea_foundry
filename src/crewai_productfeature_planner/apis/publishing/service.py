@@ -106,8 +106,12 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
         find_completed_without_confluence,
         save_confluence_url,
     )
+    from crewai_productfeature_planner.mongodb.project_config import (
+        get_project_for_run,
+    )
     from crewai_productfeature_planner.tools.confluence_tool import (
         _has_confluence_credentials,
+        confluence_project_context,
         publish_to_confluence,
     )
 
@@ -135,11 +139,17 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
     idea = (target_doc.get("idea") or "PRD")[:80].strip()
     title = f"PRD — {idea}"
 
-    result = publish_to_confluence(
-        title=title,
-        markdown_content=content,
-        run_id=run_id,
-    )
+    # Resolve project-level keys (falls back to env vars if unset)
+    pc = get_project_for_run(run_id) or {}
+    ctx_space = pc.get("confluence_space_key", "")
+    ctx_parent = pc.get("confluence_parent_id", "")
+
+    with confluence_project_context(space_key=ctx_space, parent_id=ctx_parent):
+        result = publish_to_confluence(
+            title=title,
+            markdown_content=content,
+            run_id=run_id,
+        )
 
     save_confluence_url(
         run_id=run_id,
@@ -169,8 +179,12 @@ def publish_confluence_all() -> dict[str, Any]:
     from crewai_productfeature_planner.orchestrator._startup_review import (
         _discover_publishable_prds,
     )
+    from crewai_productfeature_planner.mongodb.project_config import (
+        get_project_for_run,
+    )
     from crewai_productfeature_planner.tools.confluence_tool import (
         _has_confluence_credentials,
+        confluence_project_context,
         publish_to_confluence,
     )
 
@@ -186,11 +200,21 @@ def publish_confluence_all() -> dict[str, Any]:
 
     for item in items:
         try:
-            result = publish_to_confluence(
-                title=item["title"],
-                markdown_content=item["content"],
-                run_id=item.get("run_id", ""),
-            )
+            # Resolve project-level Confluence keys per item
+            rid = item.get("run_id", "")
+            pc = get_project_for_run(rid) if rid else None
+            pc = pc or {}
+            ctx_space = pc.get("confluence_space_key", "")
+            ctx_parent = pc.get("confluence_parent_id", "")
+
+            with confluence_project_context(
+                space_key=ctx_space, parent_id=ctx_parent,
+            ):
+                result = publish_to_confluence(
+                    title=item["title"],
+                    markdown_content=item["content"],
+                    run_id=item.get("run_id", ""),
+                )
 
             # Persist URL in MongoDB if run_id is known
             if item.get("run_id"):
@@ -267,20 +291,29 @@ def create_jira_single(run_id: str) -> dict[str, Any]:
     from crewai_productfeature_planner.mongodb.product_requirements import (
         upsert_delivery_record,
     )
+    from crewai_productfeature_planner.mongodb.project_config import (
+        get_project_for_run,
+    )
     from crewai_productfeature_planner.orchestrator._startup_delivery import (
         build_startup_delivery_crew,
     )
     from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
+    from crewai_productfeature_planner.tools.jira_tool import jira_project_context
 
     progress_lines: list[str] = []
 
     def _progress_cb(msg: str) -> None:
         progress_lines.append(msg)
 
+    # Resolve project-level Jira key
+    pc = get_project_for_run(run_id) or {}
+    ctx_key = pc.get("jira_project_key", "")
+
     crew = build_startup_delivery_crew(target, progress_callback=_progress_cb)
-    result = crew_kickoff_with_retry(
-        crew, step_label=f"publish_jira_{run_id}",
-    )
+    with jira_project_context(project_key=ctx_key):
+        result = crew_kickoff_with_retry(
+            crew, step_label=f"publish_jira_{run_id}",
+        )
     raw = result.raw if hasattr(result, "raw") else str(result)
 
     # Persist result

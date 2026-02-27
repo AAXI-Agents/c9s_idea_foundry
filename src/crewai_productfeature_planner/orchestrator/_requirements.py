@@ -52,7 +52,9 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
             "[RequirementsBreakdown] Breaking down idea into requirements"
         )
         requirements, history = breakdown_requirements(
-            flow.state.idea, run_id=flow.state.run_id,
+            flow.state.idea,
+            run_id=flow.state.run_id,
+            original_idea=flow.state.original_idea,
         )
         logger.info(
             "[RequirementsBreakdown] Breakdown complete "

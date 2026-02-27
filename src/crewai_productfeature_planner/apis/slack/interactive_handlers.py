@@ -498,6 +498,7 @@ def run_interactive_slack_flow(
     user: str,
     notify: bool = True,
     webhook_url: str | None = None,
+    project_id: str | None = None,
 ) -> None:
     """Execute the PRD flow with full Slack interactive support.
 
@@ -508,6 +509,10 @@ def run_interactive_slack_flow(
     4. Approve requirements via buttons
     5. Auto-generate sections (like CLI after requirements approve)
     6. Post results to Slack
+
+    If *project_id* is provided, the working-idea document will be
+    linked to the project via ``save_project_ref`` once the flow
+    finishes so that publishing can resolve project-level keys.
 
     This runs in a background thread and communicates with the user
     exclusively through Slack interactive messages.
@@ -609,6 +614,16 @@ def run_interactive_slack_flow(
 
         try:
             result = flow.kickoff()
+
+            # Link working idea to project (doc exists after kickoff)
+            if project_id:
+                try:
+                    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                        save_project_ref,
+                    )
+                    save_project_ref(run_id, project_id)
+                except Exception:  # noqa: BLE001
+                    logger.debug("save_project_ref failed for %s", run_id, exc_info=True)
 
             run = runs.get(run_id)
             if run:

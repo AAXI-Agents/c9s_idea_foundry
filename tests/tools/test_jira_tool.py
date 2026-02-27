@@ -14,12 +14,15 @@ from crewai_productfeature_planner.tools.jira_tool import (
     _get_jira_env,
     _has_jira_credentials,
     _normalize_priority,
+    _project_key_ctx,
     _resolve_priority_field,
     _run_id_label,
     _strip_emails,
     create_issue_link,
     create_jira_issue,
+    jira_project_context,
     search_jira_issues,
+    set_jira_project_key,
 )
 
 
@@ -1105,3 +1108,81 @@ class TestCreateJiraIssueDedup:
 
         payload = mock_request.call_args_list[1][1]["data"]
         assert "prd-run-abc-123" in payload["fields"]["labels"]
+
+
+# ── Context-variable override tests ─────────────────────────────────
+
+
+class TestJiraContextVarOverrides:
+    """Tests for the context-variable project key resolution mechanism."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_context_var(self):
+        """Ensure context var is clean for each test."""
+        token = _project_key_ctx.set("")
+        yield
+        _project_key_ctx.reset(token)
+
+    def test_context_var_overrides_env(self, monkeypatch):
+        """Context-var project key should take priority over env var."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "ENV_KEY")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        token = set_jira_project_key("CTX_KEY")
+        try:
+            env = _get_jira_env()
+            assert env["project_key"] == "CTX_KEY"
+        finally:
+            _project_key_ctx.reset(token)
+
+    def test_explicit_param_overrides_context_var(self, monkeypatch):
+        """Explicit project_key param should override context var."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "ENV")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        token = set_jira_project_key("CTX")
+        try:
+            env = _get_jira_env(project_key="EXPLICIT")
+            assert env["project_key"] == "EXPLICIT"
+        finally:
+            _project_key_ctx.reset(token)
+
+    def test_env_var_used_when_context_empty(self, monkeypatch):
+        """Without context var, env var should be used."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "FROM_ENV")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        env = _get_jira_env()
+        assert env["project_key"] == "FROM_ENV"
+
+    def test_jira_project_context_manager(self, monkeypatch):
+        """Context manager should set and reset the project key."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "OLD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        with jira_project_context(project_key="NEW"):
+            env = _get_jira_env()
+            assert env["project_key"] == "NEW"
+
+        # After context manager, should fallback to env
+        env_after = _get_jira_env()
+        assert env_after["project_key"] == "OLD"
+
+    def test_context_manager_empty_string_ignored(self, monkeypatch):
+        """Empty string should not override env var."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "KEEP")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        with jira_project_context(project_key=""):
+            env = _get_jira_env()
+            assert env["project_key"] == "KEEP"

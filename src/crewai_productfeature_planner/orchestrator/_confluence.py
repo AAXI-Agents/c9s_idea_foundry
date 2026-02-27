@@ -57,22 +57,36 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
         return False
 
     def _run() -> StageResult:
+        from crewai_productfeature_planner.mongodb.project_config import (
+            get_project_for_run,
+        )
         from crewai_productfeature_planner.tools.confluence_tool import (
+            confluence_project_context,
             publish_to_confluence,
         )
 
         idea_preview = (flow.state.idea or "PRD")[:80].strip()
         title = f"PRD — {idea_preview}"
 
+        # Resolve project-level keys (falls back to env vars if unset)
+        pc = get_project_for_run(flow.state.run_id) or {}
+        ctx_space = pc.get("confluence_space_key", "")
+        ctx_parent = pc.get("confluence_parent_id", "")
+
         logger.info(
-            "[ConfluencePublish] Publishing PRD to Confluence: '%s'",
+            "[ConfluencePublish] Publishing PRD to Confluence: '%s'"
+            " (project space_key=%s)",
             title,
+            ctx_space or "<env>",
         )
-        result = publish_to_confluence(
-            title=title,
-            markdown_content=flow.state.final_prd,
-            run_id=flow.state.run_id,
-        )
+        with confluence_project_context(
+            space_key=ctx_space, parent_id=ctx_parent,
+        ):
+            result = publish_to_confluence(
+                title=title,
+                markdown_content=flow.state.final_prd,
+                run_id=flow.state.run_id,
+            )
         return StageResult(
             output=f"{result['action']}|{result['page_id']}|{result['url']}",
         )

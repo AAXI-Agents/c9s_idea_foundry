@@ -3,21 +3,31 @@
 Publishes Markdown content to a Confluence space as a new or updated
 page via the Confluence REST API.
 
+Key resolution order (highest priority first):
+
+1. Explicit ``space_key`` parameter on :func:`publish_to_confluence`
+2. ``_space_key_ctx`` context variable (set by orchestrator stages
+   with project-level configuration)
+3. ``CONFLUENCE_SPACE_KEY`` environment variable (integration / testing
+   fallback)
+
 Environment variables:
 
 * ``ATLASSIAN_BASE_URL``   — e.g. ``https://yourcompany.atlassian.net``
 * ``ATLASSIAN_USERNAME``   — Atlassian account email
 * ``ATLASSIAN_API_TOKEN``  — API token (https://id.atlassian.com/manage-profile/security/api-tokens)
-* ``CONFLUENCE_SPACE_KEY`` — target space key (e.g. ``PRD``)
+* ``CONFLUENCE_SPACE_KEY`` — fallback space key for testing / integration
 * ``CONFLUENCE_PARENT_ID`` — (optional) parent page id to nest new pages under
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import ssl
-from typing import Type
+from contextlib import contextmanager
+from typing import Generator, Type
 
 import certifi
 import urllib.error
@@ -35,9 +45,62 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# ── Context-variable overrides (set by orchestrator with project config) ──
 
-def _get_confluence_env() -> dict[str, str]:
-    """Read Confluence config from environment.
+_space_key_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "confluence_space_key_override", default="",
+)
+_parent_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "confluence_parent_id_override", default="",
+)
+
+
+def set_confluence_space_key(key: str) -> contextvars.Token[str]:
+    """Set the Confluence space key for the current context.
+
+    Returns a reset token for use with :meth:`contextvars.ContextVar.reset`.
+    """
+    return _space_key_ctx.set(key)
+
+
+def set_confluence_parent_id(parent_id: str) -> contextvars.Token[str]:
+    """Set the Confluence parent page ID for the current context."""
+    return _parent_id_ctx.set(parent_id)
+
+
+@contextmanager
+def confluence_project_context(
+    *,
+    space_key: str = "",
+    parent_id: str = "",
+) -> Generator[None, None, None]:
+    """Context manager that sets project-level Confluence overrides.
+
+    Usage::
+
+        with confluence_project_context(space_key="PRJ", parent_id="12345"):
+            publish_to_confluence(title, content, run_id=rid)
+    """
+    tokens: list[tuple[contextvars.ContextVar, contextvars.Token]] = []
+    if space_key:
+        tokens.append((_space_key_ctx, _space_key_ctx.set(space_key)))
+    if parent_id:
+        tokens.append((_parent_id_ctx, _parent_id_ctx.set(parent_id)))
+    try:
+        yield
+    finally:
+        for var, token in tokens:
+            var.reset(token)
+
+
+def _get_confluence_env(*, space_key: str | None = None) -> dict[str, str]:
+    """Read Confluence config from environment with optional overrides.
+
+    Resolution order for ``space_key``:
+
+    1. Explicit *space_key* parameter
+    2. ``_space_key_ctx`` context variable
+    3. ``CONFLUENCE_SPACE_KEY`` environment variable
 
     Returns:
         Dict with keys ``base_url``, ``space_key``, ``username``,
@@ -47,14 +110,18 @@ def _get_confluence_env() -> dict[str, str]:
         EnvironmentError: If required vars are missing.
     """
     base_url = os.environ.get("ATLASSIAN_BASE_URL", "").rstrip("/")
-    space_key = os.environ.get("CONFLUENCE_SPACE_KEY", "")
+    resolved_space_key = (
+        space_key
+        or _space_key_ctx.get()
+        or os.environ.get("CONFLUENCE_SPACE_KEY", "")
+    )
     username = os.environ.get("ATLASSIAN_USERNAME", "")
     api_token = os.environ.get("ATLASSIAN_API_TOKEN", "")
 
     missing: list[str] = []
     if not base_url:
         missing.append("ATLASSIAN_BASE_URL")
-    if not space_key:
+    if not resolved_space_key:
         missing.append("CONFLUENCE_SPACE_KEY")
     if not username:
         missing.append("ATLASSIAN_USERNAME")
@@ -72,12 +139,17 @@ def _get_confluence_env() -> dict[str, str]:
     if not base_url.endswith("/wiki"):
         base_url = f"{base_url}/wiki"
 
+    resolved_parent_id = (
+        _parent_id_ctx.get()
+        or os.environ.get("CONFLUENCE_PARENT_ID", "")
+    )
+
     return {
         "base_url": base_url,
-        "space_key": space_key,
+        "space_key": resolved_space_key,
         "username": username,
         "api_token": api_token,
-        "parent_id": os.environ.get("CONFLUENCE_PARENT_ID", ""),
+        "parent_id": resolved_parent_id,
     }
 
 
@@ -176,6 +248,7 @@ def publish_to_confluence(
     markdown_content: str,
     *,
     run_id: str = "",
+    space_key: str | None = None,
 ) -> dict:
     """Publish a Markdown document to Confluence.
 
@@ -186,12 +259,14 @@ def publish_to_confluence(
         title: Page title in Confluence.
         markdown_content: Raw Markdown to convert and publish.
         run_id: Optional run ID for logging context.
+        space_key: Optional explicit space key override.  When omitted,
+            resolved via context variable → ``CONFLUENCE_SPACE_KEY`` env.
 
     Returns:
         Dict with ``page_id``, ``url``, and ``action`` (``created`` or
         ``updated``).
     """
-    env = _get_confluence_env()
+    env = _get_confluence_env(space_key=space_key)
     auth = _build_auth_header(env["username"], env["api_token"])
 
     xhtml = md_to_confluence_xhtml(markdown_content)

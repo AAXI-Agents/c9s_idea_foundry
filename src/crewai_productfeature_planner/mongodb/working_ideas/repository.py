@@ -389,6 +389,7 @@ def save_iteration(
     draft: dict[str, str],
     critique: str = "",
     step: str = "",
+    finalized_idea: str = "",
     **extra: Any,
 ) -> str | None:
     """Persist a section iteration to the single ``workingIdeas`` document.
@@ -432,14 +433,18 @@ def save_iteration(
 
     try:
         db = get_db()
+        set_fields: dict[str, Any] = {
+            "status": "inprogress",
+            "update_date": now,
+        }
+        if finalized_idea:
+            set_fields["finalized_idea"] = finalized_idea
+
         update_ops: dict[str, Any] = {
-            "$set": {
-                "idea": idea,
-                "status": "inprogress",
-                "update_date": now,
-            },
+            "$set": set_fields,
             "$setOnInsert": {
                 "run_id": run_id,
+                "idea": idea,
                 "created_at": now,
                 "completed_at": None,
             },
@@ -563,12 +568,12 @@ def save_executive_summary(
             {
                 "$push": {"executive_summary": record},
                 "$set": {
-                    "idea": idea,
                     "status": "inprogress",
                     "update_date": now,
                 },
                 "$setOnInsert": {
                     "run_id": run_id,
+                    "idea": idea,
                     "created_at": now,
                     "completed_at": None,
                     "section": {},
@@ -691,6 +696,7 @@ def save_pipeline_step(
     content: str,
     critique: str = "",
     step: str = "",
+    finalized_idea: str = "",
 ) -> str | None:
     """Persist a pre-PRD pipeline iteration (requirements breakdown, etc.).
 
@@ -721,17 +727,21 @@ def save_pipeline_step(
     }
     try:
         db = get_db()
+        set_fields: dict[str, Any] = {
+            "status": "inprogress",
+            "update_date": now,
+        }
+        if finalized_idea:
+            set_fields["finalized_idea"] = finalized_idea
+
         result = db[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {
                 "$push": {f"{pipeline_key}": record},
-                "$set": {
-                    "idea": idea,
-                    "status": "inprogress",
-                    "update_date": now,
-                },
+                "$set": set_fields,
                 "$setOnInsert": {
                     "run_id": run_id,
+                    "idea": idea,
                     "created_at": now,
                     "completed_at": None,
                     "section": {},
@@ -788,13 +798,13 @@ def save_failed(
             {"run_id": run_id},
             {
                 "$set": {
-                    "idea": idea,
                     "status": "failed",
                     "error": error,
                     "update_date": now,
                 },
                 "$setOnInsert": {
                     "run_id": run_id,
+                    "idea": idea,
                     "created_at": now,
                     "completed_at": None,
                     "section": {},
@@ -815,3 +825,37 @@ def save_failed(
             exc,
         )
         return None
+
+
+def save_project_ref(run_id: str, project_id: str) -> int:
+    """Associate a working-idea document with a project configuration.
+
+    Sets the ``project_id`` field so the run can look up its
+    project-level Confluence space key, Jira project key, and
+    other project config via :func:`get_project_for_run`.
+
+    Returns:
+        Number of documents modified (0 or 1).
+    """
+    try:
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "project_id": project_id,
+                "update_date": _now_iso(),
+            }},
+        )
+        logger.info(
+            "[MongoDB] Saved project_id=%s for run_id=%s (matched=%d)",
+            project_id,
+            run_id,
+            result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save project ref for run_id=%s: %s",
+            run_id,
+            exc,
+        )
+        return 0

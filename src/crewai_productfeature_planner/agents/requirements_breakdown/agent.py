@@ -132,6 +132,7 @@ def _get_iteration_limits() -> tuple[int, int]:
 def breakdown_requirements(
     refined_idea: str,
     run_id: str = "",
+    original_idea: str = "",
 ) -> tuple[str, list[dict]]:
     """Iteratively break down a refined idea into product requirements.
 
@@ -150,6 +151,9 @@ def breakdown_requirements(
     Args:
         refined_idea: The refined product idea string.
         run_id: Optional flow run identifier for MongoDB persistence.
+        original_idea: The raw user-inputted idea (before refinement).
+            When provided, this is stored in the ``idea`` field of the
+            ``workingIdeas`` document to preserve the original input.
 
     Returns:
         A tuple of ``(final_requirements, breakdown_history)`` where
@@ -268,12 +272,13 @@ def breakdown_requirements(
 
                 save_pipeline_step(
                     run_id=run_id,
-                    idea=refined_idea,
+                    idea=original_idea or refined_idea,
                     pipeline_key="requirements_breakdown",
                     iteration=iteration,
                     content=current_requirements,
                     critique=evaluation,
                     step=f"requirements_breakdown_{iteration}",
+                    finalized_idea=refined_idea,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

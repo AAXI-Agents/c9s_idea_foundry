@@ -305,6 +305,120 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
     return flow
 
 
+def _select_or_create_project() -> tuple[str, str]:
+    """Prompt the user to select an existing project or create a new one.
+
+    This is the **first step** of the CLI PRD flow.  Every run must be
+    associated with a project so that publishing (Confluence, Jira) can
+    resolve project-level keys.
+
+    Returns:
+        A ``(project_id, project_name)`` tuple.
+    """
+    from crewai_productfeature_planner.mongodb.project_config import (
+        create_project,
+        list_projects,
+    )
+
+    projects = list_projects(limit=20)
+
+    print(f"\n{'=' * 60}")
+    print("  Select a Project")
+    print(f"{'=' * 60}")
+    if projects:
+        for i, proj in enumerate(projects, 1):
+            pname = proj.get("name", "Unnamed")
+            space = proj.get("confluence_space_key", "")
+            jira = proj.get("jira_project_key", "")
+            extras = []
+            if space:
+                extras.append(f"confluence={space}")
+            if jira:
+                extras.append(f"jira={jira}")
+            suffix = f"  ({', '.join(extras)})" if extras else ""
+            print(f"  [{i}] {pname}{suffix}")
+    else:
+        print("  (no existing projects)")
+    print(f"  [n] Create a new project")
+    print(f"{'=' * 60}\n")
+
+    while True:
+        choice = input("Choose a project number, or 'n' for new: ").strip().lower()
+        if choice in ("n", "new"):
+            return _create_project_interactive()
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(projects):
+                proj = projects[idx]
+                pid = proj["project_id"]
+                pname = proj.get("name", "Unnamed")
+                print(f"\n  ✦ Selected project: {pname}")
+                return pid, pname
+        except ValueError:
+            pass
+        max_n = len(projects) if projects else 0
+        print(f"Please enter 1-{max_n} or 'n'." if max_n else "Please enter 'n' to create a project.")
+
+
+def _create_project_interactive() -> tuple[str, str]:
+    """Walk the user through creating a new project configuration.
+
+    Returns:
+        A ``(project_id, project_name)`` tuple.
+    """
+    from crewai_productfeature_planner.mongodb.project_config import create_project
+
+    print(f"\n{'=' * 60}")
+    print("  Create a New Project")
+    print(f"{'=' * 60}\n")
+
+    while True:
+        name = input("  Project name: ").strip()
+        if name:
+            break
+        print("  Project name cannot be empty.")
+
+    confluence_space_key = input(
+        "  Confluence space key (press Enter to skip): "
+    ).strip()
+    jira_project_key = input(
+        "  Jira project key (press Enter to skip): "
+    ).strip()
+    confluence_parent_id = input(
+        "  Confluence parent page ID (press Enter to skip): "
+    ).strip()
+
+    project_id = create_project(
+        name=name,
+        confluence_space_key=confluence_space_key,
+        jira_project_key=jira_project_key,
+        confluence_parent_id=confluence_parent_id,
+    )
+
+    if not project_id:
+        print("  ⚠ Failed to create project in MongoDB — using offline mode.")
+        # Generate a local project_id so the flow can still proceed
+        import uuid
+        project_id = uuid.uuid4().hex
+
+    print(f"\n  ✦ Created project: {name} (id={project_id[:12]}…)")
+    return project_id, name
+
+
+def _save_project_link(run_id: str, project_id: str) -> None:
+    """Link a working-idea document to its project configuration.
+
+    Silently ignores errors so the flow is never interrupted.
+    """
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_project_ref,
+        )
+        save_project_ref(run_id, project_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("save_project_ref failed for run_id=%s", run_id, exc_info=True)
+
+
 def _get_idea() -> str:
     """Get the feature idea from CLI args or interactive prompt.
 
@@ -1110,13 +1224,18 @@ def run():
 
     # If idea was passed as CLI arg, run once and exit
     if len(sys.argv) >= 2:
-        _run_single_flow(idea=sys.argv[1])
+        # Step 1: Select or create a project
+        project_id, project_name = _select_or_create_project()
+        _run_single_flow(idea=sys.argv[1], project_id=project_id)
         return
+
+    # Step 1: Select or create a project (once per session)
+    project_id, project_name = _select_or_create_project()
 
     # Interactive loop — keeps offering new ideas after each run
     idea = None
     while True:
-        _run_single_flow(idea=idea)
+        _run_single_flow(idea=idea, project_id=project_id)
         next_idea = _prompt_next_action()
         if next_idea is None:
             print("\nGoodbye!")
@@ -1143,11 +1262,19 @@ def _run_startup_delivery_background() -> None:
         logger.warning("[StartupDelivery] Background thread failed: %s", exc)
 
 
-def _run_single_flow(idea: str | None = None) -> None:
+def _run_single_flow(
+    idea: str | None = None,
+    *,
+    project_id: str | None = None,
+) -> None:
     """Execute one PRD flow cycle (new or resumed).
 
     Args:
         idea: When supplied, skip the resume check and use this idea directly.
+        project_id: The project configuration to link this run to.
+            When provided, ``save_project_ref`` is called after the
+            working-idea document is created so that publishing can
+            resolve project-level Confluence/Jira keys.
     """
     # Check for resumable runs (skip if idea passed via CLI arg)
     resumed_flow = None
@@ -1233,6 +1360,8 @@ def _run_single_flow(idea: str | None = None) -> None:
                     create_job(job_id=flow.state.run_id, flow_name="prd", idea=idea)
                 update_job_started(flow.state.run_id)
                 update_job_completed(flow.state.run_id, status="completed")
+                if project_id:
+                    _save_project_link(flow.state.run_id, project_id)
                 print(f"\n  ✦ Idea finalized and saved (run_id={flow.state.run_id})")
                 return
         else:
@@ -1251,6 +1380,10 @@ def _run_single_flow(idea: str | None = None) -> None:
         flow.requirements_approval_callback = _approve_requirements
         result = flow.kickoff()
 
+        # Link working idea to project configuration
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id)
+
         # Safety net: if finalize() failed or was skipped, persist here
         if not flow.state.is_ready:
             logger.warning(
@@ -1268,11 +1401,15 @@ def _run_single_flow(idea: str | None = None) -> None:
         logger.info("PRD flow completed successfully")
         print(f"\nPRD Flow completed. Result:\n{result}")
     except IdeaFinalized:
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id)
         update_job_completed(flow.state.run_id, status="completed")
         logger.info("Idea finalized without PRD generation (run_id=%s)",
                      flow.state.run_id)
         print(f"\n  ✦ Idea finalized and saved (run_id={flow.state.run_id})")
     except RequirementsFinalized:
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id)
         update_job_completed(flow.state.run_id, status="completed")
         logger.info(
             "Requirements finalized without PRD generation (run_id=%s)",
@@ -1283,6 +1420,8 @@ def _run_single_flow(idea: str | None = None) -> None:
             f"(run_id={flow.state.run_id})"
         )
     except PauseRequested:
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
@@ -1294,6 +1433,8 @@ def _run_single_flow(idea: str | None = None) -> None:
         logger.info("PRD flow paused by user (run_id=%s, %d/%d approved)",
                     flow.state.run_id, approved, total)
     except BillingError as e:
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
@@ -1311,6 +1452,8 @@ def _run_single_flow(idea: str | None = None) -> None:
         print(f"  'crewai run' to resume from where you left off.")
         print(f"{'=' * 60}")
     except LLMError as e:
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
@@ -1328,6 +1471,8 @@ def _run_single_flow(idea: str | None = None) -> None:
         print(f"  'crewai run' to resume from where you left off.")
         print(f"{'=' * 60}")
     except Exception as e:
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")

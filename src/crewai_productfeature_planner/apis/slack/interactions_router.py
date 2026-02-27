@@ -44,6 +44,14 @@ _KNOWN_ACTIONS = frozenset({
     "flow_cancel",
 })
 
+# Project session action IDs — handled by the session manager
+_SESSION_ACTIONS = frozenset({
+    "project_create",
+    "project_continue",
+    "project_switch",
+    "session_end",
+})
+
 
 def _extract_payload(body: bytes) -> dict | None:
     """Parse the ``payload`` field from a Slack interaction POST.
@@ -71,6 +79,10 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "requirements_approve": ":white_check_mark: Requirements approved",
         "requirements_cancel": ":no_entry_sign: Flow cancelled",
         "flow_cancel": ":no_entry_sign: Flow cancelled",
+        "project_create": ":heavy_plus_sign: Creating new project",
+        "project_continue": ":arrow_forward: Continuing with project",
+        "project_switch": ":twisted_rightwards_arrows: Switching project",
+        "session_end": ":stop_button: Session ended",
     }
     label = labels.get(action_id, action_id)
     return f"{label} by {user_name}"
@@ -152,6 +164,34 @@ async def slack_interactions(request: Request) -> JSONResponse:
         user_id = user_info.get("id", "")
         user_name = user_info.get("username", user_id)
 
+        # ── Project session actions ──
+        is_project_select = action_id.startswith("project_select_")
+        if action_id in _SESSION_ACTIONS or is_project_select:
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack project action: action=%s user=%s value=%s",
+                action_id, user_name, run_id,
+            )
+
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                _handle_project_action,
+                action_id, run_id, user_id, channel_id, thread_ts,
+            )
+
+            if channel_id:
+                ack_text = _ack_action(action_id, user_name)
+                loop.run_in_executor(None, _post_ack, channel_id, thread_ts, ack_text)
+
+            return JSONResponse({"ok": True})
+
+        # ── Flow actions ──
         if action_id not in _KNOWN_ACTIONS:
             logger.debug("Unknown action_id: %s", action_id)
             return JSONResponse({"ok": True})
@@ -225,3 +265,92 @@ def _post_ack(channel: str, thread_ts: str, text: str) -> None:
             )
         except Exception as exc:
             logger.error("Ack post failed: %s", exc)
+
+
+def _handle_project_action(
+    action_id: str,
+    value: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+) -> None:
+    """Process a project-session button click in a background thread.
+
+    Delegates to the session manager and posts Block Kit feedback.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks import (
+        project_create_prompt_blocks,
+        project_selection_blocks,
+        session_ended_blocks,
+        session_started_blocks,
+    )
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        activate_project,
+        deactivate_session,
+        mark_pending_create,
+    )
+    from crewai_productfeature_planner.mongodb.project_config import (
+        create_project,
+        get_project,
+        list_projects,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    client = _get_slack_client()
+    if not client:
+        return
+
+    def _post(blocks=None, text=""):
+        try:
+            kwargs: dict = {"channel": channel, "thread_ts": thread_ts, "text": text or "Project update"}
+            if blocks:
+                kwargs["blocks"] = blocks
+            client.chat_postMessage(**kwargs)
+        except Exception as exc:
+            logger.error("Project action post failed: %s", exc)
+
+    try:
+        if action_id.startswith("project_select_"):
+            # User selected an existing project
+            project_id = action_id.removeprefix("project_select_")
+            proj = get_project(project_id)
+            if not proj:
+                _post(text=":warning: Project not found. Please try again.")
+                return
+            pname = proj.get("name", "Unnamed")
+            activate_project(
+                user_id=user_id,
+                channel=channel,
+                project_id=project_id,
+                project_name=pname,
+            )
+            _post(blocks=session_started_blocks(pname), text=f"Session started: {pname}")
+
+        elif action_id == "project_create":
+            # Prompt user for project name via thread reply
+            mark_pending_create(user_id, channel, thread_ts)
+            _post(
+                blocks=project_create_prompt_blocks(user_id),
+                text="Type the new project name in this thread",
+            )
+
+        elif action_id == "project_continue":
+            # User chose to keep the current project — nothing to do
+            _post(text=":arrow_forward: Continuing with your current project. What would you like to do?")
+
+        elif action_id == "project_switch":
+            # End current session and show project picker
+            deactivate_session(user_id)
+            projects = list_projects(limit=20)
+            _post(
+                blocks=project_selection_blocks(projects, user_id),
+                text="Select a project",
+            )
+
+        elif action_id == "session_end":
+            deactivate_session(user_id)
+            _post(blocks=session_ended_blocks(), text="Session ended")
+
+    except Exception as exc:
+        logger.error("_handle_project_action failed: %s", exc, exc_info=True)
+        _post(text=f":x: Something went wrong: {exc}")

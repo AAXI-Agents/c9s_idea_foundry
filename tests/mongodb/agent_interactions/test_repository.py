@@ -98,6 +98,46 @@ def test_log_interaction_minimal(mock_get_db):
 
 
 @patch("crewai_productfeature_planner.mongodb.agent_interactions.repository.get_db")
+def test_log_interaction_with_project_id(mock_get_db):
+    """log_interaction should store project_id when provided."""
+    mock_collection = MagicMock()
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    result = log_interaction(
+        source="slack",
+        user_message="create a prd",
+        intent="create_prd",
+        agent_response="Starting flow",
+        project_id="proj-abc",
+    )
+
+    assert result is not None
+    doc = mock_collection.insert_one.call_args[0][0]
+    assert doc["project_id"] == "proj-abc"
+
+
+@patch("crewai_productfeature_planner.mongodb.agent_interactions.repository.get_db")
+def test_log_interaction_project_id_defaults_none(mock_get_db):
+    """log_interaction should store project_id as None by default."""
+    mock_collection = MagicMock()
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    log_interaction(
+        source="cli",
+        user_message="test",
+        intent="help",
+        agent_response="resp",
+    )
+
+    doc = mock_collection.insert_one.call_args[0][0]
+    assert doc["project_id"] is None
+
+
+@patch("crewai_productfeature_planner.mongodb.agent_interactions.repository.get_db")
 def test_log_interaction_with_metadata(mock_get_db):
     """log_interaction should store metadata and conversation_history."""
     mock_collection = MagicMock()

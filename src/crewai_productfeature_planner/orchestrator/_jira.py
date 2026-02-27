@@ -69,10 +69,27 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
             create_jira_product_manager_agent,
             get_task_configs,
         )
+        from crewai_productfeature_planner.mongodb.project_config import (
+            get_project_for_run,
+        )
         from crewai_productfeature_planner.scripts.logging_config import is_verbose
         from crewai_productfeature_planner.scripts.retry import (
             crew_kickoff_with_retry,
         )
+        from crewai_productfeature_planner.tools.jira_tool import (
+            set_jira_project_key,
+        )
+
+        # Resolve project-level Jira key (falls back to env var if unset)
+        pc = get_project_for_run(flow.state.run_id) or {}
+        ctx_key = pc.get("jira_project_key", "")
+        jira_token: object = None
+        if ctx_key:
+            jira_token = set_jira_project_key(ctx_key)
+            logger.info(
+                "[JiraTicketing] Using project-level JIRA_PROJECT_KEY=%s",
+                ctx_key,
+            )
 
         pm_agent = create_jira_product_manager_agent()
         atl_agent = create_jira_architect_tech_lead_agent()
@@ -211,6 +228,13 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
             output = f"Epic: {epic_result.raw}\n(Epic key extraction failed — stories skipped)"
         else:
             output = f"Epic: {epic_result.raw}\n(No functional requirements for stories)"
+
+        # Reset project-level Jira key override
+        if jira_token is not None:
+            from crewai_productfeature_planner.tools.jira_tool import (
+                _project_key_ctx,
+            )
+            _project_key_ctx.reset(jira_token)
 
         return StageResult(output=output)
 

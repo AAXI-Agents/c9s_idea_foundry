@@ -10,6 +10,8 @@ Sub-modules:
     - ``mongodb.crew_jobs``            — ``crewJobs`` collection (job tracking)
     - ``mongodb.product_requirements`` — ``productRequirements`` collection
     - ``mongodb.agent_interactions``   — ``agentInteraction`` collection (fine-tuning data)
+    - ``mongodb.project_config``       — ``projectConfig`` collection (project-level configuration)
+    - ``mongodb.user_session``         — ``userSession`` collection (Slack session tracking)
 """
 
 from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
@@ -50,6 +52,16 @@ from crewai_productfeature_planner.mongodb.product_requirements.repository impor
     get_delivery_record,
     upsert_delivery_record,
 )
+from crewai_productfeature_planner.mongodb.project_config.repository import (
+    PROJECT_CONFIG_COLLECTION,
+    create_project,
+    delete_project,
+    get_project,
+    get_project_by_name,
+    get_project_for_run,
+    list_projects,
+    update_project,
+)
 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     WORKING_COLLECTION,
     ensure_section_field,
@@ -67,21 +79,35 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     save_iteration,
     save_output_file,
     save_pipeline_step,
+    save_project_ref,
     update_executive_summary_critique,
     update_section_critique,
+)
+from crewai_productfeature_planner.mongodb.user_session import (
+    USER_SESSION_COLLECTION,
+    end_active_session,
+    get_active_session,
+    get_session,
+    list_sessions,
+    start_session,
+    switch_session,
 )
 
 __all__ = [
     "AGENT_INTERACTIONS_COLLECTION",
     "CREW_JOBS_COLLECTION",
+    "PROJECT_CONFIG_COLLECTION",
     "DEFAULT_DB_NAME",
     "DEFAULT_HOST",
     "DEFAULT_PORT",
     "PRODUCT_REQUIREMENTS_COLLECTION",
     "WORKING_COLLECTION",
+    "USER_SESSION_COLLECTION",
     "_build_uri",
     "_get_db_name",
     "create_job",
+    "create_project",
+    "delete_project",
     "ensure_section_field",
     "fail_incomplete_jobs_on_startup",
     "find_active_job",
@@ -98,9 +124,13 @@ __all__ = [
     "get_db",
     "get_interaction",
     "get_output_file",
+    "get_project",
+    "get_project_by_name",
+    "get_project_for_run",
     "get_run_documents",
     "list_interactions",
     "list_jobs",
+    "list_projects",
     "log_interaction",
     "mark_completed",
     "mark_paused",
@@ -113,11 +143,19 @@ __all__ = [
     "save_iteration",
     "save_output_file",
     "save_pipeline_step",
+    "save_project_ref",
     "update_executive_summary_critique",
     "update_job_completed",
     "update_job_failed",
     "update_job_started",
     "update_job_status",
+    "update_project",
     "update_section_critique",
     "upsert_delivery_record",
+    "end_active_session",
+    "get_active_session",
+    "get_session",
+    "list_sessions",
+    "start_session",
+    "switch_session",
 ]

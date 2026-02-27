@@ -190,7 +190,17 @@ def _interpret_and_act(
     clean_text: str,
     event_ts: str,
 ) -> None:
-    """Interpret the message via OpenAI and respond or kick off a PRD flow."""
+    """Interpret the message via OpenAI and respond or kick off a PRD flow.
+
+    All intents require an active project session.  If the user has not
+    selected a project yet, a project-selection prompt is posted and the
+    current request is deferred — except for explicit session-management
+    commands (switch project, end session, current project).
+    """
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        ensure_session_loaded,
+        get_project_id_for_user,
+    )
     from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
         log_interaction,
     )
@@ -223,6 +233,60 @@ def _interpret_and_act(
     tracked_response: str = ""
     tracked_run_id: str | None = None
     tracked_metadata: dict | None = None
+
+    # Resolve active project session for this user
+    session = ensure_session_loaded(user)
+    session_project_id = session.get("project_id") if session else None
+    session_project_name = session.get("project_name") if session else None
+
+    # ── Session management intents (explicit text commands) ──
+    lower_text = clean_text.lower().strip()
+    if lower_text in ("switch project", "change project"):
+        _handle_switch_project(channel, thread_ts, user)
+        tracked_response = "(switch project prompt)"
+        _log_tracked_interaction(
+            log_interaction, "slack", clean_text, "switch_project",
+            tracked_response, None, None, session_project_id,
+            channel, thread_ts, user, history,
+        )
+        return
+
+    if lower_text in ("end session", "stop session", "close session"):
+        _handle_end_session(channel, thread_ts, user)
+        tracked_response = "(session ended)"
+        _log_tracked_interaction(
+            log_interaction, "slack", clean_text, "end_session",
+            tracked_response, None, None, session_project_id,
+            channel, thread_ts, user, history,
+        )
+        return
+
+    if lower_text in ("current project", "my project", "which project"):
+        _handle_current_project(channel, thread_ts, user, session)
+        tracked_response = "(current project info)"
+        _log_tracked_interaction(
+            log_interaction, "slack", clean_text, "current_project",
+            tracked_response, None, None, session_project_id,
+            channel, thread_ts, user, history,
+        )
+        return
+
+    # ── Global project-session gate ──
+    # Every intent (help, greeting, create_prd, publish, etc.) requires
+    # an active project session.  If the user hasn't selected a project
+    # yet, prompt them and defer the current request.
+    if not session_project_id:
+        _prompt_project_selection(channel, thread_ts, user)
+        tracked_response = "(project selection required)"
+        tracked_metadata_gate: dict | None = None
+        if idea:
+            tracked_metadata_gate = {"deferred_idea": idea}
+        _log_tracked_interaction(
+            log_interaction, "slack", clean_text, intent,
+            tracked_response, idea, None, None,
+            channel, thread_ts, user, history, tracked_metadata_gate,
+        )
+        return
 
     if intent == "help":
         help_msg = (
@@ -287,6 +351,9 @@ def _interpret_and_act(
             _append_to_thread(channel, thread_ts, "assistant", ack_text)
             tracked_response = ack_text
             tracked_metadata = {"interactive": interactive}
+            if session_project_id:
+                tracked_metadata["project_id"] = session_project_id
+                tracked_metadata["project_name"] = session_project_name
             _kick_off_prd_flow(
                 channel=channel,
                 thread_ts=thread_ts,
@@ -294,6 +361,7 @@ def _interpret_and_act(
                 idea=idea,
                 event_ts=event_ts,
                 interactive=interactive,
+                project_id=session_project_id,
             )
 
     elif intent == "publish":
@@ -319,22 +387,167 @@ def _interpret_and_act(
         tracked_response = fallback
 
     # ── Track this interaction for fine-tuning data ──
+    _log_tracked_interaction(
+        log_interaction, "slack", clean_text, intent,
+        tracked_response, idea, tracked_run_id, session_project_id,
+        channel, thread_ts, user, history, tracked_metadata,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Session helpers (used by _interpret_and_act)
+# ---------------------------------------------------------------------------
+
+
+def _log_tracked_interaction(
+    log_fn,
+    source, user_message, intent, agent_response,
+    idea, run_id, project_id,
+    channel, thread_ts, user_id,
+    history=None, metadata=None,
+) -> None:
+    """Wrapper to log an agent interaction, swallowing errors."""
     try:
-        log_interaction(
-            source="slack",
-            user_message=clean_text,
+        log_fn(
+            source=source,
+            user_message=user_message,
             intent=intent,
-            agent_response=tracked_response,
+            agent_response=agent_response,
             idea=idea,
-            run_id=tracked_run_id,
+            run_id=run_id,
+            project_id=project_id,
             channel=channel,
             thread_ts=thread_ts,
-            user_id=user,
+            user_id=user_id,
             conversation_history=history or None,
-            metadata=tracked_metadata,
+            metadata=metadata,
         )
     except Exception:  # noqa: BLE001
         logger.debug("Failed to log agent interaction", exc_info=True)
+
+
+def _prompt_project_selection(channel: str, thread_ts: str, user: str) -> None:
+    """Post the project-selection Block Kit prompt."""
+    from crewai_productfeature_planner.apis.slack.blocks import project_selection_blocks
+    from crewai_productfeature_planner.mongodb.project_config import list_projects
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    client = _get_slack_client()
+    if not client:
+        return
+
+    projects = list_projects(limit=20)
+    blocks = project_selection_blocks(projects, user)
+    msg = (
+        f"<@{user}> Before we get started, please select a project "
+        "to work on (or create a new one)."
+    )
+    try:
+        client.chat_postMessage(
+            channel=channel, thread_ts=thread_ts,
+            blocks=blocks, text=msg,
+        )
+    except Exception as exc:
+        logger.error("Failed to post project selection: %s", exc)
+
+
+def _handle_switch_project(channel: str, thread_ts: str, user: str) -> None:
+    """End the current session and show the project picker."""
+    from crewai_productfeature_planner.apis.slack.session_manager import deactivate_session
+
+    deactivate_session(user)
+    _prompt_project_selection(channel, thread_ts, user)
+
+
+def _handle_end_session(channel: str, thread_ts: str, user: str) -> None:
+    """End the user's active session and confirm."""
+    from crewai_productfeature_planner.apis.slack.blocks import session_ended_blocks
+    from crewai_productfeature_planner.apis.slack.session_manager import deactivate_session
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    deactivate_session(user)
+    client = _get_slack_client()
+    if client:
+        try:
+            client.chat_postMessage(
+                channel=channel, thread_ts=thread_ts,
+                blocks=session_ended_blocks(),
+                text="Session ended",
+            )
+        except Exception as exc:
+            logger.error("Failed to post session-ended: %s", exc)
+
+
+def _handle_current_project(
+    channel: str, thread_ts: str, user: str, session: dict | None,
+) -> None:
+    """Tell the user which project they're in (or that they have none)."""
+    from crewai_productfeature_planner.apis.slack.blocks import active_session_blocks
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    client = _get_slack_client()
+    if not client:
+        return
+
+    if session and session.get("project_name"):
+        blocks = active_session_blocks(
+            session["project_name"],
+            session.get("project_id", ""),
+            user,
+        )
+        text = f"Current project: {session['project_name']}"
+    else:
+        _prompt_project_selection(channel, thread_ts, user)
+        return
+
+    try:
+        client.chat_postMessage(
+            channel=channel, thread_ts=thread_ts,
+            blocks=blocks, text=text,
+        )
+    except Exception as exc:
+        logger.error("Failed to post current-project: %s", exc)
+
+
+def _handle_project_name_reply(
+    channel: str, thread_ts: str, user: str, project_name: str,
+) -> None:
+    """Create a new project from a thread reply and start a session."""
+    from crewai_productfeature_planner.apis.slack.blocks import session_started_blocks
+    from crewai_productfeature_planner.apis.slack.session_manager import activate_project
+    from crewai_productfeature_planner.mongodb.project_config import create_project
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    client = _get_slack_client()
+    if not client:
+        return
+
+    project_id = create_project(name=project_name)
+    if not project_id:
+        try:
+            client.chat_postMessage(
+                channel=channel, thread_ts=thread_ts,
+                text=":x: Failed to create the project. Please try again.",
+            )
+        except Exception:
+            pass
+        return
+
+    activate_project(
+        user_id=user,
+        channel=channel,
+        project_id=project_id,
+        project_name=project_name,
+    )
+
+    try:
+        client.chat_postMessage(
+            channel=channel, thread_ts=thread_ts,
+            blocks=session_started_blocks(project_name),
+            text=f"Project '{project_name}' created and session started!",
+        )
+    except Exception as exc:
+        logger.error("Failed to post session-started: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +665,7 @@ def _kick_off_prd_flow(
     idea: str,
     event_ts: str,
     interactive: bool = False,
+    project_id: str | None = None,
 ) -> None:
     """Start a PRD flow from a Slack interaction.
 
@@ -462,6 +676,9 @@ def _kick_off_prd_flow(
 
     When ``False`` (the default), the flow runs with ``auto_approve=True``
     as before.
+
+    If *project_id* is provided the working-idea document will be linked
+    to the project so publishing can resolve project-level keys.
     """
     from crewai_productfeature_planner.apis.slack.router import _run_slack_prd_flow
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
@@ -482,6 +699,7 @@ def _kick_off_prd_flow(
         t = threading.Thread(
             target=run_interactive_slack_flow,
             args=(run_id, idea, channel, thread_ts, user),
+            kwargs={"project_id": project_id},
             name=f"slack-prd-interactive-{run_id}",
             daemon=True,
         )
@@ -489,6 +707,7 @@ def _kick_off_prd_flow(
         t = threading.Thread(
             target=_run_slack_prd_flow,
             args=(run_id, idea, channel, thread_ts),
+            kwargs={"project_id": project_id} if project_id else {},
             name=f"slack-prd-{run_id}",
             daemon=True,
         )
@@ -525,6 +744,20 @@ def _handle_thread_message(event: dict) -> None:
 
     clean_text = re.sub(r"<@[^>]+>\s*", "", text).strip()
     if not clean_text:
+        return
+
+    # Check if this is a project-name reply after "Create New Project"
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        pop_pending_create,
+    )
+    pending = pop_pending_create(user)
+    if pending:
+        _handle_project_name_reply(
+            user_id=user,
+            channel=channel,
+            thread_ts=thread_ts,
+            project_name=clean_text,
+        )
         return
 
     # Check if this thread has an active manual-refinement session.

@@ -23,6 +23,7 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     save_iteration,
     save_output_file,
     save_pipeline_step,
+    save_project_ref,
     update_executive_summary_critique,
     update_section_critique,
 )
@@ -57,7 +58,8 @@ def test_save_iteration_upserts_doc(mock_get_db):
     # Should use upsert=True
     assert call_args[1].get("upsert") is True
     update_ops = call_args[0][1]
-    assert update_ops["$set"]["idea"] == "Dark mode"
+    # idea is in $setOnInsert so it is only written on first insert
+    assert update_ops["$setOnInsert"]["idea"] == "Dark mode"
     assert update_ops["$set"]["status"] == "inprogress"
     assert "$push" in update_ops
     assert "section.executive_summary" in update_ops["$push"]
@@ -104,6 +106,55 @@ def test_save_iteration_no_step_field(mock_get_db):
     pushed = update_ops["$push"]["section.exec"]
     assert "step" not in pushed
     assert set(pushed.keys()) == {"content", "iteration", "critique", "updated_date"}
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_iteration_idea_in_setOnInsert(mock_get_db):
+    """idea should be in $setOnInsert so it is never overwritten on subsequent updates."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id=None)
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_iteration(run_id="r1", idea="Original idea", iteration=1, draft={"s": "D"})
+
+    update_ops = mock_collection.update_one.call_args[0][1]
+    assert "idea" not in update_ops["$set"]
+    assert update_ops["$setOnInsert"]["idea"] == "Original idea"
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_iteration_finalized_idea_in_set(mock_get_db):
+    """finalized_idea should be written to $set when provided."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id=None)
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_iteration(
+        run_id="r1", idea="Original", iteration=1,
+        draft={"s": "D"}, finalized_idea="Refined version",
+    )
+
+    update_ops = mock_collection.update_one.call_args[0][1]
+    assert update_ops["$set"]["finalized_idea"] == "Refined version"
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_iteration_no_finalized_idea_omits_field(mock_get_db):
+    """When finalized_idea is empty, it should NOT appear in $set."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id=None)
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_iteration(run_id="r1", idea="X", iteration=1, draft={"s": "D"})
+
+    update_ops = mock_collection.update_one.call_args[0][1]
+    assert "finalized_idea" not in update_ops["$set"]
 
 
 @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
@@ -306,6 +357,23 @@ def test_save_failed_setOnInsert_includes_section(mock_get_db):
     assert update_ops["$setOnInsert"]["section"] == {}
 
 
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_failed_idea_in_setOnInsert(mock_get_db):
+    """save_failed should store idea in $setOnInsert, not $set."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id="new")
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_failed(run_id="run-f", idea="My original idea", iteration=1, error="err")
+
+    upsert_args = mock_collection.update_one.call_args_list[1]
+    update_ops = upsert_args[0][1]
+    assert "idea" not in update_ops["$set"]
+    assert update_ops["$setOnInsert"]["idea"] == "My original idea"
+
+
 # ── save_executive_summary — section initialization ────────────
 
 
@@ -325,6 +393,24 @@ def test_save_executive_summary_setOnInsert_includes_section(mock_get_db):
     ops = mock_collection.update_one.call_args[0][1]
     assert "$setOnInsert" in ops
     assert ops["$setOnInsert"]["section"] == {}
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_executive_summary_idea_in_setOnInsert(mock_get_db):
+    """save_executive_summary should store idea in $setOnInsert, not $set."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id="es-x")
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_executive_summary(
+        run_id="run-es", idea="Original user input", iteration=1, content="content",
+    )
+
+    ops = mock_collection.update_one.call_args[0][1]
+    assert "idea" not in ops["$set"]
+    assert ops["$setOnInsert"]["idea"] == "Original user input"
 
 
 # ── save_pipeline_step — section initialization ────────────────
@@ -347,6 +433,61 @@ def test_save_pipeline_step_setOnInsert_includes_section(mock_get_db):
     ops = mock_collection.update_one.call_args[0][1]
     assert "$setOnInsert" in ops
     assert ops["$setOnInsert"]["section"] == {}
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_pipeline_step_idea_in_setOnInsert(mock_get_db):
+    """save_pipeline_step should store idea in $setOnInsert, not $set."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id="ps-x")
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_pipeline_step(
+        run_id="run-ps", idea="User original", pipeline_key="req",
+        iteration=1, content="c",
+    )
+
+    ops = mock_collection.update_one.call_args[0][1]
+    assert "idea" not in ops["$set"]
+    assert ops["$setOnInsert"]["idea"] == "User original"
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_pipeline_step_finalized_idea(mock_get_db):
+    """save_pipeline_step should write finalized_idea to $set when provided."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id=None)
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_pipeline_step(
+        run_id="run-ps2", idea="Original", pipeline_key="req",
+        iteration=1, content="c", finalized_idea="Refined version",
+    )
+
+    ops = mock_collection.update_one.call_args[0][1]
+    assert ops["$set"]["finalized_idea"] == "Refined version"
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_pipeline_step_no_finalized_idea_omits_field(mock_get_db):
+    """When finalized_idea is empty, it should NOT appear in $set."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(upserted_id=None)
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    save_pipeline_step(
+        run_id="run-ps3", idea="X", pipeline_key="req",
+        iteration=1, content="c",
+    )
+
+    ops = mock_collection.update_one.call_args[0][1]
+    assert "finalized_idea" not in ops["$set"]
 
 
 # ── update_section_critique ─────────────────────────────────────
@@ -1324,3 +1465,38 @@ class TestFindCompletedWithoutConfluence:
 
         result = find_completed_without_confluence()
         assert result == []
+
+
+# ── save_project_ref ──────────────────────────────────────────────
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_project_ref(mock_get_db):
+    """save_project_ref should $set project_id on the working idea doc."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.return_value = MagicMock(modified_count=1)
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    count = save_project_ref("run-1", "proj-abc")
+
+    assert count == 1
+    mock_db.__getitem__.assert_called_with(WORKING_COLLECTION)
+    call_args = mock_collection.update_one.call_args
+    assert call_args[0][0] == {"run_id": "run-1"}
+    set_fields = call_args[0][1]["$set"]
+    assert set_fields["project_id"] == "proj-abc"
+    assert "update_date" in set_fields
+
+
+@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+def test_save_project_ref_db_error(mock_get_db):
+    """save_project_ref should return 0 on DB failure."""
+    mock_collection = MagicMock()
+    mock_collection.update_one.side_effect = ServerSelectionTimeoutError("fail")
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    assert save_project_ref("run-1", "proj-abc") == 0

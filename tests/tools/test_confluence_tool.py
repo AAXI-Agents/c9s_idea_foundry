@@ -10,8 +10,13 @@ from crewai_productfeature_planner.tools.confluence_tool import (
     _build_auth_header,
     _get_confluence_env,
     _has_confluence_credentials,
+    _space_key_ctx,
+    _parent_id_ctx,
+    confluence_project_context,
     find_page_by_title,
     publish_to_confluence,
+    set_confluence_parent_id,
+    set_confluence_space_key,
 )
 
 
@@ -251,3 +256,114 @@ class TestConfluencePublishTool:
         result = tool._run(title="Test", markdown_content="# Fail")
 
         assert "failed" in result
+
+
+# ── Context-variable override tests ─────────────────────────────────
+
+
+class TestConfluenceContextVarOverrides:
+    """Tests for the context-variable key resolution mechanism."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_context_vars(self):
+        """Ensure context vars are clean for each test."""
+        t1 = _space_key_ctx.set("")
+        t2 = _parent_id_ctx.set("")
+        yield
+        _space_key_ctx.reset(t1)
+        _parent_id_ctx.reset(t2)
+
+    def test_space_key_context_var_overrides_env(self, monkeypatch):
+        """Context-var space key should take priority over env var."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "ENV_KEY")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        token = set_confluence_space_key("CTX_KEY")
+        try:
+            env = _get_confluence_env()
+            assert env["space_key"] == "CTX_KEY"
+        finally:
+            _space_key_ctx.reset(token)
+
+    def test_explicit_param_overrides_context_var(self, monkeypatch):
+        """Explicit space_key param should override context var."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "ENV")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        token = set_confluence_space_key("CTX")
+        try:
+            env = _get_confluence_env(space_key="EXPLICIT")
+            assert env["space_key"] == "EXPLICIT"
+        finally:
+            _space_key_ctx.reset(token)
+
+    def test_env_var_used_when_context_empty(self, monkeypatch):
+        """Without context var, env var should be used."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "FROM_ENV")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        env = _get_confluence_env()
+        assert env["space_key"] == "FROM_ENV"
+
+    def test_parent_id_context_var_overrides_env(self, monkeypatch):
+        """Context-var parent_id should take priority over env var."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+        monkeypatch.setenv("CONFLUENCE_PARENT_ID", "111")
+
+        token = set_confluence_parent_id("222")
+        try:
+            env = _get_confluence_env()
+            assert env["parent_id"] == "222"
+        finally:
+            _parent_id_ctx.reset(token)
+
+    def test_confluence_project_context_manager(self, monkeypatch):
+        """Context manager should set and reset both context vars."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "OLD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+        monkeypatch.setenv("CONFLUENCE_PARENT_ID", "100")
+
+        with confluence_project_context(space_key="NEW", parent_id="200"):
+            env = _get_confluence_env()
+            assert env["space_key"] == "NEW"
+            assert env["parent_id"] == "200"
+
+        # After context manager, should fallback to env
+        env_after = _get_confluence_env()
+        assert env_after["space_key"] == "OLD"
+        assert env_after["parent_id"] == "100"
+
+    def test_context_manager_partial_keys(self, monkeypatch):
+        """Context manager with only space_key should not affect parent_id."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "OLD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+        monkeypatch.setenv("CONFLUENCE_PARENT_ID", "100")
+
+        with confluence_project_context(space_key="NEW"):
+            env = _get_confluence_env()
+            assert env["space_key"] == "NEW"
+            assert env["parent_id"] == "100"  # unchanged
+
+    def test_context_manager_empty_strings_ignored(self, monkeypatch):
+        """Empty strings should not override env vars."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net/wiki")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "KEEP")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+
+        with confluence_project_context(space_key="", parent_id=""):
+            env = _get_confluence_env()
+            assert env["space_key"] == "KEEP"

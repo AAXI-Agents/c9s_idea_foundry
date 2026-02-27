@@ -707,7 +707,7 @@ class PRDFlow(Flow[PRDState]):
                              section.title, exc)
                 save_failed(
                     run_id=self.state.run_id,
-                    idea=self.state.idea,
+                    idea=self.state.original_idea or self.state.idea,
                     iteration=section.iteration,
                     error=str(exc),
                     step=f"draft_{section.key}",
@@ -764,10 +764,11 @@ class PRDFlow(Flow[PRDState]):
             # Persist section draft
             save_iteration(
                 run_id=self.state.run_id,
-                idea=self.state.idea,
+                idea=self.state.original_idea or self.state.idea,
                 iteration=section.iteration,
                 draft={section.key: section.content},
                 step=f"draft_{section.key}",
+                finalized_idea=self.state.idea,
                 section_key=section.key,
                 section_title=section.title,
                 agent_results=agent_results,
@@ -1178,7 +1179,7 @@ class PRDFlow(Flow[PRDState]):
                     )
                     save_failed(
                         run_id=self.state.run_id,
-                        idea=self.state.idea,
+                        idea=self.state.original_idea or self.state.idea,
                         iteration=self.state.iteration,
                         error=str(exc),
                         draft={section.key: section.content},
@@ -1262,7 +1263,7 @@ class PRDFlow(Flow[PRDState]):
                 )
                 save_failed(
                     run_id=self.state.run_id,
-                    idea=self.state.idea,
+                    idea=self.state.original_idea or self.state.idea,
                     iteration=self.state.iteration,
                     error=str(exc),
                     draft={section.key: section.content},
@@ -1317,11 +1318,12 @@ class PRDFlow(Flow[PRDState]):
 
             save_iteration(
                 run_id=self.state.run_id,
-                idea=self.state.idea,
+                idea=self.state.original_idea or self.state.idea,
                 iteration=section.iteration,
                 draft={section.key: section.content},
                 critique=self.state.critique,
                 step=f"refine_{section.key}",
+                finalized_idea=self.state.idea,
                 section_key=section.key,
                 section_title=section.title,
                 selected_agent=section.selected_agent,

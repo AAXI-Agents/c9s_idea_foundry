@@ -9,6 +9,7 @@ from crewai_productfeature_planner.main import (
     _assemble_prd_from_doc,
     _choose_refinement_mode,
     _confluence_completed_in_output,
+    _create_project_interactive,
     _extract_confluence_url,
     _generate_missing_outputs,
     _jira_completed_in_output,
@@ -19,6 +20,8 @@ from crewai_productfeature_planner.main import (
     _restore_prd_state,
     _run_startup_delivery,
     _run_startup_delivery_background,
+    _save_project_link,
+    _select_or_create_project,
 )
 
 
@@ -1867,3 +1870,142 @@ class TestExtractConfluenceUrl:
         text = "See https://co.atlassian.net/wiki/page/1."
         url = _extract_confluence_url(text)
         assert not url.endswith(".")
+
+
+# ── _select_or_create_project ────────────────────────────────
+
+_PC_MODULE = "crewai_productfeature_planner.mongodb.project_config"
+
+
+class TestSelectOrCreateProject:
+    """Tests for CLI project selection flow."""
+
+    @patch(f"{_PC_MODULE}.list_projects")
+    def test_select_existing_project(self, mock_list):
+        mock_list.return_value = [
+            {"project_id": "p1", "name": "Alpha", "confluence_space_key": "ALP"},
+            {"project_id": "p2", "name": "Beta"},
+        ]
+        with patch("builtins.input", return_value="1"):
+            pid, pname = _select_or_create_project()
+        assert pid == "p1"
+        assert pname == "Alpha"
+
+    @patch(f"{_PC_MODULE}.list_projects")
+    def test_select_second_project(self, mock_list):
+        mock_list.return_value = [
+            {"project_id": "p1", "name": "Alpha"},
+            {"project_id": "p2", "name": "Beta"},
+        ]
+        with patch("builtins.input", return_value="2"):
+            pid, pname = _select_or_create_project()
+        assert pid == "p2"
+        assert pname == "Beta"
+
+    @patch(f"{_PC_MODULE}.create_project", return_value="p-new")
+    @patch(f"{_PC_MODULE}.list_projects", return_value=[])
+    def test_new_project_when_no_existing(self, mock_list, mock_create):
+        """When there are no projects, 'n' creates a new one."""
+        with patch("builtins.input", side_effect=["n", "My Project", "", "", ""]):
+            pid, pname = _select_or_create_project()
+        assert pid == "p-new"
+        assert pname == "My Project"
+        mock_create.assert_called_once()
+
+    @patch(f"{_PC_MODULE}.create_project", return_value="p-new")
+    @patch(f"{_PC_MODULE}.list_projects")
+    def test_new_project_with_existing(self, mock_list, mock_create):
+        """User picks 'n' even when projects exist."""
+        mock_list.return_value = [
+            {"project_id": "p1", "name": "Old"},
+        ]
+        with patch("builtins.input", side_effect=["n", "New Proj", "", "", ""]):
+            pid, pname = _select_or_create_project()
+        assert pid == "p-new"
+
+    @patch(f"{_PC_MODULE}.list_projects")
+    def test_invalid_then_valid(self, mock_list, capsys):
+        mock_list.return_value = [
+            {"project_id": "p1", "name": "Alpha"},
+        ]
+        with patch("builtins.input", side_effect=["99", "abc", "1"]):
+            pid, pname = _select_or_create_project()
+        assert pid == "p1"
+        out = capsys.readouterr().out
+        assert "Please enter" in out
+
+
+# ── _create_project_interactive ──────────────────────────────
+
+
+class TestCreateProjectInteractive:
+    """Tests for CLI create-project prompt."""
+
+    @patch(f"{_PC_MODULE}.create_project", return_value="p-abc")
+    def test_creates_with_all_fields(self, mock_create, capsys):
+        with patch("builtins.input", side_effect=[
+            "My App", "SPACE1", "JIRA1", "12345",
+        ]):
+            pid, pname = _create_project_interactive()
+        assert pid == "p-abc"
+        assert pname == "My App"
+        mock_create.assert_called_once_with(
+            name="My App",
+            confluence_space_key="SPACE1",
+            jira_project_key="JIRA1",
+            confluence_parent_id="12345",
+        )
+
+    @patch(f"{_PC_MODULE}.create_project", return_value="p-xyz")
+    def test_creates_with_optional_fields_empty(self, mock_create):
+        with patch("builtins.input", side_effect=["Simple", "", "", ""]):
+            pid, pname = _create_project_interactive()
+        assert pid == "p-xyz"
+        assert pname == "Simple"
+        mock_create.assert_called_once_with(
+            name="Simple",
+            confluence_space_key="",
+            jira_project_key="",
+            confluence_parent_id="",
+        )
+
+    @patch(f"{_PC_MODULE}.create_project", return_value=None)
+    def test_fallback_on_create_failure(self, mock_create, capsys):
+        """When create_project returns None, a local UUID is generated."""
+        with patch("builtins.input", side_effect=["Offline", "", "", ""]):
+            pid, pname = _create_project_interactive()
+        assert pname == "Offline"
+        assert len(pid) == 32  # uuid hex
+        out = capsys.readouterr().out
+        assert "offline mode" in out.lower()
+
+    @patch(f"{_PC_MODULE}.create_project", return_value="p1")
+    def test_empty_name_retries(self, mock_create, capsys):
+        """Entering empty name is rejected; user must re-enter."""
+        with patch("builtins.input", side_effect=["", "", "Finally", "", "", ""]):
+            pid, pname = _create_project_interactive()
+        assert pname == "Finally"
+        out = capsys.readouterr().out
+        assert "cannot be empty" in out.lower()
+
+
+# ── _save_project_link ───────────────────────────────────────
+
+
+class TestSaveProjectLink:
+    """Tests for the _save_project_link error-swallowing wrapper."""
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.save_project_ref"
+    )
+    def test_calls_save_project_ref(self, mock_save):
+        _save_project_link("run123", "proj456")
+        mock_save.assert_called_once_with("run123", "proj456")
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.save_project_ref",
+        side_effect=RuntimeError("DB error"),
+    )
+    def test_swallows_exception(self, mock_save):
+        """Errors are silently swallowed — the flow must never crash."""
+        _save_project_link("run123", "proj456")  # should not raise
