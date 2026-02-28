@@ -197,26 +197,51 @@ create_jira_stories_task:
 
 create_jira_tasks_task:
   description: >
-    Create Jira Task tickets as sub-tasks under the Stories created in
-    the previous step.  Tasks are the atomic units of work that AI
-    coding agents (Codex, Copilot, vibe-coding) pick up and execute
-    autonomously.
+    Create Jira Sub-Task tickets under the Stories created in the
+    previous step.  Sub-Tasks are the atomic units of work that the
+    Engineering Squad picks up.  The team does NOT work on User
+    Stories directly — they work on Sub-Tasks.
 
-    **CRITICAL — Agent-Ready Tasks**: Every Task description MUST
-    contain enough detail that an AI agent can start coding
-    immediately without asking for clarification.  Each Task
-    description MUST include ALL of the following sections:
+    ## Engineering Squad
+    Your squad has four roles.  Every Sub-Task is assigned to exactly
+    one role:
+      1. **UX Designer** — wireframes, prototypes, design-system
+      2. **Backend Engineer** — APIs, services, database, webhooks
+      3. **Frontend Engineer** — UI components, state, integration
+      4. **Quality Engineer (QE)** — test suites, coverage, validation
 
-    1. **Reasoning** — WHY this task exists, what problem it solves,
-       and how it fits into the larger feature
-    2. **Step-by-step instructions** — Numbered implementation steps
+    ## Agent-Ready Sub-Tasks
+    **CRITICAL**: Every Sub-Task description MUST contain enough
+    detail that an AI coding agent (Claude Opus 4.6 Codex) can start
+    working immediately without asking for clarification.
+
+    Each Sub-Task description MUST include ALL of these sections:
+
+    1. **Reasoning** — WHY this sub-task exists, what problem it
+       solves, and how it fits into the larger feature
+    2. **Step-by-step Instructions** — Numbered implementation steps
        that an AI coding agent can follow linearly
-    3. **Sample data** — Concrete JSON examples, mock payloads, or
+    3. **Sample Data** — Concrete JSON examples, mock payloads, or
        test fixtures the agent can copy-paste into code
-    4. **Guard rails** — Explicit list of things NOT to do, forbidden
+    4. **Guard Rails** — Explicit list of things NOT to do, forbidden
        patterns, constraints, and out-of-scope work
-    5. **Definition of done** — Checklist of acceptance criteria that
+    5. **Definition of Done** — Checklist of acceptance criteria that
        can be verified programmatically
+
+    ## Project Configuration Boundaries
+    Sub-Task descriptions must constrain agents to these tools:
+      - **Claude Opus 4.6 Codex** — the AI agent executing each
+        Sub-Task; all instructions must be Codex-executable
+      - **Schema validator** — every data schema must include a JSON
+        Schema definition that passes validation
+      - **OpenAPI generator** — every API must produce a valid
+        OpenAPI 3.1 specification fragment
+      - **Swagger API documentation** — every endpoint must have
+        request/response examples in Swagger format
+      - **State diagram generator** — every stateful entity must
+        include a Mermaid state diagram
+      - **Crew reflection memory** — reference patterns from
+        previous decompositions to improve ticket quality
 
     ## Stories Created
     {stories_output}
@@ -233,17 +258,19 @@ create_jira_tasks_task:
 
     Use BOTH the functional requirements AND the additional PRD
     context above (especially non-functional requirements, edge cases,
-    error handling scenarios) to produce maximally detailed tasks.
-    For each Story created in the previous step, break it down into
-    **3-7 specific Tasks**.  Each Task should be a concrete, atomic,
-    agent-executable work item.
+    error handling scenarios) to produce maximally detailed sub-tasks.
+
+    For each Story created in the previous step, decompose it into
+    **3-7 Sub-Tasks**.  Each Sub-Task should be a concrete, atomic,
+    agent-codex-executable work item for one squad member.
 
     ---
 
-    ### UX Tasks (under UX Stories)
-    UX tasks produce the design artefacts that Architecture and
-    Engineering depend on.  Each UX task description must include:
+    ### UX Sub-Tasks (under UX Stories)
+    UX sub-tasks produce the design artefacts that Architecture and
+    Engineering depend on.
 
+    Each UX sub-task description MUST include:
     - **Reasoning**: Why this design artefact is needed and which
       user journey it supports
     - **Deliverables**: Exact list of screens, states, and components
@@ -256,7 +283,7 @@ create_jira_tasks_task:
     - **Guard rails**: Do NOT introduce new colour tokens without
       design-system review; Do NOT deviate from the existing grid
 
-    Task categories:
+    Sub-task categories:
     - User research / persona validation
     - Wireframe creation for each screen and interaction flow
     - High-fidelity mockup / clickable prototype
@@ -265,18 +292,17 @@ create_jira_tasks_task:
 
     ---
 
-    ### Architecture Tasks (under Architecture Stories)
-    Architecture tasks define the **data definitions** that both
-    Backend and Frontend engineering tasks depend on.  Every
-    definition must be documented in the Confluence page so that
-    engineers can reference it during implementation.
+    ### Architecture Sub-Tasks (under Architecture Stories)
+    Architecture sub-tasks define the **data definitions, API
+    contracts, state machines, webhook architecture, error taxonomy,
+    and observability hooks** that Engineering and QE depend on.
 
-    **CRITICAL**: Architecture tasks must contain the FULL
+    **CRITICAL**: Architecture sub-tasks must contain the FULL
     specification — not just a description of what to do, but the
     actual schema/contract itself with sample data.
 
-    #### MongoDB Schema tasks — prefix: "[Data Schema] …"
-    Each schema task description MUST include:
+    #### Data Schema sub-tasks — prefix: "[Data Schema] …"
+    Each schema sub-task description MUST include:
 
     - **Reasoning**: Why this collection is needed, what entity it
       models, and why no existing collection suffices
@@ -299,91 +325,184 @@ create_jira_tasks_task:
       uniqueness.  Example:
       ``{{ "user_id": 1 }}`` — unique
       ``{{ "created_at": -1 }}`` — for sorting
-    - **Sample documents**: Provide 2-3 realistic JSON documents:
+    - **JSON Schema validator** (MongoDB $jsonSchema): Include the
+      full JSON Schema definition so it can be validated:
       ```json
       {{
-        "_id": "665f1a2b3c4d5e6f7a8b9c0d",
-        "user_id": "usr_abc123",
-        "theme": "dark",
-        "notifications": {{ "email": true, "push": false }},
-        "created_at": "2026-03-01T10:00:00Z",
-        "updated_at": "2026-03-01T10:00:00Z"
+        "$jsonSchema": {{
+          "bsonType": "object",
+          "required": ["user_id", "created_at"],
+          "properties": {{
+            "user_id": {{ "bsonType": "string" }},
+            "theme": {{ "enum": ["light", "dark"] }}
+          }}
+        }}
       }}
       ```
-    - **Validation rules**: MongoDB JSON Schema validator or
-      application-level checks
+    - **Sample documents**: Provide 2-3 realistic JSON documents
+    - **Migration strategy**: If modifying existing collections,
+      specify backward-compatible migration steps
     - **Guard rails**: Do NOT embed unbounded arrays; Do NOT store
       derived/computed data; Do NOT use schemaless sub-documents
-      for structured data
 
-    #### API Definition tasks — prefix: "[API Definition] …"
-    Each API task description MUST include:
+    #### State Machine sub-tasks — prefix: "[State Machine] …"
+    When a Story involves stateful entities, create a state-machine
+    sub-task that includes:
+
+    - **Mermaid state diagram**: Full diagram showing all states
+      and transitions:
+      ```mermaid
+      stateDiagram-v2
+        [*] --> Draft
+        Draft --> PendingReview : submit
+        PendingReview --> Approved : approve
+        PendingReview --> Draft : requestChanges
+        Approved --> Published : publish
+        Published --> [*]
+      ```
+    - **Transition table**: from-state, event, guard condition,
+      to-state, side-effects
+    - **Invalid transition handling**: error code and response for
+      every illegal transition attempt
+    - **Concurrency guards**: optimistic locking strategy, version
+      fields, conflict resolution
+    - **Audit trail**: who changed what, when (fields to capture)
+
+    #### API Definition sub-tasks — prefix: "[API Definition] …"
+    Each API sub-task description MUST include:
 
     - **Reasoning**: Why this endpoint is needed, which user action
-      triggers it, and how it fits into the feature's data flow
-    - **Endpoint specification**:
-      - Path: e.g. ``/api/v1/preferences``
-      - Method: GET / POST / PUT / PATCH / DELETE
-      - Authentication: Bearer token / API key / none
-      - Rate limit: e.g. 100 req/min per user
-    - **Request schema** with a concrete example:
+      triggers it
+    - **OpenAPI 3.1 specification fragment** (YAML):
+      ```yaml
+      /api/v1/preferences:
+        post:
+          summary: Create user preferences
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CreatePreferences'
+          responses:
+            '201':
+              description: Created
+            '400':
+              description: Validation error
+            '401':
+              description: Unauthorized
+      ```
+    - **Full request example** (headers + body):
       ```json
       POST /api/v1/preferences
       Content-Type: application/json
       Authorization: Bearer <token>
+      Idempotency-Key: "idem_abc123"
 
       {{
         "theme": "dark",
         "notifications": {{ "email": true, "push": false }}
       }}
       ```
-    - **Success response** with a concrete example:
+    - **Full success response example**
+    - **Error responses**: Every expected error with status code,
+      structured error code (DOMAIN_CATEGORY_SPECIFIC), and message:
+      ```
+      400 — {{ "error": {{ "code": "PREF_VALIDATION_INVALID_THEME", "message": "theme must be 'light' or 'dark'", "trace_id": "t-xyz" }} }}
+      401 — {{ "error": {{ "code": "AUTH_TOKEN_EXPIRED", "message": "Bearer token missing or expired", "trace_id": "t-xyz" }} }}
+      409 — {{ "error": {{ "code": "PREF_CONFLICT_ALREADY_EXISTS", "message": "Preferences already exist", "trace_id": "t-xyz" }} }}
+      ```
+    - **Idempotency key header specification** (for mutating ops)
+    - **Rate limiting**: requests per minute per user/API key
+    - **Guard rails**: Do NOT return internal ObjectIds; Do NOT
+      accept unvalidated input; Do NOT allow batch-size > 100
+
+    #### Webhook sub-tasks — prefix: "[Webhook] …"
+    When a Story uses webhooks or event-driven patterns, create a
+    webhook sub-task that includes:
+
+    - **Event type taxonomy**: domain.entity.action format
+      (e.g. "preferences.user.updated")
+    - **Payload JSON schema** with full example:
       ```json
-      HTTP 201 Created
       {{
-        "id": "pref_xyz789",
-        "user_id": "usr_abc123",
-        "theme": "dark",
-        "notifications": {{ "email": true, "push": false }},
-        "created_at": "2026-03-01T10:00:00Z"
+        "event_type": "preferences.user.updated",
+        "event_id": "evt_abc123",
+        "timestamp": "2026-03-01T10:00:00Z",
+        "data": {{
+          "user_id": "usr_abc123",
+          "changes": {{ "theme": {{ "old": "light", "new": "dark" }} }}
+        }}
       }}
       ```
-    - **Error responses**: List every expected error with status code,
-      error code, and message:
+    - **Delivery guarantees**: at-least-once with idempotency
+    - **Retry policy matrix**:
       ```
-      400 Bad Request   — {{ "error": "INVALID_THEME", "message": "theme must be 'light' or 'dark'" }}
-      401 Unauthorized  — {{ "error": "AUTH_REQUIRED", "message": "Bearer token missing or expired" }}
-      409 Conflict      — {{ "error": "ALREADY_EXISTS", "message": "Preferences already exist for this user" }}
+      Attempt | Delay    | Max elapsed
+      1       | 1s       | 1s
+      2       | 5s       | 6s
+      3       | 30s      | 36s
+      4       | 5m       | 5m 36s
+      5       | 30m      | 35m 36s
       ```
-    - **Algorithm / business-logic notes**: If the endpoint
-      involves non-trivial logic (ranking, matching, scheduling),
-      specify the algorithm with reasoning for why it was chosen
-    - **Guard rails**: Do NOT return internal ObjectIds in
-      responses; Do NOT accept unvalidated input; Do NOT allow
-      batch-size > 100
+    - **Idempotency key specification**: ``event_id`` header
+    - **Dead-letter queue handling**: after max retries, persist to
+      DLQ collection with full payload for manual replay
+    - **Signature verification**: HMAC-SHA256 of payload body
+    - **Timeout and circuit-breaker thresholds**
 
-    Architecture tasks have **no internal blockers** — they can be
-    worked in parallel under their Architecture story.
+    #### Error Taxonomy sub-tasks — prefix: "[Error Taxonomy] …"
+    Define the structured error taxonomy for the feature:
+
+    - **Error code format**: DOMAIN_CATEGORY_SPECIFIC
+    - **HTTP status code mapping table**
+    - **Error response envelope**:
+      ```json
+      {{
+        "error": {{
+          "code": "DOMAIN_CATEGORY_SPECIFIC",
+          "message": "Human-readable description",
+          "details": [],
+          "trace_id": "t-xyz789"
+        }}
+      }}
+      ```
+    - **Classification**: client-actionable vs server-side errors
+    - **Observability**: which errors trigger alerts vs metrics
+
+    #### Observability sub-tasks — prefix: "[Observability] …"
+    Specify the observability requirements for the feature:
+
+    - **Structured log entries**: level, fields, sample log line
+    - **Metrics to emit**: counter/histogram/gauge — name, labels,
+      unit (e.g. ``api_requests_total{method="POST", status="201"}``)
+    - **Trace span names and attributes**
+    - **Health-check endpoints or probes affected**
+    - **Alert thresholds** (e.g. "alert if error rate > 5% for 5min")
+
+    Architecture sub-tasks have **no internal blockers** — they can
+    be worked in parallel under their Architecture story.
 
     ---
 
-    ### Engineering Tasks (under Engineering Stories)
-    Engineering tasks are split into **Frontend** and **Backend**
-    categories.  Create tasks from both categories for each
+    ### Engineering Sub-Tasks (under Engineering Stories)
+    Engineering sub-tasks are split into **Frontend** and **Backend**
+    categories.  Create sub-tasks from both categories for each
     Engineering story.
 
-    **CRITICAL**: Every Engineering task description must be
-    **vibe-coding ready** — an AI agent must be able to read the
+    **CRITICAL**: Every Engineering sub-task description must be
+    **agent-codex-ready** — an AI agent must be able to read the
     ticket and start writing production code immediately.
 
-    **IMPORTANT**: Every Frontend and Backend task **is blocked by**
-    the relevant Architecture task(s) — set ``is_blocked_by_key``
-    to the corresponding Architecture task key so that engineers
-    cannot begin implementation until the data schema and API
-    contract are defined.
+    **IMPORTANT**: Every Frontend and Backend sub-task **is blocked
+    by** the relevant Architecture sub-task(s) — set
+    ``is_blocked_by_key`` to the corresponding Architecture sub-task
+    key so that engineers cannot begin implementation until the data
+    schema, API contract, state machine, and error taxonomy are
+    defined.
 
-    #### Backend tasks — prefix: "[Backend] …"
-    Each Backend task description MUST include:
+    #### Backend sub-tasks — prefix: "[Backend] …"
+    Each Backend sub-task description MUST include:
 
     - **Reasoning**: Why this service/endpoint/module is needed and
       which Architecture definition it implements
@@ -392,41 +511,44 @@ create_jira_tasks_task:
       2. Class/function signatures with type hints
       3. Dependencies to import and install
       4. Database operations (CRUD with the schema from the
-         Architecture task)
+         Architecture sub-task)
       5. Error handling — which exceptions to catch, which HTTP
-         status codes to return
+         status codes to return (referencing the Error Taxonomy)
       6. Logging — what to log at INFO vs WARNING vs ERROR
+         (referencing the Observability sub-task)
+      7. State transitions — which state-machine transitions this
+         endpoint triggers (referencing the State Machine sub-task)
+      8. Webhook emissions — which events to publish after
+         successful operations (referencing the Webhook sub-task)
     - **Sample input/output**: Concrete request/response examples
-      the agent can use for manual verification:
-      ```
-      Input:  {{ "theme": "dark", "notifications": {{ "email": true }} }}
-      Output: {{ "id": "pref_xyz789", "status": "created" }}
-      ```
+    - **Idempotency requirements**: Which operations need
+      idempotency keys and how duplicates are detected
     - **Guard rails**:
       - Do NOT modify existing middleware or shared utilities
       - Do NOT add new dependencies without documenting them
-      - Do NOT use raw string SQL/queries — use ODM/ORM methods
+      - Do NOT use raw string queries — use ODM/ORM methods
       - Do NOT swallow exceptions silently
       - Do NOT return stack traces in API responses
     - **Definition of done**:
       - [ ] Endpoint responds correctly for valid input
-      - [ ] Input validation rejects malformed payloads
+      - [ ] Input validated against JSON Schema
+      - [ ] State transitions follow the state-machine spec
+      - [ ] Error responses match the Error Taxonomy
+      - [ ] Webhook events emitted on state changes
+      - [ ] Idempotency key prevents duplicate processing
+      - [ ] Structured logs emitted per Observability spec
       - [ ] Auth middleware enforces token verification
-      - [ ] All database writes are idempotent where applicable
-      - [ ] Logging covers happy path and error cases
 
-    Backend task categories:
-    - Database model/schema implementation (referencing the
-      Architecture MongoDB schema definition)
-    - API endpoint implementation (REST / GraphQL) per the
-      Architecture API contract
-    - Webhook integration and event handling
+    Backend sub-task categories:
+    - Database model/schema implementation (referencing Data Schema)
+    - API endpoint implementation (referencing API Definition)
+    - State-machine implementation (referencing State Machine)
+    - Webhook publisher (referencing Webhook sub-task)
     - Business-logic / service-layer implementation
     - Authentication, authorisation, and security hardening
-    - Third-party service integration
 
-    #### Frontend tasks — prefix: "[Frontend] …"
-    Each Frontend task description MUST include:
+    #### Frontend sub-tasks — prefix: "[Frontend] …"
+    Each Frontend sub-task description MUST include:
 
     - **Reasoning**: Why this component/page is needed and which
       UX wireframe it implements
@@ -434,17 +556,13 @@ create_jira_tasks_task:
       1. Suggested file path (e.g. ``src/components/Preferences/``)
       2. Component hierarchy and props interface (TypeScript types)
       3. State management approach (local state, context, store)
-      4. API integration — which backend endpoint to call, request
-         format, response handling
-      5. Responsive breakpoints (mobile ≤ 768px, tablet ≤ 1024px,
-         desktop > 1024px)
-      6. Accessibility — ARIA labels, keyboard navigation, focus
-         management
-    - **Sample UI states** — describe or provide mock data for:
-      - Loading state (skeleton placeholders)
-      - Empty state (no data yet — specific copy)
-      - Success state (populated with sample data)
-      - Error state (API failure — specific error message)
+      4. API integration — which backend endpoint to call (referencing
+         the API Definition), request format, response handling
+      5. Error handling — display errors from the Error Taxonomy
+      6. Responsive breakpoints (mobile, tablet, desktop)
+      7. Accessibility — ARIA labels, keyboard navigation, focus
+    - **Sample UI states**: Loading, Empty, Success, Error — with
+      concrete mock data for each
     - **Guard rails**:
       - Do NOT use inline styles — use CSS modules or styled
         components
@@ -454,34 +572,49 @@ create_jira_tasks_task:
     - **Definition of done**:
       - [ ] Component renders all 4 states correctly
       - [ ] Responsive layout works at all breakpoints
+      - [ ] Error messages match Error Taxonomy codes
       - [ ] Keyboard navigation works end-to-end
-      - [ ] ARIA labels are present on all interactive elements
-      - [ ] API integration handles loading, success, and error
+      - [ ] State transitions update UI reactively
 
-    Where tasks have natural ordering (e.g. "[Backend] Implement DB
-    model" must complete before "[Backend] Implement API endpoint"),
-    use the ``is_blocked_by_key`` parameter to link them **in addition
-    to** the Architecture dependency.
+    Where sub-tasks have natural ordering, use ``is_blocked_by_key``
+    to link them in addition to the Architecture dependency.
 
     ---
 
-    ### QE Tasks (under QE Stories)
-    QE tasks verify correctness of the Engineering implementation.
-    Create **two categories** of QE tasks for every Engineering task:
+    ### QE Sub-Tasks (under QE Stories)
+    QE sub-tasks verify correctness of the Engineering implementation.
+    Create **two categories** of QE sub-tasks for every Engineering
+    sub-task:
 
-    **CRITICAL**: Every QE task must contain concrete test scenarios
-    with sample data that a QA agent can convert directly into test
-    code without inventing test cases from scratch.
+    **CRITICAL**: Every QE sub-task must contain concrete test
+    scenarios with sample data that a QA agent can convert directly
+    into test code without inventing test cases from scratch.
 
-    #### Unit / Integration Test tasks
+    **MANDATORY**: In addition to happy-path, edge-case, and negative
+    tests, every QE sub-task MUST include tests for:
+      1. **JSON schema validation** — verify payloads conform to the
+         JSON Schema defined in the Architecture sub-task
+      2. **State transition verification** — verify every valid
+         transition succeeds and every invalid transition returns
+         the correct error (reference State Machine sub-task)
+      3. **API request/response contract** — verify every endpoint
+         matches the OpenAPI spec (reference API Definition sub-task)
+      4. **Webhook retry logic** — verify retry policy, idempotency,
+         and dead-letter queue behaviour (reference Webhook sub-task)
+      5. **Error taxonomy validation** — verify every error response
+         matches the Error Taxonomy (code, message, trace_id)
+      6. **Observability hooks verification** — verify structured
+         logs, metrics, and trace spans are emitted correctly
+
+    #### Unit / Integration Test sub-tasks
     Prefix: "[Unit Test — Backend] …" or "[Unit Test — Frontend] …"
 
-    Each test task description MUST include:
+    Each test sub-task description MUST include:
 
     - **Reasoning**: Why these tests are needed and which Engineering
-      task they verify
-    - **Reference**: The Engineering task key this test covers
-    - **Happy-path test scenarios** — concrete test cases:
+      sub-task they verify
+    - **Reference**: The Engineering sub-task key this test covers
+    - **Happy-path test scenarios** with GIVEN/WHEN/THEN format:
       ```
       SCENARIO: Create preferences with valid input
       GIVEN:  user_id="usr_abc123", payload={{ "theme": "dark" }}
@@ -493,29 +626,43 @@ create_jira_tasks_task:
       SCENARIO: Handle maximum-length theme value
       GIVEN:  payload={{ "theme": "a" * 256 }}
       WHEN:   POST /api/v1/preferences
-      THEN:   status=400, error="INVALID_THEME"
-
-      SCENARIO: Handle concurrent creation
-      GIVEN:  Two simultaneous POST requests for same user_id
-      WHEN:   Both processed
-      THEN:   One succeeds (201), one fails (409 ALREADY_EXISTS)
+      THEN:   status=400, error.code="PREF_VALIDATION_INVALID_THEME"
       ```
-    - **Negative test scenarios** — expected failures:
+    - **Negative test scenarios** — expected failures with Error
+      Taxonomy codes:
       ```
       SCENARIO: Reject unauthenticated request
       GIVEN:  No Authorization header
       WHEN:   POST /api/v1/preferences
-      THEN:   status=401, error="AUTH_REQUIRED"
-
-      SCENARIO: Reject invalid JSON body
-      GIVEN:  body="not json"
+      THEN:   status=401, error.code="AUTH_TOKEN_EXPIRED"
+      ```
+    - **JSON schema validation tests**:
+      ```
+      SCENARIO: Reject payload violating JSON Schema
+      GIVEN:  payload={{ "theme": 12345 }}  (type should be string)
       WHEN:   POST /api/v1/preferences
-      THEN:   status=400, error="INVALID_JSON"
-
-      SCENARIO: Handle non-existent user
-      GIVEN:  user_id="usr_nonexistent"
-      WHEN:   GET /api/v1/preferences/usr_nonexistent
-      THEN:   status=404, error="NOT_FOUND"
+      THEN:   status=400, error.code="PREF_VALIDATION_SCHEMA_ERROR"
+      ```
+    - **State transition tests**:
+      ```
+      SCENARIO: Reject invalid state transition
+      GIVEN:  entity in state "Published"
+      WHEN:   attempt transition "submit"
+      THEN:   status=409, error.code="STATE_INVALID_TRANSITION"
+      ```
+    - **Webhook retry tests**:
+      ```
+      SCENARIO: Retry webhook delivery on timeout
+      GIVEN:  webhook endpoint returns 504 on first call
+      WHEN:   retry policy triggers
+      THEN:   second attempt after 1s delay, same idempotency key
+      ```
+    - **Observability tests**:
+      ```
+      SCENARIO: Verify structured log on successful creation
+      GIVEN:  Valid create preferences request
+      WHEN:   POST /api/v1/preferences succeeds
+      THEN:   log entry at INFO with fields: user_id, action, duration_ms
       ```
     - **Sample test data fixtures** ready to copy-paste:
       ```python
@@ -540,23 +687,79 @@ create_jira_tasks_task:
     - **Definition of done**:
       - [ ] All happy-path scenarios pass
       - [ ] All edge-case scenarios pass
-      - [ ] All negative scenarios return expected errors
-      - [ ] Test coverage ≥ 90% for the module under test
-      - [ ] No flaky tests
+      - [ ] All negative scenarios return expected Error Taxonomy codes
+      - [ ] JSON schema validation tests pass
+      - [ ] State transition tests pass
+      - [ ] Webhook retry logic tests pass
+      - [ ] Observability hooks emit correct logs/metrics
+      - [ ] Test coverage >= 90% for the module under test
 
-    Each QE task must have ``is_blocked_by_key`` set to the
-    corresponding Engineering task key so the QE task cannot start
-    until the implementation exists.
+    Each QE sub-task must have ``is_blocked_by_key`` set to the
+    corresponding Engineering sub-task key so the QE sub-task cannot
+    start until the implementation exists.
 
     ---
 
-    For each Task, call the jira_create_issue tool with:
+    ## Sub-Task Dependency Summary
+
+    The dependency chain for sub-tasks mirrors the Story dependency
+    chain but at a finer granularity:
+
+    ```
+    [UX sub-tasks]           — no blockers (starting point)
+         |
+    [Architecture sub-tasks] — blocked by UX sub-tasks
+    (Data Schema, State Machine, API Definition, Webhook,
+     Error Taxonomy, Observability)
+         |
+    [Engineering sub-tasks]  — blocked by Architecture sub-tasks
+    (Backend, Frontend)
+         |
+    [QE sub-tasks]           — blocked by Engineering sub-tasks
+    (Unit Test — Backend, Unit Test — Frontend)
+    ```
+
+    ---
+
+    ## Self-Improvement Check
+
+    After creating all sub-tasks for a Story, review them as a batch:
+    1. Could an agent start working on each sub-task without asking
+       a single question?  If not, add more detail.
+    2. Are all blocking dependencies captured with
+       ``is_blocked_by_key``?  If not, add missing links.
+    3. Does every sub-task with state changes include a Mermaid
+       state diagram?  If not, add one.
+    4. Does every QE sub-task reference the exact JSON schema, API
+       contract, error codes, and observability spec?  If not,
+       cross-reference them.
+    5. Does every sub-task specify the tool boundaries (Codex,
+       Schema validator, OpenAPI generator, etc.)?  If not, add
+       the tool constraint.
+    If any check fails, revise the sub-task before moving on.
+
+    ---
+
+    For each Sub-Task, call the jira_create_issue tool with:
     - Issue type: "Task"
     - Summary: Specific, actionable title with the appropriate prefix
+      (e.g. "[Data Schema] User preferences collection",
+       "[API Definition] POST /api/v1/preferences",
+       "[State Machine] Preference lifecycle states",
+       "[Webhook] preferences.user.updated event",
+       "[Error Taxonomy] Preferences domain errors",
+       "[Observability] Preferences API metrics & logs",
+       "[Backend] Implement preferences service",
+       "[Frontend] Preferences settings page",
+       "[Unit Test — Backend] Preferences API tests",
+       "[Unit Test — Frontend] Preferences component tests")
     - Description: MUST include ALL five sections — Reasoning,
       Step-by-step instructions, Sample data, Guard rails, and
-      Definition of done (as described above for each role)
-    - Parent key: The Story key this Task belongs under
+      Definition of done (as described above for each role).
+      MUST also include QE Acceptance Criteria covering:
+      JSON schema, state transitions, API contracts, webhook retry,
+      error taxonomy, and observability hooks.
+    - Parent key: The Story key this Sub-Task belongs under
     - Labels: "prd,auto-generated"
     - Run ID: {run_id}
     - Confluence URL: "{confluence_url}"
@@ -564,7 +767,7 @@ create_jira_tasks_task:
       "Architecture", "Engineering", or "QE")
 
   expected_output: >
-    A structured list of all Jira Task keys created, grouped by
+    A structured list of all Jira Sub-Task keys created, grouped by
     parent Story, with their URLs.  Format:
       Story STORY_KEY:
         - TASK_KEY: Summary — URL

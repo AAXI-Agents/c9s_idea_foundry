@@ -7,6 +7,7 @@ and interpret messages via OpenAI for Slack interactions.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -16,6 +17,18 @@ from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Thread-local team context
+# ---------------------------------------------------------------------------
+
+#: Set by the events / interactions routers before dispatching.  Every
+#: downstream call to :func:`_get_slack_client` will pick this up
+#: automatically so individual helper functions don't need a ``team_id``
+#: parameter.
+current_team_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_team_id", default=None,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -30,25 +43,30 @@ def _is_bypass() -> bool:
     }
 
 
-def _get_slack_client():
-    """Return a ``slack_sdk.WebClient`` using a valid (auto-refreshed) token.
+def _get_slack_client(team_id: str | None = None):
+    """Return a ``slack_sdk.WebClient`` for the given *team_id*.
 
-    Resolution order (handled by ``get_valid_token()``):
-    1. Cached in-memory token if still valid.
-    2. Persisted ``.slack_tokens.json`` file.
-    3. Token rotation via ``SLACK_CLIENT_ID`` / ``SLACK_CLIENT_SECRET`` /
-       ``SLACK_REFRESH_TOKEN``.
-    4. Static ``SLACK_ACCESS_TOKEN`` env var (fallback).
-    5. *None* when bypassed or no token is available.
+    Resolution order (handled by ``get_valid_token(team_id)``):
+    1. In-memory per-team cache (fast path).
+    2. MongoDB ``slackOAuth`` collection.
+    3. Token refresh via ``SLACK_CLIENT_ID`` / ``SLACK_CLIENT_SECRET``.
+    4. *None* when bypassed or no token is available.
+
+    When *team_id* is ``None`` the function checks the
+    :data:`current_team_id` context variable (set by the event /
+    interaction routers).  If that is also ``None`` and exactly one
+    team is installed, that team's token is used automatically.
     """
     if _is_bypass():
         return None
 
+    resolved_team_id = team_id or current_team_id.get()
+
     from crewai_productfeature_planner.tools.slack_token_manager import get_valid_token
 
-    token = get_valid_token()
+    token = get_valid_token(resolved_team_id)
     if not token:
-        logger.warning("SLACK_ACCESS_TOKEN not set – Slack tools in dry-run mode")
+        logger.warning("No Slack token available – Slack tools in dry-run mode")
         return None
     try:
         from slack_sdk import WebClient
@@ -75,11 +93,12 @@ def _is_token_error(exc: Exception) -> bool:
     ))
 
 
-def _retry_on_token_error(exc: Exception):
+def _retry_on_token_error(exc: Exception, team_id: str | None = None):
     """If *exc* is a token-related error, invalidate and return a fresh client."""
     if not _is_token_error(exc):
         return None
 
+    resolved_team_id = team_id or current_team_id.get()
     logger.warning("Slack token error (%s), refreshing and retrying…", exc)
 
     from crewai_productfeature_planner.tools.slack_token_manager import (
@@ -87,8 +106,8 @@ def _retry_on_token_error(exc: Exception):
         invalidate,
     )
 
-    invalidate()
-    new_token = get_valid_token()
+    invalidate(resolved_team_id)
+    new_token = get_valid_token(resolved_team_id)
     if not new_token:
         return None
 
@@ -348,12 +367,14 @@ class SlackPostPRDResultTool(BaseTool):
 
 
 class SlackInterpretMessageTool(BaseTool):
-    """Interpret a Slack message using OpenAI to classify intent."""
+    """Interpret a Slack message using Gemini LLM to classify intent."""
 
     name: str = "Slack Interpret Message"
     description: str = (
-        "Use OpenAI to interpret a Slack message. Returns intent "
-        "(create_prd/help/greeting/unknown), idea, and reply text."
+        "Use Gemini LLM to interpret a Slack message. Returns intent "
+        "(create_project/list_projects/switch_project/current_project/"
+        "end_session/configure_memory/create_prd/publish/check_publish/"
+        "help/greeting/unknown), idea, and reply text."
     )
     args_schema: Type[BaseModel] = SlackInterpretMessageInput
 

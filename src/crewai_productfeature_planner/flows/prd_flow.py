@@ -42,6 +42,7 @@ from crewai_productfeature_planner.apis.prd.models import (
 )
 from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
+from crewai_productfeature_planner.scripts.memory_loader import resolve_project_id
 from crewai_productfeature_planner.mongodb import (
     get_output_file,
     mark_completed,
@@ -316,7 +317,9 @@ class PRDFlow(Flow[PRDState]):
     # Helper — build available agents
     # ------------------------------------------------------------------
     @staticmethod
-    def _get_available_agents() -> dict[str, Agent]:
+    def _get_available_agents(
+        project_id: str | None = None,
+    ) -> dict[str, Agent]:
         """Return a dict of agent-name → Agent for all available LLMs.
 
         The *default* agent (``DEFAULT_AGENT`` env var, falls back to
@@ -328,6 +331,9 @@ class PRDFlow(Flow[PRDState]):
         * **1** (default) — only the default agent is used.
         * **2** — the default agent plus one optional agent whose API
           key is present.
+
+        Args:
+            project_id: Optional project identifier for memory enrichment.
         """
         default = get_default_agent()
         max_agents = int(
@@ -339,10 +345,14 @@ class PRDFlow(Flow[PRDState]):
 
         # --- factories keyed by agent identifier ---
         def _openai() -> Agent:
-            return create_product_manager(provider=AGENT_OPENAI)
+            return create_product_manager(
+                provider=AGENT_OPENAI, project_id=project_id,
+            )
 
         def _gemini() -> Agent:
-            return create_product_manager(provider=AGENT_GEMINI)
+            return create_product_manager(
+                provider=AGENT_GEMINI, project_id=project_id,
+            )
 
         factories: dict[str, tuple[callable, str | list[str] | None]] = {
             AGENT_OPENAI: (_openai, "OPENAI_API_KEY"),
@@ -518,8 +528,11 @@ class PRDFlow(Flow[PRDState]):
             from crewai_productfeature_planner.agents.idea_refiner import refine_idea
 
             self.state.original_idea = self.state.idea
+            project_id = resolve_project_id(self.state.run_id)
             refined, history = refine_idea(
-                self.state.idea, run_id=self.state.run_id,
+                self.state.idea,
+                run_id=self.state.run_id,
+                project_id=project_id,
             )
             self.state.idea = refined
             self.state.idea_refined = True
@@ -551,7 +564,10 @@ class PRDFlow(Flow[PRDState]):
         orchestrator = build_default_pipeline(self)
         orchestrator.run_pipeline()
 
-        agents = self._get_available_agents()
+        # Resolve project_id for memory enrichment across all agents
+        project_id = resolve_project_id(self.state.run_id)
+
+        agents = self._get_available_agents(project_id=project_id)
         task_configs = get_task_configs()
 
         # Track initial agent roster

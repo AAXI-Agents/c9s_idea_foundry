@@ -74,6 +74,9 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
             get_project_for_run,
         )
         from crewai_productfeature_planner.scripts.logging_config import is_verbose
+        from crewai_productfeature_planner.scripts.memory_loader import (
+            resolve_project_id,
+        )
         from crewai_productfeature_planner.scripts.retry import (
             crew_kickoff_with_retry,
         )
@@ -92,8 +95,11 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
                 ctx_key,
             )
 
-        pm_agent = create_jira_product_manager_agent()
-        atl_agent = create_jira_architect_tech_lead_agent()
+        # Resolve project_id for memory enrichment
+        project_id = resolve_project_id(flow.state.run_id)
+
+        pm_agent = create_jira_product_manager_agent(project_id=project_id)
+        atl_agent = create_jira_architect_tech_lead_agent(project_id=project_id)
         task_configs = get_task_configs()
 
         idea_preview = (flow.state.idea or "PRD")[:80].strip()

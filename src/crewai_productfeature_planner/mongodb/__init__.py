@@ -11,6 +11,7 @@ Sub-modules:
     - ``mongodb.product_requirements`` — ``productRequirements`` collection
     - ``mongodb.agent_interactions``   — ``agentInteraction`` collection (fine-tuning data)
     - ``mongodb.project_config``       — ``projectConfig`` collection (project-level configuration)
+    - ``mongodb.project_memory``       — ``projectMemory`` collection (per-project agent memory)
     - ``mongodb.user_session``         — ``userSession`` collection (Slack session tracking)
 """
 
@@ -62,6 +63,18 @@ from crewai_productfeature_planner.mongodb.project_config.repository import (
     list_projects,
     update_project,
 )
+from crewai_productfeature_planner.mongodb.project_memory.repository import (
+    PROJECT_MEMORY_COLLECTION,
+    MemoryCategory,
+    add_memory_entry,
+    clear_category,
+    delete_memory_entry,
+    get_memories_for_agent,
+    get_project_memory,
+    list_memory_entries,
+    replace_category_entries,
+    upsert_project_memory,
+)
 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     WORKING_COLLECTION,
     ensure_section_field,
@@ -97,16 +110,21 @@ __all__ = [
     "AGENT_INTERACTIONS_COLLECTION",
     "CREW_JOBS_COLLECTION",
     "PROJECT_CONFIG_COLLECTION",
+    "PROJECT_MEMORY_COLLECTION",
     "DEFAULT_DB_NAME",
     "DEFAULT_HOST",
     "DEFAULT_PORT",
     "PRODUCT_REQUIREMENTS_COLLECTION",
     "WORKING_COLLECTION",
     "USER_SESSION_COLLECTION",
+    "MemoryCategory",
     "_build_uri",
     "_get_db_name",
+    "add_memory_entry",
+    "clear_category",
     "create_job",
     "create_project",
+    "delete_memory_entry",
     "delete_project",
     "ensure_section_field",
     "fail_incomplete_jobs_on_startup",
@@ -123,18 +141,22 @@ __all__ = [
     "get_client",
     "get_db",
     "get_interaction",
+    "get_memories_for_agent",
     "get_output_file",
     "get_project",
     "get_project_by_name",
     "get_project_for_run",
+    "get_project_memory",
     "get_run_documents",
     "list_interactions",
     "list_jobs",
+    "list_memory_entries",
     "list_projects",
     "log_interaction",
     "mark_completed",
     "mark_paused",
     "reactivate_job",
+    "replace_category_entries",
     "reset_client",
     "save_confluence_url",
     "save_failed",
@@ -152,6 +174,7 @@ __all__ = [
     "update_project",
     "update_section_critique",
     "upsert_delivery_record",
+    "upsert_project_memory",
     "end_active_session",
     "get_active_session",
     "get_session",

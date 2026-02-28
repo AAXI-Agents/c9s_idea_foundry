@@ -405,6 +405,135 @@ def _create_project_interactive() -> tuple[str, str]:
     return project_id, name
 
 
+def _configure_project_memory_cli(project_id: str, project_name: str) -> None:
+    """Interactive CLI loop for configuring project memory.
+
+    Offers the user the chance to add idea-iteration guardrails,
+    knowledge references, and tool entries to the project's memory
+    before starting idea iteration.  Each non-empty line entered
+    becomes a separate memory entry.
+    """
+    from crewai_productfeature_planner.mongodb.project_memory import (
+        MemoryCategory,
+        add_memory_entry,
+        get_project_memory,
+        upsert_project_memory,
+    )
+
+    upsert_project_memory(project_id)
+
+    _CATEGORIES = [
+        (
+            MemoryCategory.IDEA_ITERATION,
+            "Idea & Iteration Guardrails",
+            (
+                "How should agents behave when iterating?\n"
+                "  Examples: 'Focus on MVP features only', 'Keep iterations concise'"
+            ),
+        ),
+        (
+            MemoryCategory.KNOWLEDGE,
+            "Knowledge Links & Documents",
+            (
+                "Links, document references, or notes that serve as guidelines.\n"
+                "  Examples: 'https://wiki.example.com/api-guide', 'Follow brand guidelines v2'"
+            ),
+        ),
+        (
+            MemoryCategory.TOOLS,
+            "Implementation Tools & Technologies",
+            (
+                "Tools, databases, frameworks, and algorithms the team uses.\n"
+                "  Examples: 'MongoDB Atlas', 'FastAPI', 'React + TypeScript'"
+            ),
+        ),
+    ]
+
+    print(f"\n{'=' * 60}")
+    print(f"  Project Memory — {project_name}")
+    print(f"{'=' * 60}")
+
+    # Show current memory if any
+    doc = get_project_memory(project_id)
+    has_existing = False
+    if doc:
+        for cat, label, _ in _CATEGORIES:
+            entries = doc.get(cat.value, [])
+            if entries:
+                has_existing = True
+                print(f"\n  {label} ({len(entries)}):")
+                for e in entries:
+                    print(f"    • {e.get('content', '')}")
+
+    if has_existing:
+        print(f"\n{'=' * 60}")
+        print("  Memory already configured. Choose an option:")
+        print("  [a] Add more entries")
+        print("  [s] Skip — keep existing and continue")
+        print(f"{'=' * 60}\n")
+        while True:
+            choice = input("Choose [a/s]: ").strip().lower()
+            if choice in ("s", "skip"):
+                return
+            if choice in ("a", "add"):
+                break
+            print("Please enter 'a' to add or 's' to skip.")
+    else:
+        print("\n  No project memory configured yet.\n")
+
+    for cat, label, help_text in _CATEGORIES:
+        print(f"\n{'─' * 60}")
+        print(f"  {label}")
+        print(f"{'─' * 60}")
+        print(f"  {help_text}")
+        print("  Enter entries one per line. Press Enter on an empty line to finish.")
+        print(f"{'─' * 60}")
+
+        saved = 0
+        while True:
+            line = input("  > ").strip()
+            if not line:
+                break
+            # Infer kind for knowledge entries
+            kind = None
+            if cat == MemoryCategory.KNOWLEDGE:
+                kind = "link" if line.startswith(("http://", "https://")) else "note"
+
+            ok = add_memory_entry(
+                project_id, cat, line, added_by="cli", kind=kind,
+            )
+            if ok:
+                saved += 1
+        if saved:
+            print(f"  ✓ Saved {saved} {label} {'entry' if saved == 1 else 'entries'}")
+        else:
+            print(f"  (skipped)")
+
+    print(f"\n  ✦ Project memory configured for {project_name}")
+
+
+def _offer_memory_configuration(project_id: str, project_name: str) -> None:
+    """Prompt to configure memory or skip to idea iteration.
+
+    Called after project selection in the CLI flow.
+    """
+    print(f"\n{'=' * 60}")
+    print("  Do you want to configure project memory?")
+    print(f"{'=' * 60}")
+    print("  [y] Configure memory (idea guardrails, knowledge, tools)")
+    print("  [n] Skip — start working on ideas")
+    print(f"{'=' * 60}\n")
+
+    while True:
+        choice = input("Choose [y/n]: ").strip().lower()
+        if choice in ("y", "yes"):
+            _configure_project_memory_cli(project_id, project_name)
+            return
+        if choice in ("n", "no", "skip"):
+            return
+        print("Please enter 'y' to configure or 'n' to skip.")
+
+
 def _save_project_link(run_id: str, project_id: str) -> None:
     """Link a working-idea document to its project configuration.
 
@@ -1226,11 +1355,13 @@ def run():
     if len(sys.argv) >= 2:
         # Step 1: Select or create a project
         project_id, project_name = _select_or_create_project()
+        _offer_memory_configuration(project_id, project_name)
         _run_single_flow(idea=sys.argv[1], project_id=project_id)
         return
 
     # Step 1: Select or create a project (once per session)
     project_id, project_name = _select_or_create_project()
+    _offer_memory_configuration(project_id, project_name)
 
     # Interactive loop — keeps offering new ideas after each run
     idea = None
@@ -1516,7 +1647,11 @@ def start_api():
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
     args = parser.parse_args()
 
-    logger.info("Starting API server on %s:%d", args.host, args.port)
+    from crewai_productfeature_planner.version import get_version
+    logger.info(
+        "Starting API server v%s on %s:%d",
+        get_version(), args.host, args.port,
+    )
 
     if args.ngrok:
         from crewai_productfeature_planner.scripts.ngrok_tunnel import start_tunnel

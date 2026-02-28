@@ -29,6 +29,7 @@ from crewai_productfeature_planner.scripts.knowledge_sources import (
     get_google_embedder_config,
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
+from crewai_productfeature_planner.scripts.memory_loader import enrich_backstory
 from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 
 logger = get_logger(__name__)
@@ -80,8 +81,13 @@ def _build_refiner_llm() -> LLM:
     return LLM(model=model_name, timeout=timeout, max_retries=max_retries)
 
 
-def create_idea_refiner() -> Agent:
+def create_idea_refiner(project_id: str | None = None) -> Agent:
     """Create the Idea Refinement agent powered by Google Gemini.
+
+    Args:
+        project_id: Optional project identifier.  When provided, the
+            agent's backstory is enriched with project-level memory
+            (guardrails, knowledge, tech stack) from MongoDB.
 
     Raises ``EnvironmentError`` when neither ``GOOGLE_API_KEY`` nor
     ``GOOGLE_CLOUD_PROJECT`` is set.
@@ -100,10 +106,14 @@ def create_idea_refiner() -> Agent:
         agent_config["role"].strip(),
     )
 
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
-        backstory=agent_config["backstory"].strip(),
+        backstory=backstory,
         llm=_build_refiner_llm(),
         tools=[],  # Pure reasoning — no external tools needed
         verbose=is_verbose(),
@@ -129,7 +139,11 @@ def _get_iteration_limits() -> tuple[int, int]:
     return min_iter, max_iter
 
 
-def refine_idea(raw_idea: str, run_id: str = "") -> tuple[str, list[dict]]:
+def refine_idea(
+    raw_idea: str,
+    run_id: str = "",
+    project_id: str | None = None,
+) -> tuple[str, list[dict]]:
     """Iteratively refine a raw idea using the Gemini-powered refiner agent.
 
     Runs between ``IDEA_REFINER_MIN_ITERATIONS`` (default 3) and
@@ -146,6 +160,7 @@ def refine_idea(raw_idea: str, run_id: str = "") -> tuple[str, list[dict]]:
     Args:
         raw_idea: The raw feature idea string from the user.
         run_id: Optional flow run identifier for MongoDB persistence.
+        project_id: Optional project identifier for memory enrichment.
 
     Returns:
         A tuple of ``(final_idea, refinement_history)`` where
@@ -154,7 +169,7 @@ def refine_idea(raw_idea: str, run_id: str = "") -> tuple[str, list[dict]]:
     """
     min_iterations, max_iterations = _get_iteration_limits()
     task_configs = _load_yaml("tasks.yaml")
-    agent = create_idea_refiner()
+    agent = create_idea_refiner(project_id=project_id)
 
     current_idea = raw_idea
     previous_feedback = ""

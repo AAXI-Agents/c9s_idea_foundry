@@ -29,6 +29,7 @@ from crewai_productfeature_planner.scripts.knowledge_sources import (
     get_google_embedder_config,
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
+from crewai_productfeature_planner.scripts.memory_loader import enrich_backstory
 from crewai_productfeature_planner.tools.confluence_tool import ConfluencePublishTool
 from crewai_productfeature_planner.tools.jira_tool import JiraCreateIssueTool
 
@@ -86,11 +87,15 @@ def _build_llm() -> LLM:
     return LLM(model=model_name, timeout=timeout, max_retries=max_retries)
 
 
-def create_orchestrator_agent() -> Agent:
+def create_orchestrator_agent(project_id: str | None = None) -> Agent:
     """Create the Orchestrator agent powered by Google Gemini.
 
     The agent is equipped with Confluence and Jira tools for
     publishing completed PRDs and creating tracking tickets.
+
+    Args:
+        project_id: Optional project identifier.  When provided, the
+            agent's backstory is enriched with project-level memory.
 
     Raises:
         EnvironmentError: When neither ``GOOGLE_API_KEY`` nor
@@ -110,10 +115,14 @@ def create_orchestrator_agent() -> Agent:
         agent_config["role"].strip(),
     )
 
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
-        backstory=agent_config["backstory"].strip(),
+        backstory=backstory,
         llm=_build_llm(),
         tools=_build_tools(),
         verbose=is_verbose(),
@@ -129,7 +138,9 @@ def get_task_configs() -> dict:
     return _load_yaml("tasks.yaml")
 
 
-def create_delivery_manager_agent() -> Agent:
+def create_delivery_manager_agent(
+    project_id: str | None = None,
+) -> Agent:
     """Create the Delivery Manager agent for startup orchestration.
 
     This agent coordinates the delivery lifecycle — it decides which
@@ -139,6 +150,9 @@ def create_delivery_manager_agent() -> Agent:
     Uses the same Gemini backend as the Orchestrator agent but carries
     no tools of its own — it delegates tool-bearing work to the
     Orchestrator specialist.
+
+    Args:
+        project_id: Optional project identifier for memory enrichment.
     """
     agent_config = _load_yaml("delivery_manager.yaml")["delivery_manager"]
     logger.info(
@@ -146,10 +160,14 @@ def create_delivery_manager_agent() -> Agent:
         agent_config["role"].strip(),
     )
 
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
-        backstory=agent_config["backstory"].strip(),
+        backstory=backstory,
         llm=_build_llm(),
         tools=[],
         verbose=is_verbose(),
@@ -159,7 +177,9 @@ def create_delivery_manager_agent() -> Agent:
     )
 
 
-def create_jira_product_manager_agent() -> Agent:
+def create_jira_product_manager_agent(
+    project_id: str | None = None,
+) -> Agent:
     """Create a Product Manager agent for Jira Epic & Story creation.
 
     This agent applies product-management reasoning when creating
@@ -168,6 +188,9 @@ def create_jira_product_manager_agent() -> Agent:
     and encoding SMART acceptance criteria.
 
     Equipped with the Jira tool for creating issues.
+
+    Args:
+        project_id: Optional project identifier for memory enrichment.
     """
     agent_config = _load_yaml("product_manager_jira.yaml")["product_manager_jira"]
     logger.info(
@@ -175,10 +198,14 @@ def create_jira_product_manager_agent() -> Agent:
         agent_config["role"].strip(),
     )
 
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
-        backstory=agent_config["backstory"].strip(),
+        backstory=backstory,
         llm=_build_llm(),
         tools=[JiraCreateIssueTool()],
         verbose=is_verbose(),
@@ -188,7 +215,9 @@ def create_jira_product_manager_agent() -> Agent:
     )
 
 
-def create_jira_architect_tech_lead_agent() -> Agent:
+def create_jira_architect_tech_lead_agent(
+    project_id: str | None = None,
+) -> Agent:
     """Create an Architect & Tech Lead agent for Jira Task creation.
 
     This agent applies architectural and technical-lead reasoning
@@ -197,6 +226,9 @@ def create_jira_architect_tech_lead_agent() -> Agent:
     and unit-test mapping.
 
     Equipped with the Jira tool for creating issues.
+
+    Args:
+        project_id: Optional project identifier for memory enrichment.
     """
     agent_config = _load_yaml("architect_tech_lead.yaml")["architect_tech_lead"]
     logger.info(
@@ -204,10 +236,14 @@ def create_jira_architect_tech_lead_agent() -> Agent:
         agent_config["role"].strip(),
     )
 
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
-        backstory=agent_config["backstory"].strip(),
+        backstory=backstory,
         llm=_build_llm(),
         tools=[JiraCreateIssueTool()],
         verbose=is_verbose(),

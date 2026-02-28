@@ -1066,7 +1066,7 @@ def test_idea_approval_callback_continue_does_not_raise(monkeypatch):
     # Mock _get_available_agents to avoid real LLM creation
     monkeypatch.setattr(
         PRDFlow, "_get_available_agents",
-        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+        staticmethod(lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here"))),
     )
 
     # generate_sections will proceed past the callback but fail on agents
@@ -1096,7 +1096,7 @@ def test_idea_approval_callback_skipped_when_not_refined(monkeypatch):
 
     monkeypatch.setattr(
         PRDFlow, "_get_available_agents",
-        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+        staticmethod(lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here"))),
     )
 
     with pytest.raises(RuntimeError, match="stop here"):
@@ -1118,7 +1118,7 @@ def test_idea_approval_callback_skipped_when_none(monkeypatch):
 
     monkeypatch.setattr(
         PRDFlow, "_get_available_agents",
-        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+        staticmethod(lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here"))),
     )
 
     # Should proceed past the approval gate without IdeaFinalized
@@ -1194,7 +1194,7 @@ def test_requirements_approval_callback_continue_proceeds(monkeypatch):
 
     monkeypatch.setattr(
         PRDFlow, "_get_available_agents",
-        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+        staticmethod(lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here"))),
     )
 
     with pytest.raises(RuntimeError, match="stop here"):
@@ -1223,7 +1223,7 @@ def test_requirements_callback_skipped_when_not_broken_down(monkeypatch):
 
     monkeypatch.setattr(
         PRDFlow, "_get_available_agents",
-        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("stop here"))),
+        staticmethod(lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here"))),
     )
 
     with pytest.raises(RuntimeError, match="stop here"):

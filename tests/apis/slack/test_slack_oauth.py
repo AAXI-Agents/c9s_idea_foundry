@@ -108,22 +108,17 @@ async def test_oauth_callback_exchange_failure(monkeypatch):
     assert "Exchange Failed" in resp.text or "failed" in resp.text.lower()
 
 
-# ---- _apply_tokens persists env ----
+# ---- _apply_tokens persists to MongoDB ----
 
-def test_apply_tokens_sets_env(monkeypatch, tmp_path):
+def test_apply_tokens_persists_to_mongodb(monkeypatch):
     from crewai_productfeature_planner.apis.slack.oauth_router import _apply_tokens
 
-    monkeypatch.delenv("SLACK_ACCESS_TOKEN", raising=False)
-    monkeypatch.delenv("SLACK_REFRESH_TOKEN", raising=False)
-
-    # Prevent token manager persistence from failing
     with patch(
-        "crewai_productfeature_planner.apis.slack.oauth_router._update_env_file",
-    ), patch(
-        "crewai_productfeature_planner.tools.slack_token_manager._persist_tokens",
-    ), patch(
-        "crewai_productfeature_planner.tools.slack_token_manager._set_token_env",
-    ):
+        "crewai_productfeature_planner.mongodb.slack_oauth.upsert_team",
+        return_value={"team_id": "TID"},
+    ) as mock_upsert, patch(
+        "crewai_productfeature_planner.tools.slack_token_manager.invalidate",
+    ) as mock_invalidate:
         summary = _apply_tokens({
             "access_token": "xoxb-new-token",
             "refresh_token": "xoxr-new-refresh",
@@ -135,7 +130,51 @@ def test_apply_tokens_sets_env(monkeypatch, tmp_path):
             "token_type": "bot",
         })
 
-    import os
-    assert os.environ.get("SLACK_ACCESS_TOKEN") == "xoxb-new-token"
     assert summary["team"] == "T"
     assert summary["bot_user_id"] == "B1"
+    assert summary["persisted"] is True
+
+    mock_upsert.assert_called_once()
+    call_kwargs = mock_upsert.call_args.kwargs
+    assert call_kwargs["team_id"] == "TID"
+    assert call_kwargs["access_token"] == "xoxb-new-token"
+    assert call_kwargs["refresh_token"] == "xoxr-new-refresh"
+
+    mock_invalidate.assert_called_once_with("TID")
+
+
+def test_apply_tokens_handles_mongodb_failure(monkeypatch):
+    from crewai_productfeature_planner.apis.slack.oauth_router import _apply_tokens
+
+    with patch(
+        "crewai_productfeature_planner.mongodb.slack_oauth.upsert_team",
+        side_effect=Exception("DB down"),
+    ), patch(
+        "crewai_productfeature_planner.tools.slack_token_manager.invalidate",
+    ):
+        summary = _apply_tokens({
+            "access_token": "xoxb-fail",
+            "refresh_token": "",
+            "team": {"name": "T2", "id": "TID2"},
+            "scope": "chat:write",
+            "bot_user_id": "B2",
+            "app_id": "A2",
+            "token_type": "bot",
+        })
+
+    assert summary["persisted"] is False
+
+
+def test_apply_tokens_missing_team_id():
+    from crewai_productfeature_planner.apis.slack.oauth_router import _apply_tokens
+
+    summary = _apply_tokens({
+        "access_token": "xoxb-no-team",
+        "team": {"name": "T3"},
+        "scope": "chat:write",
+        "bot_user_id": "B3",
+        "app_id": "A3",
+        "token_type": "bot",
+    })
+
+    assert summary["persisted"] is False

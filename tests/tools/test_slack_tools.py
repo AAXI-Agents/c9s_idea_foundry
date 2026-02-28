@@ -35,11 +35,15 @@ class TestSlackSendMessageTool:
         assert result["channel"] == "C1"
 
     def test_dry_run_no_token(self):
-        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        with patch(
+            "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
+            return_value=None,
+        ):
+            from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
 
-        tool = SlackSendMessageTool()
-        result = json.loads(tool.run(channel="C1", text="hello"))
-        assert result["status"] == "dry_run"
+            tool = SlackSendMessageTool()
+            result = json.loads(tool.run(channel="C1", text="hello"))
+            assert result["status"] == "dry_run"
 
     def test_sends_message_with_client(self, monkeypatch):
         mock_client = MagicMock()

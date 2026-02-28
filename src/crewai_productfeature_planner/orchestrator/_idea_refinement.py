@@ -44,12 +44,18 @@ def build_idea_refinement_stage(flow: "PRDFlow") -> AgentStage:
         from crewai_productfeature_planner.agents.idea_refiner import (
             refine_idea,
         )
+        from crewai_productfeature_planner.scripts.memory_loader import (
+            resolve_project_id,
+        )
 
         logger.info("[IdeaRefiner] Refining idea before PRD generation")
         # Snapshot original idea *before* refinement
         flow.state.original_idea = flow.state.idea
+        project_id = resolve_project_id(flow.state.run_id)
         refined, history = refine_idea(
-            flow.state.idea, run_id=flow.state.run_id,
+            flow.state.idea,
+            run_id=flow.state.run_id,
+            project_id=project_id,
         )
         logger.info(
             "[IdeaRefiner] Idea refined (%d → %d chars, %d iterations)",

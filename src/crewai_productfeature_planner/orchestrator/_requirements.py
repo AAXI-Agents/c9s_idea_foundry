@@ -47,14 +47,19 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
         from crewai_productfeature_planner.agents.requirements_breakdown import (
             breakdown_requirements,
         )
+        from crewai_productfeature_planner.scripts.memory_loader import (
+            resolve_project_id,
+        )
 
         logger.info(
             "[RequirementsBreakdown] Breaking down idea into requirements"
         )
+        project_id = resolve_project_id(flow.state.run_id)
         requirements, history = breakdown_requirements(
             flow.state.idea,
             run_id=flow.state.run_id,
             original_idea=flow.state.original_idea,
+            project_id=project_id,
         )
         logger.info(
             "[RequirementsBreakdown] Breakdown complete "

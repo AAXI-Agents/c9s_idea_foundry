@@ -1,30 +1,45 @@
-"""Tests for the Slack token rotation manager."""
+"""Tests for the Slack token rotation manager (team-scoped, MongoDB-backed)."""
 
-import json
-import os
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 import crewai_productfeature_planner.tools.slack_token_manager as tm
 
+# Module path for patching shortcuts
+_REPO = "crewai_productfeature_planner.mongodb.slack_oauth.repository"
+
+TEAM_A = "T_TEAM_A"
+TEAM_B = "T_TEAM_B"
+
 
 @pytest.fixture(autouse=True)
-def _reset_token_state(monkeypatch, tmp_path):
-    """Reset module-level singleton and point token store to tmp."""
-    monkeypatch.delenv("SLACK_ACCESS_TOKEN", raising=False)
-    monkeypatch.delenv("SLACK_REFRESH_TOKEN", raising=False)
+def _reset_token_state(monkeypatch):
+    """Clear the per-team in-memory cache and client-credential env vars."""
     monkeypatch.delenv("SLACK_CLIENT_ID", raising=False)
     monkeypatch.delenv("SLACK_CLIENT_SECRET", raising=False)
-    monkeypatch.delenv("SLACK_TOKEN_STORE", raising=False)
+    tm._cache.clear()
 
-    # Point persistence to a temp file
-    store_path = str(tmp_path / ".slack_tokens.json")
-    monkeypatch.setenv("SLACK_TOKEN_STORE", store_path)
 
-    # Clear module state
-    tm.invalidate()
+# ---- helpers ----
+
+def _fake_team_doc(
+    team_id: str = TEAM_A,
+    access_token: str = "xoxb-abc",
+    refresh_token: str | None = "xoxr-abc",
+    expires_at: float | None = None,
+) -> dict:
+    """Return a minimal MongoDB slackOAuth document."""
+    return {
+        "team_id": team_id,
+        "team_name": "Acme",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at or time.time() + 7200,
+        "installed_at": time.time(),
+        "updated_at": time.time(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -32,60 +47,106 @@ def _reset_token_state(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 class TestGetValidToken:
-    def test_returns_none_when_nothing_configured(self):
-        token = tm.get_valid_token()
+    def test_returns_none_when_no_teams_installed(self):
+        with patch(f"{_REPO}.get_all_teams", return_value=[]):
+            token = tm.get_valid_token()
         assert token is None
 
-    def test_returns_static_env_token(self, monkeypatch):
-        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-static-token")
-        token = tm.get_valid_token()
-        assert token == "xoxb-static-token"
+    def test_auto_resolves_single_team(self):
+        doc = _fake_team_doc()
+        with patch(f"{_REPO}.get_all_teams", return_value=[doc]), \
+             patch(f"{_REPO}.get_team", return_value=doc):
+            token = tm.get_valid_token()
+        assert token == "xoxb-abc"
 
-    def test_caches_token_on_second_call(self, monkeypatch):
-        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-cached")
-        t1 = tm.get_valid_token()
-        t2 = tm.get_valid_token()
-        assert t1 == t2 == "xoxb-cached"
+    def test_returns_none_when_multiple_teams_no_id(self):
+        docs = [_fake_team_doc(TEAM_A), _fake_team_doc(TEAM_B)]
+        with patch(f"{_REPO}.get_all_teams", return_value=docs):
+            token = tm.get_valid_token()
+        assert token is None
 
-    def test_loads_persisted_tokens(self, monkeypatch):
-        store = tm._token_store_path()
-        payload = {
-            "access_token": "xoxe.xoxb-persisted",
-            "refresh_token": "xoxr-refresh",
-            "expires_at": time.time() + 3600,
-            "last_refresh_at": time.time(),
-        }
-        with open(store, "w") as fh:
-            json.dump(payload, fh)
+    def test_loads_valid_token_from_mongodb(self):
+        doc = _fake_team_doc(expires_at=time.time() + 7200)
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"):
+            token = tm.get_valid_token(TEAM_A)
+        assert token == "xoxb-abc"
+        # Also cached
+        assert tm._cache[TEAM_A]["access_token"] == "xoxb-abc"
 
-        token = tm.get_valid_token()
-        assert token == "xoxe.xoxb-persisted"
+    def test_returns_cached_token_on_second_call(self):
+        doc = _fake_team_doc()
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"):
+            t1 = tm.get_valid_token(TEAM_A)
+        # Second call should hit cache — no MongoDB patch needed
+        t2 = tm.get_valid_token(TEAM_A)
+        assert t1 == t2 == "xoxb-abc"
 
     def test_refreshes_expired_token(self, monkeypatch):
         monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
         monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
-        monkeypatch.setenv("SLACK_REFRESH_TOKEN", "xoxr-refresh")
 
-        mock_result = {
+        doc = _fake_team_doc(
+            access_token="xoxe.xoxb-old",
+            refresh_token="xoxr-old",
+            expires_at=time.time() - 100,  # expired
+        )
+        mock_refresh = {
             "ok": True,
             "access_token": "xoxe.xoxb-refreshed",
-            "refresh_token": "xoxr-new-refresh",
+            "refresh_token": "xoxr-new",
             "expires_in": 43200,
         }
 
-        with patch.object(tm, "_do_refresh", return_value=mock_result):
-            token = tm.get_valid_token()
-        assert token == "xoxe.xoxb-refreshed"
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"), \
+             patch(f"{_REPO}.update_tokens") as mock_update, \
+             patch.object(tm, "_do_refresh", return_value=mock_refresh):
+            token = tm.get_valid_token(TEAM_A)
 
-    def test_falls_back_to_static_on_refresh_failure(self, monkeypatch):
+        assert token == "xoxe.xoxb-refreshed"
+        mock_update.assert_called_once()
+        call_kwargs = mock_update.call_args.kwargs
+        assert call_kwargs["team_id"] == TEAM_A
+        assert call_kwargs["access_token"] == "xoxe.xoxb-refreshed"
+        assert call_kwargs["refresh_token"] == "xoxr-new"
+
+    def test_falls_back_to_expired_token_on_refresh_failure(self, monkeypatch):
         monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
         monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
-        monkeypatch.setenv("SLACK_REFRESH_TOKEN", "xoxr-bad")
-        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-fallback")
 
-        with patch.object(tm, "_do_refresh", side_effect=RuntimeError("invalid_refresh_token")):
-            token = tm.get_valid_token()
+        doc = _fake_team_doc(
+            access_token="xoxb-fallback",
+            refresh_token="xoxr-bad",
+            expires_at=time.time() - 100,
+        )
+
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"), \
+             patch.object(tm, "_do_refresh", side_effect=RuntimeError("bad")):
+            token = tm.get_valid_token(TEAM_A)
+
         assert token == "xoxb-fallback"
+
+    def test_returns_none_for_unknown_team(self):
+        with patch(f"{_REPO}.get_team", return_value=None), \
+             patch(f"{_REPO}.get_all_teams"):
+            token = tm.get_valid_token("T_UNKNOWN")
+        assert token is None
+
+    def test_no_refresh_when_rotation_not_configured(self):
+        """Without SLACK_CLIENT_ID/SECRET, no refresh attempt is made."""
+        doc = _fake_team_doc(expires_at=time.time() - 100)
+
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"), \
+             patch.object(tm, "_do_refresh") as mock_refresh:
+            token = tm.get_valid_token(TEAM_A)
+
+        mock_refresh.assert_not_called()
+        # Returns the expired token as a last resort
+        assert token == "xoxb-abc"
 
 
 # ---------------------------------------------------------------------------
@@ -93,15 +154,21 @@ class TestGetValidToken:
 # ---------------------------------------------------------------------------
 
 class TestInvalidate:
-    def test_invalidate_clears_cache(self, monkeypatch):
-        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-test")
-        tm.get_valid_token()
+    def test_invalidate_single_team(self):
+        tm._cache[TEAM_A] = {"access_token": "x"}
+        tm._cache[TEAM_B] = {"access_token": "y"}
+        tm.invalidate(TEAM_A)
+        assert TEAM_A not in tm._cache
+        assert TEAM_B in tm._cache
 
+    def test_invalidate_all(self):
+        tm._cache[TEAM_A] = {"access_token": "x"}
+        tm._cache[TEAM_B] = {"access_token": "y"}
         tm.invalidate()
+        assert tm._cache == {}
 
-        # Access internal state directly
-        assert tm._access_token is None
-        assert tm._expires_at == 0.0
+    def test_invalidate_nonexistent_team_is_noop(self):
+        tm.invalidate("T_NONEXISTENT")  # Should not raise
 
 
 # ---------------------------------------------------------------------------
@@ -111,69 +178,49 @@ class TestInvalidate:
 class TestExchangeToken:
     def test_exchange_raises_without_creds(self):
         with pytest.raises(ValueError, match="SLACK_CLIENT_ID"):
-            tm.exchange_token()
+            tm.exchange_token(TEAM_A, token="xoxb-old")
+
+    def test_exchange_raises_without_token(self, monkeypatch):
+        monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
+        monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
+        with pytest.raises(ValueError, match="token"):
+            tm.exchange_token(TEAM_A)
 
     def test_exchange_success(self, monkeypatch):
         monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
         monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
-        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-old")
 
         mock_result = {
             "ok": True,
-            "access_token": "xoxe.xoxb-new",
-            "refresh_token": "xoxr-new",
+            "access_token": "xoxe.xoxb-exchanged",
+            "refresh_token": "xoxr-exchanged",
             "expires_in": 43200,
         }
 
-        with patch.object(tm, "_post_slack", return_value=mock_result):
-            result = tm.exchange_token()
+        with patch.object(tm, "_post_slack", return_value=mock_result), \
+             patch(f"{_REPO}.update_tokens") as mock_update:
+            result = tm.exchange_token(TEAM_A, token="xoxb-old")
 
-        assert result["access_token"] == "xoxe.xoxb-new"
-        assert os.environ.get("SLACK_ACCESS_TOKEN") == "xoxe.xoxb-new"
-        assert os.environ.get("SLACK_REFRESH_TOKEN") == "xoxr-new"
-
-
-# ---------------------------------------------------------------------------
-# Persistence
-# ---------------------------------------------------------------------------
-
-class TestPersistence:
-    def test_persist_and_load(self):
-        tm._persist_tokens("xoxb-p", "xoxr-p", time.time() + 3600)
-        loaded = tm._load_persisted_tokens()
-        assert loaded["access_token"] == "xoxb-p"
-        assert loaded["refresh_token"] == "xoxr-p"
-
-    def test_load_empty_when_no_file(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SLACK_TOKEN_STORE", str(tmp_path / "missing.json"))
-        loaded = tm._load_persisted_tokens()
-        assert loaded == {}
+        assert result["access_token"] == "xoxe.xoxb-exchanged"
+        mock_update.assert_called_once()
+        call_kwargs = mock_update.call_args.kwargs
+        assert call_kwargs["team_id"] == TEAM_A
+        assert call_kwargs["access_token"] == "xoxe.xoxb-exchanged"
+        # Cache should be updated
+        assert tm._cache[TEAM_A]["access_token"] == "xoxe.xoxb-exchanged"
 
 
 # ---------------------------------------------------------------------------
-# token_status
+# token_status (delegates to MongoDB repo)
 # ---------------------------------------------------------------------------
 
 class TestTokenStatus:
-    def test_status_no_token(self):
-        status = tm.token_status()
-        assert status["has_token"] is False
-        assert status["token_type"] == "none"
-
-    def test_status_with_static_bot_token(self, monkeypatch):
-        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-static")
-        tm.get_valid_token()
-        status = tm.token_status()
-        assert status["has_token"] is True
-        assert status["token_type"] == "static_bot"
-
-    def test_status_rotating_token(self, monkeypatch):
-        # Manually set module state to simulate a rotating token
-        tm._access_token = "xoxe.xoxb-rotating"
-        tm._expires_at = time.time() + 3600
-        status = tm.token_status()
-        assert status["is_rotating"] is True
-        assert status["token_type"] == "rotating_bot"
+    def test_delegates_to_repo(self):
+        expected = {"has_token": True, "team_id": TEAM_A}
+        with patch(f"{_REPO}.token_status", return_value=expected) as mock_ts:
+            status = tm.token_status(TEAM_A)
+        mock_ts.assert_called_once_with(TEAM_A)
+        assert status == expected
 
 
 # ---------------------------------------------------------------------------
@@ -196,19 +243,46 @@ class TestIsRotatingToken:
 
 class TestNeedsRefresh:
     def test_needs_refresh_no_token(self):
-        assert tm._needs_refresh() is True
+        assert tm._needs_refresh({}) is True
+        assert tm._needs_refresh({"access_token": ""}) is True
 
     def test_needs_refresh_expired(self):
-        tm._access_token = "xoxb-expired"
-        tm._expires_at = time.time() - 100
-        assert tm._needs_refresh() is True
+        entry = {"access_token": "xoxb-expired", "expires_at": time.time() - 100}
+        assert tm._needs_refresh(entry) is True
 
     def test_no_refresh_needed(self):
-        tm._access_token = "xoxb-valid"
-        tm._expires_at = time.time() + 3600
-        assert tm._needs_refresh() is False
+        entry = {"access_token": "xoxb-valid", "expires_at": time.time() + 3600}
+        assert tm._needs_refresh(entry) is False
 
     def test_refresh_within_buffer(self):
-        tm._access_token = "xoxb-soon"
-        tm._expires_at = time.time() + 200  # less than 300s buffer
-        assert tm._needs_refresh() is True
+        entry = {"access_token": "xoxb-soon", "expires_at": time.time() + 200}
+        assert tm._needs_refresh(entry) is True
+
+
+# ---------------------------------------------------------------------------
+# _basic_auth_header
+# ---------------------------------------------------------------------------
+
+class TestBasicAuthHeader:
+    def test_encodes_correctly(self):
+        import base64
+        hdr = tm._basic_auth_header("client_id", "client_secret")
+        expected = base64.b64encode(b"client_id:client_secret").decode()
+        assert hdr == f"Basic {expected}"
+
+
+# ---------------------------------------------------------------------------
+# _cache_entry / _set_cache
+# ---------------------------------------------------------------------------
+
+class TestCacheHelpers:
+    def test_set_and_get(self):
+        tm._set_cache(TEAM_A, "xoxb-cached", "xoxr-cached", time.time() + 3600)
+        entry = tm._cache_entry(TEAM_A)
+        assert entry is not None
+        assert entry["access_token"] == "xoxb-cached"
+        assert entry["refresh_token"] == "xoxr-cached"
+        assert "last_refresh_at" in entry
+
+    def test_cache_entry_returns_none_for_unknown(self):
+        assert tm._cache_entry("T_UNKNOWN") is None

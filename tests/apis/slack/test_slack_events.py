@@ -86,7 +86,7 @@ async def test_member_joined_bot_posts_intro():
     with patch.object(er, "_post_intro") as mock_intro:
         resp = await _post(payload)()
     assert resp.status_code == 200
-    mock_intro.assert_called_once_with("C42")
+    mock_intro.assert_called_once_with("C42", "")
 
 
 @pytest.mark.asyncio

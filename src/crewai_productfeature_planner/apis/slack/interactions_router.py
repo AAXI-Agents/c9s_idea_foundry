@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import partial
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Request
@@ -32,6 +33,16 @@ from crewai_productfeature_planner.apis.slack.verify import verify_slack_request
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Slack Interactions"])
+
+
+def _with_team(team_id: str, fn, *args, **kwargs):
+    """Run *fn* with :data:`current_team_id` set so downstream
+    ``_get_slack_client()`` calls resolve the correct OAuth token.
+    """
+    from crewai_productfeature_planner.tools.slack_tools import current_team_id
+    current_team_id.set(team_id)
+    return fn(*args, **kwargs)
+
 
 # Action IDs we handle (must match blocks.py)
 _KNOWN_ACTIONS = frozenset({
@@ -50,6 +61,16 @@ _SESSION_ACTIONS = frozenset({
     "project_continue",
     "project_switch",
     "session_end",
+})
+
+# Memory configuration action IDs
+_MEMORY_ACTIONS = frozenset({
+    "memory_configure",
+    "memory_idea",
+    "memory_knowledge",
+    "memory_tools",
+    "memory_view",
+    "memory_done",
 })
 
 
@@ -83,6 +104,12 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "project_continue": ":arrow_forward: Continuing with project",
         "project_switch": ":twisted_rightwards_arrows: Switching project",
         "session_end": ":stop_button: Session ended",
+        "memory_configure": ":brain: Configuring project memory",
+        "memory_idea": ":bulb: Adding idea & iteration guardrails",
+        "memory_knowledge": ":books: Adding knowledge entries",
+        "memory_tools": ":wrench: Adding tool entries",
+        "memory_view": ":mag: Viewing project memory",
+        "memory_done": ":white_check_mark: Memory configuration done",
     }
     label = labels.get(action_id, action_id)
     return f"{label} by {user_name}"
@@ -149,6 +176,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
 
     payload_type = payload.get("type", "")
 
+    # Resolve the workspace team_id so downstream Slack API calls use
+    # the correct OAuth token from MongoDB.
+    _team_id = payload.get("team", {}).get("id", "")
+
     # ------------------------------------------------------------------
     # block_actions — button clicks
     # ------------------------------------------------------------------
@@ -181,13 +212,44 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop = asyncio.get_event_loop()
             loop.run_in_executor(
                 None,
-                _handle_project_action,
-                action_id, run_id, user_id, channel_id, thread_ts,
+                partial(
+                    _with_team, _team_id,
+                    _handle_project_action,
+                    action_id, run_id, user_id, channel_id, thread_ts,
+                ),
             )
 
             if channel_id:
                 ack_text = _ack_action(action_id, user_name)
-                loop.run_in_executor(None, _post_ack, channel_id, thread_ts, ack_text)
+                loop.run_in_executor(
+                    None,
+                    partial(_with_team, _team_id, _post_ack, channel_id, thread_ts, ack_text),
+                )
+
+            return JSONResponse({"ok": True})
+
+        # ── Memory configuration actions ──
+        if action_id in _MEMORY_ACTIONS:
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack memory action: action=%s user=%s",
+                action_id, user_name,
+            )
+
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_memory_action,
+                    action_id, user_id, channel_id, thread_ts,
+                ),
+            )
 
             return JSONResponse({"ok": True})
 
@@ -232,10 +294,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop = asyncio.get_event_loop()
             loop.run_in_executor(
                 None,
-                _post_ack,
-                channel_id,
-                thread_ts,
-                ack_text,
+                partial(
+                    _with_team, _team_id,
+                    _post_ack, channel_id, thread_ts, ack_text,
+                ),
             )
 
         return JSONResponse({"ok": True})
@@ -277,6 +339,9 @@ def _handle_project_action(
     """Process a project-session button click in a background thread.
 
     Delegates to the session manager and posts Block Kit feedback.
+
+    In DMs, the project is scoped to the user.
+    In channels, the project is scoped to the channel (admin-only).
     """
     from crewai_productfeature_planner.apis.slack.blocks import (
         project_create_prompt_blocks,
@@ -285,8 +350,12 @@ def _handle_project_action(
         session_started_blocks,
     )
     from crewai_productfeature_planner.apis.slack.session_manager import (
+        activate_channel_project,
         activate_project,
+        can_manage_memory,
+        deactivate_channel_session,
         deactivate_session,
+        is_dm,
         mark_pending_create,
     )
     from crewai_productfeature_planner.mongodb.project_config import (
@@ -309,6 +378,17 @@ def _handle_project_action(
         except Exception as exc:
             logger.error("Project action post failed: %s", exc)
 
+    # In channels, only admins may select or switch projects
+    if not is_dm(channel) and action_id not in ("project_continue",):
+        if not can_manage_memory(user_id, channel):
+            _post(
+                text=(
+                    ":lock: Only workspace admins can select or change "
+                    "the project for this channel."
+                ),
+            )
+            return
+
     try:
         if action_id.startswith("project_select_"):
             # User selected an existing project
@@ -318,12 +398,20 @@ def _handle_project_action(
                 _post(text=":warning: Project not found. Please try again.")
                 return
             pname = proj.get("name", "Unnamed")
-            activate_project(
-                user_id=user_id,
-                channel=channel,
-                project_id=project_id,
-                project_name=pname,
-            )
+            if is_dm(channel):
+                activate_project(
+                    user_id=user_id,
+                    channel=channel,
+                    project_id=project_id,
+                    project_name=pname,
+                )
+            else:
+                activate_channel_project(
+                    channel_id=channel,
+                    project_id=project_id,
+                    project_name=pname,
+                    activated_by=user_id,
+                )
             _post(blocks=session_started_blocks(pname), text=f"Session started: {pname}")
 
         elif action_id == "project_create":
@@ -340,7 +428,10 @@ def _handle_project_action(
 
         elif action_id == "project_switch":
             # End current session and show project picker
-            deactivate_session(user_id)
+            if is_dm(channel):
+                deactivate_session(user_id)
+            else:
+                deactivate_channel_session(channel)
             projects = list_projects(limit=20)
             _post(
                 blocks=project_selection_blocks(projects, user_id),
@@ -348,9 +439,168 @@ def _handle_project_action(
             )
 
         elif action_id == "session_end":
-            deactivate_session(user_id)
+            if is_dm(channel):
+                deactivate_session(user_id)
+            else:
+                deactivate_channel_session(channel)
             _post(blocks=session_ended_blocks(), text="Session ended")
 
     except Exception as exc:
         logger.error("_handle_project_action failed: %s", exc, exc_info=True)
+        _post(text=f":x: Something went wrong: {exc}")
+
+
+def _handle_memory_action(
+    action_id: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+) -> None:
+    """Process a memory-configuration button click in a background thread.
+
+    In channels only workspace admins may modify memory.
+    ``memory_view`` is allowed for all users.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks import (
+        memory_category_prompt_blocks,
+        memory_configure_blocks,
+        memory_saved_blocks,
+        memory_view_blocks,
+    )
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        can_manage_memory,
+        get_context_session,
+        mark_pending_memory,
+    )
+    from crewai_productfeature_planner.mongodb.project_memory import (
+        MemoryCategory,
+        get_project_memory,
+        upsert_project_memory,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    client = _get_slack_client()
+    if not client:
+        return
+
+    def _post(blocks=None, text=""):
+        try:
+            kwargs: dict = {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "text": text or "Memory update",
+            }
+            if blocks:
+                kwargs["blocks"] = blocks
+            client.chat_postMessage(**kwargs)
+        except Exception as exc:
+            logger.error("Memory action post failed: %s", exc)
+
+    # Admin gate — memory_view is read-only so anyone can use it
+    if action_id != "memory_view" and not can_manage_memory(user_id, channel):
+        _post(
+            text=(
+                ":lock: Only workspace admins can configure project "
+                "memory in a channel."
+            ),
+        )
+        return
+
+    session = get_context_session(user_id, channel)
+    if not session or not session.get("project_id"):
+        _post(text=":warning: No active project session. Please select a project first.")
+        return
+
+    project_id = session["project_id"]
+    project_name = session.get("project_name", "Unknown")
+
+    # Ensure the memory document scaffold exists
+    upsert_project_memory(project_id)
+
+    _CATEGORY_MAP = {
+        "memory_idea": (
+            MemoryCategory.IDEA_ITERATION,
+            "Idea & Iteration Guardrails",
+            (
+                "Describe how agents should behave when iterating "
+                "through ideas.  Examples:\n"
+                "• _Focus on MVP features only_\n"
+                "• _Keep iterations concise, max 3 rounds_\n"
+                "• _Prioritise user-facing value over technical debt_\n"
+                "• _Follow lean startup methodology_"
+            ),
+        ),
+        "memory_knowledge": (
+            MemoryCategory.KNOWLEDGE,
+            "Knowledge Links & Documents",
+            (
+                "Provide links, document references, or notes that "
+                "serve as guidelines.  Examples:\n"
+                "• _https://wiki.example.com/api-design-guide_\n"
+                "• _See the brand guidelines PDF uploaded last week_\n"
+                "• _Our API versioning strategy: URI-based /v1/_\n"
+                "• _Competitor analysis: https://docs.example.com/competitor_"
+            ),
+        ),
+        "memory_tools": (
+            MemoryCategory.TOOLS,
+            "Implementation Tools & Technologies",
+            (
+                "List the tools, databases, frameworks, and algorithms "
+                "the team uses.  Examples:\n"
+                "• _MongoDB Atlas for persistence_\n"
+                "• _FastAPI for REST endpoints_\n"
+                "• _React + TypeScript for frontend_\n"
+                "• _Redis for caching and pub/sub_\n"
+                "• _OpenAI GPT-4o for embeddings_"
+            ),
+        ),
+    }
+
+    try:
+        if action_id == "memory_configure":
+            _post(
+                blocks=memory_configure_blocks(project_name, user_id),
+                text="Configure project memory",
+            )
+
+        elif action_id in _CATEGORY_MAP:
+            cat_enum, cat_label, help_text = _CATEGORY_MAP[action_id]
+            mark_pending_memory(
+                user_id=user_id,
+                channel=channel,
+                thread_ts=thread_ts,
+                category=cat_enum.value,
+                project_id=project_id,
+            )
+            _post(
+                blocks=memory_category_prompt_blocks(
+                    cat_enum.value, cat_label, help_text,
+                ),
+                text=f"Configure {cat_label}",
+            )
+
+        elif action_id == "memory_view":
+            doc = get_project_memory(project_id) or {}
+            _post(
+                blocks=memory_view_blocks(
+                    project_name,
+                    doc.get("idea_iteration", []),
+                    doc.get("knowledge", []),
+                    doc.get("tools", []),
+                ),
+                text="Project memory",
+            )
+
+        elif action_id == "memory_done":
+            _post(
+                text=(
+                    ":white_check_mark: Memory configuration complete! "
+                    "All agents will now recall these guardrails "
+                    "during PRD runs."
+                ),
+            )
+
+    except Exception as exc:
+        logger.error("_handle_memory_action failed: %s", exc, exc_info=True)
         _post(text=f":x: Something went wrong: {exc}")

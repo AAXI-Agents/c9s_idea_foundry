@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import ssl
-import time
 import urllib.parse
 import urllib.request
 
@@ -73,12 +72,14 @@ def _exchange_code(code: str, redirect_uri: str | None = None) -> dict:
 
 
 def _apply_tokens(result: dict) -> dict:
-    """Persist exchanged tokens to env + token store and return a summary."""
+    """Persist exchanged tokens to MongoDB ``slackOAuth`` and return a summary."""
+    from crewai_productfeature_planner.mongodb.slack_oauth import upsert_team
+    from crewai_productfeature_planner.tools.slack_token_manager import invalidate
+
     summary: dict = {}
 
     bot_access = result.get("access_token", "")
     if bot_access:
-        os.environ["SLACK_ACCESS_TOKEN"] = bot_access
         summary["bot_token_prefix"] = bot_access[:12] + "…"
         summary["bot_token_type"] = (
             "rotating" if bot_access.startswith("xoxe.") else "static"
@@ -86,7 +87,6 @@ def _apply_tokens(result: dict) -> dict:
 
     bot_refresh = result.get("refresh_token", "")
     if bot_refresh:
-        os.environ["SLACK_REFRESH_TOKEN"] = bot_refresh
         summary["has_bot_refresh"] = True
 
     expires_in = result.get("expires_in")
@@ -101,59 +101,50 @@ def _apply_tokens(result: dict) -> dict:
     if user_refresh:
         summary["has_user_refresh"] = True
 
-    summary["team"] = result.get("team", {}).get("name", "")
-    summary["team_id"] = result.get("team", {}).get("id", "")
-    summary["scope"] = result.get("scope", "")
-    summary["bot_user_id"] = result.get("bot_user_id", "")
-    summary["app_id"] = result.get("app_id", "")
-    summary["token_type"] = result.get("token_type", "")
+    team_id = result.get("team", {}).get("id", "")
+    team_name = result.get("team", {}).get("name", "")
+    scope = result.get("scope", "")
+    bot_user_id = result.get("bot_user_id", "")
+    app_id = result.get("app_id", "")
+    token_type = result.get("token_type", "")
 
-    try:
-        from crewai_productfeature_planner.tools.slack_token_manager import (
-            _persist_tokens,
-            _set_token_env,
+    summary["team"] = team_name
+    summary["team_id"] = team_id
+    summary["scope"] = scope
+    summary["bot_user_id"] = bot_user_id
+    summary["app_id"] = app_id
+    summary["token_type"] = token_type
+
+    # ── Persist to MongoDB (replaces env-var / .env / .slack_tokens.json) ──
+    if team_id and bot_access:
+        try:
+            doc = upsert_team(
+                team_id=team_id,
+                team_name=team_name,
+                access_token=bot_access,
+                refresh_token=bot_refresh or None,
+                token_type=token_type,
+                scope=scope,
+                bot_user_id=bot_user_id,
+                app_id=app_id,
+                expires_in=expires_in,
+                authed_user_id=authed_user.get("id"),
+            )
+            summary["persisted"] = doc is not None
+
+            # Invalidate the in-memory cache so the next API call picks
+            # up the freshly-stored token.
+            invalidate(team_id)
+        except Exception as exc:
+            logger.error("Failed to persist OAuth tokens to MongoDB: %s", exc)
+            summary["persisted"] = False
+    else:
+        logger.warning(
+            "OAuth callback missing team_id or access_token — tokens NOT persisted"
         )
-        if bot_access:
-            _set_token_env(bot_access)
-        if bot_access and bot_refresh and expires_in:
-            _persist_tokens(bot_access, bot_refresh, time.time() + expires_in)
-            summary["persisted"] = True
-    except Exception as exc:
-        logger.warning("Could not persist tokens via token manager: %s", exc)
         summary["persisted"] = False
 
-    _update_env_file(bot_access, bot_refresh)
     return summary
-
-
-def _update_env_file(access_token: str, refresh_token: str) -> None:
-    """Best-effort update of the ``.env`` file with new tokens."""
-    env_path = os.path.join(
-        os.path.dirname(
-            os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
-        ),
-        ".env",
-    )
-    if not os.path.exists(env_path):
-        return
-    try:
-        with open(env_path, "r") as fh:
-            lines = fh.readlines()
-        new_lines = []
-        for line in lines:
-            if line.startswith("SLACK_ACCESS_TOKEN=") and access_token:
-                new_lines.append(f"SLACK_ACCESS_TOKEN={access_token}\n")
-            elif line.startswith("SLACK_REFRESH_TOKEN=") and refresh_token:
-                new_lines.append(f"SLACK_REFRESH_TOKEN={refresh_token}\n")
-            else:
-                new_lines.append(line)
-        with open(env_path, "w") as fh:
-            fh.writelines(new_lines)
-        logger.info("Updated .env with new Slack tokens")
-    except Exception as exc:
-        logger.warning("Could not update .env file: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -174,11 +165,9 @@ def _update_env_file(access_token: str, refresh_token: str) -> None:
         "1. Slack redirects to this URL with a ``code`` query parameter.\n"
         "2. The server exchanges the ``code`` for bot and user tokens via "
         "``oauth.v2.access`` using HTTP Basic auth (client ID + secret).\n"
-        "3. Tokens are persisted to:\n"
-        "   - **Process environment** (``SLACK_ACCESS_TOKEN``, "
-        "``SLACK_REFRESH_TOKEN``)\n"
-        "   - **``.slack_tokens.json``** (for rotating token persistence)\n"
-        "   - **``.env`` file** (best-effort update for restarts)\n"
+        "3. Tokens are persisted to the ``slackOAuth`` MongoDB collection, "
+        "keyed by ``team_id`` (Slack workspace ID).  Each installing "
+        "workspace gets its own token record.\n"
         "4. A confirmation HTML page is returned to the user's browser.\n\n"
         "**Required environment variables:**\n\n"
         "| Variable | Description |\n"

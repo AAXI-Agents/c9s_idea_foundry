@@ -29,6 +29,7 @@ from crewai_productfeature_planner.scripts.knowledge_sources import (
     get_google_embedder_config,
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
+from crewai_productfeature_planner.scripts.memory_loader import enrich_backstory
 from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 
 logger = get_logger(__name__)
@@ -80,8 +81,15 @@ def _build_breakdown_llm() -> LLM:
     return LLM(model=model_name, timeout=timeout, max_retries=max_retries)
 
 
-def create_requirements_breakdown_agent() -> Agent:
+def create_requirements_breakdown_agent(
+    project_id: str | None = None,
+) -> Agent:
     """Create the Requirements Breakdown agent powered by Google Gemini.
+
+    Args:
+        project_id: Optional project identifier.  When provided, the
+            agent's backstory is enriched with project-level memory
+            (guardrails, knowledge, tech stack) from MongoDB.
 
     Raises ``EnvironmentError`` when neither ``GOOGLE_API_KEY`` nor
     ``GOOGLE_CLOUD_PROJECT`` is set.
@@ -100,10 +108,14 @@ def create_requirements_breakdown_agent() -> Agent:
         agent_config["role"].strip(),
     )
 
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
-        backstory=agent_config["backstory"].strip(),
+        backstory=backstory,
         llm=_build_breakdown_llm(),
         tools=[],  # Pure reasoning — no external tools needed
         verbose=is_verbose(),
@@ -133,6 +145,7 @@ def breakdown_requirements(
     refined_idea: str,
     run_id: str = "",
     original_idea: str = "",
+    project_id: str | None = None,
 ) -> tuple[str, list[dict]]:
     """Iteratively break down a refined idea into product requirements.
 
@@ -154,6 +167,7 @@ def breakdown_requirements(
         original_idea: The raw user-inputted idea (before refinement).
             When provided, this is stored in the ``idea`` field of the
             ``workingIdeas`` document to preserve the original input.
+        project_id: Optional project identifier for memory enrichment.
 
     Returns:
         A tuple of ``(final_requirements, breakdown_history)`` where
@@ -162,7 +176,7 @@ def breakdown_requirements(
     """
     min_iterations, max_iterations = _get_iteration_limits()
     task_configs = _load_yaml("tasks.yaml")
-    agent = create_requirements_breakdown_agent()
+    agent = create_requirements_breakdown_agent(project_id=project_id)
 
     current_requirements = ""
     previous_feedback = ""

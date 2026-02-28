@@ -2,6 +2,12 @@
 
 from fastapi import APIRouter, HTTPException
 
+from crewai_productfeature_planner.version import (
+    get_codex,
+    get_latest_codex_entry,
+    get_version,
+)
+
 router = APIRouter()
 
 
@@ -10,8 +16,8 @@ router = APIRouter()
     tags=["Health"],
     summary="Health check",
     description=(
-        "Returns a simple ``{\"status\": \"ok\"}`` payload to confirm the "
-        "service is running.\n\n"
+        "Returns ``{\"status\": \"ok\", \"version\": \"X.Y.Z\"}`` to confirm the "
+        "service is running and which build is deployed.\n\n"
         "Use this as a **liveness probe** for container orchestration "
         "(Docker, Kubernetes) or uptime monitoring.  The endpoint performs "
         "no database or external service checks — use "
@@ -22,7 +28,7 @@ router = APIRouter()
             "description": "Service is alive.",
             "content": {
                 "application/json": {
-                    "example": {"status": "ok"}
+                    "example": {"status": "ok", "version": "0.1.3"}
                 }
             },
         },
@@ -30,7 +36,51 @@ router = APIRouter()
 )
 async def health():
     """Basic liveness probe."""
-    return {"status": "ok"}
+    return {"status": "ok", "version": get_version()}
+
+
+@router.get(
+    "/version",
+    tags=["Health"],
+    summary="Application version and codex",
+    description=(
+        "Returns the current application version, the latest changelog "
+        "entry, and the full codex (changelog) of all iterations.\n\n"
+        "Use this to verify which build is deployed and trace what "
+        "changed in each iteration."
+    ),
+    responses={
+        200: {
+            "description": "Version info with codex.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "version": "0.1.3",
+                        "latest": {
+                            "version": "0.1.3",
+                            "date": "2026-02-28",
+                            "summary": "Version control & codex.",
+                        },
+                        "codex": [
+                            {
+                                "version": "0.1.0",
+                                "date": "2026-02-14",
+                                "summary": "Initial release.",
+                            },
+                        ],
+                    }
+                }
+            },
+        },
+    },
+)
+async def version():
+    """Return version and full codex (changelog)."""
+    return {
+        "version": get_version(),
+        "latest": get_latest_codex_entry(),
+        "codex": get_codex(),
+    }
 
 
 @router.get(
@@ -63,16 +113,34 @@ async def health():
         },
     },
 )
-async def slack_token_status() -> dict:
+async def slack_token_status(team_id: str | None = None) -> dict:
     """Return the current Slack token rotation state.
 
     Includes token type, whether rotation is configured, time until expiry,
-    last refresh timestamp, and the path to the persisted token store.
-    **No secrets are exposed.**
-    """
-    from crewai_productfeature_planner.tools.slack_token_manager import token_status
+    and last refresh timestamp.  **No secrets are exposed.**
 
-    return token_status()
+    When ``team_id`` is omitted and exactly one team is installed the
+    status of that team is returned automatically.
+    """
+    from crewai_productfeature_planner.mongodb.slack_oauth import (
+        get_all_teams,
+        token_status,
+    )
+
+    if not team_id:
+        teams = get_all_teams()
+        if len(teams) == 1:
+            team_id = teams[0]["team_id"]
+        elif len(teams) == 0:
+            return {"installed": False, "message": "No teams installed"}
+        else:
+            return {
+                "installed": True,
+                "teams": [t["team_id"] for t in teams],
+                "message": "Multiple teams installed — pass team_id",
+            }
+
+    return token_status(team_id)
 
 
 @router.post(
@@ -87,12 +155,12 @@ async def slack_token_status() -> dict:
         "| Variable | Description |\n"
         "|---|---|\n"
         "| ``SLACK_CLIENT_ID`` | Slack app client ID |\n"
-        "| ``SLACK_CLIENT_SECRET`` | Slack app client secret |\n"
-        "| ``SLACK_ACCESS_TOKEN`` | Existing long-lived ``xoxb-`` token |\n\n"
+        "| ``SLACK_CLIENT_SECRET`` | Slack app client secret |\n\n"
+        "The existing ``xoxb-`` token is read from the MongoDB "
+        "``slackOAuth`` collection for the given ``team_id``.\n\n"
         "After a successful exchange, the new rotating access token, "
-        "refresh token, and expiry are persisted to ``.slack_tokens.json`` "
-        "and updated in the process environment.  Subsequent refreshes "
-        "happen automatically.\n\n"
+        "refresh token, and expiry are persisted to the ``slackOAuth`` "
+        "collection.  Subsequent refreshes happen automatically.\n\n"
         "**Note:** This is a one-time operation. Once exchanged, use "
         "``POST /health/slack-token/refresh`` to force a manual refresh."
     ),
@@ -114,23 +182,46 @@ async def slack_token_status() -> dict:
         400: {"description": "Missing required env vars or exchange failed."},
     },
 )
-async def slack_token_exchange() -> dict:
+async def slack_token_exchange(team_id: str | None = None) -> dict:
     """One-time exchange of a long-lived ``xoxb-`` token for rotating tokens.
 
-    Requires ``SLACK_CLIENT_ID``, ``SLACK_CLIENT_SECRET``, and
-    ``SLACK_ACCESS_TOKEN`` to be set.
+    Requires ``SLACK_CLIENT_ID`` and ``SLACK_CLIENT_SECRET`` env vars.
+    The *team_id* determines which installed workspace's token to exchange.
     """
+    from crewai_productfeature_planner.mongodb.slack_oauth import (
+        get_all_teams,
+        get_team,
+    )
     from crewai_productfeature_planner.tools.slack_token_manager import (
         exchange_token,
         token_status,
     )
 
+    if not team_id:
+        teams = get_all_teams()
+        if len(teams) == 1:
+            team_id = teams[0]["team_id"]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="team_id is required (multiple or no teams installed)",
+            )
+
+    # Read the existing long-lived token from MongoDB for the exchange
+    doc = get_team(team_id)
+    existing_token = doc.get("access_token", "") if doc else ""
+    if not existing_token:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No existing token found for team {team_id}",
+        )
+
     try:
-        result = exchange_token()
+        result = exchange_token(team_id, token=existing_token)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    status = token_status()
+    status = token_status(team_id)
     return {
         **status,
         "message": "Token exchanged successfully",
@@ -171,22 +262,32 @@ async def slack_token_exchange() -> dict:
         400: {"description": "Refresh failed — check credentials and refresh token."},
     },
 )
-async def slack_token_refresh() -> dict:
-    """Force an immediate token refresh."""
+async def slack_token_refresh(team_id: str | None = None) -> dict:
+    """Force an immediate token refresh for *team_id*."""
+    from crewai_productfeature_planner.mongodb.slack_oauth import get_all_teams
     from crewai_productfeature_planner.tools.slack_token_manager import (
         get_valid_token,
         invalidate,
         token_status,
     )
 
-    invalidate()
-    token = get_valid_token()
+    if not team_id:
+        teams = get_all_teams()
+        if len(teams) == 1:
+            team_id = teams[0]["team_id"]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="team_id is required (multiple or no teams installed)",
+            )
+
+    invalidate(team_id)
+    token = get_valid_token(team_id)
     if not token:
         raise HTTPException(
             status_code=400,
-            detail="Token refresh failed — check SLACK_CLIENT_ID, "
-                   "SLACK_CLIENT_SECRET, and SLACK_REFRESH_TOKEN",
+            detail=f"Token refresh failed for team {team_id}",
         )
 
-    status = token_status()
+    status = token_status(team_id)
     return {"message": "Token refreshed successfully", **status}

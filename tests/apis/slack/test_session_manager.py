@@ -7,6 +7,7 @@ import pytest
 from crewai_productfeature_planner.apis.slack.session_manager import (
     _active_sessions,
     _lock,
+    _pending_memory_entries,
     _pending_project_creates,
     activate_project,
     deactivate_session,
@@ -14,7 +15,9 @@ from crewai_productfeature_planner.apis.slack.session_manager import (
     get_cached_session,
     get_project_id_for_user,
     mark_pending_create,
+    mark_pending_memory,
     pop_pending_create,
+    pop_pending_memory,
 )
 
 
@@ -23,9 +26,11 @@ def _clean_state():
     """Clear module-level dicts before each test."""
     _active_sessions.clear()
     _pending_project_creates.clear()
+    _pending_memory_entries.clear()
     yield
     _active_sessions.clear()
     _pending_project_creates.clear()
+    _pending_memory_entries.clear()
 
 
 # ── get_cached_session ───────────────────────────────────────
@@ -176,3 +181,63 @@ def test_mark_then_pop_cycle():
     result = pop_pending_create("U1")
     assert result is not None
     assert pop_pending_create("U1") is None
+
+
+# ── pending memory entries ────────────────────────────────────
+
+
+def test_mark_pending_memory():
+    mark_pending_memory("U1", "C1", "ts1", "idea_iteration", "proj-1")
+    assert _pending_memory_entries["U1"] == {
+        "channel": "C1",
+        "thread_ts": "ts1",
+        "category": "idea_iteration",
+        "project_id": "proj-1",
+    }
+
+
+def test_pop_pending_memory_found():
+    _pending_memory_entries["U1"] = {
+        "channel": "C1",
+        "thread_ts": "ts1",
+        "category": "tools",
+        "project_id": "proj-2",
+    }
+
+    result = pop_pending_memory("U1")
+
+    assert result == {
+        "channel": "C1",
+        "thread_ts": "ts1",
+        "category": "tools",
+        "project_id": "proj-2",
+    }
+    assert "U1" not in _pending_memory_entries
+
+
+def test_pop_pending_memory_not_found():
+    assert pop_pending_memory("U1") is None
+
+
+def test_mark_then_pop_memory_cycle():
+    """Full memory cycle: mark, pop returns data, second pop returns None."""
+    mark_pending_memory("U1", "C1", "ts1", "knowledge", "proj-3")
+    result = pop_pending_memory("U1")
+    assert result is not None
+    assert result["category"] == "knowledge"
+    assert result["project_id"] == "proj-3"
+    assert pop_pending_memory("U1") is None
+
+
+def test_pending_memory_independent_of_pending_create():
+    """Memory and create pending entries should be independent."""
+    mark_pending_create("U1", "C1", "ts1")
+    mark_pending_memory("U1", "C1", "ts2", "tools", "proj-1")
+
+    # Pop one should not affect the other
+    create_data = pop_pending_create("U1")
+    assert create_data is not None
+
+    memory_data = pop_pending_memory("U1")
+    assert memory_data is not None
+    assert memory_data["category"] == "tools"

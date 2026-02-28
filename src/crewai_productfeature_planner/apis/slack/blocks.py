@@ -20,6 +20,13 @@ Action ID conventions (used in :mod:`interactions_router`):
     project_switch     – Switch away from the current project
     project_continue   – Continue with the current project
     session_end        – Explicitly end the current session
+
+    memory_configure   – Open the project memory configuration menu
+    memory_idea        – Add idea & iteration guardrails
+    memory_knowledge   – Add knowledge links / documents
+    memory_tools       – Add implementation tools
+    memory_view        – View current project memory
+    memory_done        – Finish memory configuration
 """
 
 from __future__ import annotations
@@ -491,6 +498,81 @@ def project_create_prompt_blocks(user_id: str) -> list[dict]:
     ]
 
 
+def project_setup_step_blocks(
+    project_name: str, step: str, step_number: int, total_steps: int,
+) -> list[dict]:
+    """Prompt for the next project-setup field.
+
+    Each step collects one optional configuration value.
+    The user may reply with the value or type ``skip`` to leave it blank.
+    """
+    _STEP_LABELS = {
+        "confluence_space_key": (
+            ":confluence: *Confluence Space Key*\n\n"
+            "Enter the Confluence space key for this project "
+            "(e.g. `ENG`, `PROD`).  This is used when publishing PRDs.\n\n"
+            "_Type `skip` to leave blank and use the default._"
+        ),
+        "jira_project_key": (
+            ":jira2: *Jira Project Key*\n\n"
+            "Enter the Jira project key (e.g. `MYPROJ`, `FEAT`).  "
+            "This is used when creating Jira tickets for PRDs.\n\n"
+            "_Type `skip` to leave blank and use the default._"
+        ),
+        "confluence_parent_id": (
+            ":page_facing_up: *Confluence Parent Page ID*\n\n"
+            "Enter the numeric ID of the Confluence parent page under "
+            "which PRDs will be created (e.g. `123456`).\n\n"
+            "_Type `skip` to leave blank and use the default._"
+        ),
+    }
+    label = _STEP_LABELS.get(step, f"*{step}*")
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f":gear: *Setting up project:* {project_name} "
+                    f"(step {step_number}/{total_steps})\n\n"
+                    f"{label}"
+                ),
+            },
+        },
+    ]
+
+
+def project_setup_complete_blocks(project_name: str, details: dict) -> list[dict]:
+    """Show the completed project setup summary."""
+    lines = [
+        f":white_check_mark: *Project '{project_name}' is set up and ready!*\n",
+    ]
+    csk = details.get("confluence_space_key", "")
+    jpk = details.get("jira_project_key", "")
+    cpid = details.get("confluence_parent_id", "")
+    if csk:
+        lines.append(f"• Confluence space key: `{csk}`")
+    if jpk:
+        lines.append(f"• Jira project key: `{jpk}`")
+    if cpid:
+        lines.append(f"• Confluence parent ID: `{cpid}`")
+    if not (csk or jpk or cpid):
+        lines.append("_No extra keys configured — defaults will be used._")
+    lines.append(
+        "\nYou can now start iterating ideas!  Just say something like "
+        "`iterate an idea` or `create a PRD for ...`."
+    )
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "\n".join(lines),
+            },
+        },
+    ]
+
+
 def session_started_blocks(project_name: str) -> list[dict]:
     """Confirm that a project session has been activated."""
     return [
@@ -522,3 +604,165 @@ def session_ended_blocks() -> list[dict]:
             },
         },
     ]
+
+
+# ---------------------------------------------------------------------------
+# Project Memory configuration
+# ---------------------------------------------------------------------------
+
+
+def memory_configure_blocks(project_name: str, user_id: str) -> list[dict]:
+    """Offer memory-configuration options for the active project.
+
+    Shown after a session starts or when the user says
+    "configure memory" / "project memory".
+    """
+    return [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f":brain: Project Memory — {project_name}",
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "Project Memory stores guardrails and context that "
+                    "all agents recall during every PRD run.\n\n"
+                    "*Choose a category to configure:*"
+                ),
+            },
+        },
+        {
+            "type": "actions",
+            "block_id": f"memory_menu_{user_id}",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":bulb: Idea & Iteration"},
+                    "action_id": "memory_idea",
+                    "value": user_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":books: Knowledge"},
+                    "action_id": "memory_knowledge",
+                    "value": user_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":wrench: Tools"},
+                    "action_id": "memory_tools",
+                    "value": user_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":mag: View Memory"},
+                    "action_id": "memory_view",
+                    "value": user_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":white_check_mark: Done"},
+                    "action_id": "memory_done",
+                    "value": user_id,
+                    "style": "primary",
+                },
+            ],
+        },
+    ]
+
+
+def memory_category_prompt_blocks(
+    category: str,
+    category_label: str,
+    help_text: str,
+) -> list[dict]:
+    """Prompt the user to type entries for a memory category.
+
+    The user replies in the thread; each line becomes a separate entry.
+    """
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f":pencil: *Configure {category_label}*\n\n"
+                    f"{help_text}\n\n"
+                    "Reply in this thread with your entries — "
+                    "*one per line*.  When you're finished, I'll "
+                    "save them all."
+                ),
+            },
+        },
+    ]
+
+
+def memory_saved_blocks(
+    category_label: str,
+    count: int,
+) -> list[dict]:
+    """Confirm that memory entries have been saved."""
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f":white_check_mark: Saved *{count}* "
+                    f"{category_label} "
+                    f"{'entry' if count == 1 else 'entries'}.\n\n"
+                    "Say *configure memory* to add more, or start "
+                    "creating PRDs!"
+                ),
+            },
+        },
+    ]
+
+
+def memory_view_blocks(
+    project_name: str,
+    idea_entries: list[dict],
+    knowledge_entries: list[dict],
+    tools_entries: list[dict],
+) -> list[dict]:
+    """Display all stored project memory entries."""
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f":brain: Project Memory — {project_name}",
+            },
+        },
+    ]
+
+    def _section(label: str, emoji: str, entries: list[dict]) -> None:
+        if entries:
+            lines = "\n".join(
+                f"• {e.get('content', '')}" for e in entries
+            )
+            text = f"{emoji} *{label}* ({len(entries)}):\n{lines}"
+        else:
+            text = f"{emoji} *{label}*: _none configured_"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": text},
+        })
+
+    _section("Idea & Iteration", ":bulb:", idea_entries)
+    _section("Knowledge", ":books:", knowledge_entries)
+    _section("Tools", ":wrench:", tools_entries)
+
+    blocks.append({
+        "type": "context",
+        "elements": [{
+            "type": "mrkdwn",
+            "text": "Say *configure memory* to update.",
+        }],
+    })
+    return blocks

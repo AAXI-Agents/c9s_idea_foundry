@@ -114,10 +114,16 @@ def build_post_completion_crew(
     if not confluence_needed and not jira_needed:
         return None
 
-    delivery_manager = create_delivery_manager_agent()
-    orchestrator_agent = create_orchestrator_agent()
-    pm_agent = create_jira_product_manager_agent() if jira_needed else None
-    atl_agent = create_jira_architect_tech_lead_agent() if jira_needed else None
+    # Resolve project_id for memory enrichment
+    from crewai_productfeature_planner.scripts.memory_loader import (
+        resolve_project_id,
+    )
+    project_id = resolve_project_id(flow.state.run_id)
+
+    delivery_manager = create_delivery_manager_agent(project_id=project_id)
+    orchestrator_agent = create_orchestrator_agent(project_id=project_id)
+    pm_agent = create_jira_product_manager_agent(project_id=project_id) if jira_needed else None
+    atl_agent = create_jira_architect_tech_lead_agent(project_id=project_id) if jira_needed else None
 
     # ── Task 1: Assess delivery status ─────────────────────────
     assess_task = Task(

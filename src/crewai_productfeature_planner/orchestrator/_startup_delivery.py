@@ -192,6 +192,9 @@ def build_startup_delivery_crew(
         get_task_configs,
     )
     from crewai_productfeature_planner.scripts.logging_config import is_verbose
+    from crewai_productfeature_planner.scripts.memory_loader import (
+        resolve_project_id,
+    )
 
     run_id = item["run_id"]
     idea_preview = (item["idea"] or "PRD")[:80].strip()
@@ -213,8 +216,11 @@ def build_startup_delivery_crew(
             ctx_key,
         )
 
-    delivery_manager = create_delivery_manager_agent()
-    orchestrator_agent = create_orchestrator_agent()
+    # Resolve project_id for memory enrichment
+    project_id = resolve_project_id(run_id)
+
+    delivery_manager = create_delivery_manager_agent(project_id=project_id)
+    orchestrator_agent = create_orchestrator_agent(project_id=project_id)
 
     # Determine whether Jira agents are needed.
     # Jira creation only requires Confluence to be published and creds
@@ -225,8 +231,8 @@ def build_startup_delivery_crew(
         and item["confluence_done"]
         and _has_jira_credentials()
     )
-    pm_agent = create_jira_product_manager_agent() if jira_needed else None
-    atl_agent = create_jira_architect_tech_lead_agent() if jira_needed else None
+    pm_agent = create_jira_product_manager_agent(project_id=project_id) if jira_needed else None
+    atl_agent = create_jira_architect_tech_lead_agent(project_id=project_id) if jira_needed else None
 
     # ── Summarise partially-created Jira tickets ────────────────
     existing_tickets = item.get("jira_tickets") or []

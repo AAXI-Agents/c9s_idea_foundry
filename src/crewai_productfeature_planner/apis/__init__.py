@@ -33,6 +33,7 @@ from crewai_productfeature_planner.apis.slack.oauth_router import router as slac
 from crewai_productfeature_planner.apis.slack.router import router as slack_router
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
 from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.version import get_version
 
 _logger = get_logger(__name__)
 
@@ -143,7 +144,7 @@ async def _lifespan(application: FastAPI):
 
 app = FastAPI(
     title="CrewAI Product Feature Planner API",
-    version="0.1.0",
+    version=get_version(),
     description="HTTP interface for triggering CrewAI flows.",
     lifespan=_lifespan,
     openapi_tags=[

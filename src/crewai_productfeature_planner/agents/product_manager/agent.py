@@ -25,6 +25,7 @@ from crewai_productfeature_planner.scripts.knowledge_sources import (
     get_google_embedder_config,
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
+from crewai_productfeature_planner.scripts.memory_loader import enrich_backstory
 from crewai_productfeature_planner.tools.search_tool import create_search_tool
 from crewai_productfeature_planner.tools.scrape_tool import create_scrape_tool
 from crewai_productfeature_planner.tools.file_read_tool import create_file_read_tool
@@ -120,13 +121,20 @@ def _build_llm(provider: str = PROVIDER_OPENAI) -> LLM:
     return LLM(model=model_name, timeout=timeout, max_retries=max_retries)
 
 
-def create_product_manager(provider: str = PROVIDER_OPENAI) -> Agent:
+def create_product_manager(
+    provider: str = PROVIDER_OPENAI,
+    project_id: str | None = None,
+) -> Agent:
     """Create a fully configured Product Manager agent.
 
     Parameters
     ----------
     provider:
         LLM backend — ``"openai"`` (default) or ``"gemini"``.
+    project_id:
+        Optional project identifier.  When provided, the agent's
+        backstory is enriched with project-level memory entries
+        (guardrails, knowledge, tech stack) from MongoDB.
 
     Raises
     ------
@@ -147,10 +155,14 @@ def create_product_manager(provider: str = PROVIDER_OPENAI) -> Agent:
     logger.info("Creating Product Manager agent (provider='%s', role='%s')",
                 provider, agent_config["role"].strip())
 
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
-        backstory=agent_config["backstory"].strip(),
+        backstory=backstory,
         llm=_build_llm(provider=provider),
         tools=_build_tools(),
         verbose=is_verbose(),

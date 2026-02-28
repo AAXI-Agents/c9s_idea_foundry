@@ -205,3 +205,95 @@ def list_sessions(
             exc,
         )
         return []
+
+
+# ── Channel sessions ─────────────────────────────────────────
+# Channel sessions share the same MongoDB collection but are
+# distinguished by ``context_type: "channel"`` and keyed by
+# ``channel`` rather than ``user_id``.
+
+
+def start_channel_session(
+    *,
+    channel_id: str,
+    project_id: str,
+    project_name: str,
+    activated_by: str,
+) -> str | None:
+    """Start a project session for a Slack **channel**.
+
+    Any previously active channel session is ended first.
+
+    Returns:
+        The new ``session_id``, or ``None`` on failure.
+    """
+    end_channel_session(channel_id=channel_id)
+
+    session_id = uuid.uuid4().hex
+    now = _now_iso()
+
+    doc: dict[str, Any] = {
+        "session_id": session_id,
+        "context_type": "channel",
+        "channel": channel_id,
+        "project_id": project_id,
+        "project_name": project_name,
+        "activated_by": activated_by,
+        "active": True,
+        "started_at": now,
+        "ended_at": None,
+    }
+
+    try:
+        get_db()[USER_SESSION_COLLECTION].insert_one(doc)
+        logger.info(
+            "[UserSession] Started channel session %s for channel=%s project=%s (%s) by=%s",
+            session_id, channel_id, project_id, project_name, activated_by,
+        )
+        return session_id
+    except PyMongoError as exc:
+        logger.error(
+            "[UserSession] Failed to start channel session for channel=%s: %s",
+            channel_id, exc,
+        )
+        return None
+
+
+def end_channel_session(*, channel_id: str) -> int:
+    """End the active channel session (if any).
+
+    Returns the number of sessions ended (0 or 1).
+    """
+    now = _now_iso()
+    try:
+        result = get_db()[USER_SESSION_COLLECTION].update_one(
+            {"channel": channel_id, "context_type": "channel", "active": True},
+            {"$set": {"active": False, "ended_at": now}},
+        )
+        if result.modified_count:
+            logger.info(
+                "[UserSession] Ended active channel session for channel=%s",
+                channel_id,
+            )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[UserSession] Failed to end channel session for channel=%s: %s",
+            channel_id, exc,
+        )
+        return 0
+
+
+def get_active_channel_session(channel_id: str) -> dict[str, Any] | None:
+    """Return the channel's currently active session, or ``None``."""
+    try:
+        return get_db()[USER_SESSION_COLLECTION].find_one(
+            {"channel": channel_id, "context_type": "channel", "active": True},
+            {"_id": 0},
+        )
+    except PyMongoError as exc:
+        logger.error(
+            "[UserSession] Failed to get active channel session for channel=%s: %s",
+            channel_id, exc,
+        )
+        return None
