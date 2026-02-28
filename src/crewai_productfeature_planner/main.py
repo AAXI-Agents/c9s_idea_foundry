@@ -1659,6 +1659,10 @@ def start_api():
         print(f"\n🌐 Ngrok tunnel: {public_url}")
         print(f"   Swagger docs: {public_url}/docs\n")
 
+        # Auto-update Slack app request URLs to match the new tunnel.
+        from crewai_productfeature_planner.scripts.slack_config import update_slack_app_urls
+        update_slack_app_urls(public_url)
+
     uvicorn.run(
         "crewai_productfeature_planner.apis:app",
         host=args.host,

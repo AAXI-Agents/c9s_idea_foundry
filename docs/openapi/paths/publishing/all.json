@@ -1,0 +1,34 @@
+{
+  "post": {
+    "tags": ["Publishing"],
+    "summary": "Publish all Confluence pages and create all Jira tickets",
+    "operationId": "publishing_all_batch",
+    "description": "Full batch delivery pipeline: publishes all pending PRDs to Confluence and creates Jira tickets for all eligible runs in a single call.",
+    "responses": {
+      "200": {
+        "description": "Combined publish result.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/CombinedPublishResult" },
+            "example": {
+              "run_id": "",
+              "confluence": { "published": 3, "failed": 0 },
+              "jira": { "completed": 3, "failed": 0 }
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "Atlassian credentials not configured."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -11,8 +11,11 @@ from crewai_productfeature_planner.mongodb.agent_interactions.repository import 
     find_interactions_by_intent,
     find_interactions_by_source,
     get_interaction,
+    get_next_step_accuracy,
     list_interactions,
     log_interaction,
+    record_next_step_feedback,
+    update_next_step_prediction,
 )
 
 __all__ = [
@@ -21,6 +24,9 @@ __all__ = [
     "find_interactions_by_intent",
     "find_interactions_by_source",
     "get_interaction",
+    "get_next_step_accuracy",
     "list_interactions",
     "log_interaction",
+    "record_next_step_feedback",
+    "update_next_step_prediction",
 ]

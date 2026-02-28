@@ -1,0 +1,52 @@
+{
+  "post": {
+    "tags": ["Publishing"],
+    "summary": "Publish Confluence + create Jira tickets for one run",
+    "operationId": "publishing_all_single",
+    "description": "Full delivery pipeline for a single run: publishes the PRD to Confluence and creates Jira tickets in one call.",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "The flow run identifier.",
+        "example": "a1b2c3d4e5f6"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Combined publish result.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/CombinedPublishResult" },
+            "example": {
+              "run_id": "a1b2c3d4e5f6",
+              "confluence": { "run_id": "a1b2c3d4e5f6", "title": "PRD Title", "url": "https://...", "page_id": "123", "action": "created" },
+              "jira": { "run_id": "a1b2c3d4e5f6", "jira_completed": true, "ticket_keys": ["PRD-1"] }
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      },
+      "503": {
+        "description": "Atlassian credentials not configured."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

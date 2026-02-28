@@ -47,9 +47,12 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
 
   "intent"  – one of: "create_project", "list_projects", "switch_project", \
               "current_project", "end_session", "configure_memory", \
-              "create_prd", "publish", "check_publish", "help", \
-              "greeting", "unknown"
+              "update_config", "create_prd", "publish", "check_publish", \
+              "help", "greeting", "unknown"
   "idea"    – the product or feature idea extracted from the message, or null
+  "confluence_space_key" – extracted Confluence space key, or null
+  "jira_project_key"     – extracted Jira project key, or null
+  "confluence_parent_id" – extracted Confluence parent page ID, or null
   "reply"   – a SHORT friendly reply (1-2 sentences) appropriate to the intent:
        • "create_project" → confirm you will create a new project and ask for the project name
        • "list_projects" → confirm you will show the available projects
@@ -57,6 +60,7 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
        • "current_project" → confirm you will show which project is active
        • "end_session" → confirm you will end the current session
        • "configure_memory" → confirm you will open memory configuration
+       • "update_config" → confirm you will update the project configuration with the provided keys
        • "create_prd" with idea → confirm you will start planning
        • "create_prd" without idea → ask the user for the idea
        • "publish" → confirm you will publish pending PRDs to Confluence and create Jira tickets
@@ -105,10 +109,22 @@ the word "project" does not appear.
   "close session"                         → end_session
   "I'm done"                              → end_session
   "configure memory"                      → configure_memory
+  "configure more memory"                 → configure_memory
+  "add more memory"                       → configure_memory
   "project memory"                        → configure_memory
   "setup memory"                          → configure_memory
   "edit memory"                           → configure_memory
+  "manage memory"                         → configure_memory
   "show memory"                           → configure_memory
+  "add confluence key ABC"                 → update_config  (confluence_space_key="ABC")
+  "set jira project key PROJ"             → update_config  (jira_project_key="PROJ")
+  "confluence space key is XYZ"           → update_config  (confluence_space_key="XYZ")
+  "add confluence project space key CrewAITS and jira project key CJT" → update_config  (confluence_space_key="CrewAITS", jira_project_key="CJT")
+  "set confluence key ABC and jira key DEF" → update_config  (confluence_space_key="ABC", jira_project_key="DEF")
+  "jira key is MYPROJ"                    → update_config  (jira_project_key="MYPROJ")
+  "confluence parent page id 12345"       → update_config  (confluence_parent_id="12345")
+  "update project config confluence XYZ jira ABC" → update_config
+  "configure confluence key"              → update_config  (ask for value if missing)
   "create a PRD for a fitness app"        → create_prd
   "plan a feature for user auth"          → create_prd
   "I have an idea for an AI chatbot"      → create_prd
@@ -140,6 +156,18 @@ the word "project" does not appear.
   project's memory configuration (guardrails, knowledge, tools).  \
   Keywords: "memory", "configure memory", "setup memory", "edit memory", \
   "view memory", "show memory", "project memory".
+- Intent "update_config" means the user wants to SET, ADD, or UPDATE \
+  specific project configuration keys — Confluence space key, Jira \
+  project key, or Confluence parent page ID.  The user may provide one \
+  or more key values inline.  Extract the values into \
+  "confluence_space_key", "jira_project_key", and/or "confluence_parent_id" \
+  fields.  Keywords: "confluence key", "confluence space key", "jira key", \
+  "jira project key", "set confluence", "add jira", "project key", \
+  "space key", "parent id", "parent page", "update config", "set config", \
+  "configure confluence", "configure jira".  \
+  IMPORTANT: Do NOT confuse "update_config" with "configure_memory". \
+  "update_config" is specifically about Confluence/Jira key values, \
+  while "configure_memory" is about broader project memory settings.
 - Intent "create_prd" means the user wants to create a PRD, plan a product \
   feature, build a requirements document, iterate on an idea, brainstorm, \
   or discuss a product concept. Be generous: if the message contains \
@@ -236,22 +264,33 @@ def interpret_message(
     except ImportError:
         pass
 
-    try:
-        with urllib.request.urlopen(req, timeout=30, context=ssl_context) as resp:
-            resp_payload = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except urllib.error.HTTPError as exc:
-        body = ""
+    # Retry once on timeout / transient errors
+    resp_payload = None
+    _MAX_RETRIES = 2
+    for _attempt in range(1, _MAX_RETRIES + 1):
         try:
-            body = exc.read().decode("utf-8", errors="replace")[:500]
-        except Exception:
-            pass
-        logger.error("Gemini API HTTP error %s: %s", exc.code, body)
-        return _fallback()
-    except urllib.error.URLError as exc:
-        logger.error("Gemini API connection error: %s", exc.reason)
-        return _fallback()
-    except Exception as exc:
-        logger.error("Gemini API unexpected error: %s", exc)
+            with urllib.request.urlopen(req, timeout=60, context=ssl_context) as resp:
+                resp_payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+            break  # success
+        except urllib.error.HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="replace")[:500]
+            except Exception:
+                pass
+            logger.error("Gemini API HTTP error %s (attempt %d/%d): %s", exc.code, _attempt, _MAX_RETRIES, body)
+            if _attempt == _MAX_RETRIES:
+                return _fallback()
+        except urllib.error.URLError as exc:
+            logger.error("Gemini API connection error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc.reason)
+            if _attempt == _MAX_RETRIES:
+                return _fallback()
+        except Exception as exc:
+            logger.error("Gemini API unexpected error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc)
+            if _attempt == _MAX_RETRIES:
+                return _fallback()
+
+    if resp_payload is None:
         return _fallback()
 
     # ── Parse Gemini response ──────────────────────────────────
@@ -287,10 +326,20 @@ def interpret_message(
             logger.warning("Could not parse Gemini response as JSON")
             return _fallback()
 
+    # Guard: LLM sometimes returns a JSON array instead of an object
+    if isinstance(result, list):
+        result = result[0] if result else {}
+    if not isinstance(result, dict):
+        logger.warning("Gemini returned non-dict JSON: %s", type(result).__name__)
+        return _fallback()
+
     return {
         "intent": result.get("intent", "unknown"),
         "idea": result.get("idea") or None,
         "reply": result.get("reply", ""),
+        "confluence_space_key": result.get("confluence_space_key") or None,
+        "jira_project_key": result.get("jira_project_key") or None,
+        "confluence_parent_id": result.get("confluence_parent_id") or None,
     }
 
 

@@ -1,0 +1,38 @@
+{
+  "post": {
+    "tags": ["Publishing"],
+    "summary": "Publish all pending PRDs to Confluence",
+    "operationId": "publishing_confluence_all",
+    "description": "Batch-publishes all PRDs that have not yet been published to Confluence. Each PRD is converted to Confluence XHTML and uploaded as a page under the configured parent page.\n\nReturns summary counts of successful and failed publishes.",
+    "responses": {
+      "200": {
+        "description": "Batch publish result.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/ConfluenceBatchResult" },
+            "example": {
+              "published": 3,
+              "failed": 0,
+              "results": [
+                { "run_id": "abc123", "title": "PRD Title", "url": "https://mysite.atlassian.net/wiki/spaces/PRD/pages/123", "page_id": "123", "action": "created" }
+              ],
+              "errors": [],
+              "message": "Published 3 PRDs to Confluence."
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "Atlassian credentials not configured."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

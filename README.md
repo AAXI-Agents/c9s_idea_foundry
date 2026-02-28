@@ -1,6 +1,8 @@
-# CrewaiProductfeaturePlanner Crew
+# CrewAI Product Feature Planner
 
-Welcome to the Crewai Product Feature Planner Crew project, powered by [crewAI](https://crewai.com). This crew project design to take a simple idea and create a detail product requirement documentation and associated engineering tickets for development.
+> **v0.1.6** — AI-powered PRD generation with Slack integration, Confluence publishing, and Jira ticketing.
+
+Take a simple product idea and generate a detailed Product Requirements Document (PRD) with associated engineering tickets — powered by [crewAI](https://crewai.com), Gemini, and OpenAI.
 
 ## Installation
 
@@ -67,7 +69,8 @@ The script calls `uv run start_api --ngrok` and prints the public URL.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Liveness probe — returns `{"status": "ok"}` |
+| `GET` | `/health` | Liveness probe — returns `{"status": "ok", "version": "X.Y.Z"}` |
+| `GET` | `/version` | Application version, latest changelog entry, and full codex |
 | `GET` | `/health/slack-token` | Slack token rotation diagnostics (no secrets exposed) |
 | `POST` | `/health/slack-token/exchange` | One-time exchange of a long-lived `xoxb-` token for rotating tokens |
 | `POST` | `/health/slack-token/refresh` | Force-refresh the Slack access token |
@@ -135,7 +138,35 @@ When a `webhook_url` is provided on `/slack/kickoff` or `/slack/kickoff/sync`, t
 
 ## Slack Integration
 
-The bot supports two modes of operation in Slack:
+The bot supports natural language interaction in Slack, powered by a 12-intent LLM classification system with text-phrase safety nets.
+
+### Intent Classification (v0.1.6)
+
+Every message mentioning the bot is classified by Gemini (with OpenAI fallback) into one of 12 intents:
+
+| Intent | Description | Example phrases |
+|---|---|---|
+| `create_project` | Create a new project workspace | "create a new project", "set up a project" |
+| `list_projects` | Show available projects | "show me available projects", "list projects" |
+| `switch_project` | Change to a different project | "switch project", "use a different project" |
+| `current_project` | Show which project is active | "current project", "which project am I on" |
+| `end_session` | End the active session | "end session", "I'm done" |
+| `configure_memory` | View or edit project memory | "configure memory", "show memory" |
+| `create_prd` | Create/iterate a PRD or idea | "create a PRD for...", "iterate an idea" |
+| `publish` | Publish PRDs to Confluence/Jira | "publish", "push to confluence" |
+| `check_publish` | Check publishing status | "check publish", "what's pending" |
+| `help` | Show available commands | "help", "what can you do" |
+| `greeting` | Conversational greeting | "hi", "hello" |
+| `unknown` | Unrecognised input | (fallback) |
+
+Each intent is supported by both LLM classification **and** text-phrase safety nets — so natural phrasing like "show me available projects" works even if the LLM misclassifies.
+
+### Project Setup Wizard (v0.1.5)
+
+After creating a project, the bot walks through a 3-step setup wizard:
+1. **Confluence space key** — where PRD pages are published
+2. **Jira project key** — where engineering tickets are created
+3. **Confluence parent page ID** — parent page for PRD pages
 
 ### Standard Mode (default)
 
@@ -242,3 +273,17 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 ## Understanding Your Crew
 
 The crewai_productfeature_planner Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
+
+## Version History
+
+The application uses semantic versioning (`Major.Minor.Iteration`). The full codex is available at `GET /version`.
+
+| Version | Date | Summary |
+|---|---|---|
+| 0.1.6 | 2026-02-28 | Comprehensive intent audit — 5 new LLM intents (`list_projects`, `switch_project`, `end_session`, `current_project`, `configure_memory`), phrase-based routing, improved help text |
+| 0.1.5 | 2026-02-28 | Intent fix & project setup wizard — "iterate an idea" fix, 3-step Confluence/Jira setup |
+| 0.1.4 | 2026-02-28 | Thread reply awareness — pending-state routing, session isolation |
+| 0.1.3 | 2026-02-28 | Version control & codex — `GET /version`, version in health response |
+| 0.1.2 | 2026-02-28 | Intent classification fix — `create_project` intent with few-shot examples |
+| 0.1.1 | 2026-02-25 | Slack OAuth refactoring — per-team tokens in MongoDB |
+| 0.1.0 | 2026-02-14 | Initial release — PRD flow, MongoDB, FastAPI server |

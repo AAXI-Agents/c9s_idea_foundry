@@ -648,6 +648,20 @@ def run_interactive_slack_flow(
                 )
             logger.info("Interactive Slack PRD flow %s completed", run_id)
 
+            # Proactively suggest next step after PRD completion
+            try:
+                from crewai_productfeature_planner.apis.slack._next_step import (
+                    predict_and_post_next_step,
+                )
+                predict_and_post_next_step(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    user=user,
+                    trigger_action="prd_completed",
+                )
+            except Exception as ns_exc:
+                logger.warning("Next-step after PRD completion failed: %s", ns_exc)
+
         except IdeaFinalized:
             update_job_completed(run_id, status="completed")
             if notify:

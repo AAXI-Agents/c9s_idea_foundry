@@ -1,0 +1,32 @@
+{
+  "get": {
+    "tags": ["Publishing"],
+    "summary": "File watcher and cron scheduler status",
+    "operationId": "publishing_automation_status",
+    "description": "Returns the current state of the background automation systems:\n\n- **File watcher** — monitors the output directory for new PRD markdown files and auto-publishes them to Confluence.\n- **Cron scheduler** — periodically scans for incomplete deliveries (Confluence published but Jira tickets missing, or vice versa) and resumes them.",
+    "responses": {
+      "200": {
+        "description": "Automation status.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/WatcherStatusResponse" },
+            "example": {
+              "watcher_running": true,
+              "watcher_directory": "/output/prds",
+              "scheduler_running": true,
+              "scheduler_interval_seconds": 300
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "get": {
+    "tags": [
+      "Health"
+    ],
+    "summary": "Application version and codex",
+    "operationId": "version",
+    "description": "Returns the current application version, the latest changelog entry, and the full codex (changelog) of all iterations.\n\nUse this to verify which build is deployed and trace what changed in each iteration.",
+    "responses": {
+      "200": {
+        "description": "Version info with full codex.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "description": "Current semantic version.",
+                  "example": "0.1.6"
+                },
+                "latest": {
+                  "$ref": "../../openapi.json#/components/schemas/CodexEntry",
+                  "description": "Most recent codex (changelog) entry."
+                },
+                "codex": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "../../openapi.json#/components/schemas/CodexEntry"
+                  },
+                  "description": "Full changelog, oldest first."
+                }
+              }
+            },
+            "example": {
+              "version": "0.1.6",
+              "latest": {
+                "version": "0.1.6",
+                "date": "2026-02-28",
+                "summary": "Comprehensive intent audit — added 5 new LLM intents."
+              },
+              "codex": [
+                {
+                  "version": "0.1.0",
+                  "date": "2026-02-14",
+                  "summary": "Initial release."
+                },
+                {
+                  "version": "0.1.6",
+                  "date": "2026-02-28",
+                  "summary": "Comprehensive intent audit — added 5 new LLM intents."
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

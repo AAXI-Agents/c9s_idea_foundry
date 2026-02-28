@@ -1,0 +1,42 @@
+{
+  "get": {
+    "tags": ["Publishing"],
+    "summary": "List PRDs pending delivery",
+    "operationId": "publishing_pending",
+    "description": "Returns a list of PRDs that are awaiting Confluence publish, Jira ticket creation, or both.\n\nItems are sourced from MongoDB (completed flow runs) and optionally from disk (markdown files in the output directory).",
+    "responses": {
+      "200": {
+        "description": "List of pending PRD items.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PendingListResponse" },
+            "example": {
+              "count": 2,
+              "items": [
+                {
+                  "run_id": "a1b2c3d4e5f6",
+                  "title": "Mobile Fitness Tracker PRD",
+                  "source": "mongodb",
+                  "output_file": "/output/prds/prd_v2_20260228.md",
+                  "confluence_published": false,
+                  "confluence_url": "",
+                  "jira_completed": false,
+                  "jira_tickets": [],
+                  "status": "pending"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

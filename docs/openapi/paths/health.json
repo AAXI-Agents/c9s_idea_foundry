@@ -5,7 +5,7 @@
     ],
     "summary": "Health check",
     "operationId": "health",
-    "description": "Returns a simple `{\"status\": \"ok\"}` payload to confirm the service is running.\n\nUse this as a **liveness probe** for container orchestration (Docker, Kubernetes) or uptime monitoring. The endpoint performs no database or external service checks — use `GET /health/slack-token` to verify Slack token health.",
+    "description": "Returns `{\"status\": \"ok\", \"version\": \"X.Y.Z\"}` to confirm the service is running and which build is deployed.\n\nUse this as a **liveness probe** for container orchestration (Docker, Kubernetes) or uptime monitoring. The endpoint performs no database or external service checks — use `GET /health/slack-token` to verify Slack token health.",
     "responses": {
       "200": {
         "description": "Service is alive.",
@@ -17,11 +17,17 @@
                 "status": {
                   "type": "string",
                   "example": "ok"
+                },
+                "version": {
+                  "type": "string",
+                  "description": "Current application version (semantic versioning).",
+                  "example": "0.1.6"
                 }
               }
             },
             "example": {
-              "status": "ok"
+              "status": "ok",
+              "version": "0.1.6"
             }
           }
         }

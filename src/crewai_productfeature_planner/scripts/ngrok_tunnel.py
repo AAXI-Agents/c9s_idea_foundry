@@ -46,15 +46,29 @@ def _configure_auth() -> None:
 def start_tunnel(port: int = DEFAULT_PORT, **kwargs) -> str:
     """Open an ngrok tunnel and return the public URL.
 
+    When the ``NGROK_DOMAIN`` environment variable is set (e.g.
+    ``myapp.ngrok-free.dev``), pyngrok will request that specific
+    static domain so the public URL stays the same across restarts.
+    Ngrok's free tier includes **one** static domain — claim yours at
+    https://dashboard.ngrok.com/domains.
+
     Args:
         port: Local port to expose (default 8000).
         **kwargs: Extra args forwarded to ``ngrok.connect()``
-                  (e.g. ``proto="http"``, ``subdomain="myapp"``).
+                  (e.g. ``proto="http"``, ``domain="myapp.ngrok-free.dev"``).
 
     Returns:
         The public https URL assigned by ngrok.
     """
     _configure_auth()
+
+    # Use a stable domain when NGROK_DOMAIN is set and caller didn't
+    # explicitly pass ``domain`` (or the legacy ``subdomain``) kwarg.
+    ngrok_domain = os.environ.get("NGROK_DOMAIN", "").strip()
+    if ngrok_domain and "domain" not in kwargs and "subdomain" not in kwargs:
+        kwargs["domain"] = ngrok_domain
+        logger.info("Using static ngrok domain: %s", ngrok_domain)
+
     tunnel = ngrok.connect(port, **kwargs)
     public_url = tunnel.public_url
     logger.info("Ngrok tunnel opened: %s -> localhost:%d", public_url, port)

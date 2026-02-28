@@ -1,0 +1,54 @@
+{
+  "get": {
+    "tags": ["Publishing"],
+    "summary": "Get delivery status for a run",
+    "operationId": "publishing_status",
+    "description": "Returns the delivery status for a specific flow run — whether the PRD has been published to Confluence, whether Jira tickets have been created, and the overall delivery status (pending / partial / completed).",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "The flow run identifier.",
+        "example": "a1b2c3d4e5f6"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Delivery status.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/DeliveryStatusResponse" },
+            "example": {
+              "run_id": "a1b2c3d4e5f6",
+              "confluence_published": true,
+              "confluence_url": "https://mysite.atlassian.net/wiki/spaces/PRD/pages/123",
+              "confluence_page_id": "123",
+              "jira_completed": false,
+              "jira_tickets": [],
+              "status": "partial",
+              "error": null
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

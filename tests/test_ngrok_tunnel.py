@@ -94,6 +94,89 @@ def test_start_tunnel_forwards_kwargs():
     mock_ngrok.connect.assert_called_once_with(5000, subdomain="myapp")
 
 
+# ── NGROK_DOMAIN (static domain) ─────────────────────────────
+
+
+def test_start_tunnel_uses_ngrok_domain_env(monkeypatch):
+    """When NGROK_DOMAIN is set, the domain kwarg should be forwarded."""
+    monkeypatch.setenv("NGROK_DOMAIN", "myapp.ngrok-free.dev")
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.public_url = "https://myapp.ngrok-free.dev"
+
+    with (
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.conf") as mock_conf,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.ngrok") as mock_ngrok,
+    ):
+        mock_conf.get_default.return_value = MagicMock()
+        mock_ngrok.connect.return_value = mock_tunnel
+
+        url = start_tunnel(port=8000)
+
+    assert url == "https://myapp.ngrok-free.dev"
+    mock_ngrok.connect.assert_called_once_with(8000, domain="myapp.ngrok-free.dev")
+
+
+def test_start_tunnel_without_ngrok_domain(monkeypatch):
+    """Without NGROK_DOMAIN, no domain kwarg should be added."""
+    monkeypatch.delenv("NGROK_DOMAIN", raising=False)
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.public_url = "https://random.ngrok.io"
+
+    with (
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.conf") as mock_conf,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.ngrok") as mock_ngrok,
+    ):
+        mock_conf.get_default.return_value = MagicMock()
+        mock_ngrok.connect.return_value = mock_tunnel
+
+        start_tunnel()
+
+    # Should be called with only the port, no domain kwarg.
+    mock_ngrok.connect.assert_called_once_with(DEFAULT_PORT)
+
+
+def test_start_tunnel_explicit_domain_overrides_env(monkeypatch):
+    """An explicit ``domain`` kwarg should take precedence over NGROK_DOMAIN."""
+    monkeypatch.setenv("NGROK_DOMAIN", "env-domain.ngrok-free.dev")
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.public_url = "https://explicit.ngrok-free.dev"
+
+    with (
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.conf") as mock_conf,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.ngrok") as mock_ngrok,
+    ):
+        mock_conf.get_default.return_value = MagicMock()
+        mock_ngrok.connect.return_value = mock_tunnel
+
+        start_tunnel(port=8000, domain="explicit.ngrok-free.dev")
+
+    mock_ngrok.connect.assert_called_once_with(
+        8000, domain="explicit.ngrok-free.dev",
+    )
+
+
+def test_start_tunnel_subdomain_kwarg_skips_ngrok_domain(monkeypatch):
+    """When ``subdomain`` is passed, NGROK_DOMAIN should not be injected."""
+    monkeypatch.setenv("NGROK_DOMAIN", "env-domain.ngrok-free.dev")
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.public_url = "https://sub.ngrok.io"
+
+    with (
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.conf") as mock_conf,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.ngrok") as mock_ngrok,
+    ):
+        mock_conf.get_default.return_value = MagicMock()
+        mock_ngrok.connect.return_value = mock_tunnel
+
+        start_tunnel(port=8000, subdomain="sub")
+
+    mock_ngrok.connect.assert_called_once_with(8000, subdomain="sub")
+
+
 # ── stop_tunnel ──────────────────────────────────────────────
 
 

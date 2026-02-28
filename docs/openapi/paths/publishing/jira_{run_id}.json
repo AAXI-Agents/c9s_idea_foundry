@@ -1,0 +1,53 @@
+{
+  "post": {
+    "tags": ["Publishing"],
+    "summary": "Create Jira tickets for a single run",
+    "operationId": "publishing_jira_single",
+    "description": "Creates Jira tickets for the PRD identified by `run_id`. Requirements are decomposed into Epic, Story, and Sub-task issues in the configured Jira project.",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "The flow run identifier.",
+        "example": "a1b2c3d4e5f6"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Jira creation result.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/JiraCreateResult" },
+            "example": {
+              "run_id": "a1b2c3d4e5f6",
+              "jira_completed": true,
+              "ticket_keys": ["PRD-1", "PRD-2", "PRD-3"],
+              "progress": ["Created Epic PRD-1", "Created Story PRD-2"]
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      },
+      "503": {
+        "description": "Atlassian credentials not configured."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

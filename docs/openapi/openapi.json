@@ -2,12 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CrewAI Product Feature Planner API",
-    "description": "HTTP interface for the CrewAI PRD generation flow. The flow uses a two-phase architecture: Phase 1 iterates an Executive Summary, Phase 2 auto-iterates 9 remaining PRD sections with configurable min/max iterations. Includes degenerate output guards, error-to-paused recovery, resume-from-last-iteration support, Confluence publishing, Jira ticketing, and full Slack integration (Events API, interactive Block Kit flows, OAuth v2).",
-    "version": "0.5.0"
+    "description": "HTTP interface for the CrewAI PRD generation flow.\n\nThe flow uses a two-phase architecture: Phase 1 iterates an Executive Summary, Phase 2 auto-iterates 9 remaining PRD sections with configurable min/max iterations. Includes degenerate output guards, error-to-paused recovery, resume-from-last-iteration support, Confluence publishing, Jira ticketing, and full Slack integration (Events API, interactive Block Kit flows, OAuth v2).\n\n### Slack Bot Intent System (v0.1.6)\n\nThe Slack bot classifies user messages into 12 intents via Gemini/OpenAI LLM:\n- **Project management:** `create_project`, `list_projects`, `switch_project`, `current_project`, `end_session`\n- **PRD generation:** `create_prd`, `publish`, `check_publish`\n- **Configuration:** `configure_memory`\n- **Conversational:** `help`, `greeting`, `unknown`\n\nAll intents are backed by both LLM classification and text-phrase safety nets for robust natural language handling.\n\n### Changelog Highlights\n- **v0.1.6** — Comprehensive intent audit: 5 new LLM intents, phrase-based routing, improved help text\n- **v0.1.5** — Intent fix & project setup wizard\n- **v0.1.4** — Thread reply awareness & session isolation\n- **v0.1.3** — Centralised version control & codex\n- **v0.1.2** — Intent classification fix for create_project\n- **v0.1.1** — Slack OAuth refactoring (per-team MongoDB tokens)\n- **v0.1.0** — Initial release",
+    "version": "0.1.6"
   },
   "paths": {
     "/health": {
       "$ref": "./paths/health.json"
+    },
+    "/version": {
+      "$ref": "./paths/version.json"
     },
     "/health/slack-token": {
       "$ref": "./paths/health/slack_token.json"
@@ -59,6 +62,33 @@
     },
     "/slack/oauth/callback": {
       "$ref": "./paths/slack/oauth_callback.json"
+    },
+    "/publishing/pending": {
+      "$ref": "./paths/publishing/pending.json"
+    },
+    "/publishing/confluence/all": {
+      "$ref": "./paths/publishing/confluence_all.json"
+    },
+    "/publishing/confluence/{run_id}": {
+      "$ref": "./paths/publishing/confluence_{run_id}.json"
+    },
+    "/publishing/jira/all": {
+      "$ref": "./paths/publishing/jira_all.json"
+    },
+    "/publishing/jira/{run_id}": {
+      "$ref": "./paths/publishing/jira_{run_id}.json"
+    },
+    "/publishing/all": {
+      "$ref": "./paths/publishing/all.json"
+    },
+    "/publishing/all/{run_id}": {
+      "$ref": "./paths/publishing/all_{run_id}.json"
+    },
+    "/publishing/status/{run_id}": {
+      "$ref": "./paths/publishing/status_{run_id}.json"
+    },
+    "/publishing/automation/status": {
+      "$ref": "./paths/publishing/automation_status.json"
     }
   },
   "components": {
@@ -1098,6 +1128,141 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "PendingPRDItem": {
+        "type": "object",
+        "required": ["run_id", "title"],
+        "title": "PendingPRDItem",
+        "description": "A PRD awaiting Confluence publish or Jira ticket creation.",
+        "properties": {
+          "run_id": { "type": "string", "title": "Run Id", "description": "Unique flow run identifier." },
+          "title": { "type": "string", "title": "Title", "description": "PRD title." },
+          "source": { "type": "string", "title": "Source", "description": "'mongodb' or 'disk'.", "default": "mongodb" },
+          "output_file": { "type": "string", "title": "Output File", "description": "Absolute path to the output markdown.", "default": "" },
+          "confluence_published": { "type": "boolean", "title": "Confluence Published", "default": false },
+          "confluence_url": { "type": "string", "title": "Confluence Url", "default": "" },
+          "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": false },
+          "jira_tickets": { "type": "array", "items": { "type": "object" }, "title": "Jira Tickets", "default": [] },
+          "status": { "type": "string", "title": "Status", "description": "pending | partial | completed.", "default": "pending" }
+        }
+      },
+      "PendingListResponse": {
+        "type": "object",
+        "required": ["count"],
+        "title": "PendingListResponse",
+        "description": "Response for GET /publishing/pending.",
+        "properties": {
+          "count": { "type": "integer", "title": "Count", "description": "Total number of pending items." },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/PendingPRDItem" }, "title": "Items", "default": [] }
+        }
+      },
+      "ConfluencePublishResult": {
+        "type": "object",
+        "required": ["run_id"],
+        "title": "ConfluencePublishResult",
+        "description": "Result of publishing a single PRD to Confluence.",
+        "properties": {
+          "run_id": { "type": "string", "title": "Run Id" },
+          "title": { "type": "string", "title": "Title", "default": "" },
+          "url": { "type": "string", "title": "Url", "description": "Confluence page URL.", "default": "" },
+          "page_id": { "type": "string", "title": "Page Id", "description": "Confluence page ID.", "default": "" },
+          "action": { "type": "string", "title": "Action", "description": "'created' or 'updated'.", "default": "created" }
+        }
+      },
+      "ConfluenceBatchResult": {
+        "type": "object",
+        "title": "ConfluenceBatchResult",
+        "description": "Batch Confluence publish result.",
+        "properties": {
+          "published": { "type": "integer", "title": "Published", "default": 0 },
+          "failed": { "type": "integer", "title": "Failed", "default": 0 },
+          "results": { "type": "array", "items": { "$ref": "#/components/schemas/ConfluencePublishResult" }, "title": "Results", "default": [] },
+          "errors": { "type": "array", "items": { "type": "object" }, "title": "Errors", "default": [] },
+          "message": { "type": "string", "title": "Message", "default": "" }
+        }
+      },
+      "JiraCreateResult": {
+        "type": "object",
+        "required": ["run_id"],
+        "title": "JiraCreateResult",
+        "description": "Result of creating Jira tickets for a single run.",
+        "properties": {
+          "run_id": { "type": "string", "title": "Run Id" },
+          "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": true },
+          "ticket_keys": { "type": "array", "items": { "type": "string" }, "title": "Ticket Keys", "default": [] },
+          "progress": { "type": "array", "items": { "type": "string" }, "title": "Progress", "description": "Progress messages from the crew.", "default": [] }
+        }
+      },
+      "JiraBatchResult": {
+        "type": "object",
+        "title": "JiraBatchResult",
+        "description": "Batch Jira ticket creation result.",
+        "properties": {
+          "completed": { "type": "integer", "title": "Completed", "default": 0 },
+          "failed": { "type": "integer", "title": "Failed", "default": 0 },
+          "results": { "type": "array", "items": { "$ref": "#/components/schemas/JiraCreateResult" }, "title": "Results", "default": [] },
+          "errors": { "type": "array", "items": { "type": "object" }, "title": "Errors", "default": [] },
+          "message": { "type": "string", "title": "Message", "default": "" }
+        }
+      },
+      "CombinedPublishResult": {
+        "type": "object",
+        "title": "CombinedPublishResult",
+        "description": "Combined Confluence + Jira publish result.",
+        "properties": {
+          "run_id": { "type": "string", "title": "Run Id", "default": "" },
+          "confluence": { "type": "object", "title": "Confluence", "description": "Confluence publish result.", "default": {} },
+          "jira": { "type": "object", "title": "Jira", "description": "Jira creation result.", "default": {} }
+        }
+      },
+      "DeliveryStatusResponse": {
+        "type": "object",
+        "required": ["run_id"],
+        "title": "DeliveryStatusResponse",
+        "description": "Delivery status for a specific run.",
+        "properties": {
+          "run_id": { "type": "string", "title": "Run Id" },
+          "confluence_published": { "type": "boolean", "title": "Confluence Published", "default": false },
+          "confluence_url": { "type": "string", "title": "Confluence Url", "default": "" },
+          "confluence_page_id": { "type": "string", "title": "Confluence Page Id", "default": "" },
+          "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": false },
+          "jira_tickets": { "type": "array", "items": { "type": "object" }, "title": "Jira Tickets", "default": [] },
+          "status": { "type": "string", "title": "Status", "description": "pending | partial | completed.", "default": "pending" },
+          "error": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Error" }
+        }
+      },
+      "WatcherStatusResponse": {
+        "type": "object",
+        "title": "WatcherStatusResponse",
+        "description": "File watcher and cron scheduler status.",
+        "properties": {
+          "watcher_running": { "type": "boolean", "title": "Watcher Running", "default": false },
+          "watcher_directory": { "type": "string", "title": "Watcher Directory", "default": "" },
+          "scheduler_running": { "type": "boolean", "title": "Scheduler Running", "default": false },
+          "scheduler_interval_seconds": { "type": "integer", "title": "Scheduler Interval Seconds", "default": 0 }
+        }
+      },
+      "PublishingErrorResponse": {
+        "type": "object",
+        "required": ["error_code", "message"],
+        "title": "PublishingErrorResponse",
+        "description": "Error envelope returned by publishing endpoints.",
+        "properties": {
+          "error_code": { "type": "string", "title": "Error Code", "description": "Machine-readable error code." },
+          "message": { "type": "string", "title": "Message", "description": "Human-readable error message." },
+          "detail": { "type": "string", "title": "Detail", "default": "" }
+        }
+      },
+      "CodexEntry": {
+        "type": "object",
+        "required": ["version", "date", "summary"],
+        "title": "CodexEntry",
+        "description": "A single changelog entry.",
+        "properties": {
+          "version": { "type": "string", "title": "Version", "description": "Semantic version string.", "examples": ["0.1.6"] },
+          "date": { "type": "string", "title": "Date", "description": "ISO-8601 date.", "examples": ["2026-02-28"] },
+          "summary": { "type": "string", "title": "Summary", "description": "Human-readable change summary." }
+        }
       }
     }
   }

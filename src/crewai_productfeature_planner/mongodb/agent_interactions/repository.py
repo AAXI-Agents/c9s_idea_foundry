@@ -20,6 +20,9 @@ Standard document schema
         "user_id":            str | None,       # Slack user ID or "cli_user"
         "conversation_history": list | None,    # conversation context (for training)
         "metadata":           dict | None,      # additional context (interactive mode, etc.)
+        "predicted_next_step": dict | None,     # LLM-predicted next action for the user
+        "next_step_accepted":  bool | None,     # whether user followed the prediction
+        "next_step_feedback_at": datetime | None, # when the feedback was recorded
         "created_at":         datetime (UTC),   # when the interaction occurred
     }
 """
@@ -57,6 +60,7 @@ def log_interaction(
     user_id: str | None = None,
     conversation_history: list[dict] | None = None,
     metadata: dict[str, Any] | None = None,
+    predicted_next_step: dict[str, Any] | None = None,
 ) -> str | None:
     """Insert a new agent interaction document.
 
@@ -77,6 +81,9 @@ def log_interaction(
         user_id: Slack user ID or ``"cli_user"``.
         conversation_history: Thread history for fine-tuning context.
         metadata: Any additional context (e.g. ``{"interactive": True}``).
+        predicted_next_step: LLM-predicted next action for the user
+            (e.g. ``{"next_step": "configure_confluence",
+            "message": "...", "confidence": 0.8, "reason": "..."}``).
 
     Returns:
         The ``interaction_id`` on success, or ``None`` on failure.
@@ -98,6 +105,9 @@ def log_interaction(
         "user_id": user_id,
         "conversation_history": conversation_history,
         "metadata": metadata,
+        "predicted_next_step": predicted_next_step,
+        "next_step_accepted": None,
+        "next_step_feedback_at": None,
         "created_at": now,
     }
 
@@ -260,3 +270,162 @@ def list_interactions(limit: int = 100) -> list[dict[str, Any]]:
     except PyMongoError as exc:
         logger.error("[AgentInteraction] Failed to list interactions: %s", exc)
         return []
+
+
+# ── next-step prediction tracking ─────────────────────────────
+
+
+def update_next_step_prediction(
+    interaction_id: str,
+    predicted_next_step: dict[str, Any],
+) -> bool:
+    """Store the LLM's predicted next step on an existing interaction.
+
+    Args:
+        interaction_id: The ``interaction_id`` to update.
+        predicted_next_step: Dict with ``next_step``, ``message``,
+            ``confidence``, ``reason``.
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    try:
+        result = get_db()[AGENT_INTERACTIONS_COLLECTION].update_one(
+            {"interaction_id": interaction_id},
+            {"$set": {"predicted_next_step": predicted_next_step}},
+        )
+        if result.modified_count:
+            logger.info(
+                "[AgentInteraction] Updated next-step prediction for %s: %s",
+                interaction_id,
+                predicted_next_step.get("next_step", ""),
+            )
+            return True
+        return False
+    except PyMongoError as exc:
+        logger.error(
+            "[AgentInteraction] Failed to update next-step prediction: %s",
+            exc,
+        )
+        return False
+
+
+def record_next_step_feedback(
+    interaction_id: str,
+    accepted: bool,
+) -> bool:
+    """Record whether the user followed the predicted next step.
+
+    Called when the user clicks "Accept" or "Dismiss" on the
+    next-step suggestion block, or when the user's next action
+    matches or differs from the prediction.
+
+    Args:
+        interaction_id: The ``interaction_id`` whose prediction to update.
+        accepted: ``True`` if the user followed the suggestion,
+            ``False`` if they dismissed or chose a different action.
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    now = datetime.now(timezone.utc)
+    try:
+        result = get_db()[AGENT_INTERACTIONS_COLLECTION].update_one(
+            {"interaction_id": interaction_id},
+            {
+                "$set": {
+                    "next_step_accepted": accepted,
+                    "next_step_feedback_at": now,
+                },
+            },
+        )
+        if result.modified_count:
+            logger.info(
+                "[AgentInteraction] Next-step feedback for %s: accepted=%s",
+                interaction_id,
+                accepted,
+            )
+            return True
+        return False
+    except PyMongoError as exc:
+        logger.error(
+            "[AgentInteraction] Failed to record next-step feedback: %s",
+            exc,
+        )
+        return False
+
+
+def get_next_step_accuracy(
+    *,
+    user_id: str | None = None,
+    since: datetime | None = None,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Calculate the accuracy of LLM next-step predictions.
+
+    Returns a summary dict with total predictions, accepted/rejected
+    counts, accuracy percentage, and per-step breakdown.
+
+    Args:
+        user_id: Optionally filter by user.
+        since: Optionally filter interactions after this datetime.
+        limit: Max interactions to consider.
+
+    Returns:
+        Dict with ``total``, ``accepted``, ``rejected``,
+        ``pending`` (no feedback yet), ``accuracy``, and
+        ``by_step`` breakdown.
+    """
+    query: dict[str, Any] = {
+        "predicted_next_step": {"$ne": None},
+    }
+    if user_id:
+        query["user_id"] = user_id
+    if since:
+        query["created_at"] = {"$gte": since}
+
+    try:
+        cursor = (
+            get_db()[AGENT_INTERACTIONS_COLLECTION]
+            .find(query)
+            .sort("created_at", -1)
+            .limit(limit)
+        )
+        docs = list(cursor)
+    except PyMongoError as exc:
+        logger.error(
+            "[AgentInteraction] Failed to query prediction accuracy: %s",
+            exc,
+        )
+        return {"total": 0, "accepted": 0, "rejected": 0, "pending": 0,
+                "accuracy": 0.0, "by_step": {}}
+
+    total = len(docs)
+    accepted = sum(1 for d in docs if d.get("next_step_accepted") is True)
+    rejected = sum(1 for d in docs if d.get("next_step_accepted") is False)
+    pending = total - accepted - rejected
+
+    accuracy = (accepted / (accepted + rejected)) if (accepted + rejected) > 0 else 0.0
+
+    # Per-step breakdown
+    by_step: dict[str, dict[str, int]] = {}
+    for doc in docs:
+        step = (doc.get("predicted_next_step") or {}).get("next_step", "unknown")
+        if step not in by_step:
+            by_step[step] = {"total": 0, "accepted": 0, "rejected": 0, "pending": 0}
+        by_step[step]["total"] += 1
+        if doc.get("next_step_accepted") is True:
+            by_step[step]["accepted"] += 1
+        elif doc.get("next_step_accepted") is False:
+            by_step[step]["rejected"] += 1
+        else:
+            by_step[step]["pending"] += 1
+
+    return {
+        "total": total,
+        "accepted": accepted,
+        "rejected": rejected,
+        "pending": pending,
+        "accuracy": round(accuracy, 4),
+        "by_step": by_step,
+    }

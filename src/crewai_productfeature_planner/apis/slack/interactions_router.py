@@ -73,6 +73,12 @@ _MEMORY_ACTIONS = frozenset({
     "memory_done",
 })
 
+# Next-step suggestion feedback action IDs
+_NEXT_STEP_ACTIONS = frozenset({
+    "next_step_accept",
+    "next_step_dismiss",
+})
+
 
 def _extract_payload(body: bytes) -> dict | None:
     """Parse the ``payload`` field from a Slack interaction POST.
@@ -110,6 +116,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "memory_tools": ":wrench: Adding tool entries",
         "memory_view": ":mag: Viewing project memory",
         "memory_done": ":white_check_mark: Memory configuration done",
+        "next_step_accept": ":white_check_mark: Suggestion accepted",
+        "next_step_dismiss": ":x: Suggestion dismissed",
     }
     label = labels.get(action_id, action_id)
     return f"{label} by {user_name}"
@@ -248,6 +256,31 @@ async def slack_interactions(request: Request) -> JSONResponse:
                     _with_team, _team_id,
                     _handle_memory_action,
                     action_id, user_id, channel_id, thread_ts,
+                ),
+            )
+
+            return JSONResponse({"ok": True})
+
+        # ── Next-step suggestion feedback actions ──
+        if action_id in _NEXT_STEP_ACTIONS:
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack next-step feedback: action=%s user=%s value=%s",
+                action_id, user_name, run_id,
+            )
+
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_next_step_feedback,
+                    action_id, run_id, user_id, channel_id, thread_ts,
                 ),
             )
 
@@ -413,6 +446,22 @@ def _handle_project_action(
                     activated_by=user_id,
                 )
             _post(blocks=session_started_blocks(pname), text=f"Session started: {pname}")
+
+            # Proactively suggest next step after project selection
+            try:
+                from crewai_productfeature_planner.apis.slack._next_step import (
+                    predict_and_post_next_step,
+                )
+                predict_and_post_next_step(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    user=user_id,
+                    project_id=project_id,
+                    trigger_action="project_selected",
+                    project_config=proj,
+                )
+            except Exception as ns_exc:
+                logger.warning("Next-step after project select failed: %s", ns_exc)
 
         elif action_id == "project_create":
             # Prompt user for project name via thread reply
@@ -604,3 +653,119 @@ def _handle_memory_action(
     except Exception as exc:
         logger.error("_handle_memory_action failed: %s", exc, exc_info=True)
         _post(text=f":x: Something went wrong: {exc}")
+
+
+def _handle_next_step_feedback(
+    action_id: str,
+    value: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+) -> None:
+    """Process a next-step suggestion feedback button click.
+
+    The ``value`` field encodes ``<next_step>|<interaction_id>``.
+    Records whether the user accepted or dismissed the suggestion,
+    and if accepted, triggers the suggested action.
+    """
+    from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
+        record_next_step_feedback,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    client = _get_slack_client()
+
+    # Parse the encoded value
+    parts = value.split("|", 1)
+    next_step = parts[0] if parts else ""
+    interaction_id = parts[1] if len(parts) > 1 and parts[1] else None
+
+    accepted = action_id == "next_step_accept"
+
+    # Record feedback in agentInteraction
+    if interaction_id:
+        record_next_step_feedback(interaction_id, accepted)
+
+    logger.info(
+        "Next-step feedback: action=%s next_step=%s accepted=%s "
+        "interaction_id=%s user=%s",
+        action_id, next_step, accepted, interaction_id, user_id,
+    )
+
+    if not accepted:
+        # Dismissed — just acknowledge
+        if client and channel:
+            try:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=":ok_hand: No problem! Let me know when you need help.",
+                )
+            except Exception as exc:
+                logger.error("Next-step dismiss ack failed: %s", exc)
+        return
+
+    # Accepted — trigger the suggested action
+    def _post(text: str) -> None:
+        if client and channel:
+            try:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=text,
+                )
+            except Exception as exc:
+                logger.error("Next-step accept post failed: %s", exc)
+
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        get_context_session,
+    )
+
+    session = get_context_session(user_id, channel)
+
+    if next_step == "configure_confluence":
+        _post(
+            ":confluence: To configure the Confluence space key, say "
+            "*configure memory* or update the project settings."
+        )
+    elif next_step == "configure_jira":
+        _post(
+            ":jira2: To configure the Jira project key, say "
+            "*configure memory* or update the project settings."
+        )
+    elif next_step == "configure_memory":
+        if session and session.get("project_id"):
+            from crewai_productfeature_planner.apis.slack._session_handlers import (
+                handle_configure_memory,
+            )
+            handle_configure_memory(channel, thread_ts, user_id, session)
+        else:
+            _post(":warning: No active project session. Please select a project first.")
+    elif next_step == "create_prd":
+        _post(
+            ":rocket: Great! Just tell me your product or feature idea "
+            "and I'll start planning it. For example:\n"
+            ">  _Create a PRD for a mobile fitness tracking app_"
+        )
+    elif next_step == "publish":
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            handle_publish_intent,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        handle_publish_intent(channel, thread_ts, user_id, SlackSendMessageTool())
+    elif next_step == "configure_missing_keys":
+        _post(
+            ":key: Before publishing, you'll need to configure your "
+            "Confluence and Jira keys. Say *configure memory* or update "
+            "the project settings to add them."
+        )
+    elif next_step == "review_prd":
+        _post(
+            ":mag: You have completed PRDs ready for review! Say "
+            "*check publish* to see what's pending."
+        )
+    else:
+        _post(
+            f":bulb: To proceed with _{next_step}_, just tell me "
+            "what you'd like to do!"
+        )

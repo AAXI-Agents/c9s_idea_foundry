@@ -1,0 +1,54 @@
+{
+  "post": {
+    "tags": ["Publishing"],
+    "summary": "Publish a single PRD to Confluence",
+    "operationId": "publishing_confluence_single",
+    "description": "Publishes the PRD for the given `run_id` to Confluence. The markdown content is converted to Confluence XHTML and uploaded as a page.",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "The flow run identifier.",
+        "example": "a1b2c3d4e5f6"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Confluence publish result.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/ConfluencePublishResult" },
+            "example": {
+              "run_id": "a1b2c3d4e5f6",
+              "title": "Mobile Fitness Tracker PRD",
+              "url": "https://mysite.atlassian.net/wiki/spaces/PRD/pages/123",
+              "page_id": "123",
+              "action": "created"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      },
+      "503": {
+        "description": "Atlassian credentials not configured."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

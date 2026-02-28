@@ -1,4 +1,5 @@
 {
+  "_comment": "Template manifest — YOUR_NGROK_DOMAIN placeholders are auto-replaced at startup when SLACK_APP_ID + SLACK_APP_CONFIGURATION_TOKEN are set.  Or set NGROK_DOMAIN in .env for a stable URL and paste it here manually.",
   "display_information": {
     "name": "CrewAI PRD Planner",
     "description": "AI-powered product feature planner that generates comprehensive PRDs via Slack.",
@@ -17,7 +18,7 @@
   },
   "oauth_config": {
     "redirect_urls": [
-      "https://YOUR_NGROK_DOMAIN/slack/oauth/callback"
+      "https://thermomotive-latarsha-bubbleless.ngrok-free.dev/slack/oauth/callback"
     ],
     "scopes": {
       "bot": [
@@ -43,10 +44,10 @@
   "settings": {
     "interactivity": {
       "is_enabled": true,
-      "request_url": "https://YOUR_NGROK_DOMAIN/slack/interactions"
+      "request_url": "https://thermomotive-latarsha-bubbleless.ngrok-free.dev/slack/interactions"
     },
     "event_subscriptions": {
-      "request_url": "https://YOUR_NGROK_DOMAIN/slack/events",
+      "request_url": "https://thermomotive-latarsha-bubbleless.ngrok-free.dev/slack/events",
       "bot_events": [
         "app_mention",
         "member_joined_channel",

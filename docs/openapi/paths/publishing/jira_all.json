@@ -1,0 +1,38 @@
+{
+  "post": {
+    "tags": ["Publishing"],
+    "summary": "Create Jira tickets for all pending deliveries",
+    "operationId": "publishing_jira_all",
+    "description": "Batch-creates Jira tickets for all completed PRDs that do not yet have tickets. Requirements from each PRD are decomposed into Epic, Story, and Sub-task issues.",
+    "responses": {
+      "200": {
+        "description": "Batch Jira creation result.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/JiraBatchResult" },
+            "example": {
+              "completed": 2,
+              "failed": 0,
+              "results": [
+                { "run_id": "abc123", "jira_completed": true, "ticket_keys": ["PRD-1", "PRD-2", "PRD-3"], "progress": [] }
+              ],
+              "errors": [],
+              "message": "Created Jira tickets for 2 PRDs."
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "Atlassian credentials not configured."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}
