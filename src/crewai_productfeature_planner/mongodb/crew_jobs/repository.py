@@ -108,6 +108,8 @@ def create_job(
     job_id: str,
     flow_name: str,
     idea: str = "",
+    slack_channel: str | None = None,
+    slack_thread_ts: str | None = None,
 ) -> str | None:
     """Insert a new job document in ``queued`` status.
 
@@ -119,6 +121,8 @@ def create_job(
         job_id: Unique identifier (typically the ``run_id``).
         flow_name: Name of the flow being executed (e.g. ``"prd"``).
         idea: The feature idea or input text.
+        slack_channel: Optional Slack channel (for auto-resume).
+        slack_thread_ts: Optional Slack thread timestamp (for auto-resume).
 
     Returns:
         The inserted document ``_id`` as string, or ``None`` on failure.
@@ -142,6 +146,8 @@ def create_job(
         "idea": idea,
         "status": "queued",
         "error": None,
+        "slack_channel": slack_channel,
+        "slack_thread_ts": slack_thread_ts,
         "queued_at": now,
         "started_at": None,
         "completed_at": None,
@@ -427,7 +433,7 @@ def list_jobs(
 # ── startup recovery ─────────────────────────────────────────
 
 
-def fail_incomplete_jobs_on_startup() -> int:
+def fail_incomplete_jobs_on_startup() -> list[dict[str, str]]:
     """Mark all incomplete jobs as failed on application startup.
 
     Any job whose status is in ``queued``, ``running``, or
@@ -436,15 +442,17 @@ def fail_incomplete_jobs_on_startup() -> int:
     error message.
 
     Returns:
-        The number of jobs marked as failed.
+        A list of dicts ``{"job_id": ..., "prev_status": ...}`` for
+        each job that was marked as failed.  Empty list when nothing
+        was recovered or on error.
     """
     now = datetime.now(timezone.utc)
+    recovered: list[dict[str, str]] = []
     try:
         db = get_db()
         incomplete = list(
             db[CREW_JOBS_COLLECTION].find({"status": {"$in": _INCOMPLETE_STATUSES}})
         )
-        count = 0
         for doc in incomplete:
             job_id = doc.get("job_id", "unknown")
             prev_status = doc.get("status", "unknown")
@@ -489,17 +497,17 @@ def fail_incomplete_jobs_on_startup() -> int:
                 "force exit or server downtime",
                 job_id, prev_status,
             )
-            count += 1
+            recovered.append({"job_id": job_id, "prev_status": prev_status})
 
-        if count:
+        if recovered:
             logger.info(
                 "[CrewJobs] Startup recovery complete — %d incomplete job(s) marked failed",
-                count,
+                len(recovered),
             )
         else:
             logger.info("[CrewJobs] Startup recovery — no incomplete jobs found")
 
-        return count
+        return recovered
     except PyMongoError as exc:
         logger.error("[CrewJobs] Startup recovery failed: %s", exc)
-        return 0
+        return []

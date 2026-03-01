@@ -93,6 +93,7 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     save_output_file,
     save_pipeline_step,
     save_project_ref,
+    save_slack_context,
     update_executive_summary_critique,
     update_section_critique,
 )
@@ -166,6 +167,7 @@ __all__ = [
     "save_output_file",
     "save_pipeline_step",
     "save_project_ref",
+    "save_slack_context",
     "update_executive_summary_critique",
     "update_job_completed",
     "update_job_failed",

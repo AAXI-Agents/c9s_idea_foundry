@@ -38,6 +38,257 @@ from crewai_productfeature_planner.version import get_version
 _logger = get_logger(__name__)
 
 
+def _auto_resume_interrupted_flows() -> None:
+    """Find unfinalized PRD flows and resume them.
+
+    For each resumable run the function:
+    1. Resolves Slack context (from workingIdeas or agentInteraction).
+    2. Posts a notification to the original Slack thread (when known).
+    3. Creates an in-memory ``FlowRun`` record.
+    4. Launches ``resume_prd_flow`` in a daemon background thread.
+
+    Runs without Slack context are still resumed silently.
+    """
+    import threading
+
+    from crewai_productfeature_planner.mongodb.working_ideas import find_unfinalized
+
+    unfinalized = find_unfinalized()
+    if not unfinalized:
+        _logger.info("Auto-resume: no unfinalized flows found")
+        return
+
+    # ── Resolve missing Slack context via fallback lookups ─────────
+    for run_info in unfinalized:
+        if run_info.get("slack_channel") and run_info.get("slack_thread_ts"):
+            continue  # already has context
+        run_id = run_info["run_id"]
+        idea = run_info.get("idea", "")
+        channel: str | None = None
+        thread_ts: str | None = None
+
+        try:
+            from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
+                find_interactions,
+            )
+
+            # Strategy 1: look up by run_id in agentInteraction
+            docs = find_interactions(run_id=run_id, limit=1)
+            if docs and docs[0].get("channel") and docs[0].get("thread_ts"):
+                channel = docs[0]["channel"]
+                thread_ts = docs[0]["thread_ts"]
+                _logger.info(
+                    "Auto-resume: recovered Slack context for %s via run_id match",
+                    run_id,
+                )
+
+            # Strategy 2: look up by idea text (run_id may be None in interaction)
+            if not channel and idea:
+                docs = find_interactions(intent="create_prd", limit=20)
+                for doc in docs:
+                    if (
+                        doc.get("idea") == idea
+                        and doc.get("channel")
+                        and doc.get("thread_ts")
+                    ):
+                        channel = doc["channel"]
+                        thread_ts = doc["thread_ts"]
+                        _logger.info(
+                            "Auto-resume: recovered Slack context for %s via idea match",
+                            run_id,
+                        )
+                        break
+
+            # Strategy 3: look up Slack context from crewJobs
+            if not channel:
+                from crewai_productfeature_planner.mongodb.client import get_db
+                job_doc = get_db()["crewJobs"].find_one({"job_id": run_id})
+                if (
+                    job_doc
+                    and job_doc.get("slack_channel")
+                    and job_doc.get("slack_thread_ts")
+                ):
+                    channel = job_doc["slack_channel"]
+                    thread_ts = job_doc["slack_thread_ts"]
+                    _logger.info(
+                        "Auto-resume: recovered Slack context for %s via crewJobs",
+                        run_id,
+                    )
+
+            if channel and thread_ts:
+                run_info["slack_channel"] = channel
+                run_info["slack_thread_ts"] = thread_ts
+                _logger.info(
+                    "Auto-resume: Slack context for %s → channel=%s, thread_ts=%s",
+                    run_id, channel, thread_ts,
+                )
+                # Backfill working idea so future restarts don't need fallback
+                try:
+                    from crewai_productfeature_planner.mongodb.working_ideas import (
+                        save_slack_context,
+                    )
+                    save_slack_context(run_id, channel, thread_ts)
+                except Exception:  # noqa: BLE001
+                    _logger.debug(
+                        "Auto-resume: backfill save_slack_context failed for %s",
+                        run_id, exc_info=True,
+                    )
+        except Exception:  # noqa: BLE001
+            _logger.debug(
+                "Auto-resume: Slack context fallback failed for %s",
+                run_id, exc_info=True,
+            )
+
+    # Separate runs with Slack context from silent resumes
+    slack_runs = [
+        r for r in unfinalized
+        if r.get("slack_channel") and r.get("slack_thread_ts")
+    ]
+    silent_runs = [
+        r for r in unfinalized
+        if not (r.get("slack_channel") and r.get("slack_thread_ts"))
+    ]
+
+    # Lazy imports – keep module-level lightweight
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+    from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus, runs
+
+    # ── Resume runs WITH Slack context (notify + heartbeat) ──────
+    if slack_runs:
+        from crewai_productfeature_planner.apis.slack._flow_handlers import make_progress_poster
+        from crewai_productfeature_planner.tools.slack_tools import (
+            SlackPostPRDResultTool,
+            SlackSendMessageTool,
+        )
+
+        send_tool = SlackSendMessageTool()
+
+        for run_info in slack_runs:
+            run_id = run_info["run_id"]
+            channel = run_info["slack_channel"]
+            thread_ts = run_info["slack_thread_ts"]
+            idea = run_info.get("idea", "")
+            sections_done = run_info.get("sections_done", 0)
+            total_sections = run_info.get("total_sections", 10)
+
+            try:
+                ack = (
+                    ":arrows_counterclockwise: *Server restarted.* "
+                    f"Auto-resuming PRD flow (run `{run_id}`):\n"
+                    f"> _{idea}_\n"
+                    f"Progress: {sections_done}/{total_sections} sections completed."
+                )
+                send_tool.run(channel=channel, text=ack, thread_ts=thread_ts)
+            except Exception:  # noqa: BLE001
+                _logger.debug(
+                    "Auto-resume: could not notify Slack for %s", run_id, exc_info=True,
+                )
+
+            if run_id not in runs:
+                runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
+
+            progress_cb = make_progress_poster(
+                channel=channel,
+                thread_ts=thread_ts,
+                user="",
+                send_tool=send_tool,
+                run_id=run_id,
+            )
+
+            def _resume_and_notify(
+                _run_id: str = run_id,
+                _channel: str = channel,
+                _thread_ts: str = thread_ts,
+                _idea: str = idea,
+                _progress_cb=progress_cb,
+            ) -> None:
+                try:
+                    resume_prd_flow(
+                        _run_id,
+                        auto_approve=True,
+                        progress_callback=_progress_cb,
+                    )
+
+                    run = runs.get(_run_id)
+                    if run and run.status == FlowStatus.COMPLETED:
+                        post_tool = SlackPostPRDResultTool()
+                        post_tool.run(
+                            channel=_channel,
+                            idea=_idea,
+                            output_file=run.output_file,
+                            confluence_url=run.confluence_url,
+                            jira_output=run.jira_output,
+                            thread_ts=_thread_ts,
+                        )
+                    elif run and run.status == FlowStatus.PAUSED:
+                        send_tool.run(
+                            channel=_channel,
+                            text=(
+                                f":pause_button: Auto-resumed PRD flow paused "
+                                f"(run `{_run_id}`). Say *resume prd flow* to continue."
+                            ),
+                            thread_ts=_thread_ts,
+                        )
+                    else:
+                        error_msg = run.error if run else "Unknown error"
+                        send_tool.run(
+                            channel=_channel,
+                            text=f":x: Auto-resumed PRD flow failed: {error_msg}",
+                            thread_ts=_thread_ts,
+                        )
+                except Exception as exc:
+                    _logger.error("Auto-resume flow %s failed: %s", _run_id, exc)
+                    try:
+                        send_tool.run(
+                            channel=_channel,
+                            text=f":x: Auto-resume failed: {exc}",
+                            thread_ts=_thread_ts,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            t = threading.Thread(
+                target=_resume_and_notify,
+                name=f"auto-resume-{run_id}",
+                daemon=True,
+            )
+            t.start()
+            _logger.info(
+                "Auto-resume: launched background thread for run_id=%s in %s/%s",
+                run_id, channel, thread_ts,
+            )
+
+    # ── Resume runs WITHOUT Slack context (silent) ───────────────
+    for run_info in silent_runs:
+        run_id = run_info["run_id"]
+        idea = run_info.get("idea", "")
+
+        if run_id not in runs:
+            runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
+
+        def _resume_silent(_run_id: str = run_id) -> None:
+            try:
+                resume_prd_flow(_run_id, auto_approve=True)
+            except Exception as exc:
+                _logger.error("Auto-resume (silent) flow %s failed: %s", _run_id, exc)
+
+        t = threading.Thread(
+            target=_resume_silent,
+            name=f"auto-resume-silent-{run_id}",
+            daemon=True,
+        )
+        t.start()
+        _logger.info(
+            "Auto-resume: launched silent background thread for run_id=%s (idea=%s)",
+            run_id, idea[:80] if idea else "<empty>",
+        )
+
+    _logger.info(
+        "Auto-resume: started %d flow(s) (%d with Slack, %d silent)",
+        len(unfinalized), len(slack_runs), len(silent_runs),
+    )
+
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     """Startup / shutdown lifecycle hook.
@@ -57,11 +308,12 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Startup recovery (kill stale processes) failed: %s", exc)
 
-    # 2. Fail incomplete jobs
+    # 2. Fail incomplete jobs (returns list of recovered job dicts)
+    recovered_jobs: list[dict] = []
     try:
-        count = fail_incomplete_jobs_on_startup()
-        if count:
-            _logger.info("Startup recovery: %d incomplete job(s) marked as failed", count)
+        recovered_jobs = fail_incomplete_jobs_on_startup()
+        if recovered_jobs:
+            _logger.info("Startup recovery: %d incomplete job(s) marked as failed", len(recovered_jobs))
     except Exception as exc:
         _logger.warning("Startup recovery (fail incomplete jobs) failed: %s", exc)
 
@@ -126,6 +378,12 @@ async def _lifespan(application: FastAPI):
             _logger.info("Publish scheduler: started")
     except Exception as exc:
         _logger.warning("Publish scheduler failed to start: %s", exc)
+
+    # 8. Auto-resume interrupted PRD flows that have Slack context
+    try:
+        _auto_resume_interrupted_flows()
+    except Exception as exc:
+        _logger.warning("Auto-resume startup step failed: %s", exc)
 
     yield
 

@@ -5,6 +5,7 @@ Handles:
 * PRD flow kickoff (interactive and auto-approve modes)
 * Publishing to Confluence + Jira
 * Publishing status checks
+* Live progress / heartbeat updates during PRD generation
 """
 
 from __future__ import annotations
@@ -12,10 +13,151 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from typing import Callable
 
 from crewai_productfeature_planner.apis.slack._thread_state import append_to_thread
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Progress / heartbeat poster for Slack
+# ---------------------------------------------------------------------------
+
+# Emoji map for section milestones
+_SECTION_EMOJIS: dict[str, str] = {
+    "executive_summary": ":memo:",
+    "problem_statement": ":dart:",
+    "user_personas": ":busts_in_silhouette:",
+    "functional_requirements": ":gear:",
+    "no_functional_requirements": ":shield:",
+    "edge_cases": ":warning:",
+    "error_handling": ":rotating_light:",
+    "success_metrics": ":chart_with_upwards_trend:",
+    "dependencies": ":link:",
+    "assumptions": ":crystal_ball:",
+}
+
+
+def make_progress_poster(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> Callable[[str, dict], None]:
+    """Return a ``progress_callback`` that posts heartbeat messages to Slack.
+
+    The returned callable accepts ``(event_type, details)`` and translates
+    each event into a concise Slack message in the user's thread.
+
+    When *run_id* is provided, the crewJobs document is also updated
+    with the ``current_section`` field so progress is queryable.
+    """
+
+    def _post(event_type: str, details: dict) -> None:
+        msg: str | None = None
+
+        if event_type == "section_start":
+            title = details.get("section_title", "")
+            step = details.get("section_step", 0)
+            total = details.get("total_sections", 0)
+            emoji = _SECTION_EMOJIS.get(
+                details.get("section_key", ""), ":hourglass_flowing_sand:",
+            )
+            msg = f"{emoji} [{step}/{total}] Starting _{title}_…"
+
+            # Persist current section in the crewJobs document
+            if run_id:
+                try:
+                    from crewai_productfeature_planner.mongodb.crew_jobs import (
+                        update_job_status,
+                    )
+                    update_job_status(
+                        run_id, "running",
+                        current_section=title,
+                        current_section_key=details.get("section_key", ""),
+                        current_section_step=step,
+                        total_sections=total,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "crewJobs section update failed for %s",
+                        run_id, exc_info=True,
+                    )
+
+        elif event_type == "exec_summary_iteration":
+            iteration = details.get("iteration", 0)
+            max_iter = details.get("max_iterations", 0)
+            msg = (
+                f":writing_hand: Refining *Executive Summary*… "
+                f"(iteration {iteration}/{max_iter})"
+            )
+
+        elif event_type == "executive_summary_complete":
+            iters = details.get("iterations", 0)
+            msg = (
+                f":white_check_mark: *Executive Summary* complete "
+                f"after {iters} iteration(s)."
+            )
+
+        elif event_type == "section_iteration":
+            title = details.get("section_title", "")
+            step = details.get("section_step", 0)
+            total = details.get("total_sections", 0)
+            iteration = details.get("iteration", 0)
+            max_iter = details.get("max_iterations", 0)
+            emoji = _SECTION_EMOJIS.get(
+                details.get("section_key", ""), ":writing_hand:",
+            )
+            msg = (
+                f"{emoji} [{step}/{total}] Refining _{title}_… "
+                f"(iteration {iteration}/{max_iter})"
+            )
+
+        elif event_type == "section_complete":
+            title = details.get("section_title", "")
+            step = details.get("section_step", 0)
+            total = details.get("total_sections", 0)
+            iters = details.get("iterations", 0)
+            emoji = _SECTION_EMOJIS.get(
+                details.get("section_key", ""), ":white_check_mark:",
+            )
+            msg = (
+                f"{emoji} [{step}/{total}] *{title}* complete "
+                f"({iters} iteration(s))."
+            )
+
+        elif event_type == "all_sections_complete":
+            msg = (
+                ":tada: All PRD sections complete! "
+                "Assembling the final document…"
+            )
+
+        elif event_type == "prd_complete":
+            msg = ":rocket: *PRD generation complete!* Finalizing output…"
+
+        elif event_type == "confluence_published":
+            url = details.get("url", "")
+            if url:
+                msg = f":globe_with_meridians: *Confluence published!* <{url}|View PRD>"
+            else:
+                msg = ":globe_with_meridians: *Confluence published!*"
+
+        elif event_type == "jira_published":
+            count = details.get("ticket_count", 0)
+            msg = f":tickets: *Jira tickets created!* ({count} ticket(s))"
+
+        if msg:
+            try:
+                send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "Progress post failed for %s", event_type, exc_info=True,
+                )
+
+    return _post
 
 
 # ---------------------------------------------------------------------------
@@ -190,9 +332,31 @@ def handle_resume_prd(
         if run_id not in runs:
             runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
 
+        # Update Slack context in case thread changed
+        try:
+            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                save_slack_context,
+            )
+            save_slack_context(run_id, channel, thread_ts)
+        except Exception:  # noqa: BLE001
+            logger.debug("save_slack_context failed for %s", run_id, exc_info=True)
+
+        # Build progress callback for live heartbeat messages
+        progress_cb = make_progress_poster(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user,
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+
         def _resume_and_notify():
             try:
-                resume_prd_flow(run_id, auto_approve=True)
+                resume_prd_flow(
+                    run_id,
+                    auto_approve=True,
+                    progress_callback=progress_cb,
+                )
 
                 run = runs.get(run_id)
                 if run and run.status == FlowStatus.COMPLETED:

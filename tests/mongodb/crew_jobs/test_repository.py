@@ -567,8 +567,9 @@ def test_fail_incomplete_marks_queued_jobs(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    count = fail_incomplete_jobs_on_startup()
-    assert count == 1
+    recovered = fail_incomplete_jobs_on_startup()
+    assert len(recovered) == 1
+    assert recovered[0] == {"job_id": "run-1", "prev_status": "queued"}
     mock_collection.update_one.assert_called_once()
     set_fields = mock_collection.update_one.call_args[0][1]["$set"]
     assert set_fields["status"] == "failed"
@@ -600,8 +601,9 @@ def test_fail_incomplete_marks_running_jobs(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    count = fail_incomplete_jobs_on_startup()
-    assert count == 1
+    recovered = fail_incomplete_jobs_on_startup()
+    assert len(recovered) == 1
+    assert recovered[0] == {"job_id": "run-2", "prev_status": "running"}
     set_fields = mock_collection.update_one.call_args[0][1]["$set"]
     assert set_fields["status"] == "failed"
     assert "running" in set_fields["error"]
@@ -632,8 +634,9 @@ def test_fail_incomplete_marks_awaiting_approval_jobs(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    count = fail_incomplete_jobs_on_startup()
-    assert count == 1
+    recovered = fail_incomplete_jobs_on_startup()
+    assert len(recovered) == 1
+    assert recovered[0] == {"job_id": "run-3", "prev_status": "awaiting_approval"}
     set_fields = mock_collection.update_one.call_args[0][1]["$set"]
     assert set_fields["status"] == "failed"
     assert "awaiting_approval" in set_fields["error"]
@@ -641,15 +644,15 @@ def test_fail_incomplete_marks_awaiting_approval_jobs(mock_get_db):
 
 @patch("crewai_productfeature_planner.mongodb.crew_jobs.repository.get_db")
 def test_fail_incomplete_no_incomplete_jobs(mock_get_db):
-    """fail_incomplete_jobs_on_startup should return 0 when no incomplete jobs."""
+    """fail_incomplete_jobs_on_startup should return [] when no incomplete jobs."""
     mock_collection = MagicMock()
     mock_collection.find.return_value = []
     mock_db = MagicMock()
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    count = fail_incomplete_jobs_on_startup()
-    assert count == 0
+    recovered = fail_incomplete_jobs_on_startup()
+    assert recovered == []
 
 
 @patch("crewai_productfeature_planner.mongodb.crew_jobs.repository.get_db")
@@ -689,14 +692,15 @@ def test_fail_incomplete_multiple_jobs(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    count = fail_incomplete_jobs_on_startup()
-    assert count == 3
+    recovered = fail_incomplete_jobs_on_startup()
+    assert len(recovered) == 3
+    assert {r["job_id"] for r in recovered} == {"run-1", "run-2", "run-3"}
     assert mock_collection.update_one.call_count == 3
 
 
 @patch("crewai_productfeature_planner.mongodb.crew_jobs.repository.get_db")
 def test_fail_incomplete_returns_zero_on_error(mock_get_db):
-    """fail_incomplete_jobs_on_startup should return 0 on database errors."""
+    """fail_incomplete_jobs_on_startup should return [] on database errors."""
     mock_get_db.side_effect = ServerSelectionTimeoutError("timeout")
-    count = fail_incomplete_jobs_on_startup()
-    assert count == 0
+    recovered = fail_incomplete_jobs_on_startup()
+    assert recovered == []

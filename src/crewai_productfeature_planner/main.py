@@ -19,6 +19,10 @@ from crewai_productfeature_planner.mongodb.crew_jobs import (
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
+# Suppress FutureWarning from the deprecated google-generativeai package.
+# We no longer use it directly (switched to google-vertex / google-genai SDK),
+# but chromadb still imports it transitively.
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
 
 logger = get_logger(__name__)
 

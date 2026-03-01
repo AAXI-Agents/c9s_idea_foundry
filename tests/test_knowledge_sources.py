@@ -28,11 +28,11 @@ from crewai_productfeature_planner.scripts.knowledge_sources import (
 class TestGetGoogleEmbedderConfig:
     """Tests for get_google_embedder_config()."""
 
-    def test_returns_google_generativeai_provider(self, monkeypatch):
-        """Provider must be 'google-generativeai'."""
+    def test_returns_google_vertex_provider(self, monkeypatch):
+        """Provider must be 'google-vertex' (uses google-genai SDK)."""
         monkeypatch.setenv("GOOGLE_API_KEY", "key-123")
         cfg = get_google_embedder_config()
-        assert cfg["provider"] == "google-generativeai"
+        assert cfg["provider"] == "google-vertex"
 
     def test_default_model_is_gemini_embedding_001(self, monkeypatch):
         """Default model should be gemini-embedding-001."""

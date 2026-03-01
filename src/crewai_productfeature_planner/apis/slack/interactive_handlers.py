@@ -537,7 +537,7 @@ def run_interactive_slack_flow(
 
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
-    create_job(run_id, idea)
+    create_job(run_id, idea, slack_channel=channel, slack_thread_ts=thread_ts)
 
     try:
         # Step 1: Ask refinement mode

@@ -154,12 +154,33 @@ def _run_slack_prd_flow(
         SlackPostPRDResultTool,
         SlackSendMessageTool,
     )
+    from crewai_productfeature_planner.apis.slack._flow_handlers import (
+        make_progress_poster,
+    )
 
     send_tool = SlackSendMessageTool()
 
+    # Build progress callback for live heartbeat messages
+    progress_cb = make_progress_poster(
+        channel=channel,
+        thread_ts=thread_ts or "",
+        user="",  # not needed for progress messages
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
-    create_job(run_id, idea)
+    create_job(run_id, idea, slack_channel=channel, slack_thread_ts=thread_ts or "")
+
+    # Persist Slack context so auto-resume can notify the same thread
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_slack_context,
+        )
+        save_slack_context(run_id, channel, thread_ts or "")
+    except Exception:  # noqa: BLE001
+        logger.debug("save_slack_context failed for %s", run_id, exc_info=True)
 
     try:
         if notify:
@@ -170,7 +191,11 @@ def _run_slack_prd_flow(
             )
 
         # Run the PRD flow (blocks until complete)
-        run_prd_flow(run_id, idea, auto_approve=auto_approve)
+        run_prd_flow(
+            run_id, idea,
+            auto_approve=auto_approve,
+            progress_callback=progress_cb,
+        )
 
         # Link working idea to project (doc exists after flow completes)
         if project_id:

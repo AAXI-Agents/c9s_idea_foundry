@@ -316,6 +316,24 @@ class PRDFlow(Flow[PRDState]):
         Callable[[str, str, str, list[dict]], bool] | None
     ) = None
 
+    # Progress / heartbeat callback.
+    # Signature: (event_type: str, details: dict) -> None
+    # Fired at key milestones so callers (e.g. Slack) can push live updates.
+    progress_callback: (
+        Callable[[str, dict], None] | None
+    ) = None
+
+    # ------------------------------------------------------------------
+    # Helper — notify progress
+    # ------------------------------------------------------------------
+    def _notify_progress(self, event_type: str, details: dict | None = None) -> None:
+        """Fire the progress callback if set, swallowing errors."""
+        if self.progress_callback is not None:
+            try:
+                self.progress_callback(event_type, details or {})
+            except Exception:  # noqa: BLE001
+                logger.debug("progress_callback failed for %s", event_type, exc_info=True)
+
     # ------------------------------------------------------------------
     # Helper — build available agents
     # ------------------------------------------------------------------
@@ -674,6 +692,13 @@ class PRDFlow(Flow[PRDState]):
             self.state.current_section_key = section.key
             total_steps = len(self.state.draft.sections)
 
+            self._notify_progress("section_start", {
+                "section_title": section.title,
+                "section_key": section.key,
+                "section_step": section.step,
+                "total_sections": total_steps,
+            })
+
             # ── Resume guard: skip drafting if section already has
             #    content from a prior run (restored from MongoDB).
             if section.content and section.iteration > 0:
@@ -706,6 +731,13 @@ class PRDFlow(Flow[PRDState]):
                     if not section.selected_agent:
                         section.selected_agent = get_default_agent()
                     self._section_approval_loop(section, agents, task_configs)
+                    self._notify_progress("section_complete", {
+                        "section_title": section.title,
+                        "section_key": section.key,
+                        "section_step": section.step,
+                        "total_sections": total_steps,
+                        "iterations": section.iteration,
+                    })
                     continue
 
             logger.info("[Draft] Step %d/%d — Generating section '%s' with %d agent(s)",
@@ -799,9 +831,20 @@ class PRDFlow(Flow[PRDState]):
 
             # --- Section approval loop ---
             self._section_approval_loop(section, agents, task_configs)
+            self._notify_progress("section_complete", {
+                "section_title": section.title,
+                "section_key": section.key,
+                "section_step": section.step,
+                "total_sections": total_steps,
+                "iterations": section.iteration,
+            })
 
         logger.info("[Steps 1-3] All sections completed, total iterations=%d",
                     self.state.iteration)
+        self._notify_progress("all_sections_complete", {
+            "total_iterations": self.state.iteration,
+            "total_sections": total_steps,
+        })
         return self.finalize()
 
     # ------------------------------------------------------------------
@@ -847,6 +890,13 @@ class PRDFlow(Flow[PRDState]):
 
         # Always persist the original user-inputted idea, not the refined one
         user_idea = self.state.original_idea or self.state.idea
+
+        self._notify_progress("section_start", {
+            "section_title": "Executive Summary",
+            "section_key": "executive_summary",
+            "section_step": 1,
+            "total_sections": len(self.state.draft.sections),
+        })
 
         # ── Initial draft (iteration 1) ───────────────────────
         draft_task = Task(
@@ -900,6 +950,11 @@ class PRDFlow(Flow[PRDState]):
         logger.info(
             "[ExecSummary] Initial draft (%d chars)", len(current_content),
         )
+        self._notify_progress("exec_summary_iteration", {
+            "iteration": 1,
+            "max_iterations": max_iter,
+            "chars": len(current_content),
+        })
 
         # ── Critique → iterate loop ──────────────────────────
         # Assembles a unique agent list for multi-agent Crews.
@@ -1056,6 +1111,11 @@ class PRDFlow(Flow[PRDState]):
                 "[ExecSummary] Refined iteration %d (%d chars)",
                 iteration, len(current_content),
             )
+            self._notify_progress("exec_summary_iteration", {
+                "iteration": iteration,
+                "max_iterations": max_iter,
+                "chars": len(current_content),
+            })
 
         # Force-approve if max reached without READY_FOR_DEV
         if not self.state.executive_summary.is_approved:
@@ -1077,6 +1137,10 @@ class PRDFlow(Flow[PRDState]):
             "(%d chars)",
             len(self.state.finalized_idea),
         )
+        self._notify_progress("executive_summary_complete", {
+            "iterations": len(self.state.executive_summary.iterations),
+            "chars": len(self.state.finalized_idea),
+        })
 
     def _section_approval_loop(self, section, agents: dict[str, Agent], task_configs) -> None:
         """Iterate a single section through critique→refine cycles.
@@ -1388,6 +1452,14 @@ class PRDFlow(Flow[PRDState]):
                 "[Refine] Section '%s' refined (%d chars)",
                 section.title, len(section.content),
             )
+            self._notify_progress("section_iteration", {
+                "section_title": section.title,
+                "section_key": section.key,
+                "section_step": section.step,
+                "total_sections": total_steps,
+                "iteration": section.iteration,
+                "max_iterations": max_iter,
+            })
 
     # ------------------------------------------------------------------
     # Save progress markdown (partial output on error / pause)
@@ -1526,6 +1598,10 @@ class PRDFlow(Flow[PRDState]):
         self.state.update_date = self.state.completed_at
         logger.info("[Step 4] %s", save_result)
 
+        self._notify_progress("prd_complete", {
+            "total_iterations": self.state.iteration,
+        })
+
         # ── Post-completion: Confluence publish & Jira ticketing ──
         self._run_post_completion()
 
@@ -1618,6 +1694,17 @@ class PRDFlow(Flow[PRDState]):
                 "done" if conf_done else "pending",
                 "done" if jira_done else "pending",
             )
+
+            # ── Progress heartbeats for Confluence / Jira ─────
+            if conf_done:
+                self._notify_progress("confluence_published", {
+                    "url": conf_url,
+                })
+            if jira_done:
+                ticket_keys = _re.findall(r"[A-Z]{2,10}-\d+", raw_output)
+                self._notify_progress("jira_published", {
+                    "ticket_count": len(set(ticket_keys)),
+                })
 
             # Persist individual ticket keys
             if jira_done:

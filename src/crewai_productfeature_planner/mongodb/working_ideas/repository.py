@@ -345,9 +345,14 @@ def find_unfinalized() -> list[dict[str, Any]]:
                 "iteration": effective_iter,
                 "created_at": doc.get("created_at"),
                 "sections": sections,
+                "sections_done": len(sections),
+                "total_sections": 10,
                 "exec_summary_iterations": exec_iter_count,
                 "req_breakdown_iterations": req_iter_count,
                 "section_missing": "section" not in doc,
+                "project_id": doc.get("project_id"),
+                "slack_channel": doc.get("slack_channel"),
+                "slack_thread_ts": doc.get("slack_thread_ts"),
             })
         logger.info("[MongoDB] Found %d unfinalized working idea(s)", len(runs))
         return runs
@@ -857,5 +862,42 @@ def save_project_ref(run_id: str, project_id: str) -> int:
             "[MongoDB] Failed to save project ref for run_id=%s: %s",
             run_id,
             exc,
+        )
+        return 0
+
+
+def save_slack_context(
+    run_id: str,
+    slack_channel: str,
+    slack_thread_ts: str,
+) -> int:
+    """Persist the Slack channel and thread_ts for a working-idea run.
+
+    Called when a Slack-initiated PRD flow starts so the server can
+    notify the same thread on auto-resume after a restart.
+
+    Returns:
+        Number of documents modified (0 or 1).
+    """
+    try:
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "slack_channel": slack_channel,
+                "slack_thread_ts": slack_thread_ts,
+                "update_date": _now_iso(),
+            }},
+            upsert=True,
+        )
+        logger.info(
+            "[MongoDB] Saved Slack context for run_id=%s "
+            "(channel=%s, thread_ts=%s)",
+            run_id, slack_channel, slack_thread_ts,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save Slack context for run_id=%s: %s",
+            run_id, exc,
         )
         return 0

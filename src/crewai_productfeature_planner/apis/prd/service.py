@@ -167,7 +167,12 @@ def _sync_flow_state_to_run(run_id: str, flow: "PRDFlow") -> None:
             pass
 
 
-def run_prd_flow(run_id: str, idea: str, auto_approve: bool = False) -> None:
+def run_prd_flow(
+    run_id: str,
+    idea: str,
+    auto_approve: bool = False,
+    progress_callback: "Callable[[str, dict], None] | None" = None,
+) -> None:
     """Execute the PRD flow in background and update the run record.
 
     When *auto_approve* is ``True`` the flow runs end-to-end without
@@ -189,6 +194,8 @@ def run_prd_flow(run_id: str, idea: str, auto_approve: bool = False) -> None:
         flow = PRDFlow()
         flow.state.idea = idea
         flow.state.run_id = run_id
+        if progress_callback is not None:
+            flow.progress_callback = progress_callback
         if not auto_approve:
             flow.approval_callback = make_approval_callback(run_id)
         result = flow.kickoff()
@@ -379,7 +386,11 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDr
     return idea, draft, exec_summary_draft, requirements_breakdown, breakdown_history
 
 
-def resume_prd_flow(run_id: str, auto_approve: bool = False) -> None:
+def resume_prd_flow(
+    run_id: str,
+    auto_approve: bool = False,
+    progress_callback: "Callable[[str, dict], None] | None" = None,
+) -> None:
     """Resume a previously paused/unfinalized PRD flow from MongoDB state.
 
     When *auto_approve* is ``True`` the flow runs end-to-end without
@@ -412,6 +423,8 @@ def resume_prd_flow(run_id: str, auto_approve: bool = False) -> None:
         flow.state.breakdown_history = breakdown_history
         if requirements_breakdown:
             flow.state.requirements_broken_down = True
+        if progress_callback is not None:
+            flow.progress_callback = progress_callback
 
         # Set finalized_idea from the last executive summary iteration
         if exec_summary.latest_content:

@@ -146,6 +146,44 @@ class TestUpdateSlackAppUrls:
         args = mock_api.call_args[0]
         assert args[2] == "https://test.ngrok.io/slack/interactions"
 
+    def test_rejects_xapp_token(self, monkeypatch):
+        """App-level tokens (xapp-) are not valid for manifest updates."""
+        monkeypatch.setenv("SLACK_APP_ID", "A12345")
+        monkeypatch.setenv("SLACK_APP_CONFIGURATION_TOKEN", "xapp-1-A0A-fake")
+
+        with (
+            patch(
+                "crewai_productfeature_planner.scripts.slack_config._update_via_api",
+            ) as mock_api,
+            patch(
+                "crewai_productfeature_planner.scripts.slack_config._print_manual_instructions",
+            ) as mock_manual,
+        ):
+            result = update_slack_app_urls("https://test.ngrok.io")
+
+        assert result is False
+        mock_api.assert_not_called()
+        mock_manual.assert_called_once()
+
+    def test_rejects_xoxb_token(self, monkeypatch):
+        """Bot tokens (xoxb-) are not valid for manifest updates."""
+        monkeypatch.setenv("SLACK_APP_ID", "A12345")
+        monkeypatch.setenv("SLACK_APP_CONFIGURATION_TOKEN", "xoxb-fake")
+
+        with (
+            patch(
+                "crewai_productfeature_planner.scripts.slack_config._update_via_api",
+            ) as mock_api,
+            patch(
+                "crewai_productfeature_planner.scripts.slack_config._print_manual_instructions",
+            ) as mock_manual,
+        ):
+            result = update_slack_app_urls("https://test.ngrok.io")
+
+        assert result is False
+        mock_api.assert_not_called()
+        mock_manual.assert_called_once()
+
 
 # ── _update_via_api ──────────────────────────────────────────
 

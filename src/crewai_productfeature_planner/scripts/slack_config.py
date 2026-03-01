@@ -74,6 +74,27 @@ def update_slack_app_urls(public_url: str) -> bool:
     config_token = os.environ.get("SLACK_APP_CONFIGURATION_TOKEN", "").strip()
 
     if app_id and config_token:
+        # Validate token type before calling the API.
+        # The Manifest API requires an *app configuration token*
+        # (prefix ``xoxe.xoxp-``).  App-level tokens (``xapp-``) and
+        # regular bot tokens (``xoxb-``) will fail with
+        # ``not_allowed_token_type``.
+        if not config_token.startswith("xoxe."):
+            _token_prefix = config_token.split("-")[0] if "-" in config_token else config_token[:4]
+            logger.warning(
+                "SLACK_APP_CONFIGURATION_TOKEN has prefix '%s' but "
+                "the Manifest API requires an app-configuration token "
+                "(prefix 'xoxe.xoxp-…'). Generate one at "
+                "https://api.slack.com/apps/%s/general → "
+                "App-Level Tokens (with scope 'configuration').  "
+                "Current token type will be rejected by Slack.",
+                _token_prefix, app_id or "<your-app-id>",
+            )
+            _print_manual_instructions(
+                interactions_url, events_url, oauth_url, app_id,
+            )
+            return False
+
         return _update_via_api(
             app_id, config_token,
             interactions_url, events_url, oauth_url,
@@ -195,28 +216,9 @@ def _print_manual_instructions(
     )
 
     logger.warning(
-        "\n"
-        "╔══════════════════════════════════════════════════════════════╗\n"
-        "║  ⚠  Slack app request URLs may need updating               ║\n"
-        "╚══════════════════════════════════════════════════════════════╝\n"
-        "\n"
-        "  The ngrok tunnel URL has changed.  Update these URLs\n"
-        "  in your Slack app dashboard:\n"
-        "\n"
-        "  1. Interactivity & Shortcuts → Request URL:\n"
-        "     %s\n"
-        "\n"
-        "  2. Event Subscriptions → Request URL:\n"
-        "     %s\n"
-        "\n"
-        "  3. OAuth & Permissions → Redirect URLs:\n"
-        "     %s\n"
-        "\n"
-        "  Dashboard: %s\n"
-        "\n"
-        "  💡 To automate this, set SLACK_APP_ID and\n"
-        "     SLACK_APP_CONFIGURATION_TOKEN in your .env file.\n"
-        "     Or set NGROK_DOMAIN for a stable ngrok URL.\n",
+        "[SlackConfig] Ngrok URL changed — update Slack app URLs manually: "
+        "Interactivity=%s  Events=%s  OAuth=%s  Dashboard=%s  "
+        "(Tip: set SLACK_APP_ID + SLACK_APP_CONFIGURATION_TOKEN or NGROK_DOMAIN to automate)",
         interactions_url,
         events_url,
         oauth_url,

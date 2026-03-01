@@ -50,9 +50,10 @@ _PRD_KNOWLEDGE_FILES = [
 
 
 def get_google_embedder_config() -> dict:
-    """Return the Google Generative AI embedder configuration.
+    """Return the Google Vertex AI embedder configuration.
 
-    Uses Gemini's ``gemini-embedding-001`` model by default.  The API key
+    Uses Gemini's ``gemini-embedding-001`` model by default via the
+    ``google-genai`` SDK (provider ``google-vertex``).  The API key
     is read from ``GOOGLE_API_KEY`` (same key used for the Gemini LLM).
 
     The model can be overridden via the ``KNOWLEDGE_EMBEDDING_MODEL`` env
@@ -73,7 +74,7 @@ def get_google_embedder_config() -> dict:
         config["api_key"] = api_key
 
     return {
-        "provider": "google-generativeai",
+        "provider": "google-vertex",
         "config": config,
     }
 
