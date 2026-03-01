@@ -29,70 +29,23 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _NEXT_STEP_SYSTEM_PROMPT = """\
-You are a navigation assistant for a Product Requirements Document (PRD) \
-planning bot.  Given the user's current context, predict the SINGLE most \
-useful next step the user should take.
+Predict ONE next step for a PRD planning bot user. Return JSON:
+{"next_step":"<category>","message":"<1-2 sentence Slack suggestion>",\
+"confidence":<0-1>,"reason":"<brief>"}
 
-=== Context variables you will receive ===
-- trigger_action: what just happened (e.g. "project_selected", \
-  "project_setup_complete", "session_started", "prd_completed", \
-  "idea_approved", "requirements_approved", "publish_completed")
-- project_config: the project's configuration (may include \
-  confluence_space_key, jira_project_key, confluence_parent_id)
-- session_active: whether the user has an active session
-- has_confluence_key: whether Confluence space key is configured
-- has_jira_key: whether Jira project key is configured
-- has_confluence_parent: whether Confluence parent page ID is configured
-- has_memory_entries: whether the project has memory configured
-- pending_prds: count of PRDs not yet published
-- recent_intents: recent user intents for pattern analysis
+Categories: configure_confluence | configure_jira | configure_memory | \
+create_prd | publish | configure_missing_keys | review_prd | none
 
-=== Next-step categories ===
-Return ONE of these suggested next steps:
+Rules:
+- No Confluence key + user may publish → configure_confluence
+- No Jira key + user may need tickets → configure_jira
+- New project, no memory → configure_memory
+- Project ready, no recent PRD → create_prd
+- Pending PRDs + keys set → publish
+- Pending PRDs + keys missing → configure_missing_keys
+- Very active user → none
 
-1. "configure_confluence" — Suggest configuring Confluence space key \
-   (when missing and user may want to publish later)
-2. "configure_jira" — Suggest configuring Jira project key \
-   (when missing and user may want Jira tickets later)
-3. "configure_memory" — Suggest setting up project memory / guardrails \
-   (when project is new and no memory configured)
-4. "create_prd" — Suggest creating a PRD / iterating an idea \
-   (when project is ready and no recent PRD activity)
-5. "publish" — Suggest publishing pending PRDs to Confluence / Jira \
-   (when there are unpublished PRDs and keys are configured)
-6. "configure_missing_keys" — Suggest setting up Confluence/Jira \
-   before publishing (when PRDs exist but keys are missing)
-7. "review_prd" — Suggest reviewing a completed PRD
-8. "none" — No proactive suggestion needed (user seems to know \
-   what they're doing)
-
-=== Decision guidelines ===
-- After project creation/selection with NO Confluence/Jira keys: \
-  suggest "configure_confluence" or "configure_jira" (optional but \
-  helpful for later publishing)
-- After project setup where keys were skipped: suggest \
-  "configure_memory" or "create_prd"
-- After project setup where keys were provided: suggest \
-  "configure_memory" if not set, otherwise "create_prd"
-- After PRD completion: suggest "publish" if keys are configured, \
-  or "configure_missing_keys" if not
-- After publishing: suggest "create_prd" for more ideas
-- If everything is configured and ready: suggest "create_prd"
-- If the user has been very active recently: "none" \
-  (don't over-suggest)
-
-=== Output format ===
-Return a JSON object with EXACTLY these keys:
-  "next_step": one of the categories above
-  "message": a SHORT (1-2 sentence) friendly suggestion text for the \
-             user, written as if addressing them directly. Use Slack \
-             markdown (*bold*, _italic_). Include a specific example \
-             or hint when possible.
-  "confidence": float 0.0 to 1.0 — how confident you are this is the \
-                right next step
-  "reason": a brief internal reason for the prediction (for logging)
-
-Always return valid JSON — no markdown fences, no extra text.
+Return valid JSON only, no fences.
 """
 
 # ---------------------------------------------------------------------------
@@ -308,7 +261,8 @@ def predict_next_step(
         "generationConfig": {
             "responseMimeType": "application/json",
             "temperature": 0.3,
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": 1024,
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
 

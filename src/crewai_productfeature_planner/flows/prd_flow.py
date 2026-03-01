@@ -55,7 +55,10 @@ from crewai_productfeature_planner.mongodb import (
     update_executive_summary_critique,
     update_section_critique,
 )
-from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
+from crewai_productfeature_planner.scripts.retry import (
+    BillingError,
+    crew_kickoff_with_retry,
+)
 from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 
 logger = get_logger(__name__)
@@ -928,6 +931,8 @@ class PRDFlow(Flow[PRDState]):
                 critique_result = crew_kickoff_with_retry(
                     crew, step_label=f"critique_exec_summary_iter{iteration}",
                 )
+            except BillingError:
+                raise  # Non-transient — must pause
             except Exception as exc:
                 logger.error(
                     "[ExecSummary] Critique failed at iteration %d: %s",
@@ -940,7 +945,13 @@ class PRDFlow(Flow[PRDState]):
                     error=str(exc),
                     step=f"critique_exec_summary_iter{iteration}",
                 )
-                raise
+                logger.warning(
+                    "[ExecSummary] Critique unrecoverable at iteration "
+                    "%d — force-approving with current content (%d chars)",
+                    iteration, len(current_content),
+                )
+                self.state.executive_summary.is_approved = True
+                break
 
             critique_text = critique_result.raw
 
@@ -1000,6 +1011,8 @@ class PRDFlow(Flow[PRDState]):
                     crew,
                     step_label=f"refine_exec_summary_iter{iteration}",
                 )
+            except BillingError:
+                raise  # Non-transient — must pause
             except Exception as exc:
                 logger.error(
                     "[ExecSummary] Refine failed at iteration %d: %s",
@@ -1012,7 +1025,13 @@ class PRDFlow(Flow[PRDState]):
                     error=str(exc),
                     step=f"refine_exec_summary_iter{iteration}",
                 )
-                raise
+                logger.warning(
+                    "[ExecSummary] Refine unrecoverable at iteration "
+                    "%d — force-approving with current content (%d chars)",
+                    iteration, len(current_content),
+                )
+                self.state.executive_summary.is_approved = True
+                break
 
             current_content = refine_result.raw
             now = datetime.now(timezone.utc).isoformat()
@@ -1188,6 +1207,8 @@ class PRDFlow(Flow[PRDState]):
                     critique_result = crew_kickoff_with_retry(
                         crew, step_label=f"critique_{section.key}",
                     )
+                except BillingError:
+                    raise  # Non-transient — must pause
                 except Exception as exc:
                     logger.error(
                         "[Critique] Section '%s' failed at iteration %d: %s",
@@ -1203,7 +1224,15 @@ class PRDFlow(Flow[PRDState]):
                         section_key=section.key,
                         section_title=section.title,
                     )
-                    raise
+                    logger.warning(
+                        "[Critique] Section '%s' unrecoverable at "
+                        "iteration %d — force-approving with current "
+                        "content (%d chars)",
+                        section.title, section.iteration,
+                        len(section.content),
+                    )
+                    section.is_approved = True
+                    break
                 self.state.critique = critique_result.raw
                 section.critique = self.state.critique
 
@@ -1272,6 +1301,8 @@ class PRDFlow(Flow[PRDState]):
                 refine_result = crew_kickoff_with_retry(
                     crew, step_label=f"refine_{section.key}",
                 )
+            except BillingError:
+                raise  # Non-transient — must pause
             except Exception as exc:
                 logger.error(
                     "[Refine] Section '%s' failed at iteration %d: %s",
@@ -1287,7 +1318,15 @@ class PRDFlow(Flow[PRDState]):
                     section_key=section.key,
                     section_title=section.title,
                 )
-                raise
+                logger.warning(
+                    "[Refine] Section '%s' unrecoverable at "
+                    "iteration %d — force-approving with current "
+                    "content (%d chars)",
+                    section.title, section.iteration,
+                    len(section.content),
+                )
+                section.is_approved = True
+                break
             section.content = refine_result.raw
 
             # ── Degenerate output guard ─────────────────────

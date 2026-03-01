@@ -54,6 +54,7 @@ from crewai_productfeature_planner.apis.slack._session_handlers import (
 from crewai_productfeature_planner.apis.slack._flow_handlers import (
     handle_check_publish_intent,
     handle_publish_intent,
+    handle_resume_prd,
     kick_off_prd_flow,
 )
 from crewai_productfeature_planner.apis.slack._thread_state import (
@@ -112,6 +113,7 @@ _handle_switch_project = handle_switch_project
 _handle_update_config = handle_update_config
 _handle_publish_intent = handle_publish_intent
 _handle_check_publish_intent = handle_check_publish_intent
+_handle_resume_prd = handle_resume_prd
 _kick_off_prd_flow = kick_off_prd_flow
 _prompt_project_selection = prompt_project_selection
 

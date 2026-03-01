@@ -2842,3 +2842,213 @@ def test_prd_state_jira_output_default():
     """PRDState should have empty jira_output by default."""
     state = PRDState()
     assert state.jira_output == ""
+
+
+# ------------------------------------------------------------------
+# LLM failure resilience – force-approve instead of pausing
+# ------------------------------------------------------------------
+
+@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
+@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
+@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
+@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+def test_section_critique_failure_force_approves(
+    _mock_task, _mock_crew, mock_kickoff, mock_save_failed, _mock_update_crit,
+    monkeypatch,
+):
+    """When section critique fails after retries, section is force-approved."""
+    from crewai_productfeature_planner.scripts.retry import LLMError
+
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "2")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "5")
+
+    mock_kickoff.side_effect = LLMError("Invalid response from LLM call - None or empty.")
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-critique-fail"
+
+    section = flow.state.draft.sections[0]
+    section.content = "Existing drafted content"
+    section.agent_results = {AGENT_OPENAI: "Existing drafted content"}
+    section.selected_agent = AGENT_OPENAI
+    section.iteration = 1
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "critique_section_task": {
+            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "A critique",
+        },
+        "refine_section_task": {
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    # Should NOT raise — force-approve instead
+    flow._section_approval_loop(section, agents, task_configs)
+
+    assert section.is_approved is True
+    assert section.content == "Existing drafted content"
+    mock_save_failed.assert_called_once()
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
+@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
+@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
+@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+def test_section_refine_failure_force_approves(
+    _mock_task, _mock_crew, mock_kickoff, mock_save_failed, _mock_update_crit,
+    _mock_save_iter, monkeypatch,
+):
+    """When section refine fails after retries, section is force-approved."""
+    from crewai_productfeature_planner.scripts.retry import LLMError
+
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "2")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "5")
+
+    call_count = {"n": 0}
+
+    def _kickoff(crew, step_label=""):
+        call_count["n"] += 1
+        result = MagicMock()
+        if "critique" in step_label:
+            result.raw = "Score 4/10 — NEEDS_REFINEMENT"
+            return result
+        # Refine fails
+        raise LLMError("Invalid response from LLM call - None or empty.")
+
+    mock_kickoff.side_effect = _kickoff
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-refine-fail"
+
+    section = flow.state.draft.sections[0]
+    section.content = "Existing drafted content"
+    section.agent_results = {AGENT_OPENAI: "Existing drafted content"}
+    section.selected_agent = AGENT_OPENAI
+    section.iteration = 1
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "critique_section_task": {
+            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "A critique",
+        },
+        "refine_section_task": {
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    flow._section_approval_loop(section, agents, task_configs)
+
+    assert section.is_approved is True
+    # Content is preserved (refine failed, so original content kept)
+    assert section.content == "Existing drafted content"
+    mock_save_failed.assert_called_once()
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
+@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
+@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
+@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+def test_billing_error_still_propagates_from_critique(
+    _mock_task, _mock_crew, mock_kickoff, _mock_save_failed, _mock_update_crit,
+    monkeypatch,
+):
+    """BillingError is non-transient and must still propagate (pause the flow)."""
+    from crewai_productfeature_planner.scripts.retry import BillingError
+
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "2")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "5")
+
+    mock_kickoff.side_effect = BillingError("exceeded your current quota")
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-billing-fail"
+
+    section = flow.state.draft.sections[0]
+    section.content = "Existing drafted content"
+    section.agent_results = {AGENT_OPENAI: "Existing drafted content"}
+    section.selected_agent = AGENT_OPENAI
+    section.iteration = 1
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "critique_section_task": {
+            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "A critique",
+        },
+        "refine_section_task": {
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    with pytest.raises(BillingError):
+        flow._section_approval_loop(section, agents, task_configs)
+
+    assert section.is_approved is False
+
+
+@patch("crewai_productfeature_planner.flows.prd_flow.save_executive_summary")
+@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
+@patch("crewai_productfeature_planner.flows.prd_flow.update_executive_summary_critique")
+@patch("crewai_productfeature_planner.flows.prd_flow.save_finalized_idea")
+@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
+@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+def test_exec_summary_critique_failure_force_approves(
+    _mock_task, _mock_crew, mock_kickoff, _mock_save_fin,
+    _mock_update_crit, mock_save_failed, _mock_save_exec,
+    monkeypatch,
+):
+    """When exec summary critique fails, it is force-approved."""
+    from crewai_productfeature_planner.scripts.retry import LLMError
+
+    monkeypatch.setenv("PRD_EXEC_MIN_ITERATIONS", "1")
+    monkeypatch.setenv("PRD_EXEC_MAX_ITERATIONS", "3")
+
+    call_count = {"n": 0}
+
+    def _kickoff(crew, step_label=""):
+        call_count["n"] += 1
+        # First call = initial draft (succeeds)
+        if call_count["n"] == 1:
+            result = MagicMock()
+            result.raw = "Great executive summary content"
+            return result
+        # Second call = critique (fails)
+        raise LLMError("Invalid response from LLM call - None or empty.")
+
+    mock_kickoff.side_effect = _kickoff
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-exec-critique-fail"
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "draft_prd_task": {
+            "description": "Draft exec for: {idea} with {executive_summary}",
+            "expected_output": "Executive summary",
+        },
+        "critique_prd_task": {
+            "description": "Critique: {critique} exec: {executive_summary}",
+            "expected_output": "Critique",
+        },
+    }
+
+    # Should NOT raise — force-approve instead
+    flow._iterate_executive_summary(agents, task_configs)
+
+    assert flow.state.executive_summary.is_approved is True
+    mock_save_failed.assert_called_once()

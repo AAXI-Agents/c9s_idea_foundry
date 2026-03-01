@@ -81,6 +81,10 @@ def _handle_check_publish_intent(channel, thread_ts, user, send_tool):
     return _er()._handle_check_publish_intent(channel, thread_ts, user, send_tool)
 
 
+def _handle_resume_prd(channel, thread_ts, user, send_tool, project_id=None):
+    return _er()._handle_resume_prd(channel, thread_ts, user, send_tool, project_id=project_id)
+
+
 def _reply(channel, thread_ts, text):
     return _er()._reply(channel, thread_ts, text)
 
@@ -142,6 +146,14 @@ _UPDATE_CONFIG_PHRASES = (
     "space key", "parent page id", "parent id",
     "update config", "set config",
 )
+_RESUME_PRD_PHRASES = (
+    "resume prd", "resume prd flow", "resume flow",
+    "continue prd", "continue prd flow", "continue flow",
+    "restart prd", "restart prd flow", "restart flow",
+    "resume the prd", "continue the prd", "resume the flow",
+    "pick up where", "resume run", "resume generation",
+    "unpause", "unpause prd", "unpause flow",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +207,7 @@ def log_tracked_interaction(
 # ---------------------------------------------------------------------------
 
 _PHRASE_INTENT_MAP: list[tuple[tuple[str, ...], str]] = [
+    (_RESUME_PRD_PHRASES, "resume_prd"),
     (_IDEA_PHRASES, "create_prd"),
     (_CONFIGURE_MEMORY_PHRASES, "configure_memory"),
     (_UPDATE_CONFIG_PHRASES, "update_config"),
@@ -340,9 +353,14 @@ def _interpret_and_act_inner(
     has_current_phrase = any(p in lower_text_bare for p in _CURRENT_PROJECT_PHRASES)
     has_memory_phrase = any(p in lower_text_bare for p in _CONFIGURE_MEMORY_PHRASES)
     has_config_phrase = any(p in lower_text_bare for p in _UPDATE_CONFIG_PHRASES)
+    has_resume_phrase = any(p in lower_text_bare for p in _RESUME_PRD_PHRASES)
 
-    # ── Idea-phrase override (highest priority) ──
-    if has_idea_phrase:
+    # ── Resume-phrase override (highest priority — before idea) ──
+    if has_resume_phrase:
+        intent = "resume_prd"
+
+    # ── Idea-phrase override (high priority, but below resume) ──
+    elif has_idea_phrase:
         intent = "create_prd"
 
     # ── Session-management & navigation intents ──
@@ -518,6 +536,16 @@ def _interpret_and_act_inner(
             log_interaction, "slack", clean_text, intent,
             tracked_response, idea, None, None,
             channel, thread_ts, user, history, tracked_metadata_gate,
+        )
+        return
+
+    if intent == "resume_prd":
+        _handle_resume_prd(channel, thread_ts, user, send_tool, project_id=session_project_id)
+        tracked_response = "(resume_prd triggered)"
+        log_tracked_interaction(
+            log_interaction, "slack", clean_text, intent,
+            tracked_response, idea, None, session_project_id,
+            channel, thread_ts, user, history, tracked_metadata,
         )
         return
 

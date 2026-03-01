@@ -32,8 +32,8 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
 
   "intent"  – one of: "create_project", "list_projects", "switch_project", \
               "current_project", "end_session", "configure_memory", \
-              "update_config", "create_prd", "publish", "check_publish", \
-              "help", "greeting", "unknown"
+              "update_config", "create_prd", "resume_prd", "publish", \
+              "check_publish", "help", "greeting", "unknown"
   "idea"    – the product or feature idea extracted from the message, or null
   "confluence_space_key" – extracted Confluence space key, or null
   "jira_project_key"     – extracted Jira project key, or null
@@ -48,6 +48,7 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
        • "update_config" → confirm you will update the project configuration with the provided keys
        • "create_prd" with idea → confirm you will start planning
        • "create_prd" without idea → ask the user for the idea
+       • "resume_prd" → confirm you will resume the paused/unfinished PRD flow
        • "publish" → confirm you will publish pending PRDs to Confluence and create Jira tickets
        • "check_publish" → confirm you will check the publishing status of pending PRDs
        • "help" → briefly list what you can do
@@ -123,6 +124,22 @@ the word "project" does not appear.
   "start an idea"                         → create_prd
   "new idea"                              → create_prd
   "refine my idea"                        → create_prd
+  "resume prd flow"                       → resume_prd
+  "resume prd"                            → resume_prd
+  "continue prd flow"                     → resume_prd
+  "continue the prd"                      → resume_prd
+  "resume the flow"                       → resume_prd
+  "pick up where you left off"            → resume_prd
+  "unpause prd"                           → resume_prd
+  "resume run"                            → resume_prd
+  "restart prd flow"                      → resume_prd
+  "continue flow"                         → resume_prd
+
+=== CRITICAL RULE — "resume" vs "create" PRD ===
+When the user says "resume", "continue", "unpause", "restart", or \
+"pick up where" in relation to a PRD or flow, that is ALWAYS **resume_prd** — \
+not create_prd.  "resume_prd" means the user wants to continue a previously \
+paused or unfinished PRD generation run.
 
 === Other rules ===
 - Intent "list_projects" means the user wants to SEE, LIST, BROWSE, or \
@@ -160,6 +177,12 @@ the word "project" does not appear.
   "idea", "iterate", "brainstorm", "refine", "plan", assume "create_prd".
 - If the user provides ONLY a product idea (no command word), still classify \
   as "create_prd".
+- Intent "resume_prd" means the user wants to RESUME, CONTINUE, UNPAUSE, \
+  or RESTART a previously paused or unfinished PRD flow.  Keywords: \
+  "resume prd", "resume flow", "continue prd", "continue flow", \
+  "unpause", "restart prd", "pick up where", "resume run".  \
+  Do NOT confuse with "create_prd" — resume is about continuing an \
+  existing run, not starting a new one.
 - Intent "publish" means the user wants to publish PRDs to Confluence, \
   create Jira tickets, or trigger the delivery pipeline. Keywords: \
   "publish", "deploy", "push to confluence", "create tickets", "deliver", \
