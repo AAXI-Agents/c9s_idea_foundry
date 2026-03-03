@@ -45,6 +45,12 @@ _PRD_KNOWLEDGE_FILES = [
     _PRD_GUIDELINES_FILE,
 ]
 
+# ── Knowledge-source cache ───────────────────────────────────────────
+# Knowledge files are static during a server run, so we build them once
+# and re-use across all agent creations.  Avoids redundant embedding
+# API calls on every Crew.kickoff().
+_cached_prd_knowledge_sources: list | None = None
+
 
 # ── Embedder configuration ───────────────────────────────────────────
 
@@ -134,15 +140,40 @@ def build_prd_knowledge_sources() -> list[TextFileKnowledgeSource]:
     covering user preferences, project architecture, and PRD guidelines.
     Suitable for agents involved in PRD drafting and critique.
 
+    Results are cached after the first call.  Call
+    :func:`clear_knowledge_cache` to force a rebuild.
+
     Returns:
         A list of three knowledge sources.
     """
+    global _cached_prd_knowledge_sources  # noqa: PLW0603
+
+    if _cached_prd_knowledge_sources is not None:
+        logger.debug(
+            "Returning cached PRD knowledge sources (%d files)",
+            len(_cached_prd_knowledge_sources),
+        )
+        return _cached_prd_knowledge_sources
+
     logger.info(
         "Building PRD knowledge sources (%d files)",
         len(_PRD_KNOWLEDGE_FILES),
     )
-    return [
+    _cached_prd_knowledge_sources = [
         build_user_knowledge_source(),
         build_project_knowledge_source(),
         build_prd_guidelines_knowledge_source(),
     ]
+    return _cached_prd_knowledge_sources
+
+
+def clear_knowledge_cache() -> None:
+    """Clear the cached PRD knowledge sources.
+
+    Forces :func:`build_prd_knowledge_sources` to rebuild knowledge
+    source objects on its next call.  Useful in tests or when
+    knowledge files change at runtime.
+    """
+    global _cached_prd_knowledge_sources  # noqa: PLW0603
+    _cached_prd_knowledge_sources = None
+    logger.debug("Knowledge source cache cleared")

@@ -42,13 +42,15 @@ def section_approval_loop(
     section,
     agents: dict[str, Agent],
     task_configs,
+    *,
+    critic_agent: Agent | None = None,
 ) -> None:
     """Iterate a single section through critique→refine cycles.
 
-    When multiple PM agents are available, the critique is performed
-    by a **different agent** from the one that drafted/refined —
-    enabling genuine cross-agent collaboration via CrewAI's
-    sequential process.
+    When a dedicated *critic_agent* is supplied, it handles all
+    critique tasks — using a lightweight (flash) model with no tools
+    for faster evaluation.  Otherwise, falls back to cross-agent
+    collaboration or self-critique.
 
     Each section is automatically iterated between *min* and *max*
     iterations (controlled by ``PRD_SECTION_MIN_ITERATIONS`` /
@@ -127,13 +129,20 @@ def section_approval_loop(
         selected = section.selected_agent or available[0]
         pm = agents.get(selected) or next(iter(agents.values()))
 
-        # Pick a secondary agent for cross-agent critique
-        critic = pm
-        for name, agent_obj in agents.items():
-            if name != selected:
-                critic = agent_obj
-                break
-        crew_agents = [pm] if critic is pm else [pm, critic]
+        # Pick a critic agent.  Priority:
+        #   1) Dedicated lightweight critic (fast model, no tools)
+        #   2) Secondary PM agent (cross-agent collaboration)
+        #   3) Same PM agent (self-critique)
+        if critic_agent is not None:
+            critic = critic_agent
+        else:
+            critic = pm
+            for name, agent_obj in agents.items():
+                if name != selected:
+                    critic = agent_obj
+                    break
+        critique_crew_agents = [critic]
+        refine_crew_agents = [pm]
 
         # ── Critique (cross-agent when available) ─────────
         if user_feedback is not None:
@@ -145,7 +154,8 @@ def section_approval_loop(
                 "(agent=%s)",
                 section.step, total_steps, section.title,
                 section.iteration,
-                next((n for n, a in agents.items() if a is critic), selected),
+                "critic" if critic_agent is not None
+                else next((n for n, a in agents.items() if a is critic), selected),
             )
             critique_task = Task(
                 description=task_configs["critique_section_task"][
@@ -162,7 +172,7 @@ def section_approval_loop(
                 agent=critic,
             )
             crew = Crew(
-                agents=crew_agents,
+                agents=critique_crew_agents,
                 tasks=[critique_task],
                 process=Process.sequential,
                 verbose=is_verbose(),
@@ -256,7 +266,7 @@ def section_approval_loop(
             agent=pm,
         )
         crew = Crew(
-            agents=crew_agents,
+            agents=refine_crew_agents,
             tasks=[refine_task],
             process=Process.sequential,
             verbose=is_verbose(),

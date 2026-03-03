@@ -218,11 +218,11 @@ def test_section_approval_loop_raises_pause(monkeypatch):
         flow._section_approval_loop(section, agents, {})
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-@patch.object(PRDFlow, "_run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
 def test_finalize_saves_prd(_mock_post, mock_writer_cls, mock_mark_completed, mock_save_output, _mock_get_output):
     """finalize() should persist the assembled PRD via file and mark completed."""
     mock_writer = MagicMock()
@@ -258,14 +258,14 @@ def test_finalize_saves_prd(_mock_post, mock_writer_cls, mock_mark_completed, mo
 # ── save_progress ────────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_paused")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
 def test_save_progress_with_idea_and_requirements(mock_writer_cls, mock_save_output, _mock_get_output, mock_mark_paused):
     """save_progress() should write a progress markdown with refined idea & requirements."""
     mock_writer = MagicMock()
-    mock_writer._run.return_value = "PRD saved to output/prds/2026/02/prd_v1.md"
+    mock_writer._run.return_value = "PRD saved to output/prds/_drafts/2026/02/prd_v1.md"
     mock_writer_cls.return_value = mock_writer
 
     flow = PRDFlow()
@@ -276,6 +276,8 @@ def test_save_progress_with_idea_and_requirements(mock_writer_cls, mock_save_out
 
     result = flow.save_progress()
 
+    # Writer should use the _drafts subdirectory
+    mock_writer_cls.assert_called_once_with(output_dir="output/prds/_drafts")
     mock_writer._run.assert_called_once()
     call_args = mock_writer._run.call_args
     content = call_args.kwargs.get("content") or call_args[1].get("content")
@@ -289,17 +291,17 @@ def test_save_progress_with_idea_and_requirements(mock_writer_cls, mock_save_out
 
     # Output file path stored in MongoDB
     mock_save_output.assert_called_once_with(
-        flow.state.run_id, "output/prds/2026/02/prd_v1.md",
+        flow.state.run_id, "output/prds/_drafts/2026/02/prd_v1.md",
     )
 
     # Working idea status updated to paused
     mock_mark_paused.assert_called_once_with(flow.state.run_id)
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_paused")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
 def test_save_progress_uses_final_header_when_all_approved(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should NOT include '(In Progress)' when all sections are approved."""
     mock_writer = MagicMock()
@@ -329,10 +331,10 @@ def test_save_progress_uses_final_header_when_all_approved(mock_writer_cls, mock
     assert "(In Progress)" not in content
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_paused")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
 def test_save_progress_includes_executive_summary(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should include executive summary if available."""
     mock_writer = MagicMock()
@@ -358,10 +360,10 @@ def test_save_progress_includes_executive_summary(mock_writer_cls, mock_save_out
     assert call_args.kwargs.get("version") == 3 or call_args[1].get("version") == 3
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_paused")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
 def test_save_progress_includes_drafted_sections(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should include any sections that have content."""
     mock_writer = MagicMock()
@@ -398,10 +400,10 @@ def test_save_progress_returns_empty_when_no_content():
     assert result == ""
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_paused")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
 def test_save_progress_uses_finalized_idea_over_raw(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should prefer finalized_idea over raw idea."""
     mock_writer = MagicMock()
@@ -420,10 +422,10 @@ def test_save_progress_uses_finalized_idea_over_raw(mock_writer_cls, mock_save_o
     assert "Raw idea" not in content
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_paused")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_paused")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
 def test_save_progress_version_defaults_to_one(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should use version=1 when iteration is 0."""
     mock_writer = MagicMock()
@@ -444,8 +446,8 @@ def test_save_progress_version_defaults_to_one(mock_writer_cls, mock_save_output
 # ── _persist_output_path cleanup ─────────────────────────────
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file")
 def test_persist_output_path_deletes_previous_file(mock_get_output, mock_save_output, tmp_path):
     """_persist_output_path should delete the old file when a new one is saved."""
     old_file = tmp_path / "old_prd.md"
@@ -462,8 +464,8 @@ def test_persist_output_path_deletes_previous_file(mock_get_output, mock_save_ou
     mock_save_output.assert_called_once_with("run-cleanup", new_path)
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
 def test_persist_output_path_skips_cleanup_when_no_previous(_mock_get_output, mock_save_output):
     """_persist_output_path should not attempt deletion when no previous file exists."""
     flow = PRDFlow()
@@ -473,8 +475,8 @@ def test_persist_output_path_skips_cleanup_when_no_previous(_mock_get_output, mo
     mock_save_output.assert_called_once_with("run-new", "output/prds/2026/02/prd_v1.md")
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file")
 def test_persist_output_path_skips_cleanup_when_same_path(mock_get_output, mock_save_output):
     """_persist_output_path should not delete the file if old and new paths match."""
     mock_get_output.return_value = "output/prds/2026/02/prd_v1.md"
@@ -487,8 +489,8 @@ def test_persist_output_path_skips_cleanup_when_same_path(mock_get_output, mock_
     mock_save_output.assert_called_once_with("run-same", "output/prds/2026/02/prd_v1.md")
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.save_output_file")
-@patch("crewai_productfeature_planner.flows.prd_flow.get_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file")
 def test_persist_output_path_handles_missing_old_file(mock_get_output, mock_save_output, tmp_path):
     """_persist_output_path should not error if the old file doesn't exist on disk."""
     mock_get_output.return_value = str(tmp_path / "already_gone.md")
@@ -526,7 +528,7 @@ def test_parse_decision_tuple_feedback():
 
 def test_parse_decision_legacy_true():
     """Legacy True return should select the DEFAULT_AGENT."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=AGENT_OPENAI):
+    with patch("crewai_productfeature_planner.flows._agents.get_default_agent", return_value=AGENT_OPENAI):
         agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI, _SECOND_AGENT])
     assert agent == AGENT_OPENAI
     assert action is True
@@ -534,7 +536,7 @@ def test_parse_decision_legacy_true():
 
 def test_parse_decision_legacy_false():
     """Legacy False return should select the DEFAULT_AGENT when available."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=_SECOND_AGENT):
+    with patch("crewai_productfeature_planner.flows._agents.get_default_agent", return_value=_SECOND_AGENT):
         agent, action = PRDFlow._parse_decision(False, [_SECOND_AGENT, AGENT_OPENAI])
     assert agent == _SECOND_AGENT
     assert action is False
@@ -542,7 +544,7 @@ def test_parse_decision_legacy_false():
 
 def test_parse_decision_legacy_prefers_default_agent():
     """Legacy decision should prefer DEFAULT_AGENT over first in available list."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=_SECOND_AGENT):
+    with patch("crewai_productfeature_planner.flows._agents.get_default_agent", return_value=_SECOND_AGENT):
         agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI, _SECOND_AGENT])
     assert agent == _SECOND_AGENT
     assert action is True
@@ -550,7 +552,7 @@ def test_parse_decision_legacy_prefers_default_agent():
 
 def test_parse_decision_legacy_falls_back_when_default_unavailable():
     """Legacy decision should fall back to first available when default not in list."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=_SECOND_AGENT):
+    with patch("crewai_productfeature_planner.flows._agents.get_default_agent", return_value=_SECOND_AGENT):
         agent, action = PRDFlow._parse_decision(True, [AGENT_OPENAI])
     assert agent == AGENT_OPENAI
     assert action is True
@@ -558,7 +560,7 @@ def test_parse_decision_legacy_falls_back_when_default_unavailable():
 
 def test_parse_decision_legacy_string():
     """Legacy string return (feedback) should select the DEFAULT_AGENT."""
-    with patch("crewai_productfeature_planner.flows.prd_flow.get_default_agent", return_value=AGENT_OPENAI):
+    with patch("crewai_productfeature_planner.flows._agents.get_default_agent", return_value=AGENT_OPENAI):
         agent, action = PRDFlow._parse_decision(
             "Needs more detail", [AGENT_OPENAI],
         )
@@ -566,7 +568,7 @@ def test_parse_decision_legacy_string():
     assert action == "Needs more detail"
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
+@patch("crewai_productfeature_planner.flows._agents.create_product_manager")
 def test_get_available_agents_gemini_only(mock_create_pm, monkeypatch):
     """Default agent should be Gemini PM."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
@@ -577,7 +579,7 @@ def test_get_available_agents_gemini_only(mock_create_pm, monkeypatch):
     mock_create_pm.assert_called_once()
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
+@patch("crewai_productfeature_planner.flows._agents.create_product_manager")
 def test_get_available_agents_openai_explicit(mock_create_pm, monkeypatch):
     """DEFAULT_AGENT=openai should use the OpenAI agent."""
     monkeypatch.setenv("DEFAULT_AGENT", AGENT_OPENAI)
@@ -588,7 +590,7 @@ def test_get_available_agents_openai_explicit(mock_create_pm, monkeypatch):
     mock_create_pm.assert_called_once()
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.create_product_manager")
+@patch("crewai_productfeature_planner.flows._agents.create_product_manager")
 def test_get_available_agents_multi_agents_1_limits_to_default(mock_create_pm, monkeypatch):
     """DEFAULT_MULTI_AGENTS=1 should use only the default agent."""
     monkeypatch.delenv("DEFAULT_AGENT", raising=False)
@@ -605,10 +607,10 @@ def test_run_agents_parallel_single():
     mock_result.raw = "Agent draft content"
 
     with patch(
-        "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.flows._agents.crew_kickoff_with_retry",
         return_value=mock_result,
-    ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
-        "crewai_productfeature_planner.flows.prd_flow.Task",
+    ), patch("crewai_productfeature_planner.flows._agents.Crew"), patch(
+        "crewai_productfeature_planner.flows._agents.Task",
     ):
         results, failed = PRDFlow._run_agents_parallel(
             agents={AGENT_OPENAI: mock_agent},
@@ -643,10 +645,10 @@ def test_run_agents_parallel_multi():
         return mock_result_openai if "openai" in step_label else mock_result_second
 
     with patch(
-        "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.flows._agents.crew_kickoff_with_retry",
         side_effect=mock_kickoff,
-    ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
-        "crewai_productfeature_planner.flows.prd_flow.Task",
+    ), patch("crewai_productfeature_planner.flows._agents.Crew"), patch(
+        "crewai_productfeature_planner.flows._agents.Task",
     ):
         results, failed = PRDFlow._run_agents_parallel(
             agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
@@ -678,10 +680,10 @@ def test_run_agents_parallel_one_fails():
         return mock_result
 
     with patch(
-        "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.flows._agents.crew_kickoff_with_retry",
         side_effect=mock_kickoff,
-    ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
-        "crewai_productfeature_planner.flows.prd_flow.Task",
+    ), patch("crewai_productfeature_planner.flows._agents.Crew"), patch(
+        "crewai_productfeature_planner.flows._agents.Task",
     ):
         results, failed = PRDFlow._run_agents_parallel(
             agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
@@ -710,10 +712,10 @@ def test_run_agents_parallel_all_fail():
         raise RuntimeError("boom")
 
     with patch(
-        "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.flows._agents.crew_kickoff_with_retry",
         side_effect=mock_kickoff,
-    ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
-        "crewai_productfeature_planner.flows.prd_flow.Task",
+    ), patch("crewai_productfeature_planner.flows._agents.Crew"), patch(
+        "crewai_productfeature_planner.flows._agents.Task",
     ):
         with pytest.raises(RuntimeError, match="All agents failed"):
             PRDFlow._run_agents_parallel(
@@ -742,13 +744,13 @@ def test_run_agents_parallel_reorders_default_first(monkeypatch):
         return mock_result_openai if "openai" in step_label else mock_result_second
 
     with patch(
-        "crewai_productfeature_planner.flows.prd_flow.get_default_agent",
+        "crewai_productfeature_planner.flows._agents.get_default_agent",
         return_value=_SECOND_AGENT,
     ), patch(
-        "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.flows._agents.crew_kickoff_with_retry",
         side_effect=mock_kickoff,
-    ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
-        "crewai_productfeature_planner.flows.prd_flow.Task",
+    ), patch("crewai_productfeature_planner.flows._agents.Crew"), patch(
+        "crewai_productfeature_planner.flows._agents.Task",
     ):
         results, failed = PRDFlow._run_agents_parallel(
             agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
@@ -784,10 +786,10 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
     agents = {AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()}
 
     with patch(
-        "crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.flows._agents.crew_kickoff_with_retry",
         side_effect=mock_kickoff,
-    ), patch("crewai_productfeature_planner.flows.prd_flow.Crew"), patch(
-        "crewai_productfeature_planner.flows.prd_flow.Task",
+    ), patch("crewai_productfeature_planner.flows._agents.Crew"), patch(
+        "crewai_productfeature_planner.flows._agents.Task",
     ):
         # First call — second agent fails
         results, failed = PRDFlow._run_agents_parallel(
@@ -1289,11 +1291,11 @@ def test_default_constants():
 # ── min/max iteration enforcement in _section_approval_loop ──
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_section_iterates_min_before_auto_approve(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1349,11 +1351,11 @@ def test_section_iterates_min_before_auto_approve(
     assert call_count["critique"] >= 2  # at least iterations 1 and 2 critiqued + refine
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_section_force_approved_at_max(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1402,11 +1404,11 @@ def test_section_force_approved_at_max(
     assert section.iteration == 3
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_section_ready_before_min_keeps_iterating(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1459,11 +1461,11 @@ def test_section_ready_before_min_keeps_iterating(
     assert section.iteration >= 3
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_section_saves_each_iteration_to_db(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1518,11 +1520,11 @@ def test_section_saves_each_iteration_to_db(
     assert 3 in saved_iters
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_section_critique_updates_each_iteration(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1633,11 +1635,11 @@ def test_is_degenerate_content_no_prev_len(monkeypatch):
 # ── degenerate output guard in _section_approval_loop ────────
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_degenerate_output_exceeds_max_chars(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1690,11 +1692,11 @@ def test_degenerate_output_exceeds_max_chars(
     assert section.content == "Good initial draft content"
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_degenerate_output_exceeds_growth_factor(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1743,11 +1745,11 @@ def test_degenerate_output_exceeds_growth_factor(
     assert section.content == "A" * 1000  # reverted to original
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_degenerate_refine_retries_below_min_iter(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1806,11 +1808,11 @@ def test_degenerate_refine_retries_below_min_iter(
     assert section.iteration >= 3  # reached min_iter before approval
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_degenerate_refine_force_approves_at_min_iter(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -1860,11 +1862,11 @@ def test_degenerate_refine_force_approves_at_min_iter(
     assert section.content == "Good initial draft"  # reverted
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_normal_output_not_flagged_as_degenerate(
     _mock_task, _mock_crew, mock_kickoff, mock_save, mock_update_crit,
     monkeypatch,
@@ -2000,9 +2002,9 @@ def test_executive_summary_callback_defaults_to_none():
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._executive_summary.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._executive_summary.Crew")
+@patch("crewai_productfeature_planner.flows._executive_summary.Task")
 def test_iterate_exec_summary_ready_at_min(_mock_task, _mock_crew, mock_kickoff, mock_update_crit, mock_save, mock_save_fin, monkeypatch):
     """Executive summary should approve when READY_FOR_DEV at min iteration."""
     monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "2")
@@ -2049,9 +2051,9 @@ def test_iterate_exec_summary_ready_at_min(_mock_task, _mock_crew, mock_kickoff,
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._executive_summary.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._executive_summary.Crew")
+@patch("crewai_productfeature_planner.flows._executive_summary.Task")
 def test_iterate_exec_summary_force_approve_at_max(_mock_task, _mock_crew, mock_kickoff, mock_update_crit, mock_save, mock_save_fin, monkeypatch):
     """Executive summary should force-approve when max iterations reached."""
     monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "1")
@@ -2095,9 +2097,9 @@ def test_iterate_exec_summary_force_approve_at_max(_mock_task, _mock_crew, mock_
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._executive_summary.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._executive_summary.Crew")
+@patch("crewai_productfeature_planner.flows._executive_summary.Task")
 def test_iterate_exec_summary_ready_before_min_continues(_mock_task, _mock_crew, mock_kickoff, mock_update_crit, mock_save, mock_save_fin, monkeypatch):
     """READY_FOR_DEV before min iterations should keep iterating."""
     monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "3")
@@ -2138,9 +2140,9 @@ def test_iterate_exec_summary_ready_before_min_continues(_mock_task, _mock_crew,
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._executive_summary.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._executive_summary.Crew")
+@patch("crewai_productfeature_planner.flows._executive_summary.Task")
 def test_iterate_exec_summary_critique_text_persisted(_mock_task, _mock_crew, mock_kickoff, mock_update_crit, mock_save, mock_save_fin, monkeypatch):
     """Critique text should be stored on the iteration record."""
     monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "1")
@@ -2182,9 +2184,9 @@ def test_iterate_exec_summary_critique_text_persisted(_mock_task, _mock_crew, mo
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._executive_summary.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._executive_summary.Crew")
+@patch("crewai_productfeature_planner.flows._executive_summary.Task")
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
@@ -2220,20 +2222,20 @@ def test_callback_false_raises_completed(
         flow.generate_sections()
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
-@patch.object(PRDFlow, "_run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
 def test_callback_true_continues_to_sections(
     _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save, mock_save_fin,
@@ -2289,7 +2291,13 @@ def test_callback_true_continues_to_sections(
     flow.executive_summary_callback = lambda content, idea, run_id, iters: True
 
     # Should not raise, should return finalized PRD
-    result = flow.generate_sections()
+    _ES = "crewai_productfeature_planner.flows._executive_summary"
+    _AG = "crewai_productfeature_planner.flows._agents"
+    with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
+         patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+        result = flow.generate_sections()
     assert result is not None
     # Executive summary should be carried from Phase 1
     exec_sec = flow.state.draft.sections[0]
@@ -2306,20 +2314,20 @@ def test_callback_true_continues_to_sections(
 # ══════════════════════════════════════════════════════════════
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
-@patch.object(PRDFlow, "_run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
 def test_skip_phase1_when_exec_summary_has_enough_iterations(
     _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
@@ -2381,7 +2389,13 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
             )
         )
 
-    result = flow.generate_sections()
+    _ES = "crewai_productfeature_planner.flows._executive_summary"
+    _AG = "crewai_productfeature_planner.flows._agents"
+    with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
+         patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+        result = flow.generate_sections()
 
     assert result is not None
     # Phase 1 was skipped — save_executive_summary should NOT have been called
@@ -2399,20 +2413,20 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
         assert section.content != "", f"Section '{section.key}' was not filled"
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
-@patch.object(PRDFlow, "_run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
 def test_phase1_runs_when_below_threshold(
     _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
@@ -2476,7 +2490,13 @@ def test_phase1_runs_when_below_threshold(
             )
         )
 
-    result = flow.generate_sections()
+    _ES = "crewai_productfeature_planner.flows._executive_summary"
+    _AG = "crewai_productfeature_planner.flows._agents"
+    with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
+         patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+        result = flow.generate_sections()
 
     assert result is not None
     # Phase 1 DID run — save_executive_summary should have been called
@@ -2488,20 +2508,20 @@ def test_phase1_runs_when_below_threshold(
 # ══════════════════════════════════════════════════════════════
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
-@patch.object(PRDFlow, "_run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
 def test_resume_skips_draft_for_in_progress_section(
     _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
@@ -2578,7 +2598,13 @@ def test_resume_skips_draft_for_in_progress_section(
         calls.append(MagicMock(raw="SECTION_READY: ok"))
     mock_kickoff.side_effect = calls
 
-    result = flow.generate_sections()
+    _ES = "crewai_productfeature_planner.flows._executive_summary"
+    _AG = "crewai_productfeature_planner.flows._agents"
+    with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
+         patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+        result = flow.generate_sections()
 
     assert result is not None
     # The in-progress section should keep its restored content since
@@ -2593,20 +2619,20 @@ def test_resume_skips_draft_for_in_progress_section(
         )
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.PRDFileWriteTool")
-@patch("crewai_productfeature_planner.flows.prd_flow.mark_completed")
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 @patch.object(PRDFlow, "_get_available_agents")
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
-@patch.object(PRDFlow, "_run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
 def test_resume_wipes_degenerate_restored_content(
     _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
@@ -2680,7 +2706,13 @@ def test_resume_wipes_degenerate_restored_content(
         calls.append(MagicMock(raw="SECTION_READY: ok"))
     mock_kickoff.side_effect = calls
 
-    result = flow.generate_sections()
+    _ES = "crewai_productfeature_planner.flows._executive_summary"
+    _AG = "crewai_productfeature_planner.flows._agents"
+    with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
+         patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+        result = flow.generate_sections()
 
     assert result is not None
     # Degenerate content should have been wiped and re-drafted
@@ -2848,11 +2880,11 @@ def test_prd_state_jira_output_default():
 # LLM failure resilience – force-approve instead of pausing
 # ------------------------------------------------------------------
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_failed")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_section_critique_failure_force_approves(
     _mock_task, _mock_crew, mock_kickoff, mock_save_failed, _mock_update_crit,
     monkeypatch,
@@ -2895,12 +2927,12 @@ def test_section_critique_failure_force_approves(
     mock_save_failed.assert_called_once()
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.save_iteration")
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_failed")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_section_refine_failure_force_approves(
     _mock_task, _mock_crew, mock_kickoff, mock_save_failed, _mock_update_crit,
     _mock_save_iter, monkeypatch,
@@ -2954,11 +2986,11 @@ def test_section_refine_failure_force_approves(
     mock_save_failed.assert_called_once()
 
 
-@patch("crewai_productfeature_planner.flows.prd_flow.update_section_critique")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_failed")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
 def test_billing_error_still_propagates_from_critique(
     _mock_task, _mock_crew, mock_kickoff, _mock_save_failed, _mock_update_crit,
     monkeypatch,
@@ -3000,12 +3032,12 @@ def test_billing_error_still_propagates_from_critique(
 
 
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
-@patch("crewai_productfeature_planner.flows.prd_flow.save_failed")
+@patch("crewai_productfeature_planner.flows._executive_summary.save_failed")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
-@patch("crewai_productfeature_planner.flows.prd_flow.crew_kickoff_with_retry")
-@patch("crewai_productfeature_planner.flows.prd_flow.Crew")
-@patch("crewai_productfeature_planner.flows.prd_flow.Task")
+@patch("crewai_productfeature_planner.flows._executive_summary.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._executive_summary.Crew")
+@patch("crewai_productfeature_planner.flows._executive_summary.Task")
 def test_exec_summary_critique_failure_force_approves(
     _mock_task, _mock_crew, mock_kickoff, _mock_save_fin,
     _mock_update_crit, mock_save_failed, _mock_save_exec,

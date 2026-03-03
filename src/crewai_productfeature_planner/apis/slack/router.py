@@ -193,7 +193,7 @@ def _run_slack_prd_flow(
 
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
-    create_job(run_id, idea, slack_channel=channel, slack_thread_ts=thread_ts or "")
+    create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts or "")
 
     # Persist Slack context so auto-resume can notify the same thread
     try:

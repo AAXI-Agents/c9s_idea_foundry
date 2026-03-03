@@ -323,6 +323,79 @@ def make_slack_exec_summary_feedback_callback(run_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Executive summary completion gate (Phase 1 → Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def make_slack_exec_summary_completion_callback(run_id: str):
+    """Create an ``executive_summary_callback`` for interactive flows.
+
+    Returns a callable: ``(executive_summary, idea, run_id, iterations) -> bool``
+    where ``True`` means continue to section drafting and ``False`` means stop.
+
+    Posts the finalized executive summary with Continue / Stop buttons
+    so the user can review before the flow proceeds to Phase 2.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks import (
+        exec_summary_completion_blocks,
+    )
+
+    def _callback(
+        executive_summary: str,
+        idea: str,
+        cb_run_id: str,
+        iterations: list[dict],
+    ) -> bool:
+        info = get_interactive_run(run_id)
+        if not info:
+            # No interactive session — auto-continue
+            return True
+
+        if info.get("cancelled"):
+            return False
+
+        channel = info["channel"]
+        thread_ts = info["thread_ts"]
+        total_iterations = len(iterations)
+
+        blocks = exec_summary_completion_blocks(
+            run_id, executive_summary, total_iterations,
+        )
+        _post_blocks(
+            channel, thread_ts, blocks,
+            text="Executive Summary — Finalized — awaiting your review",
+        )
+
+        decision = _wait_for_decision(run_id, "exec_summary_completion")
+
+        if decision == "exec_summary_continue":
+            logger.info(
+                "Exec summary completion: user chose to continue to "
+                "section drafting for run_id=%s",
+                run_id,
+            )
+            return True
+
+        if decision == "exec_summary_stop":
+            logger.info(
+                "Exec summary completion: user chose to stop after "
+                "executive summary for run_id=%s",
+                run_id,
+            )
+            return False
+
+        # Timeout — auto-continue
+        logger.warning(
+            "Exec summary completion timeout for run_id=%s — "
+            "auto-continuing to section drafting",
+            run_id,
+        )
+        return True
+
+    return _callback
+
+
+# ---------------------------------------------------------------------------
 # Jira phased callbacks
 # ---------------------------------------------------------------------------
 

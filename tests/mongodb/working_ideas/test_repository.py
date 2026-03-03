@@ -58,8 +58,8 @@ def test_save_iteration_upserts_doc(wi_mocks):
     # Should use upsert=True
     assert call_args[1].get("upsert") is True
     update_ops = call_args[0][1]
-    # idea is in $setOnInsert so it is only written on first insert
-    assert update_ops["$setOnInsert"]["idea"] == "Dark mode"
+    # idea is in $set so it is always written (even on existing docs)
+    assert update_ops["$set"]["idea"] == "Dark mode"
     assert update_ops["$set"]["status"] == "inprogress"
     assert "$push" in update_ops
     assert "section.executive_summary" in update_ops["$push"]
@@ -100,16 +100,16 @@ def test_save_iteration_no_step_field(wi_mocks):
     assert set(pushed.keys()) == {"content", "iteration", "critique", "updated_date"}
 
 
-def test_save_iteration_idea_in_setOnInsert(wi_mocks):
-    """idea should be in $setOnInsert so it is never overwritten on subsequent updates."""
+def test_save_iteration_idea_in_set(wi_mocks):
+    """idea should be in $set so it is always written (even on existing docs)."""
     mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
 
     save_iteration(run_id="r1", idea="Original idea", iteration=1, draft={"s": "D"})
 
     update_ops = mock_collection.update_one.call_args[0][1]
-    assert "idea" not in update_ops["$set"]
-    assert update_ops["$setOnInsert"]["idea"] == "Original idea"
+    assert update_ops["$set"]["idea"] == "Original idea"
+    assert "idea" not in update_ops["$setOnInsert"]
 
 
 def test_save_iteration_finalized_idea_in_set(wi_mocks):
@@ -1417,6 +1417,176 @@ class TestFindIdeasByProject:
         ):
             result = find_ideas_by_project("proj-1")
             assert result == []
+
+    def test_backfills_orphaned_idea_via_channel(self, wi_mocks):
+        """When channel is provided, orphaned ideas whose crew job
+        matches the channel should be backfilled and returned."""
+        mock_collection, mock_db = wi_mocks
+
+        # First .find() returns no ideas for project_id query
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = []
+
+        # Second .find() returns an orphan (no project_id)
+        orphan_doc = {
+            "run_id": "orphan-1",
+            "idea": "Orphan idea",
+            "status": "failed",
+            "created_at": "2026-03-01T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+
+        mock_collection.find.side_effect = [proj_cursor, [orphan_doc]]
+
+        # Mock find_job to return a job in the same channel
+        with patch(
+            "crewai_productfeature_planner.mongodb.crew_jobs.repository.find_job",
+            return_value={"slack_channel": "C123"},
+        ):
+            result = find_ideas_by_project("proj-1", channel="C123")
+
+        assert len(result) == 1
+        assert result[0]["run_id"] == "orphan-1"
+        assert result[0]["status"] == "failed"
+        # Verify backfill update_one was called
+        update_calls = mock_collection.update_one.call_args_list
+        assert any(
+            call[0][0] == {"run_id": "orphan-1"}
+            and call[0][1]["$set"]["project_id"] == "proj-1"
+            for call in update_calls
+        )
+
+    def test_no_backfill_when_channel_not_provided(self, wi_mocks):
+        """Without channel, no backfill should occur."""
+        mock_collection, mock_db = wi_mocks
+
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = []
+        mock_collection.find.return_value = proj_cursor
+
+        result = find_ideas_by_project("proj-1")
+
+        assert result == []
+        # .find() called only once (for project query, not orphan query)
+        assert mock_collection.find.call_count == 1
+
+    def test_backfill_skips_wrong_channel(self, wi_mocks):
+        """Orphaned ideas whose crew job is in a different channel
+        should NOT be included."""
+        mock_collection, mock_db = wi_mocks
+
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = []
+
+        orphan_doc = {
+            "run_id": "orphan-2",
+            "idea": "Wrong channel idea",
+            "status": "inprogress",
+            "created_at": "2026-03-01T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+        mock_collection.find.side_effect = [proj_cursor, [orphan_doc]]
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.crew_jobs.repository.find_job",
+            return_value={"slack_channel": "C-OTHER"},
+        ):
+            result = find_ideas_by_project("proj-1", channel="C123")
+
+        assert result == []
+
+    def test_backfill_skips_orphan_without_crew_job(self, wi_mocks):
+        """Orphaned ideas with no matching crew job should be ignored."""
+        mock_collection, mock_db = wi_mocks
+
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = []
+
+        orphan_doc = {
+            "run_id": "orphan-3",
+            "idea": "No job idea",
+            "status": "failed",
+            "created_at": "2026-03-01T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+        mock_collection.find.side_effect = [proj_cursor, [orphan_doc]]
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.crew_jobs.repository.find_job",
+            return_value=None,
+        ):
+            result = find_ideas_by_project("proj-1", channel="C123")
+
+        assert result == []
+
+    def test_backfill_does_not_duplicate_existing(self, wi_mocks):
+        """If an idea already has project_id and an orphan with the same
+        run_id exists (impossible but defensive), no duplicate is added."""
+        mock_collection, mock_db = wi_mocks
+
+        existing_doc = {
+            "run_id": "r1",
+            "idea": "Existing",
+            "status": "inprogress",
+            "project_id": "proj-1",
+            "created_at": "2026-03-01T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = [existing_doc]
+
+        # Orphan with same run_id (edge case)
+        orphan_doc = {
+            "run_id": "r1",
+            "idea": "Existing",
+            "status": "inprogress",
+            "created_at": "2026-03-01T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+        mock_collection.find.side_effect = [proj_cursor, [orphan_doc]]
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.crew_jobs.repository.find_job",
+            return_value={"slack_channel": "C123"},
+        ):
+            result = find_ideas_by_project("proj-1", channel="C123")
+
+        # Should only get 1 result, not 2
+        assert len(result) == 1
+        assert result[0]["run_id"] == "r1"
+
+    def test_backfill_db_error_returns_gracefully(self, wi_mocks):
+        """If the backfill DB query fails, the main query result
+        should still be returned."""
+        from pymongo.errors import PyMongoError
+
+        mock_collection, mock_db = wi_mocks
+
+        existing_doc = {
+            "run_id": "r1",
+            "idea": "Existing",
+            "status": "completed",
+            "project_id": "proj-1",
+            "created_at": "2026-03-01T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = [existing_doc]
+
+        # Second .find() (orphan query) raises
+        mock_collection.find.side_effect = [proj_cursor, PyMongoError("fail")]
+
+        result = find_ideas_by_project("proj-1", channel="C123")
+
+        # Should still return the existing idea
+        assert len(result) == 1
+        assert result[0]["run_id"] == "r1"
 
 
 # ── fail_unfinalized_on_startup ───────────────────────────────

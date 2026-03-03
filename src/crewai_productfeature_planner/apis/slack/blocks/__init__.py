@@ -35,6 +35,10 @@ Action ID conventions (used in :mod:`interactions_router`):
 
     idea_resume_<N>    – Resume idea #N from the list
     idea_restart_<N>   – Restart idea #N from the list
+    idea_archive_<N>   – Archive idea #N from the list
+
+    archive_idea_confirm – Confirm archiving an idea
+    archive_idea_cancel  – Cancel archiving an idea
 
     flow_retry         – Retry / resume a paused PRD flow
 

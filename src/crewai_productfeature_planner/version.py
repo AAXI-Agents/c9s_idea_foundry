@@ -403,6 +403,109 @@ _CODEX: list[CodexEntry] = [
             "updated. New tests for upsert behavior added."
         ),
     ),
+    CodexEntry(
+        "0.7.2",
+        date(2026, 3, 3),
+        (
+            "Backfill orphaned working ideas — Added _backfill_orphaned_ideas() "
+            "to rescue workingIdeas documents missing project_id by cross-referencing "
+            "crewJobs channel. find_ideas_by_project() now accepts optional channel "
+            "kwarg to trigger backfill. Callers (_session_ideas, _flow_handlers) pass "
+            "channel. Also fixed find_unfinalized() missing 'status' in return dict, "
+            "extracted _doc_to_idea_dict() helper to reduce duplication, and removed "
+            "duplicate return statement. 7 new tests for backfill scenarios."
+        ),
+    ),
+    CodexEntry(
+        "0.7.3",
+        date(2026, 3, 3),
+        (
+            "Resume flow exec-summary user gates — resume_prd_flow() now "
+            "accepts exec_summary_user_feedback_callback and "
+            "executive_summary_callback parameters. handle_resume_prd() "
+            "creates and wires both Slack gates (per-iteration feedback "
+            "and Phase 1→2 completion review) so resumed flows show "
+            "executive summary results for user review, matching the "
+            "initial-run behavior."
+        ),
+    ),
+    CodexEntry(
+        "0.7.4",
+        date(2026, 3, 4),
+        (
+            "Rescan exec-summary review gate & failed-idea titles — "
+            "(1) skip_phase1 branch now invokes executive_summary_callback "
+            "so users can review the existing exec summary before Phase 2 "
+            "on resume/rescan. (2) Fixed create_job() callers in Slack "
+            "router and interactive flow runner using positional args that "
+            "put the idea text into flow_name instead of idea. (3) Moved "
+            "idea from $setOnInsert to $set in save_iteration() so working-"
+            "idea documents always have the title. (4) Enhanced backfill "
+            "to recover titles from flow_name field in legacy crew-job docs."
+        ),
+    ),
+    CodexEntry(
+        "0.8.0",
+        date(2026, 3, 4),
+        (
+            "Manual archive interaction for idea list — Added an Archive "
+            "button to each idea in the idea list (alongside Resume and "
+            "Rescan). Clicking Archive shows a confirmation prompt; on "
+            "confirm, both the working-idea document and crew job are "
+            "marked as archived and removed from the active list. New "
+            "files: _archive_handler.py (confirmation button handler). "
+            "New functions: handle_archive_idea() and "
+            "execute_archive_idea() in _flow_handlers.py. Updated "
+            "_dispatch.py with _ARCHIVE_ACTIONS routing."
+        ),
+    ),
+    CodexEntry(
+        "0.8.1",
+        date(2026, 3, 4),
+        (
+            "PRD critique performance optimisation — (1) Dedicated "
+            "lightweight critic agent using basic/flash model tier "
+            "(GEMINI_CRITIC_MODEL) with no tools, separate from the "
+            "research-tier PM drafter. (2) Critique and refine Crews "
+            "now use separate agent lists so the critic never loads "
+            "heavy tools. (3) Knowledge sources cached at module level "
+            "to avoid redundant embedding API calls on every agent "
+            "creation (clear_knowledge_cache() to reset). New env vars: "
+            "GEMINI_CRITIC_MODEL, CRITIC_LLM_TIMEOUT."
+        ),
+    ),
+    CodexEntry(
+        "0.8.2",
+        date(2026, 3, 4),
+        (
+            "Interactive exec summary completion gate — The interactive "
+            "Slack flow now pauses after executive summary iteration to "
+            "let the user review and choose Continue/Stop before section "
+            "drafting begins. Added make_slack_exec_summary_completion_callback "
+            "to interactive_handlers/_callbacks.py. Wired "
+            "executive_summary_callback in _flow_runner.py. Added "
+            "ExecutiveSummaryCompleted handler so stopping after exec "
+            "summary marks the flow as completed (not failed)."
+        ),
+    ),
+    CodexEntry(
+        "0.8.3",
+        date(2026, 3, 4),
+        (
+            "Prevent incomplete PRDs from polluting output/prds/ — "
+            "(1) save_progress() now writes to output/prds/_drafts/ "
+            "instead of output/prds/ so partial/paused progress saves "
+            "are structurally separated from completed PRDs. "
+            "(2) _discover_publishable_prds() disk scan now skips files "
+            "inside _drafts/ and files with '(In Progress)' header to "
+            "prevent incomplete documents from being published to "
+            "Confluence on startup. "
+            "(3) Removed PRDFileWriteTool from the Product Manager agent "
+            "toolkit (5 tools instead of 6) — file writing is handled "
+            "programmatically by finalize() and save_progress() to "
+            "prevent LLM-autonomous uncontrolled file creation."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

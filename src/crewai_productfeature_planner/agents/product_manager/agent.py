@@ -21,6 +21,7 @@ import yaml
 from crewai import Agent, LLM
 
 from crewai_productfeature_planner.agents.gemini_utils import (
+    DEFAULT_GEMINI_MODEL,
     DEFAULT_GEMINI_RESEARCH_MODEL,
     DEFAULT_OPENAI_RESEARCH_MODEL,
     ensure_gemini_env,
@@ -34,7 +35,6 @@ from crewai_productfeature_planner.scripts.memory_loader import enrich_backstory
 from crewai_productfeature_planner.tools.search_tool import create_search_tool
 from crewai_productfeature_planner.tools.scrape_tool import create_scrape_tool
 from crewai_productfeature_planner.tools.file_read_tool import create_file_read_tool
-from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 from crewai_productfeature_planner.tools.directory_read_tool import create_directory_read_tool
 from crewai_productfeature_planner.tools.website_search_tool import create_website_search_tool
 
@@ -65,16 +65,18 @@ def _build_tools() -> list:
         - SerperDevTool: Google search for market & competitor research
         - ScrapeWebsiteTool: Extract content from competitor/product pages
         - FileReadTool: Read knowledge files, existing PRDs, reference docs
-        - PRDFileWriteTool: Save PRD drafts with automatic versioning
         - DirectoryReadTool: List output and knowledge directories
         - WebsiteSearchTool: RAG-based semantic search within a website
+
+    Note: PRDFileWriteTool is intentionally excluded — file writing is
+    handled programmatically by finalize() and save_progress() to
+    prevent the LLM from creating uncontrolled output files.
     """
-    logger.debug("Assembling Product Manager toolkit (6 tools)")
+    logger.debug("Assembling Product Manager toolkit (5 tools)")
     return [
         create_search_tool(),
         create_scrape_tool(),
         create_file_read_tool(),
-        PRDFileWriteTool(),
         create_directory_read_tool(directory="output/prds"),
         create_website_search_tool(),
     ]
@@ -171,6 +173,113 @@ def create_product_manager(
         backstory=backstory,
         llm=_build_llm(provider=provider),
         tools=_build_tools(),
+        verbose=is_verbose(),
+        allow_delegation=False,
+        reasoning=True,
+        max_reasoning_attempts=3,
+        knowledge_sources=build_prd_knowledge_sources(),
+        embedder=get_google_embedder_config(),
+    )
+
+
+# ── Lightweight critic agent ─────────────────────────────────────────
+
+# Default timeout / retry for the critic — shorter timeout since the
+# basic model responds faster.
+DEFAULT_CRITIC_TIMEOUT = 120      # seconds
+DEFAULT_CRITIC_MAX_RETRIES = 3
+
+
+def _build_critic_llm() -> LLM:
+    """Build a lightweight LLM for the critic agent.
+
+    Uses the **basic** model tier (``GEMINI_CRITIC_MODEL`` /
+    ``GEMINI_MODEL`` / ``DEFAULT_GEMINI_MODEL``) because critique is
+    a judgment / evaluation task — not deep generation.
+
+    Resolution order for model name:
+        1. ``GEMINI_CRITIC_MODEL`` env var
+        2. ``GEMINI_MODEL`` env var
+        3. Hard-coded default (``DEFAULT_GEMINI_MODEL`` — flash)
+
+    Always uses Gemini (regardless of the drafting agent's provider)
+    because it offers the fastest inference for evaluation tasks.
+    """
+    ensure_gemini_env()
+
+    model_name = os.environ.get(
+        "GEMINI_CRITIC_MODEL",
+        os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+    ).strip()
+    if "/" not in model_name:
+        model_name = f"gemini/{model_name}"
+
+    timeout = int(os.environ.get(
+        "CRITIC_LLM_TIMEOUT",
+        os.environ.get("LLM_TIMEOUT", str(DEFAULT_CRITIC_TIMEOUT)),
+    ))
+    max_retries = int(os.environ.get(
+        "LLM_MAX_RETRIES", str(DEFAULT_CRITIC_MAX_RETRIES),
+    ))
+
+    logger.info(
+        "Critic LLM: %s (timeout=%ds, max_retries=%d)",
+        model_name, timeout, max_retries,
+    )
+    return LLM(model=model_name, timeout=timeout, max_retries=max_retries)
+
+
+def create_product_manager_critic(
+    project_id: str | None = None,
+) -> Agent:
+    """Create a lightweight critic agent for evaluating PRD sections.
+
+    The critic is optimised for speed:
+      - Uses the **basic** (flash) model tier instead of research
+      - Has **no tools** — critique is pure text evaluation
+      - Uses cached knowledge sources (shared with the drafter)
+      - Retains ``reasoning=True, max_reasoning_attempts=3``
+
+    The critic evaluates drafts against a checklist and produces a
+    readiness score.  It does not draft, refine, or call external
+    APIs.
+
+    Parameters
+    ----------
+    project_id:
+        Optional project identifier.  When provided, the critic's
+        backstory is enriched with project-level memory from MongoDB.
+
+    Raises
+    ------
+    EnvironmentError
+        When neither ``GOOGLE_API_KEY`` nor ``GOOGLE_CLOUD_PROJECT``
+        is set (required for the Gemini basic model).
+    """
+    has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
+    has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+    if not has_api_key and not has_project:
+        raise EnvironmentError(
+            "Critic agent requires GOOGLE_API_KEY or "
+            "GOOGLE_CLOUD_PROJECT to be set."
+        )
+
+    agent_config = _load_yaml("agent.yaml")["product_manager"]
+    logger.info(
+        "Creating Product Manager critic agent (role='%s')",
+        agent_config["role"].strip(),
+    )
+
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+
+    return Agent(
+        role=agent_config["role"].strip(),
+        goal=agent_config["goal"].strip(),
+        backstory=backstory,
+        llm=_build_critic_llm(),
+        tools=[],                       # No tools — pure text evaluation
         verbose=is_verbose(),
         allow_delegation=False,
         reasoning=True,

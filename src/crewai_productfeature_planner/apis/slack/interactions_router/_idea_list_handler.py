@@ -1,4 +1,4 @@
-"""Handler for idea-list resume/restart button clicks."""
+"""Handler for idea-list resume/restart/archive button clicks."""
 
 from __future__ import annotations
 
@@ -14,13 +14,14 @@ def _handle_idea_list_action(
     channel: str,
     thread_ts: str,
 ) -> None:
-    """Process a resume/restart button click from the idea list.
+    """Process a resume/restart/archive button click from the idea list.
 
     The button ``value`` is ``<project_id>|<idea_number>``.
-    Action IDs follow the pattern ``idea_resume_<N>`` or
-    ``idea_restart_<N>``.
+    Action IDs follow the pattern ``idea_resume_<N>``,
+    ``idea_restart_<N>``, or ``idea_archive_<N>``.
     """
     from crewai_productfeature_planner.apis.slack._flow_handlers import (
+        handle_archive_idea,
         handle_restart_prd,
         handle_resume_prd,
     )
@@ -44,6 +45,7 @@ def _handle_idea_list_action(
 
     send_tool = SlackSendMessageTool()
     is_resume = action_id.startswith("idea_resume_")
+    is_archive = action_id.startswith("idea_archive_")
 
     if is_resume:
         # Post acknowledgement
@@ -62,6 +64,16 @@ def _handle_idea_list_action(
                 logger.error("Idea resume ack failed: %s", exc)
 
         handle_resume_prd(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user_id,
+            send_tool=send_tool,
+            project_id=project_id,
+            idea_number=idea_number,
+        )
+    elif is_archive:
+        # Archive — posts a confirmation prompt
+        handle_archive_idea(
             channel=channel,
             thread_ts=thread_ts,
             user=user_id,

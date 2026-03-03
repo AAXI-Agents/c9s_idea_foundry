@@ -33,6 +33,7 @@ from crewai_productfeature_planner.apis.slack.interactive_handlers._slack_helper
 
 # -- callbacks ---------------------------------------------------------------
 from crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks import (
+    make_slack_exec_summary_completion_callback,
     make_slack_exec_summary_feedback_callback,
     make_slack_idea_callback,
     make_slack_jira_review_callback,
@@ -71,6 +72,7 @@ __all__ = [
     "make_slack_idea_callback",
     "make_slack_requirements_callback",
     "make_slack_exec_summary_feedback_callback",
+    "make_slack_exec_summary_completion_callback",
     "make_slack_jira_skeleton_callback",
     "make_slack_jira_review_callback",
     # flow runner

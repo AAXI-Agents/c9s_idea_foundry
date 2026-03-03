@@ -30,8 +30,14 @@ def _backfill_missing_idea_titles(ideas: list[dict]) -> None:
             if not run_id:
                 continue
             job = find_job(run_id)
-            if job and job.get("idea"):
-                idea_doc["idea"] = job["idea"]
+            if not job:
+                continue
+            # Prefer the dedicated idea field; fall back to flow_name
+            # which may contain the idea text due to a legacy
+            # positional-arg bug in create_job() callers.
+            title = job.get("idea") or job.get("flow_name") or ""
+            if title and title != "prd":
+                idea_doc["idea"] = title
     except Exception:  # noqa: BLE001
         pass  # best-effort — caller will show "Untitled" anyway
 
@@ -58,7 +64,7 @@ def handle_list_ideas(
         find_ideas_by_project,
     )
 
-    ideas = find_ideas_by_project(project_id)
+    ideas = find_ideas_by_project(project_id, channel=channel)
 
     if not ideas:
         reply(

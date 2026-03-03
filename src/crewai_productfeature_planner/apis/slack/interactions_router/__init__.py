@@ -11,10 +11,12 @@ _project_handler     – Project-session button handler
 _memory_handler      – Memory-configuration button handler
 _next_step_handler   – Next-step suggestion feedback handler
 _restart_handler     – Restart PRD confirmation handler
-_idea_list_handler   – Idea list resume/restart handler
+_archive_handler     – Archive idea confirmation handler
+_idea_list_handler   – Idea list resume/restart/archive handler
 """
 
 from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
+    _ARCHIVE_ACTIONS,
     _KNOWN_ACTIONS,
     _MEMORY_ACTIONS,
     _NEXT_STEP_ACTIONS,
@@ -26,6 +28,9 @@ from crewai_productfeature_planner.apis.slack.interactions_router._dispatch impo
     _with_team,
     router,
     slack_interactions,
+)
+from crewai_productfeature_planner.apis.slack.interactions_router._archive_handler import (
+    _handle_archive_action,
 )
 from crewai_productfeature_planner.apis.slack.interactions_router._idea_list_handler import (
     _handle_idea_list_action,
@@ -52,6 +57,7 @@ __all__ = [
     "_MEMORY_ACTIONS",
     "_NEXT_STEP_ACTIONS",
     "_RESTART_PRD_ACTIONS",
+    "_ARCHIVE_ACTIONS",
     "_extract_payload",
     "_with_team",
     "_ack_action",
@@ -61,5 +67,6 @@ __all__ = [
     "_handle_memory_action",
     "_handle_next_step_feedback",
     "_handle_restart_prd_action",
+    "_handle_archive_action",
     "_handle_idea_list_action",
 ]

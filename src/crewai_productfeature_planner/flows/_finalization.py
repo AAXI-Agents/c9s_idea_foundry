@@ -70,7 +70,7 @@ def save_progress(flow: PRDFlow) -> str:
     )
     content = header + "\n\n---\n\n".join(parts)
 
-    writer = PRDFileWriteTool()
+    writer = PRDFileWriteTool(output_dir="output/prds/_drafts")
     save_result = writer._run(
         content=content,
         filename="",

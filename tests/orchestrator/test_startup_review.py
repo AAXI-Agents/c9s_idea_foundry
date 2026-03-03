@@ -75,6 +75,30 @@ class TestDiscoverPublishablePrds:
         items = _discover_publishable_prds()
         assert items == []
 
+    @patch(_FIND_NO_CONF, return_value=[])
+    def test_in_progress_header_detected(self, _find):
+        """The '(In Progress)' header filter should match partial PRDs."""
+        in_progress = "# Product Requirements Document (In Progress)\n\n## Refined Idea"
+        completed = "# Product Requirements Document\n\n## Executive Summary"
+        assert in_progress.lstrip().startswith(
+            "# Product Requirements Document (In Progress)"
+        )
+        assert not completed.lstrip().startswith(
+            "# Product Requirements Document (In Progress)"
+        )
+
+    @patch(_FIND_NO_CONF, return_value=[])
+    def test_drafts_dir_files_excluded_from_disk_scan(self, _find):
+        """Files inside _drafts/ should be excluded by is_relative_to check."""
+        from pathlib import Path
+
+        drafts_dir = Path("/output/prds/_drafts")
+        drafts_file = Path("/output/prds/_drafts/2026/03/prd_v1.md")
+        assert drafts_file.is_relative_to(drafts_dir)
+
+        regular_file = Path("/output/prds/2026/03/prd_v10.md")
+        assert not regular_file.is_relative_to(drafts_dir)
+
 
 # ── Startup Markdown Review Stage ────────────────────────────────────
 

@@ -48,7 +48,7 @@ def _resolve_idea_by_number(
         find_ideas_by_project,
     )
 
-    ideas = find_ideas_by_project(project_id)
+    ideas = find_ideas_by_project(project_id, channel=channel)
 
     if not ideas:
         send_tool.run(
@@ -731,12 +731,33 @@ def handle_resume_prd(
             run_id=run_id,
         )
 
+        # Build exec summary user feedback gate so the user can
+        # iterate or approve each executive summary revision.
+        exec_summary_cb = make_exec_summary_gate(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user,
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+
+        # Build exec summary completion gate (Phase 1 → Phase 2 pause)
+        exec_completion_cb = make_exec_summary_completion_gate(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user,
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+
         def _resume_and_notify():
             try:
                 resume_prd_flow(
                     run_id,
                     auto_approve=True,
                     progress_callback=progress_cb,
+                    exec_summary_user_feedback_callback=exec_summary_cb,
+                    executive_summary_callback=exec_completion_cb,
                 )
 
                 run = runs.get(run_id)
@@ -1055,6 +1076,213 @@ def execute_restart_prd(
             send_tool.run(
                 channel=channel,
                 text=f"<@{user}> :x: Failed to restart PRD flow: {exc}",
+                thread_ts=thread_ts,
+            )
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Archive idea (manual archive from idea list)
+# ---------------------------------------------------------------------------
+
+
+def handle_archive_idea(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    project_id: str | None = None,
+    idea_number: int | None = None,
+) -> None:
+    """Post a confirmation prompt to archive a specific idea.
+
+    If *idea_number* is provided (1-based), the numbered idea from
+    the project idea list is selected.  Otherwise the most recent
+    unfinalized run is used.
+
+    Posts Block Kit buttons — the user must confirm before the idea
+    is actually archived.
+    """
+    try:
+        if idea_number is not None and project_id:
+            run_info = _resolve_idea_by_number(
+                idea_number, project_id, channel, thread_ts, user, send_tool,
+            )
+            if run_info is None:
+                return
+        else:
+            from crewai_productfeature_planner.mongodb import find_unfinalized
+
+            unfinalized = find_unfinalized()
+            if project_id:
+                project_runs = [
+                    r for r in unfinalized
+                    if r.get("project_id") == project_id
+                ]
+                if project_runs:
+                    unfinalized = project_runs
+
+            if not unfinalized:
+                send_tool.run(
+                    channel=channel,
+                    text=(
+                        f"<@{user}> :no_entry_sign: No active ideas found "
+                        "to archive."
+                    ),
+                    thread_ts=thread_ts,
+                )
+                append_to_thread(channel, thread_ts, "assistant",
+                                 "(no ideas to archive)")
+                return
+
+            run_info = unfinalized[0]
+
+        run_id = run_info["run_id"]
+        idea = run_info.get("idea") or "(unknown idea)"
+        status = run_info.get("status", "unknown")
+
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        client = _get_slack_client()
+        if not client:
+            send_tool.run(
+                channel=channel,
+                text=f"<@{user}> :x: Slack client unavailable.",
+                thread_ts=thread_ts,
+            )
+            return
+
+        idea_preview = idea[:500] + "\u2026" if len(idea) > 500 else idea
+
+        confirm_blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"<@{user}> :file_folder: *Archive this idea?*\n\n"
+                        f"This will archive the run (`{run_id}`) and "
+                        f"remove it from your active idea list:\n"
+                        f"> _{idea_preview}_\n\n"
+                        f"Current status: *{status}*\n"
+                        f"The archived idea will be preserved for reference "
+                        f"but will no longer appear in your list."
+                    ),
+                },
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Yes, archive"},
+                        "action_id": "archive_idea_confirm",
+                        "value": run_id,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Cancel"},
+                        "action_id": "archive_idea_cancel",
+                        "value": run_id,
+                    },
+                ],
+            },
+        ]
+
+        client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text="Archive this idea?",
+            blocks=confirm_blocks,
+        )
+        append_to_thread(channel, thread_ts, "assistant",
+                         "(archive confirmation prompt)")
+        logger.info(
+            "Posted archive confirmation for run_id=%s idea=%r",
+            run_id, idea[:80],
+        )
+
+    except Exception as exc:
+        err_msg = f"<@{user}> :x: Failed to process archive request: {exc}"
+        send_tool.run(channel=channel, text=err_msg, thread_ts=thread_ts)
+        append_to_thread(channel, thread_ts, "assistant", err_msg)
+        logger.error("Archive idea intent failed: %s", exc)
+
+
+def execute_archive_idea(
+    run_id: str,
+    channel: str,
+    thread_ts: str,
+    user: str,
+) -> None:
+    """Archive the given run after the user confirms.
+
+    Marks both the working-idea document and the crew job as archived.
+    """
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_run_any_status,
+            mark_archived,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import (
+            SlackSendMessageTool,
+        )
+
+        doc = find_run_any_status(run_id)
+
+        if not doc:
+            send_tool = SlackSendMessageTool()
+            send_tool.run(
+                channel=channel,
+                text=(
+                    f"<@{user}> :x: Could not find run `{run_id}` \u2014 "
+                    "it may have already been archived."
+                ),
+                thread_ts=thread_ts,
+            )
+            return
+
+        idea = (
+            doc.get("idea")
+            or doc.get("finalized_idea")
+            or "(unknown idea)"
+        )
+
+        # Archive the working-idea document
+        mark_archived(run_id)
+
+        # Also mark the crew job as archived
+        try:
+            from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
+                update_job_status,
+            )
+            update_job_status(run_id, "archived")
+        except Exception:
+            logger.debug("Could not archive crewJob for %s", run_id, exc_info=True)
+
+        idea_preview = idea[:500] + "\u2026" if len(idea) > 500 else idea
+        send_tool = SlackSendMessageTool()
+        send_tool.run(
+            channel=channel,
+            text=(
+                f"<@{user}> :white_check_mark: Archived run `{run_id}`.\n"
+                f"> _{idea_preview}_\n"
+                "The idea has been removed from your active list."
+            ),
+            thread_ts=thread_ts,
+        )
+        append_to_thread(channel, thread_ts, "assistant",
+                         f"(archived {run_id})")
+        logger.info("Archived idea run_id=%s by user=%s", run_id, user)
+
+    except Exception as exc:
+        logger.error("execute_archive_idea failed for %s: %s", run_id, exc)
+        try:
+            send_tool = SlackSendMessageTool()
+            send_tool.run(
+                channel=channel,
+                text=f"<@{user}> :x: Failed to archive idea: {exc}",
                 thread_ts=thread_ts,
             )
         except Exception:

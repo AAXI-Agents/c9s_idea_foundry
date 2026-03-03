@@ -23,8 +23,9 @@ def idea_list_blocks(
     button ``value`` carries ``<project_id>|<idea_number>`` so the
     interactions router can resolve the idea.
 
-    Action IDs follow the pattern ``idea_resume_<N>`` and
-    ``idea_restart_<N>`` where *N* is the 1-based index.
+    Action IDs follow the pattern ``idea_resume_<N>``,
+    ``idea_restart_<N>``, and ``idea_archive_<N>`` where *N* is the
+    1-based index.
     """
     blocks: list[dict] = [
         {
@@ -60,7 +61,7 @@ def idea_list_blocks(
             }
         )
 
-        # Build action buttons — always show both Resume and Rescan
+        # Build action buttons — Resume, Rescan, and Archive
         btn_value = f"{project_id}|{idx}"
         blocks.append(
             {
@@ -79,6 +80,12 @@ def idea_list_blocks(
                         "action_id": f"idea_restart_{idx}",
                         "value": btn_value,
                         "style": "danger",
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": f":file_folder: Archive #{idx}"},
+                        "action_id": f"idea_archive_{idx}",
+                        "value": btn_value,
                     },
                 ],
             }

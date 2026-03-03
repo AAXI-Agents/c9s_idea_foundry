@@ -74,15 +74,32 @@ def _discover_publishable_prds() -> list[dict]:
         from pathlib import Path
 
         prds_dir = Path(__file__).resolve().parents[2] / "output" / "prds"
+        drafts_dir = prds_dir / "_drafts"
         if prds_dir.exists():
             for md_file in sorted(prds_dir.rglob("*.md")):
                 abs_path = str(md_file)
+
+                # Skip files inside the _drafts/ directory — those are
+                # partial/paused progress saves, not completed PRDs.
+                try:
+                    if md_file.resolve().is_relative_to(drafts_dir.resolve()):
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
                 # Skip files already covered by the MongoDB source
                 if any(abs_path.endswith(sf) for sf in seen_files):
                     continue
 
                 content = md_file.read_text(encoding="utf-8")
                 if not content.strip():
+                    continue
+
+                # Skip in-progress documents that were saved before
+                # the _drafts/ directory convention was introduced.
+                if content.lstrip().startswith(
+                    "# Product Requirements Document (In Progress)"
+                ):
                     continue
 
                 items.append({

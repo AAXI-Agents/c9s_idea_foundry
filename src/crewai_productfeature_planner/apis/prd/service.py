@@ -417,11 +417,20 @@ def resume_prd_flow(
     run_id: str,
     auto_approve: bool = False,
     progress_callback: "Callable[[str, dict], None] | None" = None,
+    exec_summary_user_feedback_callback: "Callable | None" = None,
+    executive_summary_callback: "Callable | None" = None,
 ) -> None:
     """Resume a previously paused/unfinalized PRD flow from MongoDB state.
 
     When *auto_approve* is ``True`` the flow runs end-to-end without
     pausing for manual approval.
+
+    When *exec_summary_user_feedback_callback* is provided, the user is
+    given a chance to iterate or approve after each executive summary
+    iteration — even in auto-approve mode.
+
+    When *executive_summary_callback* is provided, the user is given a
+    final review gate between the executive summary and section drafting.
     """
     from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
     from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
@@ -452,6 +461,10 @@ def resume_prd_flow(
             flow.state.requirements_broken_down = True
         if progress_callback is not None:
             flow.progress_callback = progress_callback
+        if exec_summary_user_feedback_callback is not None:
+            flow.exec_summary_user_feedback_callback = exec_summary_user_feedback_callback
+        if executive_summary_callback is not None:
+            flow.executive_summary_callback = executive_summary_callback
 
         # Set finalized_idea from the last executive summary iteration
         if exec_summary.latest_content:

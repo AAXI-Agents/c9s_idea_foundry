@@ -75,12 +75,13 @@ def save_iteration(
         }
         if finalized_idea:
             set_fields["finalized_idea"] = finalized_idea
+        if idea:
+            set_fields["idea"] = idea
 
         update_ops: dict[str, Any] = {
             "$set": set_fields,
             "$setOnInsert": {
                 "run_id": run_id,
-                "idea": idea,
                 "created_at": now,
                 "completed_at": None,
             },

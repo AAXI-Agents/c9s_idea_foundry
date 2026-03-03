@@ -18,8 +18,17 @@ from crewai_productfeature_planner.scripts.knowledge_sources import (
     build_prd_knowledge_sources,
     build_project_knowledge_source,
     build_user_knowledge_source,
+    clear_knowledge_cache,
     get_google_embedder_config,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """Clear the knowledge source cache before and after each test."""
+    clear_knowledge_cache()
+    yield
+    clear_knowledge_cache()
 
 
 # ── Embedder configuration ───────────────────────────────────
@@ -181,11 +190,22 @@ class TestBuildPrdKnowledgeSources:
         for expected_file in _PRD_KNOWLEDGE_FILES:
             assert expected_file in all_paths
 
-    def test_returns_fresh_list_each_call(self):
-        """Each call should return a new list (no shared mutable state)."""
+    def test_returns_same_list_when_cached(self):
+        """Cached calls return the same list object."""
+        clear_knowledge_cache()
         a = build_prd_knowledge_sources()
         b = build_prd_knowledge_sources()
+        assert a is b
+        clear_knowledge_cache()
+
+    def test_returns_fresh_list_after_cache_clear(self):
+        """After clear_knowledge_cache, a new list is built."""
+        clear_knowledge_cache()
+        a = build_prd_knowledge_sources()
+        clear_knowledge_cache()
+        b = build_prd_knowledge_sources()
         assert a is not b
+        clear_knowledge_cache()
 
     def test_order_user_project_guidelines(self):
         """Sources should be ordered: user, project, guidelines."""

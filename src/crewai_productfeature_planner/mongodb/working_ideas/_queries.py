@@ -194,6 +194,7 @@ def find_unfinalized() -> list[dict[str, Any]]:
             runs.append({
                 "run_id": doc.get("run_id", ""),
                 "idea": idea_text,
+                "status": doc.get("status", "unknown"),
                 "iteration": effective_iter,
                 "created_at": doc.get("created_at"),
                 "sections": sections,
@@ -213,11 +214,127 @@ def find_unfinalized() -> list[dict[str, Any]]:
         return []
 
 
-def find_ideas_by_project(project_id: str) -> list[dict[str, Any]]:
+def _backfill_orphaned_ideas(
+    project_id: str,
+    channel: str | None,
+) -> list:
+    """Find working ideas missing ``project_id`` that belong to *channel*.
+
+    Looks for non-archived working-idea documents whose ``project_id``
+    is absent or null.  For each, checks whether a corresponding crew
+    job exists with the given *channel*.  Matching documents get their
+    ``project_id`` back-filled in MongoDB so future queries find them
+    normally.
+
+    Returns:
+        The list of matching raw MongoDB documents (already updated).
+    """
+    if not channel:
+        return []
+    try:
+        db = _common.get_db()
+        orphans = list(
+            db[WORKING_COLLECTION].find({
+                "status": {"$ne": "archived"},
+                "$or": [
+                    {"project_id": {"$exists": False}},
+                    {"project_id": None},
+                    {"project_id": ""},
+                ],
+            })
+        )
+        if not orphans:
+            return []
+
+        # Import crew jobs lazily to avoid circular imports
+        from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
+            find_job,
+        )
+
+        matched: list = []
+        for doc in orphans:
+            run_id = doc.get("run_id", "")
+            if not run_id:
+                continue
+            # Check if the crew job lives in the same channel
+            job = find_job(run_id)
+            if not job:
+                continue
+            job_channel = job.get("slack_channel") or ""
+            if job_channel != channel:
+                continue
+            # Backfill project_id
+            try:
+                db[WORKING_COLLECTION].update_one(
+                    {"run_id": run_id},
+                    {"$set": {
+                        "project_id": project_id,
+                        "update_date": _now_iso(),
+                    }},
+                )
+                doc["project_id"] = project_id
+                logger.info(
+                    "[MongoDB] Backfilled project_id=%s on orphaned "
+                    "working idea run_id=%s (channel=%s)",
+                    project_id, run_id, channel,
+                )
+            except PyMongoError:
+                logger.debug(
+                    "Backfill project_id failed for run_id=%s",
+                    run_id, exc_info=True,
+                )
+            matched.append(doc)
+        return matched
+    except PyMongoError as exc:
+        logger.debug("_backfill_orphaned_ideas failed: %s", exc)
+        return []
+
+
+def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
+    """Convert a raw working-idea document to the dict format
+    returned by :func:`find_ideas_by_project`."""
+    section_obj = doc.get("section") or {}
+    sections = [k for k, v in section_obj.items() if isinstance(v, list) and v]
+    max_iter = 0
+    for entries in section_obj.values():
+        if isinstance(entries, list):
+            for entry in entries:
+                it = entry.get("iteration", 0) if isinstance(entry, dict) else 0
+                if it > max_iter:
+                    max_iter = it
+    raw_exec = doc.get("executive_summary", [])
+    exec_iter_count = len(raw_exec) if isinstance(raw_exec, list) else 0
+    effective_iter = max(max_iter, exec_iter_count)
+    idea_text = (
+        doc.get("idea")
+        or doc.get("finalized_idea")
+        or ""
+    )
+    return {
+        "run_id": doc.get("run_id", ""),
+        "idea": idea_text,
+        "status": doc.get("status", "unknown"),
+        "iteration": effective_iter,
+        "created_at": doc.get("created_at"),
+        "sections_done": len(sections),
+        "total_sections": 10,
+    }
+
+
+def find_ideas_by_project(
+    project_id: str,
+    *,
+    channel: str | None = None,
+) -> list[dict[str, Any]]:
     """Find all working ideas associated with a project.
 
-    Returns ideas in any status (in-progress, paused, completed) except
-    ``archived``.  Results are sorted newest-first.
+    Returns ideas in any status (in-progress, paused, completed, failed)
+    except ``archived``.  Results are sorted newest-first.
+
+    If *channel* is provided, also checks for orphaned working ideas
+    (those missing ``project_id``) whose crew job lives in the same
+    channel.  Any matches are back-filled with *project_id* so future
+    queries find them without the channel hint.
 
     Returns:
         A list of dicts, each containing: ``run_id``, ``idea``,
@@ -231,38 +348,22 @@ def find_ideas_by_project(project_id: str) -> list[dict[str, Any]]:
             "status": {"$ne": "archived"},
         }
         docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
-        ideas: list[dict[str, Any]] = []
-        for doc in docs:
-            section_obj = doc.get("section") or {}
-            sections = [k for k, v in section_obj.items() if isinstance(v, list) and v]
-            # Determine latest iteration across all sections
-            max_iter = 0
-            for entries in section_obj.values():
-                if isinstance(entries, list):
-                    for entry in entries:
-                        it = entry.get("iteration", 0) if isinstance(entry, dict) else 0
-                        if it > max_iter:
-                            max_iter = it
-            raw_exec = doc.get("executive_summary", [])
-            exec_iter_count = len(raw_exec) if isinstance(raw_exec, list) else 0
-            effective_iter = max(max_iter, exec_iter_count)
-            # Prefer the original idea; fall back to finalized_idea
-            # or the crew-job idea for documents created before the idea
-            # field was reliably persisted.
-            idea_text = (
-                doc.get("idea")
-                or doc.get("finalized_idea")
-                or ""
-            )
-            ideas.append({
-                "run_id": doc.get("run_id", ""),
-                "idea": idea_text,
-                "status": doc.get("status", "unknown"),
-                "iteration": effective_iter,
-                "created_at": doc.get("created_at"),
-                "sections_done": len(sections),
-                "total_sections": 10,
-            })
+        known_run_ids = {doc.get("run_id") for doc in docs}
+
+        # Attempt to rescue orphaned ideas that lack project_id
+        if channel:
+            orphan_docs = _backfill_orphaned_ideas(project_id, channel)
+            for od in orphan_docs:
+                if od.get("run_id") not in known_run_ids:
+                    docs.append(od)
+                    known_run_ids.add(od.get("run_id"))
+
+        ideas = [_doc_to_idea_dict(doc) for doc in docs]
+        # Re-sort by created_at descending (orphans may be interleaved)
+        ideas.sort(
+            key=lambda x: x.get("created_at") or "",
+            reverse=True,
+        )
         logger.info(
             "[MongoDB] Found %d idea(s) for project_id=%s",
             len(ideas), project_id,

@@ -71,6 +71,12 @@ _RESTART_PRD_ACTIONS = frozenset({
     "restart_prd_cancel",
 })
 
+# Archive idea confirmation action IDs
+_ARCHIVE_ACTIONS = frozenset({
+    "archive_idea_confirm",
+    "archive_idea_cancel",
+})
+
 # Flow retry (resume paused flow from Retry button)
 _RETRY_ACTIONS = frozenset({
     "flow_retry",
@@ -121,6 +127,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "next_step_dismiss": ":x: Suggestion dismissed",
         "restart_prd_confirm": ":arrows_counterclockwise: PRD restart confirmed",
         "restart_prd_cancel": ":no_entry_sign: PRD restart cancelled",
+        "archive_idea_confirm": ":file_folder: Idea archived",
+        "archive_idea_cancel": ":no_entry_sign: Archive cancelled",
         "flow_retry": ":arrows_counterclockwise: Retrying PRD flow",
     }
     label = labels.get(action_id, action_id)
@@ -129,6 +137,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         label = f":arrow_forward: Resuming idea #{action_id.removeprefix('idea_resume_')}"
     elif action_id.startswith("idea_restart_"):
         label = f":arrows_counterclockwise: Restarting idea #{action_id.removeprefix('idea_restart_')}"
+    elif action_id.startswith("idea_archive_"):
+        label = f":file_folder: Archiving idea #{action_id.removeprefix('idea_archive_')}"
     return f"{label} by {user_name}"
 
 
@@ -326,10 +336,11 @@ async def slack_interactions(request: Request) -> JSONResponse:
 
             return JSONResponse({"ok": True})
 
-        # ── Idea list resume / restart actions ──
+        # ── Idea list resume / restart / archive actions ──
         is_idea_resume = action_id.startswith("idea_resume_")
         is_idea_restart = action_id.startswith("idea_restart_")
-        if is_idea_resume or is_idea_restart:
+        is_idea_archive = action_id.startswith("idea_archive_")
+        if is_idea_resume or is_idea_restart or is_idea_archive:
             channel_info = payload.get("channel", {})
             channel_id = channel_info.get("id", "")
             message = payload.get("message", {})
@@ -382,6 +393,43 @@ async def slack_interactions(request: Request) -> JSONResponse:
                 partial(
                     _with_team, _team_id,
                     _handle_restart_prd_action,
+                    action_id, run_id, user_id, channel_id, thread_ts,
+                ),
+            )
+
+            if channel_id:
+                ack_text = _ack_action(action_id, user_name)
+                loop.run_in_executor(
+                    None,
+                    partial(_with_team, _team_id, _post_ack, channel_id, thread_ts, ack_text),
+                )
+
+            return JSONResponse({"ok": True})
+
+        # ── Archive idea confirmation actions ──
+        if action_id in _ARCHIVE_ACTIONS:
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack archive idea action: action=%s user=%s run_id=%s",
+                action_id, user_name, run_id,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack.interactions_router._archive_handler import (
+                _handle_archive_action,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_archive_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
                 ),
             )

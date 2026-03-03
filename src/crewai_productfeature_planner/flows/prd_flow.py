@@ -34,6 +34,7 @@ from crewai.flow.flow import Flow, start
 
 from crewai_productfeature_planner.agents.product_manager import (
     create_product_manager,
+    create_product_manager_critic,
     get_task_configs,
 )
 from crewai_productfeature_planner.apis.prd.models import (
@@ -315,18 +316,25 @@ class PRDFlow(Flow[PRDState]):
 
     def _iterate_executive_summary(
         self, agents: dict[str, Agent], task_configs: dict,
+        *, critic_agent: Agent | None = None,
     ) -> None:
         """Draft and iterate the executive summary."""
-        _iterate_executive_summary_fn(self, agents, task_configs)
+        _iterate_executive_summary_fn(
+            self, agents, task_configs, critic_agent=critic_agent,
+        )
 
     # ------------------------------------------------------------------
     # Phase 2 helper — Section approval loop
     # ------------------------------------------------------------------
     def _section_approval_loop(
         self, section, agents: dict[str, Agent], task_configs,
+        *, critic_agent: Agent | None = None,
     ) -> None:
         """Iterate a single section through critique→refine cycles."""
-        _section_approval_loop_fn(self, section, agents, task_configs)
+        _section_approval_loop_fn(
+            self, section, agents, task_configs,
+            critic_agent=critic_agent,
+        )
 
     # ------------------------------------------------------------------
     # Step 1 — Executive Summary iteration → then section drafting
@@ -348,6 +356,25 @@ class PRDFlow(Flow[PRDState]):
         agents = self._get_available_agents(project_id=project_id)
         task_configs = get_task_configs()
 
+        # Create a lightweight critic agent once; reused for all
+        # critique tasks in both Phase 1 (exec summary) and Phase 2
+        # (section loop).  Falls back to None when Gemini credentials
+        # are missing — the critique functions will self-critique.
+        critic_agent: Agent | None = None
+        try:
+            critic_agent = create_product_manager_critic(
+                project_id=project_id,
+            )
+            logger.info(
+                "[Agents] Lightweight critic agent created "
+                "(flash model, no tools)",
+            )
+        except EnvironmentError:
+            logger.info(
+                "[Agents] Critic agent unavailable — no Gemini "
+                "credentials; critique will use the primary PM agent",
+            )
+
         # Track initial agent roster
         self.state.active_agents = list(agents.keys())
         self.state.dropped_agents = []
@@ -368,7 +395,7 @@ class PRDFlow(Flow[PRDState]):
 
         if skip_phase1:
             logger.info(
-                "[Phase 1] Skipping — executive summary already has "
+                "[Phase 1] Skipping iteration — executive summary already has "
                 "%d iteration(s) (threshold=%d). Using last iteration "
                 "as context for section drafting.",
                 existing_iters,
@@ -379,13 +406,42 @@ class PRDFlow(Flow[PRDState]):
             self.state.finalized_idea = (
                 self.state.executive_summary.latest_content
             )
+
+            # ── Still let the user review before moving to Phase 2 ──
+            if self.executive_summary_callback is not None:
+                continue_to_sections = self.executive_summary_callback(
+                    self.state.executive_summary.latest_content,
+                    self.state.idea,
+                    self.state.run_id,
+                    [
+                        {
+                            "iteration": it.iteration,
+                            "content": it.content,
+                            "critique": it.critique,
+                        }
+                        for it in self.state.executive_summary.iterations
+                    ],
+                )
+                if not continue_to_sections:
+                    logger.info(
+                        "[Phase 1] User chose not to continue after "
+                        "reviewing resumed executive summary"
+                    )
+                    raise ExecutiveSummaryCompleted()
+            else:
+                logger.info(
+                    "[Phase 1] No executive_summary_callback set — "
+                    "auto-continuing to section drafting (skipped phase)"
+                )
         else:
             # ── Phase 1: Executive Summary iteration ─────────────
             logger.info(
                 "[Phase 1] Iterating executive summary for idea: '%s'",
                 self.state.idea[:80],
             )
-            self._iterate_executive_summary(agents, task_configs)
+            self._iterate_executive_summary(
+                agents, task_configs, critic_agent=critic_agent,
+            )
 
             # ── User decision gate — continue to sections? ───────
             if self.executive_summary_callback is not None:
@@ -487,7 +543,10 @@ class PRDFlow(Flow[PRDState]):
                         section.agent_results = {agent_key: section.content}
                     if not section.selected_agent:
                         section.selected_agent = get_default_agent()
-                    self._section_approval_loop(section, agents, task_configs)
+                    self._section_approval_loop(
+                        section, agents, task_configs,
+                        critic_agent=critic_agent,
+                    )
                     self._notify_progress("section_complete", {
                         "section_title": section.title,
                         "section_key": section.key,
@@ -587,7 +646,10 @@ class PRDFlow(Flow[PRDState]):
                         len(section.content), len(agent_results))
 
             # --- Section approval loop ---
-            self._section_approval_loop(section, agents, task_configs)
+            self._section_approval_loop(
+                section, agents, task_configs,
+                critic_agent=critic_agent,
+            )
             self._notify_progress("section_complete", {
                 "section_title": section.title,
                 "section_key": section.key,

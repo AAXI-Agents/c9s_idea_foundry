@@ -11,11 +11,15 @@ from crewai_productfeature_planner.agents.product_manager.agent import (
     PROVIDER_GEMINI,
     PROVIDER_OPENAI,
     create_product_manager,
+    create_product_manager_critic,
     get_task_configs,
     _build_tools,
     _build_llm,
+    _build_critic_llm,
     DEFAULT_LLM_TIMEOUT,
     DEFAULT_LLM_MAX_RETRIES,
+    DEFAULT_CRITIC_TIMEOUT,
+    DEFAULT_CRITIC_MAX_RETRIES,
 )
 
 
@@ -35,10 +39,10 @@ class _StubTool(BaseTool):
 
 
 def _mock_build_tools():
-    """Patch _build_tools to return six stub BaseTool instances."""
+    """Patch _build_tools to return five stub BaseTool instances."""
     return patch(
         "crewai_productfeature_planner.agents.product_manager.agent._build_tools",
-        return_value=[_StubTool() for _ in range(6)],
+        return_value=[_StubTool() for _ in range(5)],
     )
 
 
@@ -76,12 +80,12 @@ def test_create_product_manager_backstory_mentions_smart():
     assert "SMART" in agent.backstory
 
 
-def test_create_product_manager_has_six_tools():
-    """Agent should carry all six tools."""
+def test_create_product_manager_has_five_tools():
+    """Agent should carry all five tools (no PRDFileWriteTool)."""
     with _mock_build_tools(), _mock_build_llm():
         agent = create_product_manager()
 
-    assert len(agent.tools) == 6
+    assert len(agent.tools) == 5
 
 
 def test_create_product_manager_no_delegation():
@@ -120,12 +124,12 @@ def test_create_product_manager_gemini_backstory_mentions_smart():
     assert "SMART" in agent.backstory
 
 
-def test_create_product_manager_gemini_has_six_tools():
-    """Gemini-backed agent should carry all six tools."""
+def test_create_product_manager_gemini_has_five_tools():
+    """Gemini-backed agent should carry all five tools (no PRDFileWriteTool)."""
     with _mock_build_tools(), _mock_build_llm():
         agent = create_product_manager(provider=PROVIDER_GEMINI)
 
-    assert len(agent.tools) == 6
+    assert len(agent.tools) == 5
 
 
 def test_create_product_manager_gemini_no_delegation():
@@ -158,8 +162,8 @@ def test_create_product_manager_gemini_requires_key(monkeypatch):
 # ── Tool assembly tests ──────────────────────────────────────
 
 
-def test_build_tools_returns_six_items():
-    """_build_tools should assemble exactly six tools."""
+def test_build_tools_returns_five_items():
+    """_build_tools should assemble exactly five tools (no PRDFileWriteTool)."""
     patches = [
         patch(
             "crewai_productfeature_planner.agents.product_manager.agent.create_search_tool",
@@ -190,7 +194,7 @@ def test_build_tools_returns_six_items():
     with stack:
         tools = _build_tools()
 
-    assert len(tools) == 6
+    assert len(tools) == 5
 
 
 # ── Task configuration tests ─────────────────────────────────
@@ -348,3 +352,163 @@ def test_default_constants():
     """Module-level defaults should be sensible."""
     assert DEFAULT_LLM_TIMEOUT == 300
     assert DEFAULT_LLM_MAX_RETRIES == 3
+
+
+# ---------------------------------------------------------------------------
+# Critic agent tests
+# ---------------------------------------------------------------------------
+
+def _mock_build_critic_llm():
+    """Patch _build_critic_llm to return the model name string."""
+    return patch(
+        "crewai_productfeature_planner.agents.product_manager.agent._build_critic_llm",
+        return_value="gemini/gemini-3-flash-preview",
+    )
+
+
+class TestCreateProductManagerCritic:
+    """Tests for create_product_manager_critic."""
+
+    def test_critic_requires_google_key(self, monkeypatch):
+        """Should raise EnvironmentError without Google credentials."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+        with pytest.raises(EnvironmentError, match="GOOGLE_API_KEY"):
+            create_product_manager_critic()
+
+    def test_critic_has_no_tools(self, monkeypatch):
+        """Critic agent must have zero tools."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        with _mock_build_critic_llm():
+            agent = create_product_manager_critic()
+        assert len(agent.tools) == 0
+
+    def test_critic_no_delegation(self, monkeypatch):
+        """Critic must not delegate."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        with _mock_build_critic_llm():
+            agent = create_product_manager_critic()
+        assert agent.allow_delegation is False
+
+    def test_critic_reasoning_enabled(self, monkeypatch):
+        """Critic should use reasoning with 3 attempts."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        with _mock_build_critic_llm():
+            agent = create_product_manager_critic()
+        assert agent.reasoning is True
+        assert agent.max_reasoning_attempts == 3
+
+    def test_critic_role_matches_pm(self, monkeypatch):
+        """Critic shares the PM role from agent.yaml."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        with _mock_build_critic_llm():
+            agent = create_product_manager_critic()
+        assert agent.role  # non-empty string
+
+    def test_critic_accepts_project_id(self, monkeypatch):
+        """Critic creation should accept project_id without error."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        with _mock_build_critic_llm(), \
+             patch("crewai_productfeature_planner.agents.product_manager.agent.enrich_backstory",
+                   return_value="enriched backstory"):
+            agent = create_product_manager_critic(project_id="test-project")
+        assert agent.backstory == "enriched backstory"
+
+
+class TestBuildCriticLlm:
+    """Tests for _build_critic_llm."""
+
+    def test_default_model(self, monkeypatch):
+        """Without env vars, uses DEFAULT_GEMINI_MODEL."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.delenv("GEMINI_CRITIC_MODEL", raising=False)
+        monkeypatch.delenv("GEMINI_MODEL", raising=False)
+        llm = _build_critic_llm()
+        # Should contain the default flash model
+        assert "gemini" in llm.model
+
+    def test_critic_model_env_var(self, monkeypatch):
+        """GEMINI_CRITIC_MODEL should override all other model vars."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.setenv("GEMINI_CRITIC_MODEL", "gemini-custom-critic")
+        monkeypatch.setenv("GEMINI_MODEL", "gemini-should-not-use")
+        llm = _build_critic_llm()
+        assert "gemini-custom-critic" in llm.model
+        assert "should-not-use" not in llm.model
+
+    def test_falls_back_to_gemini_model(self, monkeypatch):
+        """Without GEMINI_CRITIC_MODEL, should fall back to GEMINI_MODEL."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.delenv("GEMINI_CRITIC_MODEL", raising=False)
+        monkeypatch.setenv("GEMINI_MODEL", "gemini-basic-fallback")
+        llm = _build_critic_llm()
+        assert "gemini-basic-fallback" in llm.model
+
+    def test_default_timeout_passed_to_constructor(self, monkeypatch):
+        """Without env vars, passes DEFAULT_CRITIC_TIMEOUT to LLM()."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.delenv("CRITIC_LLM_TIMEOUT", raising=False)
+        monkeypatch.delenv("LLM_TIMEOUT", raising=False)
+        with patch(
+            "crewai_productfeature_planner.agents.product_manager.agent.LLM",
+            return_value=MagicMock(),
+        ) as mock_llm:
+            _build_critic_llm()
+        _, kwargs = mock_llm.call_args
+        assert kwargs["timeout"] == DEFAULT_CRITIC_TIMEOUT
+
+    def test_critic_timeout_env_var(self, monkeypatch):
+        """CRITIC_LLM_TIMEOUT overrides LLM_TIMEOUT for the critic."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.setenv("CRITIC_LLM_TIMEOUT", "60")
+        monkeypatch.setenv("LLM_TIMEOUT", "300")
+        with patch(
+            "crewai_productfeature_planner.agents.product_manager.agent.LLM",
+            return_value=MagicMock(),
+        ) as mock_llm:
+            _build_critic_llm()
+        _, kwargs = mock_llm.call_args
+        assert kwargs["timeout"] == 60
+
+    def test_falls_back_to_llm_timeout(self, monkeypatch):
+        """Without CRITIC_LLM_TIMEOUT, falls back to LLM_TIMEOUT."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.delenv("CRITIC_LLM_TIMEOUT", raising=False)
+        monkeypatch.setenv("LLM_TIMEOUT", "200")
+        with patch(
+            "crewai_productfeature_planner.agents.product_manager.agent.LLM",
+            return_value=MagicMock(),
+        ) as mock_llm:
+            _build_critic_llm()
+        _, kwargs = mock_llm.call_args
+        assert kwargs["timeout"] == 200
+
+    def test_default_max_retries_passed_to_constructor(self, monkeypatch):
+        """Without LLM_MAX_RETRIES, passes DEFAULT_CRITIC_MAX_RETRIES."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.delenv("LLM_MAX_RETRIES", raising=False)
+        with patch(
+            "crewai_productfeature_planner.agents.product_manager.agent.LLM",
+            return_value=MagicMock(),
+        ) as mock_llm:
+            _build_critic_llm()
+        _, kwargs = mock_llm.call_args
+        assert kwargs["max_retries"] == DEFAULT_CRITIC_MAX_RETRIES
+
+    def test_custom_max_retries(self, monkeypatch):
+        """LLM_MAX_RETRIES env var should override the default."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        monkeypatch.setenv("LLM_MAX_RETRIES", "7")
+        with patch(
+            "crewai_productfeature_planner.agents.product_manager.agent.LLM",
+            return_value=MagicMock(),
+        ) as mock_llm:
+            _build_critic_llm()
+        _, kwargs = mock_llm.call_args
+        assert kwargs["max_retries"] == 7
+
+
+def test_critic_default_constants():
+    """Critic module-level defaults should be sensible."""
+    assert DEFAULT_CRITIC_TIMEOUT == 120
+    assert DEFAULT_CRITIC_MAX_RETRIES == 3

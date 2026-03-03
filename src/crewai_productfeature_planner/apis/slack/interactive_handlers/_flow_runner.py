@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks import (
+    make_slack_exec_summary_completion_callback,
     make_slack_exec_summary_feedback_callback,
     make_slack_idea_callback,
     make_slack_jira_review_callback,
@@ -76,7 +77,7 @@ def run_interactive_slack_flow(
 
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
-    create_job(run_id, idea, slack_channel=channel, slack_thread_ts=thread_ts)
+    create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts)
 
     # Link working idea to project early so in-progress runs appear in
     # find_ideas_by_project queries (e.g. "list ideas").
@@ -134,6 +135,7 @@ def run_interactive_slack_flow(
         # Run the PRD flow — use Slack callbacks for idea/requirements approval
         # The flow will call these callbacks at the appropriate points
         from crewai_productfeature_planner.flows.prd_flow import (
+            ExecutiveSummaryCompleted,
             IdeaFinalized,
             PauseRequested,
             PRDFlow,
@@ -163,6 +165,9 @@ def run_interactive_slack_flow(
         flow.requirements_approval_callback = make_slack_requirements_callback(run_id)
         flow.exec_summary_user_feedback_callback = (
             make_slack_exec_summary_feedback_callback(run_id)
+        )
+        flow.executive_summary_callback = (
+            make_slack_exec_summary_completion_callback(run_id)
         )
         flow.jira_skeleton_approval_callback = (
             make_slack_jira_skeleton_callback(run_id)
@@ -233,6 +238,16 @@ def run_interactive_slack_flow(
                 blocks = flow_cancelled_blocks(run_id, "requirements approval")
                 _post_blocks(channel, thread_ts, blocks,
                              text="PRD flow cancelled at requirements approval")
+            runs[run_id].status = FlowStatus.COMPLETED
+
+        except ExecutiveSummaryCompleted:
+            update_job_completed(run_id, status="completed")
+            if notify:
+                _post_text(
+                    channel, thread_ts,
+                    ":white_check_mark: PRD flow completed — stopped "
+                    "after executive summary.",
+                )
             runs[run_id].status = FlowStatus.COMPLETED
 
         except PauseRequested:

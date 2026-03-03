@@ -110,6 +110,8 @@ def iterate_executive_summary(
     flow: PRDFlow,
     agents: dict[str, Agent],
     task_configs: dict,
+    *,
+    critic_agent: Agent | None = None,
 ) -> None:
     """Draft and iterate the executive summary using critique_prd_task.
 
@@ -117,9 +119,10 @@ def iterate_executive_summary(
     ``critique_prd_task`` up to min/max iterations.  Each iteration
     both critiques the current summary and produces a refined version.
 
-    When multiple PM agents are available, the secondary agent
-    critiques the primary agent's work — enabling genuine
-    **cross-agent collaboration** via CrewAI's sequential process.
+    When a dedicated *critic_agent* is supplied, it handles all
+    critique tasks — using a lightweight (flash) model with no tools
+    for faster evaluation.  Otherwise, falls back to cross-agent
+    collaboration or self-critique.
 
     The executive summary is stored at the top-level
     ``executive_summary`` array in ``workingIdeas`` (not under ``draft``).
@@ -129,20 +132,29 @@ def iterate_executive_summary(
     default_name = get_default_agent()
     pm = agents.get(default_name) or next(iter(agents.values()))
 
-    # Pick a secondary agent for cross-agent critique collaboration.
-    # When only one agent is available, the primary agent self-critiques.
-    critic = pm
-    critic_name = default_name
-    for name, agent_obj in agents.items():
-        if name != default_name:
-            critic = agent_obj
-            critic_name = name
-            logger.info(
-                "[ExecSummary] Cross-agent collaboration: "
-                "'%s' will critique '%s' drafts",
-                critic_name, default_name,
-            )
-            break
+    # Pick a critic agent.  Priority:
+    #   1) Dedicated lightweight critic (fast model, no tools)
+    #   2) Secondary PM agent (cross-agent collaboration)
+    #   3) Same PM agent (self-critique)
+    if critic_agent is not None:
+        critic = critic_agent
+        critic_name = "critic"
+        logger.info(
+            "[ExecSummary] Using dedicated lightweight critic agent",
+        )
+    else:
+        critic = pm
+        critic_name = default_name
+        for name, agent_obj in agents.items():
+            if name != default_name:
+                critic = agent_obj
+                critic_name = name
+                logger.info(
+                    "[ExecSummary] Cross-agent collaboration: "
+                    "'%s' will critique '%s' drafts",
+                    critic_name, default_name,
+                )
+                break
 
     # Always persist the original user-inputted idea, not the refined one
     user_idea = flow.state.original_idea or flow.state.idea
@@ -265,8 +277,11 @@ def iterate_executive_summary(
             return
 
     # ── Critique → iterate loop ──────────────────────────
-    # Assembles a unique agent list for multi-agent Crews.
-    crew_agents = [pm] if critic is pm else [pm, critic]
+    # Assembles unique agent lists for multi-agent Crews.
+    # The critique Crew only uses the critic agent (lightweight).
+    # The refine Crew only uses the primary PM (research-tier).
+    critique_crew_agents = [critic]
+    refine_crew_agents = [pm]
     iteration = 1
     while iteration < max_iter:
         # --- Critique (uses secondary agent when available) ---
@@ -285,7 +300,7 @@ def iterate_executive_summary(
             agent=critic,
         )
         crew = Crew(
-            agents=crew_agents,
+            agents=critique_crew_agents,
             tasks=[critique_task],
             process=Process.sequential,
             verbose=is_verbose(),
@@ -373,7 +388,7 @@ def iterate_executive_summary(
             agent=pm,
         )
         crew = Crew(
-            agents=crew_agents,
+            agents=refine_crew_agents,
             tasks=[refine_task],
             process=Process.sequential,
             verbose=is_verbose(),
