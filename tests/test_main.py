@@ -153,7 +153,7 @@ class TestManualIdeaRefinement:
         out = capsys.readouterr().out
         assert out.count("Please enter") == 2
 
-    @patch("crewai_productfeature_planner.main.save_executive_summary")
+    @patch("crewai_productfeature_planner._cli_refinement.save_executive_summary")
     def test_saves_iterations_with_run_id(self, mock_save):
         """When run_id is provided, iterations should be saved to workingIdeas."""
         inputs = [
@@ -177,7 +177,7 @@ class TestManualIdeaRefinement:
         assert first_call["idea"] == "Original"
         assert first_call["content"] == "Revised v1"
 
-    @patch("crewai_productfeature_planner.components.cli.save_executive_summary")
+    @patch("crewai_productfeature_planner._cli_refinement.save_executive_summary")
     def test_no_run_id_skips_save(self, mock_save):
         """Without run_id, no save_executive_summary calls should be made."""
         inputs = ["e", "Revised", "", "", "y"]
@@ -728,7 +728,7 @@ class TestRunSingleFlowRequirements:
 class TestRestorePrdState:
     """Tests for _restore_prd_state executive summary restoration."""
 
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_restores_executive_summary_iterations(self, mock_docs):
         """Should reconstruct executive summary iterations from MongoDB doc."""
         mock_docs.return_value = [{
@@ -750,7 +750,7 @@ class TestRestorePrdState:
         assert flow.state.finalized_idea == "v3"
         assert flow.state.idea_refined is True
 
-    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_empty_executive_summary(self, mock_docs):
         """No executive_summary in doc should produce empty iterations."""
         mock_docs.return_value = [{
@@ -766,7 +766,7 @@ class TestRestorePrdState:
         assert flow.state.finalized_idea == ""
         assert flow.state.idea_refined is False
 
-    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_no_docs_returns_empty_exec_summary(self, mock_docs):
         """No documents at all should produce empty executive summary."""
         mock_docs.return_value = []
@@ -776,7 +776,7 @@ class TestRestorePrdState:
         assert len(flow.state.executive_summary.iterations) == 0
         assert flow.state.finalized_idea == ""
 
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_partial_executive_summary_fields(self, mock_docs):
         """Iteration records with missing optional fields should still restore."""
         mock_docs.return_value = [{
@@ -797,7 +797,7 @@ class TestRestorePrdState:
 
     # ── requirements_breakdown restoration ──────────────────────
 
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_restores_requirements_breakdown(self, mock_docs):
         """Should set requirements_broken_down and rebuild breakdown_history."""
         mock_docs.return_value = [{
@@ -824,7 +824,7 @@ class TestRestorePrdState:
         assert flow.state.breakdown_history[0]["evaluation"] == "needs work"
         assert flow.state.breakdown_history[2]["requirements"] == "reqs v3"
 
-    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_empty_requirements_breakdown(self, mock_docs):
         """No requirements_breakdown should leave flag False."""
         mock_docs.return_value = [{
@@ -839,7 +839,7 @@ class TestRestorePrdState:
         assert flow.state.requirements_breakdown == ""
         assert flow.state.breakdown_history == []
 
-    @patch("crewai_productfeature_planner.components.resume.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_requirements_breakdown_with_empty_content(self, mock_docs):
         """Iteration records with no content should not set flag."""
         mock_docs.return_value = [{
@@ -857,8 +857,8 @@ class TestRestorePrdState:
 
     # ── section field missing edge case ─────────────────────────
 
-    @patch("crewai_productfeature_planner.main.ensure_section_field")
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.ensure_section_field")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_restore_reinitialises_missing_section_field(
         self, mock_docs, mock_ensure,
     ):
@@ -881,8 +881,8 @@ class TestRestorePrdState:
         # Executive summary should still be restored
         assert len(flow.state.executive_summary.iterations) == 1
 
-    @patch("crewai_productfeature_planner.main.ensure_section_field")
-    @patch("crewai_productfeature_planner.main.get_run_documents")
+    @patch("crewai_productfeature_planner._cli_state.ensure_section_field")
+    @patch("crewai_productfeature_planner._cli_state.get_run_documents")
     def test_restore_does_not_call_ensure_when_section_present(
         self, mock_docs, mock_ensure,
     ):
@@ -912,9 +912,9 @@ class TestRestorePrdState:
 class TestKillStaleCrewProcesses:
     """Tests for _kill_stale_crew_processes."""
 
-    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
-    @patch("crewai_productfeature_planner.components.startup.os.kill")
-    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner._cli_startup.subprocess.run")
+    @patch("crewai_productfeature_planner._cli_startup.os.kill")
+    @patch("crewai_productfeature_planner._cli_startup.os.getpid", return_value=100)
     def test_kills_stale_run_crew_process(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -925,9 +925,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 1
         mock_kill.assert_called_once_with(200, __import__("signal").SIGTERM)
 
-    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
-    @patch("crewai_productfeature_planner.components.startup.os.kill")
-    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner._cli_startup.subprocess.run")
+    @patch("crewai_productfeature_planner._cli_startup.os.kill")
+    @patch("crewai_productfeature_planner._cli_startup.os.getpid", return_value=100)
     def test_does_not_kill_self(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -937,9 +937,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 0
         mock_kill.assert_not_called()
 
-    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
-    @patch("crewai_productfeature_planner.components.startup.os.kill")
-    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner._cli_startup.subprocess.run")
+    @patch("crewai_productfeature_planner._cli_startup.os.kill")
+    @patch("crewai_productfeature_planner._cli_startup.os.getpid", return_value=100)
     def test_does_not_kill_ancestor_processes(self, _getpid, mock_kill, mock_ps):
         """crewai run → uv run run_crew → our process.
 
@@ -959,9 +959,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 1
         mock_kill.assert_called_once_with(999, __import__("signal").SIGTERM)
 
-    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
-    @patch("crewai_productfeature_planner.components.startup.os.kill")
-    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner._cli_startup.subprocess.run")
+    @patch("crewai_productfeature_planner._cli_startup.os.kill")
+    @patch("crewai_productfeature_planner._cli_startup.os.getpid", return_value=100)
     def test_ignores_unrelated_processes(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -973,9 +973,9 @@ class TestKillStaleCrewProcesses:
         assert killed == 0
         mock_kill.assert_not_called()
 
-    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
-    @patch("crewai_productfeature_planner.components.startup.os.kill")
-    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner._cli_startup.subprocess.run")
+    @patch("crewai_productfeature_planner._cli_startup.os.kill")
+    @patch("crewai_productfeature_planner._cli_startup.os.getpid", return_value=100)
     def test_handles_already_gone_process(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -986,16 +986,16 @@ class TestKillStaleCrewProcesses:
         killed = _kill_stale_crew_processes()
         assert killed == 0
 
-    @patch("crewai_productfeature_planner.components.startup.subprocess.run",
+    @patch("crewai_productfeature_planner._cli_startup.subprocess.run",
            side_effect=Exception("ps not available"))
-    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner._cli_startup.os.getpid", return_value=100)
     def test_handles_ps_failure_gracefully(self, _getpid, mock_ps):
         killed = _kill_stale_crew_processes()
         assert killed == 0
 
-    @patch("crewai_productfeature_planner.components.startup.subprocess.run")
-    @patch("crewai_productfeature_planner.components.startup.os.kill")
-    @patch("crewai_productfeature_planner.components.startup.os.getpid", return_value=100)
+    @patch("crewai_productfeature_planner._cli_startup.subprocess.run")
+    @patch("crewai_productfeature_planner._cli_startup.os.kill")
+    @patch("crewai_productfeature_planner._cli_startup.os.getpid", return_value=100)
     def test_kills_multiple_stale_processes(self, _getpid, mock_kill, mock_ps):
         mock_ps.return_value.stdout = (
             "  PID  PPID COMMAND\n"
@@ -1159,9 +1159,9 @@ class TestMaxIterationFromDoc:
 class TestGenerateMissingOutputs:
     """Tests for _generate_missing_outputs."""
 
-    @patch("crewai_productfeature_planner.main.save_output_file")
+    @patch("crewai_productfeature_planner._cli_startup.save_output_file")
     @patch("crewai_productfeature_planner.tools.file_write_tool.PRDFileWriteTool")
-    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    @patch("crewai_productfeature_planner._cli_startup.find_completed_without_output")
     def test_generates_output_for_completed_docs(
         self, mock_find, mock_writer_cls, mock_save_output,
     ):
@@ -1191,21 +1191,21 @@ class TestGenerateMissingOutputs:
             "run-1", "output/prds/2026/02/prd_v1.md",
         )
 
-    @patch("crewai_productfeature_planner.components.startup.find_completed_without_output")
+    @patch("crewai_productfeature_planner._cli_startup.find_completed_without_output")
     def test_returns_zero_when_none_found(self, mock_find):
         """Should return 0 when no completed docs are missing output."""
         mock_find.return_value = []
         assert _generate_missing_outputs() == 0
 
-    @patch("crewai_productfeature_planner.components.startup.find_completed_without_output")
+    @patch("crewai_productfeature_planner._cli_startup.find_completed_without_output")
     def test_returns_zero_on_db_error(self, mock_find):
         """Should return 0 when DB query fails."""
         mock_find.side_effect = Exception("connection refused")
         assert _generate_missing_outputs() == 0
 
-    @patch("crewai_productfeature_planner.components.startup.save_output_file")
+    @patch("crewai_productfeature_planner._cli_startup.save_output_file")
     @patch("crewai_productfeature_planner.tools.file_write_tool.PRDFileWriteTool")
-    @patch("crewai_productfeature_planner.components.startup.find_completed_without_output")
+    @patch("crewai_productfeature_planner._cli_startup.find_completed_without_output")
     def test_skips_docs_with_no_content(
         self, mock_find, mock_writer_cls, mock_save_output,
     ):
@@ -1220,9 +1220,9 @@ class TestGenerateMissingOutputs:
         mock_writer_cls.assert_not_called()
         mock_save_output.assert_not_called()
 
-    @patch("crewai_productfeature_planner.main.save_output_file")
+    @patch("crewai_productfeature_planner._cli_startup.save_output_file")
     @patch("crewai_productfeature_planner.tools.file_write_tool.PRDFileWriteTool")
-    @patch("crewai_productfeature_planner.main.find_completed_without_output")
+    @patch("crewai_productfeature_planner._cli_startup.find_completed_without_output")
     def test_continues_on_individual_failure(
         self, mock_find, mock_writer_cls, mock_save_output,
     ):
@@ -1270,7 +1270,7 @@ class TestPublishUnpublishedPrds:
         monkeypatch.delenv("ATLASSIAN_USERNAME", raising=False)
         assert _publish_unpublished_prds() == 0
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db")
     @patch(
         "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
         return_value=True,
@@ -1286,7 +1286,7 @@ class TestPublishUnpublishedPrds:
         mock_get_db.return_value = mock_db
         assert _publish_unpublished_prds() == 0
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db")
     @patch(
         "crewai_productfeature_planner.tools.confluence_tool.publish_to_confluence"
     )
@@ -1332,7 +1332,7 @@ class TestPublishUnpublishedPrds:
         assert count == 1
         mock_publish.assert_called_once()
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db")
     @patch(
         "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
         return_value=True,
@@ -1353,7 +1353,7 @@ class TestPublishUnpublishedPrds:
         count = _publish_unpublished_prds()
         assert count == 0
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db")
     @patch(
         "crewai_productfeature_planner.tools.confluence_tool.publish_to_confluence"
     )
@@ -1409,7 +1409,7 @@ class TestPublishUnpublishedPrds:
         return_value=True,
     )
     @patch(
-        "crewai_productfeature_planner.mongodb.working_ideas.repository.get_db",
+        "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
         side_effect=Exception("connection refused"),
     )
     def test_returns_zero_on_db_error(self, mock_get_db, mock_has_cred):
@@ -1708,7 +1708,7 @@ class TestRunStartupDelivery:
     @patch(_JIRA, return_value=True)
     def test_jira_output_not_written_to_working_ideas(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
-        _rec, mock_upsert, _status, _no_real_mongodb,
+        _rec, mock_upsert, _status, fresh_mock_db,
     ):
         """jira_output belongs in productRequirements only, not workingIdeas."""
         mock_disc.return_value = [
@@ -1742,7 +1742,7 @@ class TestRunStartupDelivery:
         )
 
         # Ensure no raw write to workingIdeas for jira_output
-        mock_db = _no_real_mongodb
+        mock_db = fresh_mock_db
         for call in mock_db.__getitem__.call_args_list:
             col_name = call[0][0] if call[0] else ""
             if col_name == "workingIdeas":
@@ -1755,7 +1755,7 @@ class TestRunStartupDelivery:
 
     # ── background wrapper ────────────────────────────────────
 
-    @patch("crewai_productfeature_planner.components.startup._run_startup_delivery")
+    @patch("crewai_productfeature_planner._cli_startup._run_startup_delivery")
     def test_background_wrapper_catches_exceptions(self, mock_delivery):
         """_run_startup_delivery_background should not raise on failure."""
         mock_delivery.side_effect = Exception("boom")
@@ -1763,7 +1763,7 @@ class TestRunStartupDelivery:
         _run_startup_delivery_background()
 
     @patch(_STATUS)
-    @patch("crewai_productfeature_planner.main._run_startup_delivery", return_value=3)
+    @patch("crewai_productfeature_planner._cli_startup._run_startup_delivery", return_value=3)
     def test_background_wrapper_reports_count(self, mock_delivery, mock_status):
         """_run_startup_delivery_background should print count on success."""
         _run_startup_delivery_background()

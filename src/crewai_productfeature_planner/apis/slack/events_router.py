@@ -2,23 +2,24 @@
 
 Handles inbound events from the Slack Events API:
 
-* **url_verification** – Responds with the ``challenge`` token so Slack can
+* **url_verification** -- Responds with the ``challenge`` token so Slack can
   verify the endpoint during setup.
-* **member_joined_channel** – When the bot joins a channel, posts an
+* **member_joined_channel** -- When the bot joins a channel, posts an
   introductory message explaining how users can interact with it.
-* **app_mention** – When a user @mentions the bot, the message is
+* **app_mention** -- When a user @mentions the bot, the message is
   interpreted via LLM and either kicks off a PRD flow or asks
   follow-up questions in a thread.
-* **message** (in threads the bot is part of) – Continues a multi-turn
+* **message** (in threads the bot is part of) -- Continues a multi-turn
   conversation.
 
 The heavy lifting is delegated to sub-modules:
 
-* ``_thread_state`` – thread conversation cache, deduplication, bot identity
-* ``_message_handler`` – intent classification and action dispatch
-* ``_session_handlers`` – project/setup/memory session handlers
-* ``_flow_handlers`` – PRD flow kickoff, publishing
-* ``_next_step`` – LLM-based proactive next-step prediction
+* ``_thread_state`` -- thread conversation cache, deduplication, bot identity
+* ``_event_handlers`` -- app_mention, thread-message routing, error reply
+* ``_message_handler`` -- intent classification and action dispatch
+* ``_session_handlers`` -- project/setup/memory session handlers
+* ``_flow_handlers`` -- PRD flow kickoff, publishing
+* ``_next_step`` -- LLM-based proactive next-step prediction
 
 All event payloads are verified using ``verify_slack_request`` (HMAC-SHA256
 signing secret or deprecated verification-token fallback).
@@ -29,11 +30,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
+from crewai_productfeature_planner.apis.slack._event_handlers import (
+    _handle_app_mention,
+    _handle_thread_message,
+    _handle_thread_message_inner,
+    _safe_error_reply,
+)
 from crewai_productfeature_planner.apis.slack._message_handler import (
     interpret_and_act,
 )
@@ -42,6 +48,7 @@ from crewai_productfeature_planner.apis.slack._session_handlers import (
     handle_create_project_intent,
     handle_current_project,
     handle_end_session,
+    handle_list_ideas,
     handle_memory_reply,
     handle_project_name_reply,
     handle_project_setup_reply,
@@ -54,6 +61,7 @@ from crewai_productfeature_planner.apis.slack._session_handlers import (
 from crewai_productfeature_planner.apis.slack._flow_handlers import (
     handle_check_publish_intent,
     handle_publish_intent,
+    handle_restart_prd,
     handle_resume_prd,
     kick_off_prd_flow,
 )
@@ -73,27 +81,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Slack Events"])
 
 
-def _safe_error_reply(
-    channel: str, thread_ts: str, user: str, text: str,
-) -> None:
-    """Best-effort error reply to the user — never raises."""
-    try:
-        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
-        client = _get_slack_client()
-        if client:
-            msg = f"<@{user}> :warning: {text}"
-            client.chat_postMessage(
-                channel=channel,
-                thread_ts=thread_ts,
-                text=msg,
-            )
-            # Keep the conversation alive so the bot keeps listening
-            append_to_thread(channel, thread_ts, "assistant", msg)
-    except Exception:
-        logger.debug("_safe_error_reply itself failed", exc_info=True)
-
-
-# ── Backward-compatibility aliases ──
+# -- Backward-compatibility aliases --
 # Some test files and interactive_handlers import these names from
 # events_router.  Keep thin aliases so they keep working.
 _get_bot_user_id = get_bot_user_id
@@ -111,9 +99,11 @@ _handle_current_project = handle_current_project
 _handle_end_session = handle_end_session
 _handle_switch_project = handle_switch_project
 _handle_update_config = handle_update_config
+_handle_list_ideas = handle_list_ideas
 _handle_publish_intent = handle_publish_intent
 _handle_check_publish_intent = handle_check_publish_intent
 _handle_resume_prd = handle_resume_prd
+_handle_restart_prd = handle_restart_prd
 _kick_off_prd_flow = kick_off_prd_flow
 _prompt_project_selection = prompt_project_selection
 
@@ -156,184 +146,6 @@ _sys.modules[__name__].__class__ = _ModuleProxy
 
 
 # ---------------------------------------------------------------------------
-# Handlers
-# ---------------------------------------------------------------------------
-
-
-def _handle_app_mention(event: dict) -> None:
-    from crewai_productfeature_planner.apis.slack.session_manager import (
-        has_pending_state,
-    )
-    from crewai_productfeature_planner.tools.slack_tools import current_team_id
-
-    current_team_id.set(event.get("_team_id"))
-
-    channel = event.get("channel", "")
-    text = event.get("text", "")
-    user = event.get("user", "")
-    thread_ts = event.get("thread_ts") or event.get("ts", "")
-    event_ts = event.get("ts", "")
-    clean_text = re.sub(r"<@[^>]+>\s*", "", text).strip()
-
-    try:
-        # If this user has a pending input state (e.g. awaiting a project
-        # name after "Create New Project") and the message is in a thread,
-        # route through _handle_thread_message so the pending-state logic
-        # fires instead of re-interpreting via the LLM.
-        if event.get("thread_ts") and has_pending_state(user):
-            logger.info(
-                "app_mention redirected to thread handler (pending state) "
-                "user=%s channel=%s thread=%s",
-                user, channel, thread_ts,
-            )
-            _handle_thread_message(event)
-            return
-
-        _interpret_and_act(channel, thread_ts, user, clean_text, event_ts)
-    except Exception:
-        logger.exception(
-            "Unhandled error in _handle_app_mention "
-            "(channel=%s thread=%s user=%s)", channel, thread_ts, user,
-        )
-        _safe_error_reply(
-            channel, thread_ts, user,
-            "Something went wrong while processing your message. "
-            "Please try again.",
-        )
-
-
-def _handle_thread_message(event: dict) -> None:
-    from crewai_productfeature_planner.tools.slack_tools import current_team_id
-
-    current_team_id.set(event.get("_team_id"))
-
-    channel = event.get("channel", "")
-    text = event.get("text", "")
-    user = event.get("user", "")
-    thread_ts = event.get("thread_ts", "")
-    event_ts = event.get("ts", "")
-
-    bot_id = get_bot_user_id()
-    if bot_id and user == bot_id:
-        return
-    if event.get("subtype"):
-        return
-
-    clean_text = re.sub(r"<@[^>]+>\s*", "", text).strip()
-    if not clean_text:
-        return
-
-    try:
-        _handle_thread_message_inner(channel, thread_ts, user, clean_text, event_ts)
-    except Exception:
-        logger.exception(
-            "Unhandled error in _handle_thread_message "
-            "(channel=%s thread=%s user=%s text=%r)",
-            channel, thread_ts, user, clean_text[:80],
-        )
-        _safe_error_reply(
-            channel, thread_ts, user,
-            "Something went wrong while processing your message. "
-            "Please try again.",
-        )
-
-
-def _handle_thread_message_inner(
-    channel: str,
-    thread_ts: str,
-    user: str,
-    clean_text: str,
-    event_ts: str,
-) -> None:
-    """Core thread-message logic, separated for top-level error handling."""
-    # Refresh the conversation cache FIRST so the TTL stays alive
-    # regardless of which handler processes this message.
-    touch_thread(channel, thread_ts)
-
-    # Check if this is a project-name reply after "Create New Project"
-    from crewai_productfeature_planner.apis.slack.session_manager import (
-        get_pending_create_owner_for_thread,
-        mark_pending_create,
-        pop_pending_create,
-        pop_pending_memory,
-    )
-    pending = pop_pending_create(user)
-    if pending:
-        if pending["channel"] == channel and pending["thread_ts"] == thread_ts:
-            _handle_project_name_reply(
-                channel=channel,
-                thread_ts=thread_ts,
-                user=user,
-                project_name=clean_text,
-            )
-            return
-        mark_pending_create(user, pending["channel"], pending["thread_ts"])
-
-    # If another user owns a pending create in this thread, ignore
-    pending_owner = get_pending_create_owner_for_thread(channel, thread_ts)
-    if pending_owner and pending_owner != user:
-        logger.debug(
-            "Ignoring thread reply from user=%s — pending create "
-            "belongs to user=%s in %s/%s",
-            user, pending_owner, channel, thread_ts,
-        )
-        _reply(
-            channel, thread_ts,
-            f"<@{user}> :hourglass_flowing_sand: I'm waiting for "
-            f"<@{pending_owner}> to provide the project name. "
-            "Please wait until they're done.",
-        )
-        return
-
-    # Check if user is in the project-setup wizard (confluence/jira keys)
-    from crewai_productfeature_planner.apis.slack.session_manager import (
-        get_pending_setup,
-    )
-    setup_entry = get_pending_setup(user)
-    if setup_entry:
-        if setup_entry["channel"] == channel and setup_entry["thread_ts"] == thread_ts:
-            _handle_project_setup_reply(
-                channel=channel,
-                thread_ts=thread_ts,
-                user=user,
-                text=clean_text,
-            )
-            return
-
-    # Check if user is typing memory entries for a category
-    pending_mem = pop_pending_memory(user)
-    if pending_mem:
-        handle_memory_reply(
-            user_id=user,
-            channel=channel,
-            thread_ts=thread_ts,
-            text=clean_text,
-            category=pending_mem["category"],
-            project_id=pending_mem["project_id"],
-        )
-        return
-
-    # Check if this thread has an active manual-refinement session
-    from crewai_productfeature_planner.apis.slack.interactive_handlers import (
-        _interactive_runs,
-        _lock as _ih_lock,
-        submit_manual_refinement,
-    )
-    with _ih_lock:
-        for run_id, info in _interactive_runs.items():
-            if (
-                info.get("channel") == channel
-                and info.get("thread_ts") == thread_ts
-                and info.get("pending_action") == "manual_refinement"
-            ):
-                submit_manual_refinement(run_id, clean_text)
-                append_to_thread(channel, thread_ts, "user", clean_text)
-                return
-
-    _interpret_and_act(channel, thread_ts, user, clean_text, event_ts)
-
-
-# ---------------------------------------------------------------------------
 # Events endpoint
 # ---------------------------------------------------------------------------
 
@@ -352,10 +164,10 @@ def _handle_thread_message_inner(
         "**Supported event types:**\n\n"
         "| Event | Description |\n"
         "|---|---|\n"
-        "| ``url_verification`` | Slack setup handshake — returns the challenge token |\n"
-        "| ``member_joined_channel`` | Bot joined a channel — posts an introductory message |\n"
-        "| ``app_mention`` | User @mentioned the bot — interprets the message via LLM and either kicks off a PRD flow or asks follow-up questions |\n"
-        "| ``message`` (threaded) | Follow-up message in a thread the bot is part of — continues multi-turn conversation or routes manual-refinement input |\n\n"
+        "| ``url_verification`` | Slack setup handshake -- returns the challenge token |\n"
+        "| ``member_joined_channel`` | Bot joined a channel -- posts an introductory message |\n"
+        "| ``app_mention`` | User @mentioned the bot -- interprets the message via LLM and either kicks off a PRD flow or asks follow-up questions |\n"
+        "| ``message`` (threaded) | Follow-up message in a thread the bot is part of -- continues multi-turn conversation or routes manual-refinement input |\n\n"
         "**Interactive mode detection**: when an @mention contains keywords "
         "like *\"interactive\"*, *\"step by step\"*, or *\"guided\"*, the PRD "
         "flow starts in interactive mode with Block Kit button prompts "
@@ -432,7 +244,7 @@ async def slack_events(request: Request) -> JSONResponse:
 
         event_id = payload.get("event_id", "")
         if is_duplicate_event(event_id):
-            logger.debug("Duplicate event_id %s — ignoring", event_id)
+            logger.debug("Duplicate event_id %s -- ignoring", event_id)
             return JSONResponse({"ok": True})
 
         if event_subtype == "member_joined_channel":
@@ -441,7 +253,7 @@ async def slack_events(request: Request) -> JSONResponse:
             team_id = event.get("_team_id", "")
             bot_id = get_bot_user_id()
             if bot_id and joined_user == bot_id:
-                logger.info("Bot joined channel %s – posting intro", channel_id)
+                logger.info("Bot joined channel %s -- posting intro", channel_id)
                 loop = asyncio.get_event_loop()
                 loop.run_in_executor(
                     None, _post_intro, channel_id, team_id,
@@ -469,7 +281,7 @@ async def slack_events(request: Request) -> JSONResponse:
             if event.get("subtype"):
                 return JSONResponse({"ok": True})
 
-            # ── DMs: always process ──
+            # -- DMs: always process --
             from crewai_productfeature_planner.apis.slack.session_manager import (
                 is_dm,
             )
@@ -490,7 +302,7 @@ async def slack_events(request: Request) -> JSONResponse:
                     loop.run_in_executor(None, _handle_app_mention, event)
                 return JSONResponse({"ok": True})
 
-            # ── Channels: only threaded messages with known context ──
+            # -- Channels: only threaded messages with known context --
             if thread_ts:
                 key = (channel, thread_ts)
 

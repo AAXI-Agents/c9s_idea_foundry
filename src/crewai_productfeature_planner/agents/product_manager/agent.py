@@ -4,10 +4,14 @@ Supports both OpenAI and Gemini LLM backends through a single unified
 factory.  The ``provider`` parameter (``"openai"`` or ``"gemini"``)
 controls which LLM is used:
 
-* **openai** — uses ``OPENAI_MODEL`` env var (default ``o3``).
-* **gemini** — uses ``GEMINI_PM_MODEL`` / ``GEMINI_MODEL`` env var
-  (default ``gemini-3-flash-preview``).  Requires ``GOOGLE_API_KEY``
-  or ``GOOGLE_CLOUD_PROJECT``.
+* **openai** — uses ``OPENAI_RESEARCH_MODEL`` env var (default from
+  ``DEFAULT_OPENAI_RESEARCH_MODEL``).
+* **gemini** — uses ``GEMINI_PM_MODEL`` / ``GEMINI_RESEARCH_MODEL``
+  env var (default from ``DEFAULT_GEMINI_RESEARCH_MODEL``).  Requires
+  ``GOOGLE_API_KEY`` or ``GOOGLE_CLOUD_PROJECT``.
+
+The Product Manager performs deep-thinking tasks (PRD section drafting,
+critique, refinement) and therefore uses the **research** model tier.
 """
 
 import os
@@ -17,7 +21,8 @@ import yaml
 from crewai import Agent, LLM
 
 from crewai_productfeature_planner.agents.gemini_utils import (
-    DEFAULT_GEMINI_MODEL,
+    DEFAULT_GEMINI_RESEARCH_MODEL,
+    DEFAULT_OPENAI_RESEARCH_MODEL,
     ensure_gemini_env,
 )
 from crewai_productfeature_planner.scripts.knowledge_sources import (
@@ -39,10 +44,6 @@ CONFIG_DIR = Path(__file__).parent / "config"
 # Recognised LLM provider identifiers.
 PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
-
-# Default reasoning model for the OpenAI backend.
-# Override via OPENAI_MODEL env var.
-DEFAULT_OPENAI_MODEL = "o3"
 
 # LLM timeout / retry defaults.  Reasoning models (o3) can take 60-120 s;
 # a generous default avoids premature timeouts while still failing eventually.
@@ -82,19 +83,22 @@ def _build_tools() -> list:
 def _build_llm(provider: str = PROVIDER_OPENAI) -> LLM:
     """Build the LLM for the Product Manager agent.
 
+    Uses the **research** model tier because PRD section drafting,
+    critique, and refinement require deep reasoning.
+
     Parameters
     ----------
     provider:
         ``"openai"`` or ``"gemini"``.
 
     **OpenAI** resolution order for model name:
-        1. ``OPENAI_MODEL`` env var
-        2. ``DEFAULT_OPENAI_MODEL`` (hard-coded fallback — ``o3``)
+        1. ``OPENAI_RESEARCH_MODEL`` env var
+        2. ``DEFAULT_OPENAI_RESEARCH_MODEL`` (hard-coded fallback — ``o3``)
 
     **Gemini** resolution order for model name:
         1. ``GEMINI_PM_MODEL`` env var
-        2. ``GEMINI_MODEL`` env var
-        3. ``DEFAULT_GEMINI_MODEL`` (hard-coded fallback — ``gemini-3-flash-preview``)
+        2. ``GEMINI_RESEARCH_MODEL`` env var
+        3. ``DEFAULT_GEMINI_RESEARCH_MODEL`` (hard-coded fallback — ``gemini-3.1-pro-preview``)
 
     Timeout and retry behaviour are controlled via:
         - ``LLM_TIMEOUT``      — request timeout in seconds (default 300)
@@ -104,12 +108,14 @@ def _build_llm(provider: str = PROVIDER_OPENAI) -> LLM:
         ensure_gemini_env()
         model_name = os.environ.get(
             "GEMINI_PM_MODEL",
-            os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+            os.environ.get("GEMINI_RESEARCH_MODEL", DEFAULT_GEMINI_RESEARCH_MODEL),
         ).strip()
         if "/" not in model_name:
             model_name = f"gemini/{model_name}"
     else:
-        model_name = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip()
+        model_name = os.environ.get(
+            "OPENAI_RESEARCH_MODEL", DEFAULT_OPENAI_RESEARCH_MODEL,
+        ).strip()
         if "/" not in model_name:
             model_name = f"openai/{model_name}"
 

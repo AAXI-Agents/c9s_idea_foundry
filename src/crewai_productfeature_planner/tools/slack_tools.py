@@ -290,8 +290,6 @@ class SlackPostPRDResultTool(BaseTool):
         ]
 
         details = []
-        if output_file:
-            details.append(f"*Output file:* `{output_file}`")
         if confluence_url:
             details.append(f"*Confluence:* <{confluence_url}|View PRD>")
         if jira_output:
@@ -310,6 +308,29 @@ class SlackPostPRDResultTool(BaseTool):
                 "text": ":white_check_mark: PRD has been generated successfully!",
             },
         })
+
+        # Deterministic next-step hints when delivery wasn't completed
+        next_steps: list[str] = []
+        if not confluence_url:
+            next_steps.append(
+                "\u2022 Say *publish* to push the PRD to Confluence"
+            )
+        if not jira_output:
+            next_steps.append(
+                "\u2022 Say *create jira tickets* to generate Jira tickets"
+            )
+        if next_steps:
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        ":bulb: *Next steps:*\n" + "\n".join(next_steps)
+                    ),
+                },
+            })
+
         return blocks
 
     def _run(
@@ -345,25 +366,78 @@ class SlackPostPRDResultTool(BaseTool):
 
         try:
             response = client.chat_postMessage(**kwargs)
-            return json.dumps({
+            msg_result = {
                 "status": "ok",
                 "channel": response["channel"],
                 "ts": response["ts"],
-            })
+            }
         except Exception as exc:
             client = _retry_on_token_error(exc)
             if client is not None:
                 try:
                     response = client.chat_postMessage(**kwargs)
-                    return json.dumps({
+                    msg_result = {
                         "status": "ok",
                         "channel": response["channel"],
                         "ts": response["ts"],
-                    })
+                    }
                 except Exception as retry_exc:
                     exc = retry_exc
-            logger.error("Slack post PRD result failed: %s", exc)
-            return json.dumps({"status": "error", "error": str(exc)})
+                    logger.error("Slack post PRD result failed: %s", exc)
+                    return json.dumps({"status": "error", "error": str(exc)})
+            else:
+                logger.error("Slack post PRD result failed: %s", exc)
+                return json.dumps({"status": "error", "error": str(exc)})
+
+        # Upload the PRD markdown file to the thread
+        if output_file:
+            self._upload_prd_file(client, channel, thread_ts, output_file)
+
+        return json.dumps(msg_result)
+
+    @staticmethod
+    def _upload_prd_file(
+        client,
+        channel: str,
+        thread_ts: Optional[str],
+        output_file: str,
+    ) -> None:
+        """Upload the PRD markdown file to the Slack thread."""
+        import pathlib
+
+        # Resolve absolute path (output_file is workspace-relative)
+        path = pathlib.Path(output_file)
+        if not path.is_absolute():
+            # Try workspace root first, then src/ subfolder
+            for base in (
+                pathlib.Path.cwd(),
+                pathlib.Path.cwd() / "src",
+            ):
+                candidate = base / path
+                if candidate.exists():
+                    path = candidate
+                    break
+
+        if not path.exists():
+            logger.warning(
+                "PRD file not found for upload: %s", output_file,
+            )
+            return
+
+        try:
+            upload_kwargs: Dict[str, Any] = {
+                "channel": channel,
+                "file": str(path),
+                "title": path.name,
+                "initial_comment": ":page_facing_up: PRD document attached.",
+            }
+            if thread_ts:
+                upload_kwargs["thread_ts"] = thread_ts
+
+            client.files_upload_v2(**upload_kwargs)
+            logger.info("PRD file uploaded to Slack: %s", path.name)
+        except Exception as exc:
+            logger.warning("PRD file upload to Slack failed: %s", exc)
 
 
 class SlackInterpretMessageTool(BaseTool):
@@ -374,7 +448,7 @@ class SlackInterpretMessageTool(BaseTool):
         "Use Gemini LLM to interpret a Slack message. Returns intent "
         "(create_project/list_projects/switch_project/current_project/"
         "end_session/configure_memory/create_prd/publish/check_publish/"
-        "help/greeting/unknown), idea, and reply text."
+        "general_question/help/greeting/unknown), idea, and reply text."
     )
     args_schema: Type[BaseModel] = SlackInterpretMessageInput
 

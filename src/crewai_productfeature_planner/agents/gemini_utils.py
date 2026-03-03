@@ -1,7 +1,17 @@
-"""Shared Gemini LLM configuration utilities.
+"""Shared LLM configuration utilities and model defaults.
 
-Used by agents that need Gemini-specific environment setup and
-model defaults (e.g. Idea Refiner, Requirements Breakdown).
+Provides default model names for both basic (fast) and research
+(deep-thinking) tasks across Gemini and OpenAI providers:
+
+* **Basic models** (``GEMINI_MODEL`` / ``OPENAI_MODEL``) — used for
+  orchestration, intent classification, next-step prediction, and
+  other lightweight interactions.
+* **Research models** (``GEMINI_RESEARCH_MODEL`` / ``OPENAI_RESEARCH_MODEL``)
+  — used for complex tasks: idea refinement iterations, requirements
+  breakdown, PRD section drafting, Confluence generation, and Jira
+  ticket creation.
+
+Also handles Gemini-specific environment setup (Vertex AI).
 """
 
 import os
@@ -12,6 +22,14 @@ logger = get_logger(__name__)
 
 # Default Gemini model.  Override via GEMINI_MODEL env var.
 DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
+
+# Default Gemini research model for complex/deep-thinking tasks.
+# Override via GEMINI_RESEARCH_MODEL env var.
+DEFAULT_GEMINI_RESEARCH_MODEL = "gemini-3.1-pro-preview"
+
+# Default OpenAI research model for complex/deep-thinking tasks.
+# Override via OPENAI_RESEARCH_MODEL env var.
+DEFAULT_OPENAI_RESEARCH_MODEL = "o3"
 
 # Default Vertex AI region when GOOGLE_CLOUD_LOCATION is not set.
 DEFAULT_VERTEX_LOCATION = "asia-southeast1"

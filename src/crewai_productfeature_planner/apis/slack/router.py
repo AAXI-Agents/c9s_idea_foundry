@@ -145,7 +145,9 @@ def _run_slack_prd_flow(
     """Execute the PRD flow and post results to Slack.
 
     If *project_id* is provided, the working-idea document is linked
-    to the project after the flow completes.
+    to the project **before** the flow starts (via upsert) so
+    in-progress runs are visible to ``find_ideas_by_project``.
+    A safety-net re-apply is performed after the flow completes.
     """
     from crewai_productfeature_planner.apis.prd.service import run_prd_flow
     from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus, runs
@@ -155,6 +157,8 @@ def _run_slack_prd_flow(
         SlackSendMessageTool,
     )
     from crewai_productfeature_planner.apis.slack._flow_handlers import (
+        make_exec_summary_completion_gate,
+        make_exec_summary_gate,
         make_progress_poster,
     )
 
@@ -165,6 +169,24 @@ def _run_slack_prd_flow(
         channel=channel,
         thread_ts=thread_ts or "",
         user="",  # not needed for progress messages
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+
+    # Build exec summary user feedback gate so the user can iterate
+    exec_summary_cb = make_exec_summary_gate(
+        channel=channel,
+        thread_ts=thread_ts or "",
+        user="",
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+
+    # Build exec summary completion gate (Phase 1 → Phase 2 pause)
+    exec_completion_cb = make_exec_summary_completion_gate(
+        channel=channel,
+        thread_ts=thread_ts or "",
+        user="",
         send_tool=send_tool,
         run_id=run_id,
     )
@@ -182,6 +204,17 @@ def _run_slack_prd_flow(
     except Exception:  # noqa: BLE001
         logger.debug("save_slack_context failed for %s", run_id, exc_info=True)
 
+    # Link working idea to project early so in-progress runs appear in
+    # find_ideas_by_project queries (e.g. "list ideas").
+    if project_id:
+        try:
+            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                save_project_ref,
+            )
+            save_project_ref(run_id, project_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("early save_project_ref failed for %s", run_id, exc_info=True)
+
     try:
         if notify:
             send_tool.run(
@@ -195,9 +228,12 @@ def _run_slack_prd_flow(
             run_id, idea,
             auto_approve=auto_approve,
             progress_callback=progress_cb,
+            exec_summary_user_feedback_callback=exec_summary_cb,
+            executive_summary_callback=exec_completion_cb,
         )
 
-        # Link working idea to project (doc exists after flow completes)
+        # Link working idea to project (safety-net re-apply after flow
+        # completes in case the early upsert was overwritten)
         if project_id:
             try:
                 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
@@ -219,17 +255,70 @@ def _run_slack_prd_flow(
                     jira_output=run.jira_output,
                     thread_ts=thread_ts or "",
                 )
+
+                # Proactively suggest next step after PRD completion
+                try:
+                    from crewai_productfeature_planner.apis.slack._next_step import (
+                        predict_and_post_next_step,
+                    )
+                    _ns_project_id = project_id
+                    _ns_project_config = None
+                    if not _ns_project_id:
+                        from crewai_productfeature_planner.mongodb.project_config import (
+                            get_project_for_run,
+                        )
+                        _pc = get_project_for_run(run_id)
+                        if _pc:
+                            _ns_project_id = _pc.get("project_id", "")
+                            _ns_project_config = _pc
+                    predict_and_post_next_step(
+                        channel=channel,
+                        thread_ts=thread_ts or "",
+                        user="",
+                        project_id=_ns_project_id,
+                        project_config=_ns_project_config,
+                        trigger_action="prd_completed",
+                    )
+                except Exception as ns_exc:
+                    logger.debug("Next-step after PRD completion failed: %s", ns_exc)
+
             logger.info("Slack PRD flow %s completed", run_id)
         elif run and run.status == FlowStatus.PAUSED:
             if notify:
-                send_tool.run(
-                    channel=channel,
-                    text=(
-                        f":pause_button: PRD flow paused (run_id: `{run_id}`). "
-                        "Resume via the API or retry later."
-                    ),
-                    thread_ts=thread_ts or "",
-                )
+                from crewai_productfeature_planner.apis.slack.blocks import flow_paused_blocks
+                from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+                reason = run.error or ""
+                blocks = flow_paused_blocks(run_id, reason)
+                client = _get_slack_client()
+                if client:
+                    try:
+                        client.chat_postMessage(
+                            channel=channel,
+                            thread_ts=thread_ts or "",
+                            blocks=blocks,
+                            text=f"PRD flow paused ({run_id})",
+                        )
+                    except Exception:
+                        logger.debug("Failed to post pause blocks", exc_info=True)
+                        # Fallback to plain text
+                        send_tool.run(
+                            channel=channel,
+                            text=(
+                                f":pause_button: PRD flow paused (run_id: `{run_id}`). "
+                                "Say *resume prd flow* to retry."
+                            ),
+                            thread_ts=thread_ts or "",
+                        )
+                else:
+                    send_tool.run(
+                        channel=channel,
+                        text=(
+                            f":pause_button: PRD flow paused (run_id: `{run_id}`). "
+                            "Say *resume prd flow* to retry."
+                        ),
+                        thread_ts=thread_ts or "",
+                    )
         else:
             error_msg = run.error if run else "Unknown error"
             if notify:
@@ -251,7 +340,24 @@ def _run_slack_prd_flow(
             except Exception:
                 pass
 
+    except BaseException as exc:  # noqa: BLE001
+        # Never let SystemExit / KeyboardInterrupt from a background
+        # thread propagate and crash the server process.
+        logger.critical(
+            "Slack PRD flow %s caught fatal %s: %s — "
+            "suppressed to protect server",
+            run_id, type(exc).__name__, exc,
+        )
+
     finally:
+        # Clean up any pending exec summary gate for this run
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            _exec_feedback_lock,
+            _pending_exec_feedback,
+        )
+        with _exec_feedback_lock:
+            _pending_exec_feedback.pop(run_id, None)
+
         if webhook_url:
             run = runs.get(run_id)
             _deliver_webhook(

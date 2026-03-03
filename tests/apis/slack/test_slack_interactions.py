@@ -114,7 +114,7 @@ async def test_action_resolves_pending_run():
     }
 
     with patch(
-        "crewai_productfeature_planner.apis.slack.interactions_router._post_ack",
+        "crewai_productfeature_planner.apis.slack.interactions_router._dispatch._post_ack",
     ):
         resp = await _post_interaction(payload)
 
@@ -145,7 +145,7 @@ async def test_cancel_action_sets_flag():
     }
 
     with patch(
-        "crewai_productfeature_planner.apis.slack.interactions_router._post_ack",
+        "crewai_productfeature_planner.apis.slack.interactions_router._dispatch._post_ack",
     ):
         resp = await _post_interaction(payload)
 

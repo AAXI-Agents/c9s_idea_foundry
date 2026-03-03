@@ -2,12 +2,13 @@
 
 Creates a Gemini-powered agent responsible for publishing completed
 PRDs to Confluence and creating Jira tickets for actionable
-requirements.
+requirements.  Uses the **research** model tier because Confluence
+generation and Jira ticket creation require deep reasoning.
 
 Environment variables:
 
 * ``ORCHESTRATOR_MODEL`` — override the Gemini model
-  (defaults to ``GEMINI_MODEL`` → ``DEFAULT_GEMINI_MODEL``).
+  (defaults to ``GEMINI_RESEARCH_MODEL`` → ``DEFAULT_GEMINI_RESEARCH_MODEL``).
 * ``GOOGLE_API_KEY`` or ``GOOGLE_CLOUD_PROJECT`` — at least one
   must be set for Gemini authentication.
 """
@@ -21,7 +22,7 @@ import yaml
 from crewai import Agent, LLM
 
 from crewai_productfeature_planner.agents.gemini_utils import (
-    DEFAULT_GEMINI_MODEL,
+    DEFAULT_GEMINI_RESEARCH_MODEL,
     ensure_gemini_env,
 )
 from crewai_productfeature_planner.scripts.knowledge_sources import (
@@ -61,16 +62,19 @@ def _build_tools() -> list:
 def _build_llm() -> LLM:
     """Build the Gemini LLM for the orchestrator agent.
 
+    Uses the **research** model tier because Confluence generation
+    and Jira ticket creation require deep reasoning.
+
     Resolution order for model name:
         1. ``ORCHESTRATOR_MODEL`` env var
-        2. ``GEMINI_MODEL`` env var
-        3. Hard-coded default (``gemini-3-flash-preview``)
+        2. ``GEMINI_RESEARCH_MODEL`` env var
+        3. Hard-coded default (``DEFAULT_GEMINI_RESEARCH_MODEL``)
     """
     ensure_gemini_env()
 
     model_name = os.environ.get(
         "ORCHESTRATOR_MODEL",
-        os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+        os.environ.get("GEMINI_RESEARCH_MODEL", DEFAULT_GEMINI_RESEARCH_MODEL),
     ).strip()
     if "/" not in model_name:
         model_name = f"gemini/{model_name}"

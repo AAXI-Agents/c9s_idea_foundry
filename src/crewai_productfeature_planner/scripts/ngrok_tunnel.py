@@ -13,6 +13,7 @@ Usage:
 Requires NGROK_AUTHTOKEN in the environment (loaded from .env).
 """
 
+import logging
 import os
 import ssl
 
@@ -22,6 +23,10 @@ from pyngrok import conf, ngrok
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Suppress noisy pyngrok process-level ERROR logs (e.g. stale tunnel
+# cleanup on restart).  Genuine failures are caught by our own code.
+logging.getLogger("pyngrok").setLevel(logging.CRITICAL)
 
 DEFAULT_PORT = 8000
 

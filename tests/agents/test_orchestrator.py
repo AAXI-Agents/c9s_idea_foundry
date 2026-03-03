@@ -108,21 +108,21 @@ def test_build_tools_has_jira():
 
 def test_build_llm_default_model(monkeypatch):
     monkeypatch.delenv("ORCHESTRATOR_MODEL", raising=False)
-    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_RESEARCH_MODEL", raising=False)
     llm = _build_llm()
     assert "gemini" in llm.model.lower()
 
 
 def test_build_llm_respects_orchestrator_model(monkeypatch):
     monkeypatch.setenv("ORCHESTRATOR_MODEL", "gemini-custom-orch")
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-3.1-pro-preview")
     llm = _build_llm()
     assert "gemini-custom-orch" in llm.model
 
 
-def test_build_llm_falls_back_to_gemini_model(monkeypatch):
+def test_build_llm_falls_back_to_gemini_research_model(monkeypatch):
     monkeypatch.delenv("ORCHESTRATOR_MODEL", raising=False)
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-pro")
+    monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-2.5-pro")
     llm = _build_llm()
     assert "gemini-2.5-pro" in llm.model
 
@@ -217,16 +217,19 @@ class TestGetTaskConfigs:
         desc = get_task_configs()["create_jira_stories_task"]["description"]
         assert "sample" in desc.lower()
 
-    def test_stories_prompt_requires_guard_rails(self):
-        """Engineering stories must include guard rails."""
-        desc = get_task_configs()["create_jira_stories_task"]["description"]
-        assert "guard rail" in desc.lower() or "Guard rail" in desc
+    def test_stories_prompt_has_four_categories(self):
+        """Stories must use the four categories: Data Persistence, Data Layer,
+        Data Presentation, App & Data Security."""
+        desc = get_task_configs()["create_jira_stories_task"]["description"].lower()
+        assert "data persistence" in desc
+        assert "data layer" in desc
+        assert "data presentation" in desc
+        assert "app & data security" in desc.lower() or "data security" in desc
 
-    def test_stories_prompt_requires_edge_cases_for_qe(self):
-        """QE stories must include edge-case and negative test scenarios."""
-        desc = get_task_configs()["create_jira_stories_task"]["description"]
-        assert "edge-case" in desc.lower() or "edge case" in desc.lower()
-        assert "negative test" in desc.lower()
+    def test_stories_prompt_has_dependency_chain(self):
+        """Stories must define the dependency chain between categories."""
+        desc = get_task_configs()["create_jira_stories_task"]["description"].lower()
+        assert "is_blocked_by_key" in desc or "blocked by" in desc
 
     def test_tasks_prompt_has_agent_ready_marker(self):
         """Tasks prompt must instruct agents to produce agent-ready tickets."""
@@ -257,23 +260,23 @@ class TestGetTaskConfigs:
         """Architecture tasks must include full API specification."""
         desc = get_task_configs()["create_jira_tasks_task"]["description"]
         desc_lower = desc.lower()
-        assert "request schema" in desc_lower or "request body" in desc_lower or "requestbody" in desc_lower
-        assert "success response" in desc_lower or "responses" in desc_lower
-        assert "error response" in desc_lower
+        assert "request/response" in desc_lower or "request body" in desc_lower
+        assert "error response" in desc_lower or "error codes" in desc_lower
+        assert "openapi" in desc_lower
 
     def test_tasks_prompt_backend_has_vibe_coding_instructions(self):
         """Backend tasks must be agent-codex-ready with file paths and
         function signatures."""
         desc = get_task_configs()["create_jira_tasks_task"]["description"]
         desc_lower = desc.lower()
-        assert "agent-codex-ready" in desc_lower or "vibe-coding" in desc_lower
+        assert "agent-codex-ready" in desc_lower or "codex" in desc_lower or "coding agent" in desc_lower
         assert "file path" in desc_lower
         assert "function signature" in desc_lower or "class/function" in desc_lower
 
     def test_tasks_prompt_backend_has_sample_io(self):
-        """Backend tasks must include sample input/output."""
+        """Backend tasks must include sample data for implementation."""
         desc = get_task_configs()["create_jira_tasks_task"]["description"]
-        assert "sample input/output" in desc.lower() or "input/output" in desc.lower()
+        assert "sample" in desc.lower()
 
     def test_tasks_prompt_frontend_has_component_spec(self):
         """Frontend tasks must include component specs and UI states."""
@@ -296,7 +299,7 @@ class TestGetTaskConfigs:
     def test_tasks_prompt_qe_has_negative_tests(self):
         """QE tasks must include negative test scenarios."""
         desc = get_task_configs()["create_jira_tasks_task"]["description"]
-        assert "negative test" in desc.lower() or "negative scenario" in desc.lower()
+        assert "negative" in desc.lower()
 
     def test_tasks_prompt_qe_has_test_fixtures(self):
         """QE tasks must include sample test data fixtures."""
@@ -307,3 +310,25 @@ class TestGetTaskConfigs:
         """Tasks should be 3-7 per story (not the old 2-5)."""
         desc = get_task_configs()["create_jira_tasks_task"]["description"]
         assert "3-7" in desc
+
+    def test_stories_prompt_has_approved_skeleton_var(self):
+        """Stories prompt must include an {approved_skeleton} format variable."""
+        desc = get_task_configs()["create_jira_stories_task"]["description"]
+        assert "{approved_skeleton}" in desc
+
+    def test_has_skeleton_task(self):
+        """Skeleton outline task must be defined."""
+        configs = get_task_configs()
+        assert "generate_jira_skeleton_task" in configs
+        assert "description" in configs["generate_jira_skeleton_task"]
+
+    def test_tasks_prompt_has_seven_sections(self):
+        """Every sub-task must include all seven sections."""
+        desc = get_task_configs()["create_jira_tasks_task"]["description"].lower()
+        assert "reasoning" in desc
+        assert "instructions" in desc
+        assert "sample data" in desc
+        assert "guard rails" in desc or "guard rail" in desc
+        assert "definition of done" in desc
+        assert "test cases for qe" in desc
+        assert "unit test cases" in desc or "unit test" in desc

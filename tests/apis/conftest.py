@@ -9,14 +9,14 @@ from unittest.mock import patch
 import pytest
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="session")
 def _mock_lifespan_heavy_ops():
     """Neutralise background delivery and startup pipeline in the app lifespan.
 
-    The lifespan handler imports and runs ``build_startup_pipeline`` and
-    launches ``_run_startup_delivery_background`` in a daemon thread.
-    Without mocking, these create real CrewAI Agent/LLM objects that take
-    ~30s+ per TestClient instantiation.
+    **Session-scoped** — these patches are pure safety nets that never
+    need to change between tests.  Entering the eight context-managers
+    once instead of per-test saves measurable setup time across the
+    hundreds of API tests.
     """
     with (
         patch(

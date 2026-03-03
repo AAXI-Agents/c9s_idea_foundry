@@ -105,6 +105,28 @@ class TestInterpretAndActTracking:
         assert kw["intent"] == "greeting"
         assert "Hey!" in kw["agent_response"] or "<@U1>" in kw["agent_response"]
 
+    def test_tracking_general_question_intent(self):
+        """general_question intent uses the LLM reply text."""
+        mock_log = MagicMock()
+        reply = "A PRD is a Product Requirements Document."
+        self._run_interpret("general_question", reply=reply, mock_log=mock_log)
+        mock_log.assert_called_once()
+        kw = mock_log.call_args[1]
+        assert kw["intent"] == "general_question"
+        # The reply text from the LLM should appear in the tracked response
+        assert "PRD" in kw["agent_response"]
+        assert "Product Requirements Document" in kw["agent_response"]
+
+    def test_tracking_general_question_fallback(self):
+        """general_question with empty reply uses the default answer."""
+        mock_log = MagicMock()
+        self._run_interpret("general_question", reply="", mock_log=mock_log)
+        mock_log.assert_called_once()
+        kw = mock_log.call_args[1]
+        assert kw["intent"] == "general_question"
+        # Fallback message should mention PRDs and iteration
+        assert "PRD" in kw["agent_response"]
+
     def test_tracking_create_prd_no_idea(self):
         mock_log = MagicMock()
         self._run_interpret("create_prd", mock_log=mock_log)
@@ -718,6 +740,97 @@ class TestNewIntentRouting:
                 "configure_memory": "memory",
             }[intent]
             mocks[handler_key].assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# List ideas intent routing (v0.4.1)
+# ---------------------------------------------------------------------------
+
+
+class TestListIdeasRouting:
+    """Verify that 'list ideas' intent routes to handle_list_ideas."""
+
+    def _call_with_intent(
+        self, intent, *, session=None, text="test message",
+    ):
+        """Call _interpret_and_act with handle_list_ideas patched."""
+        interpretation = json.dumps({
+            "intent": intent,
+            "idea": None,
+            "reply": "some reply",
+        })
+        mock_interpret_tool = MagicMock()
+        mock_interpret_tool.run.return_value = interpretation
+        mock_send_tool = MagicMock()
+        mock_log = MagicMock()
+        mock_list_ideas = MagicMock()
+        mock_prompt = MagicMock()
+
+        with (
+            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
+                  return_value=mock_interpret_tool),
+            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
+                  return_value=mock_send_tool),
+            patch(
+                "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
+                mock_log,
+            ),
+            patch(f"{_SESSION_MODULE}.get_context_session",
+                  return_value=session),
+            patch(f"{_EVENTS_MODULE}._handle_list_ideas", mock_list_ideas),
+            patch(f"{_EVENTS_MODULE}._prompt_project_selection", mock_prompt),
+        ):
+            er._interpret_and_act("C1", "T1", "U1", text, "E1")
+
+        return {
+            "log": mock_log,
+            "list_ideas": mock_list_ideas,
+            "prompt": mock_prompt,
+            "send": mock_send_tool,
+        }
+
+    def test_list_ideas_intent_routes_to_handler(self):
+        """LLM list_ideas intent calls _handle_list_ideas."""
+        mocks = self._call_with_intent(
+            "list_ideas", session=_ACTIVE_SESSION,
+        )
+        mocks["list_ideas"].assert_called_once()
+        kw = mocks["log"].call_args[1]
+        assert kw["intent"] == "list_ideas"
+
+    @pytest.mark.parametrize("text", [
+        "list of ideas",
+        "list ideas",
+        "show ideas",
+        "my ideas",
+        "show my ideas",
+        "ideas in progress",
+        "current ideas",
+        "what ideas",
+    ])
+    def test_list_ideas_text_phrase(self, text):
+        """Text phrases trigger list_ideas even with wrong LLM intent."""
+        mocks = self._call_with_intent(
+            "unknown", session=_ACTIVE_SESSION, text=text,
+        )
+        mocks["list_ideas"].assert_called_once()
+        kw = mocks["log"].call_args[1]
+        assert kw["intent"] == "list_ideas"
+
+    def test_list_ideas_without_session_still_routes(self):
+        """list_ideas works even without an active session (handler prompts)."""
+        mocks = self._call_with_intent(
+            "list_ideas", session=None,
+        )
+        mocks["list_ideas"].assert_called_once()
+
+    def test_list_ideas_not_confused_with_list_projects(self):
+        """'list of ideas' should not trigger list_projects."""
+        mocks = self._call_with_intent(
+            "unknown", session=_ACTIVE_SESSION, text="list of ideas",
+        )
+        mocks["list_ideas"].assert_called_once()
+        mocks["prompt"].assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -217,3 +217,65 @@ def test_thread_expiration():
     er._thread_last_active[("C_EXP", "T_EXP")] = time.time() - 700
     history = er._get_thread_history("C_EXP", "T_EXP")
     assert len(history) == 0
+
+
+# ---- thread message directed at another user ----
+
+
+class TestDirectedAtOtherUser:
+    """Verify that thread messages starting with @other_user are ignored."""
+
+    def test_message_directed_at_other_user_is_skipped(self):
+        """A thread message like ``<@U_OTHER> you should try this``
+        should be silently dropped when the bot ID is different."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        event = {
+            "channel": "C100",
+            "text": "<@U_OTHER> you can ask to start a new idea.",
+            "user": "U_SENDER",
+            "thread_ts": "9999.0",
+            "ts": "9999.1",
+        }
+
+        with patch.object(er, "get_bot_user_id", return_value="U_BOT"), \
+             patch.object(er, "_handle_thread_message_inner") as mock_inner:
+            er._handle_thread_message(event)
+
+        mock_inner.assert_not_called()
+
+    def test_message_directed_at_bot_is_processed(self):
+        """A thread message like ``<@U_BOT> help`` should be processed."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        event = {
+            "channel": "C100",
+            "text": "<@U_BOT> help",
+            "user": "U_SENDER",
+            "thread_ts": "9999.0",
+            "ts": "9999.1",
+        }
+
+        with patch.object(er, "get_bot_user_id", return_value="U_BOT"), \
+             patch.object(er, "_handle_thread_message_inner") as mock_inner:
+            er._handle_thread_message(event)
+
+        mock_inner.assert_called_once_with("C100", "9999.0", "U_SENDER", "help", "9999.1")
+
+    def test_message_with_no_mention_is_processed(self):
+        """A plain thread message (no @mention) should be processed normally."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        event = {
+            "channel": "C100",
+            "text": "sounds good",
+            "user": "U_SENDER",
+            "thread_ts": "9999.0",
+            "ts": "9999.1",
+        }
+
+        with patch.object(er, "get_bot_user_id", return_value="U_BOT"), \
+             patch.object(er, "_handle_thread_message_inner") as mock_inner:
+            er._handle_thread_message(event)
+
+        mock_inner.assert_called_once_with("C100", "9999.0", "U_SENDER", "sounds good", "9999.1")

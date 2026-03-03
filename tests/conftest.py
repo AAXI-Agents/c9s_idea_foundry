@@ -1,11 +1,13 @@
 """Global test fixtures — prevent real MongoDB and HTTP connections.
 
-Every test in the suite is protected by two autouse fixtures:
+Every test in the suite is protected by two **session-scoped** autouse
+safety-net fixtures:
 
 1. ``_no_real_mongodb`` — patches ``get_db`` at the client module
    **and** at every module that imports it via ``from … import get_db``,
    so the mock intercepts all call-sites, not just attribute lookups
-   on the client module.
+   on the client module.  Session-scoped so the 9 ``patch.object``
+   contexts are created once instead of for each of the 1600+ tests.
 2. ``_no_real_http`` — patches ``urllib.request.urlopen`` to raise
    ``RuntimeError``, preventing real HTTP calls to Confluence,
    Jira, or any other external service.
@@ -22,7 +24,7 @@ import pytest
 
 import crewai_productfeature_planner.mongodb.client as _mongo_client
 import crewai_productfeature_planner.mongodb as _mongo_pkg
-import crewai_productfeature_planner.mongodb.working_ideas.repository as _wi_repo
+import crewai_productfeature_planner.mongodb.working_ideas._common as _wi_repo
 import crewai_productfeature_planner.mongodb.crew_jobs.repository as _cj_repo
 import crewai_productfeature_planner.mongodb.product_requirements.repository as _pr_repo
 import crewai_productfeature_planner.mongodb.agent_interactions.repository as _ai_repo
@@ -30,6 +32,43 @@ import crewai_productfeature_planner.mongodb.project_config.repository as _pc_re
 import crewai_productfeature_planner.mongodb.user_session as _us_repo
 import crewai_productfeature_planner.main as _main_mod
 import crewai_productfeature_planner.scripts.logging_config as _lc_mod
+
+
+def _make_mock_db() -> MagicMock:
+    """Build a mock database whose collections return safe write-results.
+
+    Reusable by any test that needs a *fresh* ``mock_db`` with no
+    accumulated call history.
+    """
+    _write_result = MagicMock(
+        modified_count=0,
+        matched_count=0,
+        upserted_id=None,
+        inserted_id=None,
+        acknowledged=True,
+    )
+    mock_db = MagicMock()
+    _default_col = mock_db.__getitem__.return_value
+    _default_col.update_one.return_value = _write_result
+    _default_col.update_many.return_value = _write_result
+    _default_col.insert_one.return_value = _write_result
+    _default_col.delete_one.return_value = _write_result
+    _default_col.find_one.return_value = None
+    return mock_db
+
+
+# All modules whose top-level ``get_db`` binding must be replaced.
+_PATCH_TARGETS: list[object] = [
+    _mongo_client,
+    _mongo_pkg,
+    _wi_repo,
+    _cj_repo,
+    _pr_repo,
+    _ai_repo,
+    _pc_repo,
+    _us_repo,
+    _main_mod,
+]
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -61,14 +100,13 @@ def _no_log_file(tmp_path_factory):
         proj_logger.addHandler(handler)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="session")
 def _no_real_mongodb():
     """Prevent any test from reaching a live MongoDB instance.
 
-    Patches ``get_db`` at the **client module level** *and* in every
-    module that binds it via ``from … import get_db`` at import time.
-    This ensures that even direct calls through locally-bound names
-    (e.g. ``repository.get_db()``) resolve to the same ``MagicMock()``.
+    **Session-scoped** — the nine ``patch.object`` context-managers are
+    entered once for the entire test run instead of once per test,
+    eliminating ~14 s of cumulative fixture setup/teardown overhead.
 
     The mock database is configured so that common write-operation
     results (``update_one``, ``insert_one``, etc.) return objects
@@ -76,39 +114,22 @@ def _no_real_mongodb():
     attributes are concrete values (not *MagicMock*), preventing
     ``TypeError`` on comparisons like ``result.modified_count > 0``.
 
-    After the test, the ``_client`` singleton is forcibly cleared
-    to avoid a stale ``MongoClient`` persisting across tests.
+    Because this is session-scoped the mock accumulates call history
+    across the entire run.  Tests that need to inspect calls should
+    use ``fresh_mock_db`` (function-scoped) or patch ``get_db``
+    themselves.
     """
-    # Build a mock result that won't explode on integer comparisons
-    _write_result = MagicMock(
-        modified_count=0,
-        matched_count=0,
-        upserted_id=None,
-        inserted_id=None,
-        acknowledged=True,
-    )
-    mock_db = MagicMock()
-    # Any collection returned by mock_db[name] should yield the safe
-    # write-result for mutating operations.
-    _default_col = mock_db.__getitem__.return_value
-    _default_col.update_one.return_value = _write_result
-    _default_col.update_many.return_value = _write_result
-    _default_col.insert_one.return_value = _write_result
-    _default_col.delete_one.return_value = _write_result
-    _default_col.find_one.return_value = None
+    mock_db = _make_mock_db()
 
-    with (
-        patch.object(_mongo_client, "get_db", return_value=mock_db),
-        patch.object(_mongo_pkg, "get_db", return_value=mock_db),
-        patch.object(_wi_repo, "get_db", return_value=mock_db),
-        patch.object(_cj_repo, "get_db", return_value=mock_db),
-        patch.object(_pr_repo, "get_db", return_value=mock_db),
-        patch.object(_ai_repo, "get_db", return_value=mock_db),
-        patch.object(_pc_repo, "get_db", return_value=mock_db),
-        patch.object(_us_repo, "get_db", return_value=mock_db),
-        patch.object(_main_mod, "get_db", return_value=mock_db),
-    ):
-        yield mock_db
+    patchers = [
+        patch.object(mod, "get_db", return_value=mock_db)
+        for mod in _PATCH_TARGETS
+    ]
+    for p in patchers:
+        p.start()
+    yield mock_db
+    for p in reversed(patchers):
+        p.stop()
     # Reset the module-level singleton so no real connection leaks
     if _mongo_client._client is not None:
         try:
@@ -118,13 +139,33 @@ def _no_real_mongodb():
         _mongo_client._client = None
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
+def fresh_mock_db():
+    """Provide a *fresh* mock database with clean call history.
+
+    Use this in any test that needs to inspect ``mock_db`` calls
+    without interference from other tests.  The fixture temporarily
+    overrides the session-scoped ``_no_real_mongodb`` patches for
+    the duration of the test.
+    """
+    mock_db = _make_mock_db()
+    patchers = [
+        patch.object(mod, "get_db", return_value=mock_db)
+        for mod in _PATCH_TARGETS
+    ]
+    for p in patchers:
+        p.start()
+    yield mock_db
+    for p in reversed(patchers):
+        p.stop()
+
+
+@pytest.fixture(autouse=True, scope="session")
 def _no_real_http():
     """Prevent any test from making real HTTP requests.
 
-    Patches ``urllib.request.urlopen`` globally so calls to
-    Confluence, Jira, or any external service raise immediately
-    instead of leaking real data.
+    **Session-scoped** — the patch is entered once for the entire suite
+    instead of once per test.
     """
     with patch(
         "urllib.request.urlopen",

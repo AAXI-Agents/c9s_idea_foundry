@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import crewai_productfeature_planner.tools.jira_tool as _jira_mod
+import crewai_productfeature_planner.tools.jira._helpers as _jira_helpers_mod
 from crewai_productfeature_planner.tools.jira_tool import (
     JiraCreateIssueTool,
     _build_auth_header,
@@ -30,9 +31,9 @@ from crewai_productfeature_planner.tools.jira_tool import (
 @pytest.fixture(autouse=True)
 def _reset_priority_cache():
     """Reset the module-level priority scheme cache between tests."""
-    _jira_mod._priority_id_cache = None
+    _jira_helpers_mod._priority_id_cache = None
     yield
-    _jira_mod._priority_id_cache = None
+    _jira_helpers_mod._priority_id_cache = None
 
 
 # ── _get_jira_env ────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ class TestCreateJiraIssue:
         monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_creates_story(self, mock_request):
         # First call is search (GET) → no existing issues; second is create (POST)
         mock_request.side_effect = [
@@ -148,7 +149,7 @@ class TestCreateJiraIssue:
         # run_id label should be auto-attached
         assert "prd-run-run-1" in payload["fields"]["labels"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_creates_epic(self, mock_request):
         mock_request.return_value = {"key": "PRD-200", "id": "20200"}
 
@@ -161,7 +162,7 @@ class TestCreateJiraIssue:
         payload = mock_request.call_args[1]["data"]
         assert payload["fields"]["issuetype"]["name"] == "Epic"
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_epic_ignores_parent_key(self, mock_request):
         """Epics are top-level — epic_key must not produce a parent field."""
         mock_request.return_value = {"key": "PRD-201", "id": "20201"}
@@ -175,7 +176,7 @@ class TestCreateJiraIssue:
         payload = mock_request.call_args[1]["data"]
         assert "parent" not in payload["fields"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_epic_key_sets_parent(self, mock_request):
         mock_request.return_value = {"key": "PRD-301", "id": "30301"}
 
@@ -187,7 +188,7 @@ class TestCreateJiraIssue:
         payload = mock_request.call_args[1]["data"]
         assert payload["fields"]["parent"] == {"key": "PRD-200"}
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_labels_and_priority_with_scheme(self, mock_request):
         """When priority scheme is fetched successfully, use id."""
         mock_request.side_effect = [
@@ -209,7 +210,7 @@ class TestCreateJiraIssue:
         assert payload["fields"]["labels"] == ["prd", "auto-generated"]
         assert payload["fields"]["priority"] == {"id": "2"}
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_labels_and_priority_scheme_failure_fallback(self, mock_request):
         """When priority scheme fetch fails, fall back to name."""
         mock_request.side_effect = [
@@ -230,7 +231,7 @@ class TestCreateJiraIssue:
         assert payload["fields"]["labels"] == ["prd", "auto-generated"]
         assert payload["fields"]["priority"] == {"name": "High"}
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_no_description_omitted(self, mock_request):
         mock_request.return_value = {"key": "PRD-501", "id": "50501"}
 
@@ -244,7 +245,7 @@ class TestCreateJiraIssue:
         with pytest.raises(EnvironmentError, match="ATLASSIAN_API_TOKEN"):
             create_jira_issue(summary="Fail")
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_confluence_url_appended_to_description(self, mock_request):
         mock_request.return_value = {"key": "PRD-701", "id": "70701"}
 
@@ -260,7 +261,7 @@ class TestCreateJiraIssue:
         assert "Some requirement details" in desc
         assert "PRD Confluence page:" in desc
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_confluence_url_without_description(self, mock_request):
         mock_request.return_value = {"key": "PRD-702", "id": "70702"}
 
@@ -275,7 +276,7 @@ class TestCreateJiraIssue:
         assert "https://wiki.example.com/page/456" in desc
         assert desc.startswith("PRD Confluence page:")
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_no_confluence_url_omits_link(self, mock_request):
         mock_request.return_value = {"key": "PRD-703", "id": "70703"}
 
@@ -287,7 +288,7 @@ class TestCreateJiraIssue:
         payload = mock_request.call_args[1]["data"]
         assert "PRD Confluence page:" not in payload["fields"]["description"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_component_sets_components_field(self, mock_request):
         mock_request.return_value = {"key": "PRD-801", "id": "80801"}
 
@@ -299,7 +300,7 @@ class TestCreateJiraIssue:
         payload = mock_request.call_args[1]["data"]
         assert payload["fields"]["components"] == [{"name": "UX"}]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_no_component_omits_field(self, mock_request):
         mock_request.return_value = {"key": "PRD-802", "id": "80802"}
 
@@ -315,7 +316,7 @@ class TestCreateJiraIssue:
 class TestFetchPriorityScheme:
     """Tests for the priority scheme caching."""
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_fetches_and_caches(self, mock_request):
         mock_request.return_value = [
             {"id": "1", "name": "Highest"},
@@ -335,14 +336,14 @@ class TestFetchPriorityScheme:
         assert result2 is result
         assert mock_request.call_count == 1
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_returns_empty_on_failure(self, mock_request):
         mock_request.side_effect = RuntimeError("network error")
 
         result = _fetch_priority_scheme("Basic xxx", "https://x.atlassian.net")
         assert result == {}
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_handles_nonstandard_priority_names(self, mock_request):
         """Projects with custom priority names like 'P0', 'P1'."""
         mock_request.return_value = [
@@ -365,7 +366,7 @@ class TestFetchPriorityScheme:
 class TestResolvePriorityField:
     """Tests for priority resolution using the cached scheme."""
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_resolves_to_id(self, mock_request):
         mock_request.return_value = [
             {"id": "2", "name": "High"},
@@ -374,7 +375,7 @@ class TestResolvePriorityField:
         result = _resolve_priority_field("High", "Basic xxx", "https://x.atlassian.net")
         assert result == {"id": "2"}
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_returns_none_when_not_in_scheme(self, mock_request):
         """When priority name doesn't exist in scheme, return None."""
         mock_request.return_value = [
@@ -383,7 +384,7 @@ class TestResolvePriorityField:
         result = _resolve_priority_field("High", "Basic xxx", "https://x.atlassian.net")
         assert result is None
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_falls_back_to_name_on_fetch_failure(self, mock_request):
         """When scheme fetch fails, fall back to name format."""
         mock_request.side_effect = RuntimeError("timeout")
@@ -403,7 +404,7 @@ class TestCreateIssueLink:
         monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_creates_blocks_link(self, mock_request):
         mock_request.return_value = {}
 
@@ -418,7 +419,7 @@ class TestCreateIssueLink:
         assert payload["inwardIssue"]["key"] == "PRD-102"
         assert payload["outwardIssue"]["key"] == "PRD-101"
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_default_link_type_is_blocks(self, mock_request):
         mock_request.return_value = {}
 
@@ -427,7 +428,7 @@ class TestCreateIssueLink:
         payload = mock_request.call_args[1]["data"]
         assert payload["type"]["name"] == "Blocks"
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_custom_link_type(self, mock_request):
         mock_request.return_value = {}
 
@@ -452,7 +453,7 @@ class TestJiraCreateIssueTool:
         assert tool.name == "jira_create_issue"
         assert "Jira" in tool.description
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_success(self, mock_create):
         mock_create.return_value = {
             "issue_key": "PRD-42",
@@ -475,7 +476,7 @@ class TestJiraCreateIssueTool:
 
         assert "skipped" in result
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_api_error(self, mock_create):
         mock_create.side_effect = RuntimeError("Jira API error 403")
 
@@ -484,7 +485,7 @@ class TestJiraCreateIssueTool:
 
         assert "failed" in result
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_labels_parsed(self, mock_create):
         mock_create.return_value = {
             "issue_key": "PRD-99",
@@ -498,7 +499,7 @@ class TestJiraCreateIssueTool:
         call_kwargs = mock_create.call_args[1]
         assert call_kwargs["labels"] == ["prd", "auto-gen", "review"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_empty_labels(self, mock_create):
         mock_create.return_value = {
             "issue_key": "PRD-98",
@@ -512,7 +513,7 @@ class TestJiraCreateIssueTool:
         call_kwargs = mock_create.call_args[1]
         assert call_kwargs["labels"] == []
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_passes_confluence_url(self, mock_create):
         mock_create.return_value = {
             "issue_key": "PRD-110",
@@ -529,7 +530,7 @@ class TestJiraCreateIssueTool:
         call_kwargs = mock_create.call_args[1]
         assert call_kwargs["confluence_url"] == "https://wiki.example.com/page/1"
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_passes_component(self, mock_create):
         mock_create.return_value = {
             "issue_key": "PRD-111",
@@ -543,7 +544,7 @@ class TestJiraCreateIssueTool:
         call_kwargs = mock_create.call_args[1]
         assert call_kwargs["component"] == "UX"
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_parent_key_overrides_epic_key(self, mock_create):
         mock_create.return_value = {
             "issue_key": "PRD-112",
@@ -562,8 +563,8 @@ class TestJiraCreateIssueTool:
         call_kwargs = mock_create.call_args[1]
         assert call_kwargs["epic_key"] == "PRD-105"
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_issue_link")
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_issue_link")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_creates_blocks_link(self, mock_create, mock_link):
         mock_create.return_value = {
             "issue_key": "PRD-113",
@@ -580,8 +581,8 @@ class TestJiraCreateIssueTool:
             link_type="Blocks",
         )
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_issue_link")
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_issue_link")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_creates_is_blocked_by_link(self, mock_create, mock_link):
         mock_create.return_value = {
             "issue_key": "PRD-114",
@@ -598,8 +599,8 @@ class TestJiraCreateIssueTool:
             link_type="Blocks",
         )
 
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_issue_link")
-    @patch("crewai_productfeature_planner.tools.jira_tool.create_jira_issue")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_issue_link")
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
     def test_run_link_failure_does_not_fail_issue(self, mock_create, mock_link):
         """Link creation failure should be logged but not fail the tool."""
         mock_create.return_value = {
@@ -716,7 +717,7 @@ class TestCreateJiraIssueEmailSanitisation:
         monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_strips_email_from_summary(self, mock_request):
         mock_request.return_value = {"key": "PRD-600", "id": "60600"}
 
@@ -726,7 +727,7 @@ class TestCreateJiraIssueEmailSanitisation:
         assert "@" not in payload["fields"]["summary"]
         assert "[redacted]" in payload["fields"]["summary"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_strips_email_from_description(self, mock_request):
         mock_request.return_value = {"key": "PRD-601", "id": "60601"}
 
@@ -739,7 +740,7 @@ class TestCreateJiraIssueEmailSanitisation:
         assert "@" not in payload["fields"]["description"]
         assert "[redacted]" in payload["fields"]["description"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_preserves_clean_summary(self, mock_request):
         mock_request.return_value = {"key": "PRD-602", "id": "60602"}
 
@@ -904,9 +905,9 @@ class TestCreateJiraIssueRetry:
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
         # Pre-populate as empty so _fetch_priority_scheme() is not called
         # (empty dict = scheme unavailable → falls back to {"name": ...}).
-        _jira_mod._priority_id_cache = {}
+        _jira_helpers_mod._priority_id_cache = {}
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_retries_without_priority_on_400(self, mock_request):
         """When priority is rejected, retry without it and succeed."""
         err_body = '{"errorMessages":[],"errors":{"priority":"Specify the Priority (name) in the string format"}}'
@@ -927,7 +928,7 @@ class TestCreateJiraIssueRetry:
         retry_payload = mock_request.call_args_list[1][1]["data"]
         assert "priority" not in retry_payload["fields"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_retries_without_components_on_400(self, mock_request):
         err_body = '{"errorMessages":[],"errors":{"components":"Component does not exist."}}'
         mock_request.side_effect = [
@@ -945,7 +946,7 @@ class TestCreateJiraIssueRetry:
         retry_payload = mock_request.call_args_list[1][1]["data"]
         assert "components" not in retry_payload["fields"]
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_no_retry_on_non_retryable_field(self, mock_request):
         """If the rejected field is not in the allow-list, raise immediately."""
         err_body = '{"errorMessages":[],"errors":{"parent":"Could not find issue."}}'
@@ -959,7 +960,7 @@ class TestCreateJiraIssueRetry:
 
         assert mock_request.call_count == 1
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_no_retry_on_403(self, mock_request):
         """Non-400 errors should propagate immediately."""
         mock_request.side_effect = RuntimeError("Jira API error 403")
@@ -969,7 +970,7 @@ class TestCreateJiraIssueRetry:
 
         assert mock_request.call_count == 1
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_retry_fails_propagates_second_error(self, mock_request):
         """If the retry also fails, propagate the second error."""
         err_body = '{"errorMessages":[],"errors":{"priority":"bad"}}'
@@ -1014,7 +1015,7 @@ class TestSearchJiraIssues:
     def test_empty_run_id(self):
         assert search_jira_issues("") == []
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_returns_issues(self, mock_request):
         mock_request.return_value = {
             "issues": [
@@ -1037,7 +1038,7 @@ class TestSearchJiraIssues:
         call_url = mock_request.call_args[0][1]
         assert "prd-run-run-1" in call_url
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_returns_empty_on_failure(self, mock_request):
         mock_request.side_effect = RuntimeError("API error 500")
 
@@ -1058,9 +1059,9 @@ class TestCreateJiraIssueDedup:
         monkeypatch.setenv("JIRA_PROJECT_KEY", "PRD")
         monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
-        _jira_mod._priority_id_cache = {}
+        _jira_helpers_mod._priority_id_cache = {}
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_reuses_existing_epic(self, mock_request):
         """When an Epic already exists for this run_id, reuse it."""
         mock_request.return_value = {
@@ -1086,7 +1087,7 @@ class TestCreateJiraIssueDedup:
         # Only the search call — no POST
         mock_request.assert_called_once()
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_reuses_existing_story_by_summary(self, mock_request):
         """Story dedup matches on summary (case-insensitive)."""
         mock_request.side_effect = [
@@ -1112,7 +1113,7 @@ class TestCreateJiraIssueDedup:
         assert result["issue_key"] == "PRD-50"
         assert result.get("reused") is True
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_creates_new_story_when_summary_differs(self, mock_request):
         """Story with different summary should create a new one."""
         mock_request.side_effect = [
@@ -1140,7 +1141,7 @@ class TestCreateJiraIssueDedup:
         assert result.get("reused") is None
         assert mock_request.call_count == 2  # search + create
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_no_dedup_without_run_id(self, mock_request):
         """Without run_id, should create directly — no search."""
         mock_request.return_value = {"key": "PRD-99", "id": "9999"}
@@ -1153,7 +1154,7 @@ class TestCreateJiraIssueDedup:
         assert result["issue_key"] == "PRD-99"
         mock_request.assert_called_once()
 
-    @patch("crewai_productfeature_planner.tools.jira_tool._jira_request")
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_run_id_label_auto_attached(self, mock_request):
         """run_id should auto-add a prd-run-X label."""
         mock_request.side_effect = [

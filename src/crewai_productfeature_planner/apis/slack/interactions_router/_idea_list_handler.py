@@ -1,0 +1,82 @@
+"""Handler for idea-list resume/restart button clicks."""
+
+from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _handle_idea_list_action(
+    action_id: str,
+    value: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+) -> None:
+    """Process a resume/restart button click from the idea list.
+
+    The button ``value`` is ``<project_id>|<idea_number>``.
+    Action IDs follow the pattern ``idea_resume_<N>`` or
+    ``idea_restart_<N>``.
+    """
+    from crewai_productfeature_planner.apis.slack._flow_handlers import (
+        handle_restart_prd,
+        handle_resume_prd,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import (
+        SlackSendMessageTool,
+        _get_slack_client,
+    )
+
+    # Parse value: "project_id|idea_number"
+    parts = value.split("|", 1)
+    if len(parts) != 2:
+        logger.warning("Invalid idea list action value: %s", value)
+        return
+
+    project_id, idea_num_str = parts
+    try:
+        idea_number = int(idea_num_str)
+    except ValueError:
+        logger.warning("Invalid idea number in value: %s", value)
+        return
+
+    send_tool = SlackSendMessageTool()
+    is_resume = action_id.startswith("idea_resume_")
+
+    if is_resume:
+        # Post acknowledgement
+        client = _get_slack_client()
+        if client and channel:
+            try:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :arrow_forward: Resuming idea "
+                        f"#{idea_number}…"
+                    ),
+                )
+            except Exception as exc:
+                logger.error("Idea resume ack failed: %s", exc)
+
+        handle_resume_prd(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user_id,
+            send_tool=send_tool,
+            project_id=project_id,
+            idea_number=idea_number,
+        )
+    else:
+        # Restart — this posts its own confirmation prompt
+        handle_restart_prd(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user_id,
+            send_tool=send_tool,
+            event_ts="",
+            project_id=project_id,
+            idea_number=idea_number,
+        )

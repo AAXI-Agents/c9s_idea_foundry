@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 
-_MAIN_MODULE = "crewai_productfeature_planner.main"
+_MAIN_MODULE = "crewai_productfeature_planner._cli_project"
 _PM_MODULE = "crewai_productfeature_planner.mongodb.project_memory"
 
 

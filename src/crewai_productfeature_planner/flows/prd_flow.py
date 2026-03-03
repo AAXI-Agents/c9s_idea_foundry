@@ -16,33 +16,35 @@ LLM agents running in parallel:
 The user must approve each section before the flow moves to the next one.
 Each iteration is persisted to MongoDB (``ideas.workingIdeas``).
 The assembled final PRD is saved and the working idea marked completed.
+
+Sub-modules (extracted for modularity):
+    - ``_constants.py``        — constants, utility functions, exceptions, state model
+    - ``_agents.py``           — agent creation, parallel execution, decision parsing
+    - ``_executive_summary.py`` — Phase 1 executive summary iteration
+    - ``_section_loop.py``     — Phase 2 section critique→refine loop
+    - ``_finalization.py``     — save, finalize, post-completion delivery
 """
 
 import os
-import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Callable, Union
+from typing import Callable
 
-from crewai import Agent, Crew, Process, Task
+from crewai import Agent, Crew, Task
 from crewai.flow.flow import Flow, start
-from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.agents.product_manager import (
     create_product_manager,
     get_task_configs,
 )
 from crewai_productfeature_planner.apis.prd.models import (
-    AGENT_GEMINI,
-    AGENT_OPENAI,
-    ExecutiveSummaryDraft,
-    ExecutiveSummaryIteration,
+    ExecutiveSummaryIteration,  # noqa: F401 — re-exported for test compat
     PRDDraft,
     get_default_agent,
 )
-from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
-from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
+from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.scripts.memory_loader import resolve_project_id
+from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
+from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 from crewai_productfeature_planner.mongodb import (
     get_output_file,
     mark_completed,
@@ -55,206 +57,48 @@ from crewai_productfeature_planner.mongodb import (
     update_executive_summary_critique,
     update_section_critique,
 )
-from crewai_productfeature_planner.scripts.retry import (
-    BillingError,
-    crew_kickoff_with_retry,
+
+# Re-export all public names from sub-modules so existing imports work.
+from crewai_productfeature_planner.flows._constants import (  # noqa: F401
+    PAUSE_SENTINEL,
+    DEFAULT_MIN_SECTION_ITERATIONS,
+    DEFAULT_MAX_SECTION_ITERATIONS,
+    DEFAULT_EXEC_RESUME_THRESHOLD,
+    DEFAULT_MULTI_AGENTS,
+    DEFAULT_SECTION_MAX_CHARS,
+    DEFAULT_SECTION_GROWTH_FACTOR,
+    ApprovalDecision,
+    PauseRequested,
+    IdeaFinalized,
+    RequirementsFinalized,
+    ExecutiveSummaryCompleted,
+    PRDState,
+    _get_section_iteration_limits,
+    _is_degenerate_content,
 )
-from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
+from crewai_productfeature_planner.flows._agents import (
+    get_available_agents as _get_available_agents_fn,
+    run_agents_parallel as _run_agents_parallel_fn,
+    parse_decision as _parse_decision_fn,
+)
+from crewai_productfeature_planner.flows._executive_summary import (
+    exec_summary_user_gate as _exec_summary_user_gate_fn,
+    iterate_executive_summary as _iterate_executive_summary_fn,
+)
+from crewai_productfeature_planner.flows._section_loop import (
+    section_approval_loop as _section_approval_loop_fn,
+)
+from crewai_productfeature_planner.flows._finalization import (
+    save_progress as _save_progress_fn,
+    persist_output_path as _persist_output_path_fn,
+    finalize as _finalize_fn,
+    run_post_completion as _run_post_completion_fn,
+    persist_post_completion as _persist_post_completion_fn,
+    extract_confluence_url as _extract_confluence_url_fn,
+    jira_detected_in_output as _jira_detected_in_output_fn,
+)
 
 logger = get_logger(__name__)
-
-PAUSE_SENTINEL = "__PAUSE__"
-
-# Minimum and maximum critique→refine iterations for each PRD section.
-# Override via ``PRD_SECTION_MIN_ITERATIONS`` / ``PRD_SECTION_MAX_ITERATIONS``.
-DEFAULT_MIN_SECTION_ITERATIONS = 2
-DEFAULT_MAX_SECTION_ITERATIONS = 10
-
-# When resuming, skip Phase 1 (executive summary iteration) if the
-# document already has at least this many executive summary iterations.
-# Override via ``PRD_EXEC_RESUME_THRESHOLD``.
-DEFAULT_EXEC_RESUME_THRESHOLD = 3
-
-# How many PM agents to run in parallel for section drafting.
-# 1 = default agent only; 2 = default + optional (e.g. Gemini + OpenAI).
-# Override via ``DEFAULT_MULTI_AGENTS``.
-DEFAULT_MULTI_AGENTS = 1
-
-# Maximum allowed character count for a single PRD section.
-# If a refine result exceeds this, it is treated as degenerate LLM
-# output (e.g. repetitive "ofofofof…") and the previous version is
-# kept.  Override via ``PRD_SECTION_MAX_CHARS``.
-DEFAULT_SECTION_MAX_CHARS = 30_000
-
-# If a refine result is more than this multiplier times the previous
-# content length, it is considered degenerate.  Override via
-# ``PRD_SECTION_GROWTH_FACTOR``.
-DEFAULT_SECTION_GROWTH_FACTOR = 5.0
-
-
-def _get_section_iteration_limits() -> tuple[int, int]:
-    """Return ``(min_iterations, max_iterations)`` from env or defaults."""
-    min_iter = int(os.environ.get(
-        "PRD_SECTION_MIN_ITERATIONS", str(DEFAULT_MIN_SECTION_ITERATIONS),
-    ))
-    max_iter = int(os.environ.get(
-        "PRD_SECTION_MAX_ITERATIONS", str(DEFAULT_MAX_SECTION_ITERATIONS),
-    ))
-    # Sanity clamp
-    min_iter = max(1, min(min_iter, 10))
-    max_iter = max(min_iter, min(max_iter, 20))
-    return min_iter, max_iter
-
-
-def _is_degenerate_content(
-    content: str,
-    prev_len: int = 0,
-    *,
-    max_chars: int | None = None,
-    growth_factor: float | None = None,
-) -> bool:
-    """Return *True* if *content* looks like degenerate LLM output.
-
-    Two independent triggers:
-    1. Absolute size exceeds *max_chars* (env ``PRD_SECTION_MAX_CHARS``).
-    2. Size exceeds *prev_len* × *growth_factor*
-       (env ``PRD_SECTION_GROWTH_FACTOR``), when *prev_len* > 0.
-    """
-    if max_chars is None:
-        max_chars = int(os.environ.get(
-            "PRD_SECTION_MAX_CHARS",
-            str(DEFAULT_SECTION_MAX_CHARS),
-        ))
-    if growth_factor is None:
-        growth_factor = float(os.environ.get(
-            "PRD_SECTION_GROWTH_FACTOR",
-            str(DEFAULT_SECTION_GROWTH_FACTOR),
-        ))
-    new_len = len(content)
-    if new_len > max_chars:
-        return True
-    if prev_len > 0 and new_len > prev_len * growth_factor:
-        return True
-    return False
-
-
-# Type alias for the approval callback return.
-#   - True/False       → approve / refine (selects first available agent)
-#   - str              → user feedback for refinement
-#   - PAUSE_SENTINEL   → pause the flow
-#   - (agent, True)    → approve using *agent*'s result
-#   - (agent, False)   → refine using *agent*
-#   - (agent, str)     → refine with user feedback using *agent*
-ApprovalDecision = Union[bool, str, tuple[str, Union[bool, str]]]
-
-
-class PauseRequested(Exception):
-    """Raised when the user requests to pause and save the current iteration."""
-
-
-class IdeaFinalized(Exception):
-    """Raised when the user approves the refined idea without generating a PRD.
-
-    The working idea has been marked as completed by the time this
-    is raised.
-    """
-
-
-class RequirementsFinalized(Exception):
-    """Raised when the user finalizes the requirements breakdown without PRD.
-
-    The working idea has been marked as completed by the time this
-    is raised.
-    """
-
-
-class ExecutiveSummaryCompleted(Exception):
-    """Raised when the executive summary iteration is complete.
-
-    The user chose not to continue to section-level drafting.  The
-    executive summary has been saved to ``workingIdeas``.
-    """
-
-
-class PRDState(BaseModel):
-    """Tracks the evolving PRD through the section-by-section workflow."""
-
-    run_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
-    idea: str = ""
-    draft: PRDDraft = Field(default_factory=PRDDraft.create_empty)
-    current_section_key: str = ""
-    critique: str = ""
-    final_prd: str = ""
-    iteration: int = 0
-    is_ready: bool = False
-    status: str = Field(
-        default="new",
-        description="Lifecycle status: 'new', 'inprogress', or 'completed'.",
-    )
-    created_at: str = Field(
-        default="",
-        description="ISO-8601 timestamp when the run was created.",
-    )
-    update_date: str = Field(
-        default="",
-        description="ISO-8601 timestamp of the last update.",
-    )
-    completed_at: str = Field(
-        default="",
-        description="ISO-8601 timestamp when the run was completed.",
-    )
-    active_agents: list[str] = Field(
-        default_factory=list,
-        description="Agent identifiers currently participating in the flow.",
-    )
-    dropped_agents: list[str] = Field(
-        default_factory=list,
-        description="Agent identifiers removed after failing during parallel drafting.",
-    )
-    agent_errors: dict[str, str] = Field(
-        default_factory=dict,
-        description="Map of agent name to error message for agents that failed.",
-    )
-    original_idea: str = Field(
-        default="",
-        description="The raw idea before refinement (empty when refinement is skipped).",
-    )
-    idea_refined: bool = Field(
-        default=False,
-        description="Whether the idea was refined by the Idea Refinement agent.",
-    )
-    refinement_history: list[dict] = Field(
-        default_factory=list,
-        description="Iteration history from idea refinement (each dict has 'iteration', 'idea', and optionally 'evaluation').",
-    )
-    requirements_breakdown: str = Field(
-        default="",
-        description="Structured product requirements produced by the Requirements Breakdown agent.",
-    )
-    breakdown_history: list[dict] = Field(
-        default_factory=list,
-        description="Iteration history from requirements breakdown (each dict has 'iteration', 'requirements', 'evaluation').",
-    )
-    requirements_broken_down: bool = Field(
-        default=False,
-        description="Whether the idea has been broken down into requirements.",
-    )
-    executive_summary: ExecutiveSummaryDraft = Field(
-        default_factory=ExecutiveSummaryDraft,
-        description="Iterative executive summary produced in the draft phase.",
-    )
-    finalized_idea: str = Field(
-        default="",
-        description="Copy of the last iterated executive summary content once Phase 1 completes.",
-    )
-    confluence_url: str = Field(
-        default="",
-        description="URL of the Confluence page where the PRD was published.",
-    )
-    jira_output: str = Field(
-        default="",
-        description="Summary of Jira tickets created from PRD requirements.",
-    )
 
 
 class PRDFlow(Flow[PRDState]):
@@ -316,11 +160,49 @@ class PRDFlow(Flow[PRDState]):
         Callable[[str, str, str, list[dict]], bool] | None
     ) = None
 
+    # Per-iteration user feedback callback for the executive summary.
+    #
+    # Called at two points inside _iterate_executive_summary():
+    # 1. **Pre-draft** (iteration=0, content=""):
+    #    Asks the user whether they want to provide initial guidance.
+    #    Return ("skip", None)     → proceed without guidance.
+    #    Return ("feedback", text) → inject *text* into the initial draft prompt.
+    #
+    # 2. **After each iteration** (iteration>=1, content=current_summary):
+    #    Shows the user the current executive summary.
+    #    Return ("approve", None)  → user is satisfied; stop iterating.
+    #    Return ("feedback", text) → incorporate *text* into the next refine step.
+    #
+    # Signature: (content, idea, run_id, iteration) -> tuple[str, str | None]
+    exec_summary_user_feedback_callback: (
+        Callable[[str, str, str, int], tuple[str, str | None]] | None
+    ) = None
+
     # Progress / heartbeat callback.
     # Signature: (event_type: str, details: dict) -> None
     # Fired at key milestones so callers (e.g. Slack) can push live updates.
     progress_callback: (
         Callable[[str, dict], None] | None
+    ) = None
+
+    # Jira skeleton approval callback — phased Jira flow (Phase 1).
+    # Called after skeleton generation with the raw skeleton text.
+    # Signature: (skeleton_text, run_id) -> tuple[str, str | None]
+    # Return ("approve", None)           → proceed to Phase 2.
+    # Return ("approve", edited_skeleton) → proceed with user edits.
+    # Return ("reject", None)            → skip Jira ticketing entirely.
+    jira_skeleton_approval_callback: (
+        Callable[[str, str], tuple[str, str | None]] | None
+    ) = None
+
+    # Jira review callback — phased Jira flow (Phase 2 → Phase 3).
+    # Called after Epics & Stories are created so the user can review
+    # before sub-task generation.
+    # Signature: (epics_stories_output, run_id) -> bool
+    # Return True  → proceed to Phase 3 (sub-task creation).
+    # Return False → skip sub-task creation.
+    jira_review_callback: (
+        Callable[[str, str], bool] | None
     ) = None
 
     # ------------------------------------------------------------------
@@ -335,89 +217,16 @@ class PRDFlow(Flow[PRDState]):
                 logger.debug("progress_callback failed for %s", event_type, exc_info=True)
 
     # ------------------------------------------------------------------
-    # Helper — build available agents
+    # Delegating methods — thin wrappers around extracted functions
     # ------------------------------------------------------------------
+
     @staticmethod
     def _get_available_agents(
         project_id: str | None = None,
     ) -> dict[str, Agent]:
-        """Return a dict of agent-name → Agent for all available LLMs.
+        """Return a dict of agent-name → Agent for all available LLMs."""
+        return _get_available_agents_fn(project_id=project_id)
 
-        The *default* agent (``DEFAULT_AGENT`` env var, falls back to
-        ``openai``) is always created first and is required.
-
-        ``DEFAULT_MULTI_AGENTS`` controls how many PM agents run in
-        parallel:
-
-        * **1** (default) — only the default agent is used.
-        * **2** — the default agent plus one optional agent whose API
-          key is present.
-
-        Args:
-            project_id: Optional project identifier for memory enrichment.
-        """
-        default = get_default_agent()
-        max_agents = int(
-            os.environ.get("DEFAULT_MULTI_AGENTS", str(DEFAULT_MULTI_AGENTS)),
-        )
-        max_agents = max(1, max_agents)  # at least the default
-
-        agents: dict[str, Agent] = {}
-
-        # --- factories keyed by agent identifier ---
-        def _openai() -> Agent:
-            return create_product_manager(
-                provider=AGENT_OPENAI, project_id=project_id,
-            )
-
-        def _gemini() -> Agent:
-            return create_product_manager(
-                provider=AGENT_GEMINI, project_id=project_id,
-            )
-
-        factories: dict[str, tuple[callable, str | list[str] | None]] = {
-            AGENT_OPENAI: (_openai, "OPENAI_API_KEY"),
-            AGENT_GEMINI: (_gemini, ["GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT"]),
-        }
-
-        # 1) Create the default agent (required)
-        factory_fn, _ = factories[default]
-        agents[default] = factory_fn()
-        logger.info("[Agents] Default agent: %s", default)
-
-        # 2) Create optional secondary agents (if multi-agent is enabled)
-        if len(agents) < max_agents:
-            for name, (factory_fn, env_key) in factories.items():
-                if name == default:
-                    continue  # already created
-                if len(agents) >= max_agents:
-                    break
-                # env_key may be a single string or a list of alternatives
-                if env_key:
-                    keys = [env_key] if isinstance(env_key, str) else env_key
-                    if not any(os.environ.get(k) for k in keys):
-                        logger.info("[Agents] None of %s set — skipping %s",
-                                    keys, name)
-                        continue
-                try:
-                    agents[name] = factory_fn()
-                    logger.info("[Agents] Optional agent enabled: %s", name)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "[Agents] Failed to create %s: %s — continuing without it",
-                        name, exc,
-                    )
-        else:
-            logger.info(
-                "[Agents] DEFAULT_MULTI_AGENTS=%d — using default agent only",
-                max_agents,
-            )
-
-        return agents
-
-    # ------------------------------------------------------------------
-    # Helper — run multiple agents in parallel for a section draft
-    # ------------------------------------------------------------------
     @staticmethod
     def _run_agents_parallel(
         agents: dict[str, Agent],
@@ -427,97 +236,23 @@ class PRDFlow(Flow[PRDState]):
         section_content: str,
         executive_summary: str,
     ) -> tuple[dict[str, str], dict[str, str]]:
-        """Execute draft tasks across *agents* in parallel.
+        """Execute draft tasks across *agents* in parallel."""
+        return _run_agents_parallel_fn(
+            agents=agents,
+            task_configs=task_configs,
+            section_title=section_title,
+            idea=idea,
+            section_content=section_content,
+            executive_summary=executive_summary,
+        )
 
-        Returns a tuple of:
-            - ``{agent_name: raw_output}`` dict with successful results.
-            - ``{agent_name: error_message}`` dict for agents that failed.
-
-        If one agent fails the others still succeed; the error is logged
-        and that agent is omitted from the result dict.
-        """
-        def _draft(agent_name: str, agent: Agent) -> tuple[str, str]:
-            draft_task = Task(
-                description=task_configs["draft_section_task"]["description"].format(
-                    section_title=section_title,
-                    idea=idea,
-                    section_content=section_content or "(Initial draft)",
-                    executive_summary=executive_summary or "(Not yet available)",
-                ),
-                expected_output=task_configs["draft_section_task"]["expected_output"].format(
-                    section_title=section_title,
-                ),
-                agent=agent,
-            )
-            crew = Crew(
-                agents=[agent],
-                tasks=[draft_task],
-                process=Process.sequential,
-                verbose=is_verbose(),
-            )
-            result = crew_kickoff_with_retry(crew, step_label=f"draft_{agent_name}")
-            return agent_name, result.raw
-
-        results: dict[str, str] = {}
-        failed: dict[str, str] = {}
-        if len(agents) == 1:
-            # Fast path — no thread overhead for single agent
-            name, agent = next(iter(agents.items()))
-            _, raw = _draft(name, agent)
-            results[name] = raw
-        else:
-            with ThreadPoolExecutor(max_workers=len(agents)) as pool:
-                futures = {
-                    pool.submit(_draft, name, agent): name
-                    for name, agent in agents.items()
-                }
-                for future in as_completed(futures):
-                    agent_name = futures[future]
-                    try:
-                        _, raw = future.result()
-                        results[agent_name] = raw
-                    except Exception as exc:  # noqa: BLE001
-                        error_msg = f"{type(exc).__name__}: {exc}"
-                        logger.error(
-                            "[Draft] Agent '%s' failed: %s — skipping", agent_name, error_msg,
-                        )
-                        failed[agent_name] = error_msg
-
-        if not results:
-            raise RuntimeError("All agents failed during parallel drafting")
-
-        # Reorder so default agent appears first in the dict.
-        # as_completed returns results in finishing order which is
-        # non-deterministic; callers rely on iteration order to pick
-        # the initial selected agent.
-        default = get_default_agent()
-        if default in results and next(iter(results)) != default:
-            results = {default: results[default], **{k: v for k, v in results.items() if k != default}}
-
-        return results, failed
-
-    # ------------------------------------------------------------------
-    # Helper — parse approval decision
-    # ------------------------------------------------------------------
     @staticmethod
     def _parse_decision(
         decision: ApprovalDecision,
         available_agents: list[str],
     ) -> tuple[str, bool | str]:
-        """Normalise an *ApprovalDecision* into ``(agent_name, action)``.
-
-        *action* is ``True`` (approve), ``False`` (self-critique + refine)
-        or a ``str`` (user-feedback → refine).
-        """
-        if isinstance(decision, tuple):
-            agent_name, action = decision
-            return str(agent_name), action
-
-        # Legacy single-value return — prefer the DEFAULT_AGENT;
-        # fall back to the first available agent if it is not in the list.
-        default = get_default_agent()
-        default_agent = default if default in available_agents else available_agents[0]
-        return default_agent, decision
+        """Normalise an *ApprovalDecision* into ``(agent_name, action)``."""
+        return _parse_decision_fn(decision, available_agents)
 
     # ------------------------------------------------------------------
     # Step 0 — Idea Refinement (Gemini-only, optional)
@@ -570,7 +305,29 @@ class PRDFlow(Flow[PRDState]):
             )
 
     # ------------------------------------------------------------------
-    # Step 0c — Requirements Breakdown (Gemini-only, optional)
+    # Phase 1 helper — Executive Summary
+    # ------------------------------------------------------------------
+    def _exec_summary_user_gate(
+        self, content: str, iteration: int,
+    ) -> str | None | bool:
+        """Prompt the user for feedback after an exec summary iteration."""
+        return _exec_summary_user_gate_fn(self, content, iteration)
+
+    def _iterate_executive_summary(
+        self, agents: dict[str, Agent], task_configs: dict,
+    ) -> None:
+        """Draft and iterate the executive summary."""
+        _iterate_executive_summary_fn(self, agents, task_configs)
+
+    # ------------------------------------------------------------------
+    # Phase 2 helper — Section approval loop
+    # ------------------------------------------------------------------
+    def _section_approval_loop(
+        self, section, agents: dict[str, Agent], task_configs,
+    ) -> None:
+        """Iterate a single section through critique→refine cycles."""
+        _section_approval_loop_fn(self, section, agents, task_configs)
+
     # ------------------------------------------------------------------
     # Step 1 — Executive Summary iteration → then section drafting
     # ------------------------------------------------------------------
@@ -848,913 +605,49 @@ class PRDFlow(Flow[PRDState]):
         return self.finalize()
 
     # ------------------------------------------------------------------
-    # Phase 1 helper — Executive Summary iteration
+    # Save / finalize / post-completion — delegated to _finalization.py
     # ------------------------------------------------------------------
-    def _iterate_executive_summary(
-        self,
-        agents: dict[str, Agent],
-        task_configs: dict,
-    ) -> None:
-        """Draft and iterate the executive summary using critique_prd_task.
 
-        Uses ``draft_prd_task`` for the initial draft, then loops
-        ``critique_prd_task`` up to min/max iterations.  Each iteration
-        both critiques the current summary and produces a refined version.
-
-        When multiple PM agents are available, the secondary agent
-        critiques the primary agent's work — enabling genuine
-        **cross-agent collaboration** via CrewAI's sequential process.
-
-        The executive summary is stored at the top-level
-        ``executive_summary`` array in ``workingIdeas`` (not under ``draft``).
-        """
-        min_iter, max_iter = _get_section_iteration_limits()
-        # Pick the default agent for the executive summary phase
-        default_name = get_default_agent()
-        pm = agents.get(default_name) or next(iter(agents.values()))
-
-        # Pick a secondary agent for cross-agent critique collaboration.
-        # When only one agent is available, the primary agent self-critiques.
-        critic = pm
-        critic_name = default_name
-        for name, agent_obj in agents.items():
-            if name != default_name:
-                critic = agent_obj
-                critic_name = name
-                logger.info(
-                    "[ExecSummary] Cross-agent collaboration: "
-                    "'%s' will critique '%s' drafts",
-                    critic_name, default_name,
-                )
-                break
-
-        # Always persist the original user-inputted idea, not the refined one
-        user_idea = self.state.original_idea or self.state.idea
-
-        self._notify_progress("section_start", {
-            "section_title": "Executive Summary",
-            "section_key": "executive_summary",
-            "section_step": 1,
-            "total_sections": len(self.state.draft.sections),
-        })
-
-        # ── Initial draft (iteration 1) ───────────────────────
-        draft_task = Task(
-            description=task_configs["draft_prd_task"]["description"].format(
-                idea=self.state.idea,
-                executive_summary="(initial draft — first iteration)",
-            ),
-            expected_output=task_configs["draft_prd_task"]["expected_output"],
-            agent=pm,
-        )
-        crew = Crew(
-            agents=[pm],
-            tasks=[draft_task],
-            process=Process.sequential,
-            verbose=is_verbose(),
-        )
-        try:
-            draft_result = crew_kickoff_with_retry(
-                crew, step_label="draft_executive_summary",
-            )
-        except Exception as exc:
-            logger.error("[ExecSummary] Initial draft failed: %s", exc)
-            save_failed(
-                run_id=self.state.run_id,
-                idea=user_idea,
-                iteration=0,
-                error=str(exc),
-                step="draft_executive_summary",
-            )
-            raise
-
-        current_content = draft_result.raw
-        now = datetime.now(timezone.utc).isoformat()
-        first_iter = ExecutiveSummaryIteration(
-            content=current_content,
-            iteration=1,
-            critique=None,
-            updated_date=now,
-        )
-        self.state.executive_summary.iterations.append(first_iter)
-        self.state.iteration = 1
-        self.state.update_date = now
-
-        save_executive_summary(
-            run_id=self.state.run_id,
-            idea=user_idea,
-            iteration=1,
-            content=current_content,
-            critique=None,
-        )
-        logger.info(
-            "[ExecSummary] Initial draft (%d chars)", len(current_content),
-        )
-        self._notify_progress("exec_summary_iteration", {
-            "iteration": 1,
-            "max_iterations": max_iter,
-            "chars": len(current_content),
-        })
-
-        # ── Critique → iterate loop ──────────────────────────
-        # Assembles a unique agent list for multi-agent Crews.
-        crew_agents = [pm] if critic is pm else [pm, critic]
-        iteration = 1
-        while iteration < max_iter:
-            # --- Critique (uses secondary agent when available) ---
-            logger.info(
-                "[ExecSummary] Critique iteration %d/%d (agent=%s)",
-                iteration, max_iter, critic_name,
-            )
-            critique_task = Task(
-                description=task_configs["critique_prd_task"]["description"].format(
-                    critique="(generate critique)",
-                    executive_summary=current_content,
-                ),
-                expected_output=task_configs["critique_prd_task"][
-                    "expected_output"
-                ],
-                agent=critic,
-            )
-            crew = Crew(
-                agents=crew_agents,
-                tasks=[critique_task],
-                process=Process.sequential,
-                verbose=is_verbose(),
-            )
-            try:
-                critique_result = crew_kickoff_with_retry(
-                    crew, step_label=f"critique_exec_summary_iter{iteration}",
-                )
-            except BillingError:
-                raise  # Non-transient — must pause
-            except Exception as exc:
-                logger.error(
-                    "[ExecSummary] Critique failed at iteration %d: %s",
-                    iteration, exc,
-                )
-                save_failed(
-                    run_id=self.state.run_id,
-                    idea=user_idea,
-                    iteration=iteration,
-                    error=str(exc),
-                    step=f"critique_exec_summary_iter{iteration}",
-                )
-                logger.warning(
-                    "[ExecSummary] Critique unrecoverable at iteration "
-                    "%d — force-approving with current content (%d chars)",
-                    iteration, len(current_content),
-                )
-                self.state.executive_summary.is_approved = True
-                break
-
-            critique_text = critique_result.raw
-
-            # Update critique on the current iteration record
-            update_executive_summary_critique(
-                run_id=self.state.run_id,
-                iteration=iteration,
-                critique=critique_text,
-            )
-            # Update in-memory model
-            current_iter = self.state.executive_summary.iterations[-1]
-            current_iter.critique = critique_text
-            self.state.critique = critique_text
-
-            # --- Check termination ----
-            is_ready = "READY_FOR_DEV" in critique_text.upper()
-            past_min = iteration >= min_iter
-
-            if is_ready and past_min:
-                logger.info(
-                    "[ExecSummary] READY_FOR_DEV at iteration %d "
-                    "(min=%d) — approved",
-                    iteration, min_iter,
-                )
-                self.state.executive_summary.is_approved = True
-                break
-
-            # --- Produce refined version — primary PM addresses
-            #     critique from the secondary agent (cross-agent
-            #     collaboration: one agent critiques, another refines) ---
-            iteration += 1
-            refine_desc = task_configs["draft_prd_task"]["description"].format(
-                idea=self.state.idea,
-                executive_summary=current_content,
-            )
-            refine_desc += (
-                f"\n\n--- CRITIQUE FEEDBACK ---\n{critique_text}\n"
-                f"--- END OF CRITIQUE ---\n\n"
-                "Address every gap identified in the critique above. "
-                "Produce an improved executive summary."
-            )
-            refine_task = Task(
-                description=refine_desc,
-                expected_output=task_configs["draft_prd_task"][
-                    "expected_output"
-                ],
-                agent=pm,
-            )
-            crew = Crew(
-                agents=crew_agents,
-                tasks=[refine_task],
-                process=Process.sequential,
-                verbose=is_verbose(),
-            )
-            try:
-                refine_result = crew_kickoff_with_retry(
-                    crew,
-                    step_label=f"refine_exec_summary_iter{iteration}",
-                )
-            except BillingError:
-                raise  # Non-transient — must pause
-            except Exception as exc:
-                logger.error(
-                    "[ExecSummary] Refine failed at iteration %d: %s",
-                    iteration, exc,
-                )
-                save_failed(
-                    run_id=self.state.run_id,
-                    idea=user_idea,
-                    iteration=iteration,
-                    error=str(exc),
-                    step=f"refine_exec_summary_iter{iteration}",
-                )
-                logger.warning(
-                    "[ExecSummary] Refine unrecoverable at iteration "
-                    "%d — force-approving with current content (%d chars)",
-                    iteration, len(current_content),
-                )
-                self.state.executive_summary.is_approved = True
-                break
-
-            current_content = refine_result.raw
-            now = datetime.now(timezone.utc).isoformat()
-            new_iter = ExecutiveSummaryIteration(
-                content=current_content,
-                iteration=iteration,
-                critique=None,
-                updated_date=now,
-            )
-            self.state.executive_summary.iterations.append(new_iter)
-            self.state.iteration = iteration
-            self.state.update_date = now
-
-            save_executive_summary(
-                run_id=self.state.run_id,
-                idea=user_idea,
-                iteration=iteration,
-                content=current_content,
-                critique=None,
-            )
-            logger.info(
-                "[ExecSummary] Refined iteration %d (%d chars)",
-                iteration, len(current_content),
-            )
-            self._notify_progress("exec_summary_iteration", {
-                "iteration": iteration,
-                "max_iterations": max_iter,
-                "chars": len(current_content),
-            })
-
-        # Force-approve if max reached without READY_FOR_DEV
-        if not self.state.executive_summary.is_approved:
-            self.state.executive_summary.is_approved = True
-            logger.info(
-                "[ExecSummary] Max iterations (%d) reached — "
-                "force-approved",
-                max_iter,
-            )
-
-        # Copy the last iterated executive summary to finalized_idea
-        self.state.finalized_idea = self.state.executive_summary.latest_content
-        save_finalized_idea(
-            run_id=self.state.run_id,
-            finalized_idea=self.state.finalized_idea,
-        )
-        logger.info(
-            "[ExecSummary] Copied executive summary to finalized_idea "
-            "(%d chars)",
-            len(self.state.finalized_idea),
-        )
-        self._notify_progress("executive_summary_complete", {
-            "iterations": len(self.state.executive_summary.iterations),
-            "chars": len(self.state.finalized_idea),
-        })
-
-    def _section_approval_loop(self, section, agents: dict[str, Agent], task_configs) -> None:
-        """Iterate a single section through critique→refine cycles.
-
-        When multiple PM agents are available, the critique is performed
-        by a **different agent** from the one that drafted/refined —
-        enabling genuine cross-agent collaboration via CrewAI's
-        sequential process.
-
-        Each section is automatically iterated between *min* and *max*
-        iterations (controlled by ``PRD_SECTION_MIN_ITERATIONS`` /
-        ``PRD_SECTION_MAX_ITERATIONS`` env vars, defaulting to 2 / 5).
-
-        * Before *min* is reached the cycle always continues
-          (critique → refine → …) regardless of the critique verdict.
-        * After *min*, if the critique contains ``SECTION_READY``, the
-          section is auto-approved (when no callback is set).
-        * At *max*, the section is force-approved regardless.
-
-        When an ``approval_callback`` is configured (API / UI mode) the
-        user is given the opportunity to approve, pause, or provide
-        feedback at every iteration.  A user-approval overrides the
-        minimum-iteration gate.
-        """
-        min_iter, max_iter = _get_section_iteration_limits()
-        total_steps = len(self.state.draft.sections)
-
-        while not section.is_approved:
-            user_feedback: str | None = None
-            available = list(section.agent_results.keys()) or list(agents.keys())
-
-            # ── Optional user gate (callback) ─────────────────
-            if self.approval_callback is not None:
-                decision = self.approval_callback(
-                    section.iteration,
-                    section.key,
-                    section.agent_results,
-                    self.state.draft,
-                    active_agents=list(self.state.active_agents),
-                    dropped_agents=list(self.state.dropped_agents),
-                    agent_errors=dict(self.state.agent_errors),
-                    original_idea=self.state.original_idea,
-                    idea_refined=self.state.idea_refined,
-                    finalized_idea=self.state.finalized_idea,
-                    requirements_breakdown=self.state.requirements_breakdown,
-                    executive_summary=self.state.executive_summary,
-                )
-
-                agent_name, action = self._parse_decision(decision, available)
-
-                # Apply selected agent's content
-                if agent_name in section.agent_results:
-                    section.content = section.agent_results[agent_name]
-                section.selected_agent = agent_name
-
-                if action is True:
-                    section.is_approved = True
-                    logger.info(
-                        "[Approval] Step %d/%d — Section '%s' approved "
-                        "(agent=%s) at iteration %d",
-                        section.step, total_steps, section.title,
-                        agent_name, section.iteration,
-                    )
-                    break
-                if action == PAUSE_SENTINEL or decision == PAUSE_SENTINEL:
-                    logger.info(
-                        "[Pause] User requested pause at step %d/%d "
-                        "section '%s' iteration %d",
-                        section.step, total_steps, section.title,
-                        section.iteration,
-                    )
-                    raise PauseRequested()
-                if isinstance(action, str) and action.strip():
-                    user_feedback = action.strip()
-                    logger.info(
-                        "[Approval] User provided critique for section "
-                        "'%s' (agent=%s, %d chars)",
-                        section.title, agent_name, len(user_feedback),
-                    )
-
-            # Resolve agent for critique / refine.
-            # Cross-agent collaboration: use a different agent for
-            # critique when multiple PM agents are available.
-            selected = section.selected_agent or available[0]
-            pm = agents.get(selected) or next(iter(agents.values()))
-
-            # Pick a secondary agent for cross-agent critique
-            critic = pm
-            for name, agent_obj in agents.items():
-                if name != selected:
-                    critic = agent_obj
-                    break
-            crew_agents = [pm] if critic is pm else [pm, critic]
-
-            # ── Critique (cross-agent when available) ─────────
-            if user_feedback is not None:
-                self.state.critique = user_feedback
-                section.critique = user_feedback
-            else:
-                logger.info(
-                    "[Critique] Step %d/%d — Section '%s' — iteration %d "
-                    "(agent=%s)",
-                    section.step, total_steps, section.title,
-                    section.iteration,
-                    next((n for n, a in agents.items() if a is critic), selected),
-                )
-                critique_task = Task(
-                    description=task_configs["critique_section_task"][
-                        "description"
-                    ].format(
-                        section_title=section.title,
-                        critique_section_content=section.content,
-                        executive_summary=self.state.executive_summary.latest_content or "(Not yet available)",
-                        approved_sections=self.state.draft.approved_context(exclude_key=section.key) or "(None yet)",
-                    ),
-                    expected_output=task_configs["critique_section_task"][
-                        "expected_output"
-                    ],
-                    agent=critic,
-                )
-                crew = Crew(
-                    agents=crew_agents,
-                    tasks=[critique_task],
-                    process=Process.sequential,
-                    verbose=is_verbose(),
-                )
-                try:
-                    critique_result = crew_kickoff_with_retry(
-                        crew, step_label=f"critique_{section.key}",
-                    )
-                except BillingError:
-                    raise  # Non-transient — must pause
-                except Exception as exc:
-                    logger.error(
-                        "[Critique] Section '%s' failed at iteration %d: %s",
-                        section.title, section.iteration, exc,
-                    )
-                    save_failed(
-                        run_id=self.state.run_id,
-                        idea=self.state.original_idea or self.state.idea,
-                        iteration=self.state.iteration,
-                        error=str(exc),
-                        draft={section.key: section.content},
-                        step=f"critique_{section.key}",
-                        section_key=section.key,
-                        section_title=section.title,
-                    )
-                    logger.warning(
-                        "[Critique] Section '%s' unrecoverable at "
-                        "iteration %d — force-approving with current "
-                        "content (%d chars)",
-                        section.title, section.iteration,
-                        len(section.content),
-                    )
-                    section.is_approved = True
-                    break
-                self.state.critique = critique_result.raw
-                section.critique = self.state.critique
-
-            update_section_critique(
-                run_id=self.state.run_id,
-                section_key=section.key,
-                iteration=section.iteration,
-                critique=self.state.critique,
-            )
-
-            # ── Check termination conditions ──────────────────
-            is_ready = "SECTION_READY" in self.state.critique.upper()
-            past_min = section.iteration >= min_iter
-            at_max = section.iteration >= max_iter
-
-            if at_max:
-                section.is_approved = True
-                logger.info(
-                    "[Iteration] Section '%s' reached max iterations "
-                    "(%d) — auto-approved",
-                    section.title, max_iter,
-                )
-                break
-
-            if is_ready and past_min and self.approval_callback is None:
-                section.is_approved = True
-                logger.info(
-                    "[Critique] Section '%s' marked SECTION_READY at "
-                    "iteration %d (min=%d) — auto-approved",
-                    section.title, section.iteration, min_iter,
-                )
-                break
-
-            # ── Refine (primary PM addresses cross-agent critique) ─
-            prev_content = section.content  # snapshot for degenerate guard
-            logger.info(
-                "[Refine] Step %d/%d — Section '%s' — iteration %d",
-                section.step, total_steps, section.title,
-                section.iteration,
-            )
-            refine_task = Task(
-                description=task_configs["refine_section_task"][
-                    "description"
-                ].format(
-                    section_title=section.title,
-                    section_content=section.content,
-                    critique_section_content=self.state.critique,
-                    executive_summary=self.state.executive_summary.latest_content or "(Not yet available)",
-                    approved_sections=self.state.draft.approved_context(exclude_key=section.key) or "(None yet)",
-                ),
-                expected_output=task_configs["refine_section_task"][
-                    "expected_output"
-                ].format(
-                    section_title=section.title,
-                    critique_section_content=self.state.critique,
-                ),
-                agent=pm,
-            )
-            crew = Crew(
-                agents=crew_agents,
-                tasks=[refine_task],
-                process=Process.sequential,
-                verbose=is_verbose(),
-            )
-            try:
-                refine_result = crew_kickoff_with_retry(
-                    crew, step_label=f"refine_{section.key}",
-                )
-            except BillingError:
-                raise  # Non-transient — must pause
-            except Exception as exc:
-                logger.error(
-                    "[Refine] Section '%s' failed at iteration %d: %s",
-                    section.title, section.iteration, exc,
-                )
-                save_failed(
-                    run_id=self.state.run_id,
-                    idea=self.state.original_idea or self.state.idea,
-                    iteration=self.state.iteration,
-                    error=str(exc),
-                    draft={section.key: section.content},
-                    step=f"refine_{section.key}",
-                    section_key=section.key,
-                    section_title=section.title,
-                )
-                logger.warning(
-                    "[Refine] Section '%s' unrecoverable at "
-                    "iteration %d — force-approving with current "
-                    "content (%d chars)",
-                    section.title, section.iteration,
-                    len(section.content),
-                )
-                section.is_approved = True
-                break
-            section.content = refine_result.raw
-
-            # ── Degenerate output guard ─────────────────────
-            if _is_degenerate_content(
-                section.content, prev_len=len(prev_content),
-            ):
-                degenerate_len = len(section.content)
-                section.content = prev_content
-                section.agent_results = {
-                    section.selected_agent: prev_content,
-                }
-
-                if section.iteration >= min_iter:
-                    logger.warning(
-                        "[Refine] Section '%s' degenerate output detected "
-                        "(%d chars, prev=%d) — "
-                        "reverting to previous content and force-approving",
-                        section.title, degenerate_len,
-                        len(prev_content),
-                    )
-                    section.is_approved = True
-                    break
-
-                logger.warning(
-                    "[Refine] Section '%s' degenerate output detected "
-                    "(%d chars, prev=%d) — "
-                    "reverting to previous content and retrying "
-                    "(iteration %d < min %d)",
-                    section.title, degenerate_len,
-                    len(prev_content), section.iteration, min_iter,
-                )
-                section.iteration += 1
-                section.updated_date = datetime.now(timezone.utc).isoformat()
-                self.state.iteration += 1
-                self.state.update_date = section.updated_date
-                continue
-
-            # Update agent_results so subsequent callbacks see refined content
-            section.agent_results = {section.selected_agent: section.content}
-            section.iteration += 1
-            section.updated_date = datetime.now(timezone.utc).isoformat()
-            self.state.iteration += 1
-            self.state.update_date = section.updated_date
-
-            save_iteration(
-                run_id=self.state.run_id,
-                idea=self.state.original_idea or self.state.idea,
-                iteration=section.iteration,
-                draft={section.key: section.content},
-                critique=self.state.critique,
-                step=f"refine_{section.key}",
-                finalized_idea=self.state.idea,
-                section_key=section.key,
-                section_title=section.title,
-                selected_agent=section.selected_agent,
-            )
-
-            logger.debug(
-                "[Refine] Section '%s' refined (%d chars)",
-                section.title, len(section.content),
-            )
-            self._notify_progress("section_iteration", {
-                "section_title": section.title,
-                "section_key": section.key,
-                "section_step": section.step,
-                "total_sections": total_steps,
-                "iteration": section.iteration,
-                "max_iterations": max_iter,
-            })
-
-    # ------------------------------------------------------------------
-    # Save progress markdown (partial output on error / pause)
-    # ------------------------------------------------------------------
     def save_progress(self) -> str:
-        """Write a progress markdown capturing whatever work is available.
-
-        Called when the flow is interrupted (error, pause, billing) so
-        the user still gets a file in ``output/prds/`` with the refined
-        idea, requirements breakdown, and any completed sections.
-
-        Returns:
-            The save-result string from :class:`PRDFileWriteTool`, or an
-            empty string if there is nothing meaningful to save.
-        """
-        parts: list[str] = []
-
-        # Refined idea
-        idea_text = self.state.finalized_idea or self.state.idea
-        if idea_text:
-            parts.append(f"## Refined Idea\n\n{idea_text}")
-
-        # Requirements breakdown
-        if self.state.requirements_broken_down and self.state.requirements_breakdown:
-            parts.append(f"## Requirements Breakdown\n\n{self.state.requirements_breakdown}")
-
-        # Executive summary (latest iteration)
-        if self.state.executive_summary.latest_content:
-            parts.append(f"## Executive Summary\n\n{self.state.executive_summary.latest_content}")
-
-        # Any drafted sections (skip executive_summary — already above)
-        for section in self.state.draft.sections:
-            if section.content and section.key != "executive_summary":
-                parts.append(f"## {section.title}\n\n{section.content}")
-
-        if not parts:
-            logger.info("[Progress] Nothing to save — no content produced yet")
-            return ""
-
-        # Use the definitive header when every section is approved;
-        # otherwise mark the document as in-progress.
-        all_approved = self.state.draft.all_approved()
-        header = (
-            "# Product Requirements Document\n\n"
-            if all_approved
-            else "# Product Requirements Document (In Progress)\n\n"
-        )
-        content = header + "\n\n---\n\n".join(parts)
-
-        writer = PRDFileWriteTool()
-        save_result = writer._run(
-            content=content,
-            filename="",
-            version=max(self.state.iteration, 1),
-        )
-        logger.info("[Progress] %s", save_result)
-
-        # Persist the output file path to the workingIdeas document
-        self._persist_output_path(save_result)
-
-        # Update workingIdeas status from "failed" → "paused" so a
-        # subsequent restart treats this as a resumable run.
-        mark_paused(self.state.run_id)
-
-        return save_result
+        """Write a progress markdown capturing whatever work is available."""
+        return _save_progress_fn(self)
 
     def _persist_output_path(self, save_result: str) -> None:
-        """Extract the file path from *save_result* and store it in MongoDB.
+        """Extract the file path from *save_result* and store it in MongoDB."""
+        _persist_output_path_fn(self, save_result)
 
-        Before storing the new path, any previously stored output file
-        for this run is deleted from disk so only the latest version
-        remains.
-
-        The *save_result* string is of the form
-        ``"PRD saved to output/prds/2026/02/prd_v10_20260223_071542.md"``.
-        """
-        from pathlib import Path
-
-        # Extract path from "PRD saved to <path>"
-        prefix = "PRD saved to "
-        if save_result.startswith(prefix):
-            output_path = save_result[len(prefix):]
-        else:
-            output_path = save_result
-
-        # Delete the previous output file (if any) so only the latest
-        # version exists on disk.
-        old_path = get_output_file(self.state.run_id)
-        if old_path and old_path != output_path:
-            try:
-                p = Path(old_path)
-                if p.is_file():
-                    p.unlink()
-                    logger.info(
-                        "[Cleanup] Deleted previous output file: %s", old_path,
-                    )
-            except OSError as exc:
-                logger.warning(
-                    "[Cleanup] Could not delete previous output %s: %s",
-                    old_path, exc,
-                )
-
-        save_output_file(self.state.run_id, output_path)
-
-    # ------------------------------------------------------------------
-    # Step 4 — Final Assembly & Persist
-    # ------------------------------------------------------------------
     def finalize(self) -> str:
         """Assemble the final PRD from all approved sections and persist."""
-        logger.info("[Step 4] Finalising PRD (total iterations=%d)", self.state.iteration)
-        self.state.final_prd = self.state.draft.assemble()
+        return _finalize_fn(self)
 
-        # Save Markdown to file
-        writer = PRDFileWriteTool()
-        save_result = writer._run(
-            content=self.state.final_prd,
-            filename="",
-            version=self.state.iteration,
-        )
-
-        # Persist the output file path to the workingIdeas document
-        self._persist_output_path(save_result)
-
-        # Convert to Confluence-compatible XHTML
-        confluence_xhtml = md_to_confluence_xhtml(self.state.final_prd)
-        logger.info(
-            "[Step 4] Generated Confluence XHTML (%d chars)", len(confluence_xhtml)
-        )
-
-        # Mark working-idea document as completed
-        mark_completed(self.state.run_id)
-
-        self.state.is_ready = True
-        self.state.status = "completed"
-        self.state.completed_at = datetime.now(timezone.utc).isoformat()
-        self.state.update_date = self.state.completed_at
-        logger.info("[Step 4] %s", save_result)
-
-        self._notify_progress("prd_complete", {
-            "total_iterations": self.state.iteration,
-        })
-
-        # ── Post-completion: Confluence publish & Jira ticketing ──
-        self._run_post_completion()
-
-        return save_result
-
-    # ------------------------------------------------------------------
-    # Post-completion pipeline (Confluence + Jira)
-    # ------------------------------------------------------------------
     def _run_post_completion(self) -> None:
-        """Run the Atlassian delivery crew after PRD finalization.
+        """Run Atlassian delivery crew after PRD finalization."""
+        _run_post_completion_fn(self)
 
-        Uses a multi-agent CrewAI Crew (Delivery Manager + Orchestrator)
-        with Process.sequential and context-chained tasks.  Falls back
-        to the legacy AgentOrchestrator pipeline if the crew cannot be
-        built.  Failures are logged but do not fail the overall flow.
+    def _run_auto_post_completion(self) -> None:
+        """Run the single post-completion crew (auto-approve mode)."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _run_auto_post_completion,
+        )
+        _run_auto_post_completion(self)
 
-        After the crew finishes, the delivery record in
-        ``productRequirements`` is updated so subsequent startups do
-        not re-attempt work that already succeeded.
-        """
-        try:
-            from crewai_productfeature_planner.orchestrator import (
-                build_post_completion_crew,
-            )
-            from crewai_productfeature_planner.scripts.retry import (
-                crew_kickoff_with_retry,
-            )
+    def _run_phased_post_completion(self) -> None:
+        """Run phased Confluence + Jira delivery with approval gates."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _run_phased_post_completion,
+        )
+        _run_phased_post_completion(self)
 
-            crew = build_post_completion_crew(self)
-            if crew is None:
-                logger.info(
-                    "[PostCompletion] No delivery steps needed — skipping."
-                )
-                return
-            result = crew_kickoff_with_retry(crew, step_label="post_completion")
-
-            # ── Persist delivery outcome ──────────────────────
-            self._persist_post_completion(result)
-        except Exception as exc:
-            logger.warning(
-                "[PostCompletion] Atlassian delivery crew failed — "
-                "PRD is saved but not published: %s",
-                exc,
-            )
-
-    # ------------------------------------------------------------------
-    # Post-completion output persistence
-    # ------------------------------------------------------------------
     def _persist_post_completion(self, result: object) -> None:
-        """Parse crew *result* and update the delivery record.
+        """Parse crew *result* and update the delivery record."""
+        _persist_post_completion_fn(self, result)
 
-        Detects Confluence publish and Jira ticket creation from the
-        raw crew output, then upserts the ``productRequirements``
-        record so the startup orchestrator knows what has already been
-        delivered.
-        """
-        import re as _re
-
-        try:
-            raw_output = result.raw if hasattr(result, "raw") else str(result)
-        except Exception:  # noqa: BLE001
-            return
-
-        try:
-            from crewai_productfeature_planner.mongodb.product_requirements import (
-                append_jira_ticket,
-                upsert_delivery_record,
-            )
-
-            # Detect Confluence publish
-            conf_url = self._extract_confluence_url(raw_output) or getattr(
-                self.state, "confluence_url", "",
-            )
-            conf_done = bool(conf_url)
-
-            # Detect Jira completion (keyword + issue key pattern)
-            jira_done = self._jira_detected_in_output(raw_output)
-
-            upsert_delivery_record(
-                self.state.run_id,
-                confluence_published=conf_done,
-                confluence_url=conf_url,
-                jira_completed=jira_done,
-                jira_output=raw_output if jira_done else None,
-            )
-            logger.info(
-                "[PostCompletion] Delivery record updated for "
-                "run_id=%s (confluence=%s, jira=%s)",
-                self.state.run_id,
-                "done" if conf_done else "pending",
-                "done" if jira_done else "pending",
-            )
-
-            # ── Progress heartbeats for Confluence / Jira ─────
-            if conf_done:
-                self._notify_progress("confluence_published", {
-                    "url": conf_url,
-                })
-            if jira_done:
-                ticket_keys = _re.findall(r"[A-Z]{2,10}-\d+", raw_output)
-                self._notify_progress("jira_published", {
-                    "ticket_count": len(set(ticket_keys)),
-                })
-
-            # Persist individual ticket keys
-            if jira_done:
-                _type_map: dict[str, str] = {}
-                try:
-                    from crewai_productfeature_planner.tools.jira_tool import (
-                        search_jira_issues,
-                    )
-                    for _iss in search_jira_issues(self.state.run_id):
-                        _type_map[_iss["issue_key"]] = _iss["issue_type"]
-                except Exception:  # noqa: BLE001
-                    pass
-                for key in _re.findall(r"[A-Z]{2,10}-\d+", raw_output):
-                    try:
-                        append_jira_ticket(self.state.run_id, {
-                            "key": key,
-                            "type": _type_map.get(key, "unknown"),
-                        })
-                    except Exception:  # noqa: BLE001
-                        pass
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[PostCompletion] Failed to persist delivery record: %s",
-                exc,
-            )
-
-    # ------------------------------------------------------------------
-    # Output detection helpers
-    # ------------------------------------------------------------------
     @staticmethod
     def _extract_confluence_url(output: str) -> str:
         """Extract a Confluence URL from crew output text."""
-        import re
-        match = re.search(r"https?://[^\s]+atlassian[^\s]*wiki[^\s]*", output)
-        if match:
-            return match.group(0).rstrip(".,;:()\"\'")
-        match = re.search(r"https?://[^\s]+/wiki/[^\s]*", output)
-        if match:
-            return match.group(0).rstrip(".,;:()\"\'")
-        return ""
+        return _extract_confluence_url_fn(output)
 
     @staticmethod
     def _jira_detected_in_output(output: str) -> bool:
         """Detect Jira ticket creation in crew output."""
-        import re
-        lower = output.lower()
-        if "fail" in lower[:200]:
-            return False
-        has_keyword = any(kw in lower for kw in [
-            "epic", "story", "stories", "issue_key", "issue key",
-        ])
-        has_issue_key = bool(re.search(r"[A-Z]{2,10}-\d+", output))
-        return has_keyword and has_issue_key
+        return _jira_detected_in_output_fn(output)

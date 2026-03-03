@@ -165,9 +165,14 @@ class TestSlackPostPRDResultTool:
         )
         text = json.dumps(blocks)
         assert "fitness app" in text
-        assert "/output/prd.md" in text
+        # output_file is no longer shown in blocks (file is uploaded separately)
         assert "confluence.test" in text
         assert "PROJ-1" in text
+        # All delivery fields present → no next-step hints
+        assert not any(
+            b.get("text", {}).get("text", "").startswith(":bulb:")
+            for b in blocks
+        )
 
     def test_builds_blocks_minimal(self):
         from crewai_productfeature_planner.tools.slack_tools import SlackPostPRDResultTool
@@ -179,8 +184,11 @@ class TestSlackPostPRDResultTool:
             confluence_url=None,
             jira_output=None,
         )
-        # Header + idea section + success section = 3
-        assert len(blocks) == 3
+        # Header + idea + success + divider + next-steps = 5
+        assert len(blocks) == 5
+        next_steps_text = blocks[-1]["text"]["text"]
+        assert "publish" in next_steps_text
+        assert "jira tickets" in next_steps_text
 
     def test_sends_blocks_to_slack(self):
         mock_client = MagicMock()

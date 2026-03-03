@@ -5,11 +5,26 @@ Pure-data functions that reconstruct PRD markdown from raw MongoDB
 from any context (CLI, API, background threads).
 """
 
+from __future__ import annotations
+
+import json
+import logging
 import re
 
 from crewai_productfeature_planner.apis.prd.models import SECTION_ORDER
 
+logger = logging.getLogger(__name__)
+
 _ITERATION_RE = re.compile(r"\s*\(Iteration\s+\d+\)", re.IGNORECASE)
+
+# Keys that identify a full workingIdeas document dump
+_DOCUMENT_DUMP_KEYS = {"run_id", "executive_summary", "section"}
+
+# Regex to strip leading/trailing code fences (```json … ``` or ``` … ```)
+_CODE_FENCE_RE = re.compile(
+    r"^\s*```(?:json)?\s*\n(.*?)\n\s*```\s*$",
+    re.DOTALL,
+)
 
 
 def strip_iteration_tags(text: str) -> str:
@@ -20,6 +35,94 @@ def strip_iteration_tags(text: str) -> str:
     should never appear in the final PRD output.
     """
     return _ITERATION_RE.sub("", text)
+
+
+def sanitize_section_content(content: str, section_key: str = "") -> str:
+    """Strip accidental JSON document dumps from section content.
+
+    The LLM occasionally wraps its output in a JSON code block that
+    mirrors the full ``workingIdeas`` MongoDB document structure.
+    When detected, we extract the *actual* section text from within the
+    JSON and return it.  Non-JSON content passes through unchanged.
+
+    Args:
+        content: Raw section content (possibly a JSON code block).
+        section_key: The section identifier (e.g. ``"executive_summary"``).
+            Used to look up the correct sub-key when extracting from a
+            JSON dump.  When empty, the function still strips JSON
+            wrappers but cannot extract a specific section.
+
+    Returns:
+        The cleaned section content with iteration tags removed.
+    """
+    if not content:
+        return content
+
+    text = content.strip()
+
+    # Unwrap code-fenced blocks: ```json\n{...}\n```
+    fence_match = _CODE_FENCE_RE.match(text)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    # Quick check: does the text look like JSON?
+    if not text.startswith("{"):
+        return strip_iteration_tags(content)
+
+    try:
+        obj = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return strip_iteration_tags(content)
+
+    if not isinstance(obj, dict):
+        return strip_iteration_tags(content)
+
+    # Detect workingIdeas document dumps
+    if not _DOCUMENT_DUMP_KEYS.issubset(obj.keys()):
+        return strip_iteration_tags(content)
+
+    logger.warning(
+        "[Sanitize] Detected JSON document dump in section '%s' "
+        "(%d chars) — extracting clean content",
+        section_key or "unknown",
+        len(content),
+    )
+
+    # --- Extract the actual content from the JSON dump ---
+
+    # For executive_summary: look in obj["executive_summary"][-1]["content"]
+    if section_key == "executive_summary":
+        raw_exec = obj.get("executive_summary", [])
+        if isinstance(raw_exec, list) and raw_exec:
+            latest = raw_exec[-1]
+            if isinstance(latest, dict) and latest.get("content"):
+                return strip_iteration_tags(latest["content"])
+
+    # For regular sections: look in obj["section"][section_key][-1]["content"]
+    if section_key:
+        section_obj = obj.get("section", {})
+        if isinstance(section_obj, dict):
+            iterations = section_obj.get(section_key, [])
+            if isinstance(iterations, list) and iterations:
+                latest = iterations[-1]
+                if isinstance(latest, dict) and latest.get("content"):
+                    return strip_iteration_tags(latest["content"])
+
+    # Fallback: if we detected a dump but couldn't extract content, try
+    # the finalized_idea field (often the clean executive summary).
+    if section_key == "executive_summary":
+        finalized = obj.get("finalized_idea", "")
+        if finalized:
+            return strip_iteration_tags(finalized)
+
+    # Last resort: return original content with iteration tags stripped.
+    # This path should rarely be hit.
+    logger.warning(
+        "[Sanitize] Could not extract clean content for section '%s' "
+        "from JSON dump — returning raw content",
+        section_key or "unknown",
+    )
+    return strip_iteration_tags(content)
 
 
 def assemble_prd_from_doc(doc: dict) -> str:
@@ -35,7 +138,8 @@ def assemble_prd_from_doc(doc: dict) -> str:
     if isinstance(raw_exec, list) and raw_exec:
         latest = raw_exec[-1]
         if isinstance(latest, dict) and latest.get("content"):
-            parts.append(f"## Executive Summary\n\n{strip_iteration_tags(latest['content'])}")
+            clean = sanitize_section_content(latest["content"], "executive_summary")
+            parts.append(f"## Executive Summary\n\n{clean}")
 
     # Regular sections
     section_obj = doc.get("section", {})
@@ -48,7 +152,8 @@ def assemble_prd_from_doc(doc: dict) -> str:
             if isinstance(iterations, list) and iterations:
                 latest = iterations[-1]
                 if isinstance(latest, dict) and latest.get("content"):
-                    parts.append(f"## {title}\n\n{strip_iteration_tags(latest['content'])}")
+                    clean = sanitize_section_content(latest["content"], key)
+                    parts.append(f"## {title}\n\n{clean}")
 
     if not parts:
         return ""

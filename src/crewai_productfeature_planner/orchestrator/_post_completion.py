@@ -46,11 +46,13 @@ def build_post_completion_crew(
 
     1. **Assess** — Delivery Manager summarises pending steps.
     2. **Confluence publish** — Orchestrator publishes PRD (if needed).
-    3. **Jira Epic** — Orchestrator creates Epic (if applicable).
-    4. **Jira Stories** — Orchestrator creates role-specific Stories
-       (UX, Engineering, QE) under the Epic with dependencies.
-    5. **Jira Tasks** — Orchestrator creates granular sub-tasks under
-       each Story.
+    3. **Jira Skeleton** — PM agent generates Epics/Stories outline.
+    4. **Jira Epic** — PM agent creates Epic (if applicable).
+    5. **Jira Stories** — PM agent creates categorised Stories
+       (Data Persistence, Data Layer, Data Presentation,
+       App & Data Security) under the Epic with dependencies.
+    6. **Jira Tasks** — Architect/TL agent creates granular sub-tasks
+       under each Story with docs, test cases, and dependencies.
 
     Args:
         flow:  The :class:`PRDFlow` instance with a finalized PRD.
@@ -162,30 +164,50 @@ def build_post_completion_crew(
     else:
         confluence_task = None
 
-    # ── Task 3: Jira Epic ──────────────────────────────────────
+    # ── Task 3: Jira Skeleton (titles only) ──────────────────
     if jira_needed:
         exec_summary = flow.state.finalized_idea or flow.state.idea
         confluence_url = getattr(flow.state, "confluence_url", "")
+
+        func_req_section = flow.state.draft.get_section("functional_requirements")
+        func_reqs = func_req_section.content if func_req_section else ""
+        additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
+
+        idea_preview = (flow.state.idea or "PRD")[:80].strip()
+        skeleton_page_title = f"PRD — {idea_preview}"
+
+        skeleton_task = Task(
+            description=task_configs["generate_jira_skeleton_task"]["description"].format(
+                page_title=skeleton_page_title,
+                executive_summary=exec_summary,
+                functional_requirements=func_reqs,
+                additional_prd_context=additional_ctx,
+            ),
+            expected_output=task_configs["generate_jira_skeleton_task"]["expected_output"],
+            agent=pm_agent,
+            context=[confluence_task or assess_task],
+        )
+        tasks.append(skeleton_task)
+
+        # ── Task 4: Jira Epic ──────────────────────────────────
         epic_task = Task(
             description=task_configs["create_jira_epic_task"]["description"].format(
-                page_title=page_title,
+                page_title=skeleton_page_title,
                 executive_summary=exec_summary,
                 run_id=flow.state.run_id,
                 confluence_url=confluence_url,
             ),
             expected_output=task_configs["create_jira_epic_task"]["expected_output"],
             agent=pm_agent,
-            context=[confluence_task or assess_task],
+            context=[skeleton_task],
         )
         tasks.append(epic_task)
 
-        # ── Task 4: Jira Stories (role-specific) ───────────────
-        func_req_section = flow.state.draft.get_section("functional_requirements")
-        func_reqs = func_req_section.content if func_req_section else ""
-        additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
+        # ── Task 5: Jira Stories (categorised) ─────────────────
         if func_reqs:
             stories_task = Task(
                 description=task_configs["create_jira_stories_task"]["description"].format(
+                    approved_skeleton="{skeleton output from skeleton task}",
                     functional_requirements=func_reqs,
                     additional_prd_context=additional_ctx,
                     epic_key="{epic_key from previous task}",
@@ -198,7 +220,7 @@ def build_post_completion_crew(
             )
             tasks.append(stories_task)
 
-            # ── Task 5: Jira Tasks (sub-tasks under Stories) ───
+            # ── Task 6: Jira Tasks (sub-tasks under Stories) ───
             tasks_task = Task(
                 description=task_configs["create_jira_tasks_task"]["description"].format(
                     stories_output="{stories output from previous task}",

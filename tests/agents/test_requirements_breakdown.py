@@ -27,13 +27,6 @@ def _set_keys(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
 
 
-def _mock_build_breakdown_llm():
-    return patch(
-        "crewai_productfeature_planner.agents.requirements_breakdown.agent._build_breakdown_llm",
-        return_value="gemini/gemini-3-flash-preview",
-    )
-
-
 # ── Factory tests ─────────────────────────────────────────────
 
 
@@ -42,16 +35,14 @@ def test_create_agent_requires_credentials(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
     with pytest.raises(EnvironmentError, match="GOOGLE_API_KEY"):
-        with _mock_build_breakdown_llm():
-            create_requirements_breakdown_agent()
+        create_requirements_breakdown_agent()
 
 
 def test_create_agent_accepts_api_key(monkeypatch):
     """Should succeed with only GOOGLE_API_KEY set."""
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
-    with _mock_build_breakdown_llm():
-        agent = create_requirements_breakdown_agent()
+    agent = create_requirements_breakdown_agent()
     assert "architect" in agent.role.lower() or "requirements" in agent.role.lower()
 
 
@@ -59,36 +50,31 @@ def test_create_agent_accepts_project(monkeypatch):
     """Should succeed with only GOOGLE_CLOUD_PROJECT set."""
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-    with _mock_build_breakdown_llm():
-        agent = create_requirements_breakdown_agent()
+    agent = create_requirements_breakdown_agent()
     assert agent is not None
 
 
 def test_create_agent_role():
     """Agent should have a role mentioning architect or requirements."""
-    with _mock_build_breakdown_llm():
-        agent = create_requirements_breakdown_agent()
+    agent = create_requirements_breakdown_agent()
     role_lower = agent.role.lower()
     assert "architect" in role_lower or "requirements" in role_lower
 
 
 def test_create_agent_no_tools():
     """Agent should have no tools — pure reasoning only."""
-    with _mock_build_breakdown_llm():
-        agent = create_requirements_breakdown_agent()
+    agent = create_requirements_breakdown_agent()
     assert len(agent.tools) == 0
 
 
 def test_create_agent_no_delegation():
     """Agent should not delegate."""
-    with _mock_build_breakdown_llm():
-        agent = create_requirements_breakdown_agent()
+    agent = create_requirements_breakdown_agent()
     assert agent.allow_delegation is False
 
 def test_create_agent_reasoning_enabled():
     """Agent should have reasoning enabled for plan-before-execute."""
-    with _mock_build_breakdown_llm():
-        agent = create_requirements_breakdown_agent()
+    agent = create_requirements_breakdown_agent()
     assert agent.reasoning is True
     assert agent.max_reasoning_attempts == 3
 
@@ -96,25 +82,25 @@ def test_create_agent_reasoning_enabled():
 
 
 def test_build_llm_default_model(monkeypatch):
-    """Without REQUIREMENTS_BREAKDOWN_MODEL or GEMINI_MODEL, uses the default."""
+    """Without REQUIREMENTS_BREAKDOWN_MODEL or GEMINI_RESEARCH_MODEL, uses the default."""
     monkeypatch.delenv("REQUIREMENTS_BREAKDOWN_MODEL", raising=False)
-    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_RESEARCH_MODEL", raising=False)
     llm = _build_breakdown_llm()
     assert "gemini" in llm.model.lower()
 
 
 def test_build_llm_respects_requirements_model(monkeypatch):
-    """REQUIREMENTS_BREAKDOWN_MODEL should take precedence over GEMINI_MODEL."""
+    """REQUIREMENTS_BREAKDOWN_MODEL should take precedence over GEMINI_RESEARCH_MODEL."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MODEL", "gemini-custom-model")
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-3.1-pro-preview")
     llm = _build_breakdown_llm()
     assert "gemini-custom-model" in llm.model
 
 
-def test_build_llm_falls_back_to_gemini_model(monkeypatch):
-    """Without REQUIREMENTS_BREAKDOWN_MODEL, should use GEMINI_MODEL."""
+def test_build_llm_falls_back_to_gemini_research_model(monkeypatch):
+    """Without REQUIREMENTS_BREAKDOWN_MODEL, should use GEMINI_RESEARCH_MODEL."""
     monkeypatch.delenv("REQUIREMENTS_BREAKDOWN_MODEL", raising=False)
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-pro")
+    monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-2.5-pro")
     llm = _build_breakdown_llm()
     assert "gemini-2.5-pro" in llm.model
 
@@ -264,8 +250,7 @@ def test_breakdown_stops_at_requirements_ready(monkeypatch):
             result.raw = "Needs more detail. NEEDS_MORE"
         return result
 
-    with _mock_build_breakdown_llm(), \
-         patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("Build a dashboard with AI")
 
@@ -296,8 +281,7 @@ def test_breakdown_runs_max_iterations(monkeypatch):
         result.raw = "Still needs work. NEEDS_MORE"
         return result
 
-    with _mock_build_breakdown_llm(), \
-         patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("Build a feature")
 
@@ -324,8 +308,7 @@ def test_breakdown_ignores_ready_before_min(monkeypatch):
         result.raw = "Looks good. REQUIREMENTS_READY"
         return result
 
-    with _mock_build_breakdown_llm(), \
-         patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("Some idea")
 
@@ -347,8 +330,7 @@ def test_breakdown_returns_tuple(monkeypatch):
         result.raw = "REQUIREMENTS_READY"
         return result
 
-    with _mock_build_breakdown_llm(), \
-         patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("An idea")
 
@@ -378,10 +360,9 @@ def test_breakdown_saves_iterations_with_run_id(monkeypatch):
         result.raw = "NEEDS_MORE" if call_count < 2 else "REQUIREMENTS_READY"
         return result
 
-    with _mock_build_breakdown_llm(), \
-         patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
-         patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db") as mock_db:
+         patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db") as mock_db:
         mock_collection = MagicMock()
         mock_db.return_value = {"workingIdeas": mock_collection}
         result, history = breakdown_requirements("An idea", run_id="test_run_456")
@@ -405,10 +386,9 @@ def test_breakdown_no_run_id_skips_save(monkeypatch):
         result.raw = "REQUIREMENTS_READY"
         return result
 
-    with _mock_build_breakdown_llm(), \
-         patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
-         patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db") as mock_db:
+         patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db") as mock_db:
         mock_collection = MagicMock()
         mock_db.return_value = {"workingIdeas": mock_collection}
         breakdown_requirements("An idea")  # no run_id
@@ -438,8 +418,7 @@ def test_breakdown_passes_previous_requirements(monkeypatch):
         result.raw = "NEEDS_MORE" if call_count < 2 else "REQUIREMENTS_READY"
         return result
 
-    with _mock_build_breakdown_llm(), \
-         patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         breakdown_requirements("Build a dashboard")
 

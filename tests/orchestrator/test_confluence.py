@@ -85,7 +85,7 @@ class TestConfluencePublishStage:
         assert "12345" in result.output
         mock_publish.assert_called_once()
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
+    @patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db")
     def test_apply_updates_state(self, mock_get_db, _confluence_env):
         mock_collection = MagicMock()
         mock_collection.update_one.return_value = MagicMock(modified_count=1)

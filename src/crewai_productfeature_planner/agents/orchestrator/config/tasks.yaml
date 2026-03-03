@@ -21,6 +21,97 @@ publish_to_confluence_task:
     the page ID and URL.  If the publish failed, include the error
     details.
 
+generate_jira_skeleton_task:
+  description: >
+    Generate a skeleton outline of Jira Epics and User Stories that will
+    be created from the PRD, **without creating any tickets yet**.  This
+    is a planning step — the user must approve the skeleton before any
+    Jira issues are created.
+
+    ## PRD Title
+    {page_title}
+
+    ## Executive Summary
+    {executive_summary}
+
+    ## PRD Functional Requirements
+    {functional_requirements}
+
+    {additional_prd_context}
+
+    ## Project Tools & Architecture
+    The implementation should follow these defaults unless the PRD
+    specifies otherwise:
+    - **Data Persistence**: MongoDB (as used by the project).  If the
+      PRD specifies a different data store, note it.
+    - **Data Layer**: FastAPI (REST API) and Webhooks for data
+      interaction.  If the PRD specifies a different framework, note it.
+    - **Data Presentation**: React with TypeScript for web.  Web-only
+      unless the PRD specifies other platforms (Android, iOS).
+    - **App & Data Security**: Role-based access control, environment
+      property management, database injection prevention, input
+      validation, and authentication/authorization at all layers.
+
+    ## Instructions
+
+    Analyse the PRD and produce a structured skeleton with:
+
+    1. **Epics** — one Epic per key feature area of the idea.  Each
+       Epic represents a major capability.  Note dependencies between
+       Epics (e.g. "Auth Epic must be completed before Payment Epic").
+
+    2. **User Stories per Epic** — organised into these four
+       categories:
+       - **Data Persistence**: Stories for database schema design,
+         data models, indexes, migrations.
+       - **Data Layer**: Stories for API endpoints, webhooks, service
+         layer, business logic.
+       - **Data Presentation**: Stories for UI components, pages,
+         state management, responsive design.
+       - **App & Data Security**: Stories for auth, RBAC, input
+         validation, environment config, injection prevention.
+
+    For each Epic and Story, provide ONLY the title — do NOT write
+    descriptions or acceptance criteria yet.
+
+    ## Output Format
+
+    ```
+    EPIC 1: [Epic Title]
+      Dependencies: [list of other Epic numbers this depends on, or "None"]
+      Stories:
+        [Data Persistence]
+          - [Story title]
+          - [Story title]
+        [Data Layer]
+          - [Story title]
+          - [Story title]
+        [Data Presentation]
+          - [Story title]
+          - [Story title]
+        [App & Data Security]
+          - [Story title]
+
+    EPIC 2: [Epic Title]
+      Dependencies: [e.g. "EPIC 1"]
+      Stories:
+        [Data Persistence]
+          - [Story title]
+        ...
+    ```
+
+    Keep Story titles concise but descriptive (e.g.
+    "[Data Persistence] User preferences MongoDB schema",
+    "[Data Layer] POST /api/v1/preferences endpoint",
+    "[Data Presentation] Preferences settings page component",
+    "[App & Data Security] RBAC for preferences API").
+
+  expected_output: >
+    A structured skeleton listing all Epics (with inter-Epic
+    dependencies) and User Story titles grouped by category
+    (Data Persistence, Data Layer, Data Presentation, App & Data
+    Security) under each Epic.  No descriptions — titles only.
+
 create_jira_epic_task:
   description: >
     Create a Jira Epic to track the implementation of a newly published
@@ -54,13 +145,17 @@ create_jira_epic_task:
 create_jira_stories_task:
   description: >
     Create Jira Story tickets for each functional requirement, organised
-    by role (UX, Engineering, QE).  Each Story represents a work stream
-    for a specific discipline under the parent Epic.
+    by category (Data Persistence, Data Layer, Data Presentation, App &
+    Data Security).  Each Story represents a work stream for a specific
+    layer under the parent Epic.
 
     **IMPORTANT — Agent-Ready Stories**: Every Story description you
     create must be detailed enough that an AI coding agent (e.g. Codex,
     Copilot) or a vibe-coding session can pick up the ticket and start
     working immediately without asking for clarification.
+
+    ## Approved Skeleton
+    {approved_skeleton}
 
     ## PRD Functional Requirements
     {functional_requirements}
@@ -73,142 +168,149 @@ create_jira_stories_task:
     ## Confluence Page
     {confluence_url}
 
+    ## Project Tools & Architecture Defaults
+    Unless the PRD specifies otherwise, use these defaults:
+    - **Data Persistence**: MongoDB — collections, document schemas,
+      indexes, validators
+    - **Data Layer**: FastAPI REST API and Webhooks
+    - **Data Presentation**: React with TypeScript (web only unless
+      PRD specifies Android/iOS)
+    - **App & Data Security**: RBAC, env configuration, injection
+      prevention, input validation, auth/authz
+
     ## Instructions
 
-    Analyse the functional requirements and the additional PRD context
-    above (non-functional requirements, edge cases, error handling,
-    user personas, dependencies) and create **one Story per
-    role per major requirement area**.  Use the following four roles
-    and create them **in the order listed** — UX first, then
-    Architecture, then Engineering, then QE:
+    Follow the approved skeleton above.  For each Story title in the
+    skeleton, create a full Jira Story with detailed description and
+    acceptance criteria.  Use the following four categories and create
+    them **in the order listed**:
 
-    ### 1. UX Stories (create these FIRST)
-    UX stories must be completed before any other work can begin.
-    Each UX story should produce concrete design deliverables:
-    - Detailed **wireframes** for every screen / interaction flow
-    - High-fidelity **design mockups** and a clickable **prototype**
-    - Component specifications and design-system tokens
-    - Interaction states (loading, error, empty, success)
-    - Accessibility annotations (contrast, focus order, ARIA)
-    - **Sample data**: Provide representative sample content for every
-      screen (e.g. placeholder text, sample images, mock user data)
-    Component: "UX"
+    ### 1. Data Persistence Stories (create these FIRST)
+    Data Persistence stories must be completed before Data Layer work
+    can begin.  Each story covers database/storage concerns:
+    - **MongoDB collection design** — document structure, field types,
+      required vs optional, defaults, validation rules
+    - **Indexes** — list every index with fields, direction, uniqueness
+    - **JSON Schema validator** — full ``$jsonSchema`` for MongoDB
+    - **Sample documents** — 2-3 realistic JSON documents per collection
+    - **Migration strategy** — if modifying existing collections,
+      specify backward-compatible steps
+    Component: "Data Persistence"
 
-    ### 2. Architecture Stories (depend on UX)
-    Architecture stories define the **data definitions** that both
-    Backend and Frontend engineering depend on.  Each Architecture
-    story **is blocked by** the corresponding UX story — set
-    ``is_blocked_by_key`` to the UX story key.
-    Architecture stories cover:
-    - **MongoDB data schema** — define new collections, document
-      structures, indexes, and validation rules for every entity
-      the feature introduces.  If no existing schema fits, design
-      a new collection and document format.  Include **sample
-      documents** (2-3 realistic JSON examples per collection).
-    - **API contract definition** — specify every REST / GraphQL
-      endpoint (path, method, query parameters, request body,
-      success response, error responses with status codes and
-      messages).  Include **sample request/response JSON** for
-      each endpoint.
-    - **Algorithm selection** — when business logic involves
-      non-trivial processing (search ranking, recommendation,
-      matching, scheduling, etc.), specify the algorithm or
-      approach with reasoning for why it was chosen over
-      alternatives.
-    All definitions must be documented in Confluence so Backend and
-    Frontend engineers can reference them during implementation.
-    Component: "Architecture"
+    ### 2. Data Layer Stories (depend on Data Persistence)
+    Data Layer stories define API endpoints, webhooks, and business
+    logic.  Each Data Layer story **is blocked by** the corresponding
+    Data Persistence story — set ``is_blocked_by_key`` to the Data
+    Persistence story key.
+    Data Layer stories cover:
+    - **REST API endpoints** — path, method, request/response schema,
+      error responses with status codes, sample JSON
+    - **Webhook definitions** — event types, payload schema, retry
+      policy, idempotency keys, dead-letter queue
+    - **Business logic / service layer** — algorithms, state machines,
+      validation rules
+    - **OpenAPI 3.1 specification fragments** for every endpoint
+    Component: "Data Layer"
 
-    ### 3. Engineering Stories (depend on UX and Architecture)
-    Engineering stories describe the full-stack implementation work
-    that is derived from the UX designs and Architecture data
-    definitions.  Each Engineering story **is blocked by** the
-    corresponding Architecture story — set ``is_blocked_by_key``
-    to the Architecture story key (which itself depends on UX).
-    Each Engineering story description must include:
-    - Summary of the backend services and frontend components to build
-    - Reference to the Architecture story for schema and API specs
-    - Acceptance criteria written as testable assertions
-    - **Guard rails**: explicit constraints on what NOT to do
-      (e.g. "Do NOT modify existing auth middleware", "Do NOT add
-      new npm dependencies without approval")
-    Component: "Engineering"
+    ### 3. Data Presentation Stories (depend on Data Layer)
+    Data Presentation stories describe the frontend/UI implementation.
+    Each Data Presentation story **is blocked by** the corresponding
+    Data Layer story — set ``is_blocked_by_key`` to the Data Layer
+    story key.
+    Unless the PRD specifies otherwise, use **React with TypeScript**
+    for web.  Only include Android/iOS stories if the PRD explicitly
+    requests mobile platforms.
+    Each Data Presentation story must include:
+    - **Component hierarchy** and props interfaces (TypeScript types)
+    - **UI states** — loading, empty, success, error with sample data
+    - **Responsive breakpoints** — mobile, tablet, desktop
+    - **Accessibility** — WCAG 2.1 AA, ARIA labels, keyboard nav
+    - **API integration** — which Data Layer endpoints to call
+    - **State management approach** — local state, context, or store
+    Component: "Data Presentation"
 
-    ### 4. QE Stories (depend on UX)
-    QE stories cover comprehensive test coverage for every Engineering
-    task to verify that each user story and the overall Epic are fully
-    satisfied.  Each QE story **is blocked by** the corresponding
-    UX story — set ``is_blocked_by_key`` to the UX story key.
-    Each QE story description must include:
-    - **Happy-path test scenarios** with sample input and expected
-      output
-    - **Edge-case test scenarios** listing boundary conditions,
-      empty inputs, maximum-length inputs, concurrent operations
-    - **Negative test scenarios** listing invalid inputs, auth
-      failures, missing data, and expected error responses
-    - **Sample test data fixtures** — concrete JSON or Python dicts
-      that the QA agent can use directly in test setup
-    Component: "QE"
+    ### 4. App & Data Security Stories (span all layers)
+    Security stories provide protection across all layers.  Each
+    security story **is blocked by** the corresponding Data Layer
+    story — set ``is_blocked_by_key`` to the Data Layer story key.
+    Security stories must cover:
+    - **Role-based access control (RBAC)** — define roles, permissions,
+      middleware/guards for API and UI routes
+    - **Environment properties** — secrets management, config files,
+      env var validation, no hardcoded credentials
+    - **Database injection prevention** — parameterised queries, ORM
+      usage, input sanitization
+    - **Input validation** — request body validation, query param
+      validation, file upload restrictions
+    - **Authentication & authorization** — token verification, session
+      management, CORS, CSP headers
+    Component: "App & Data Security"
 
     For each Story, call the jira_create_issue tool with:
     - Issue type: "Story"
-    - Summary: A concise title prefixed with the role, e.g.
-      "[UX] Design onboarding flow" or
-      "[Architecture] Data definitions for onboarding" or
-      "[Engineering] Implement onboarding backend & frontend" or
-      "[QE] Unit tests for onboarding"
-    - Description: Detailed acceptance criteria and scope for this role.
-      UX stories must specify wireframe and design deliverables with
-      sample content.
-      Architecture stories must list every collection, document schema,
-      API contract, and algorithm decision with sample data.
-      Engineering stories must describe frontend and backend scope with
-      guard rails.
-      QE stories must describe test coverage with happy-path, edge-case
-      and negative scenarios plus sample test data.
+    - Summary: A concise title prefixed with the category, e.g.
+      "[Data Persistence] User preferences MongoDB schema" or
+      "[Data Layer] POST /api/v1/preferences endpoint" or
+      "[Data Presentation] Preferences settings page" or
+      "[App & Data Security] RBAC for preferences API"
+    - Description: Detailed acceptance criteria for this category.
     - Epic key: "{epic_key}"
     - Labels: "prd,auto-generated"
     - Run ID: {run_id}
     - Confluence URL: "{confluence_url}"
-    - Component: The role name ("UX", "Architecture", "Engineering",
-      or "QE")
-    - is_blocked_by_key: For Architecture stories, set this to the
-      corresponding UX story key.  For Engineering stories, set this
-      to the corresponding Architecture story key.  For QE stories,
-      set this to the corresponding UX story key.
+    - Component: The category name ("Data Persistence", "Data Layer",
+      "Data Presentation", or "App & Data Security")
+    - is_blocked_by_key: For Data Layer stories, set this to the
+      corresponding Data Persistence story key.  For Data Presentation
+      stories, set this to the corresponding Data Layer story key.
+      For App & Data Security stories, set this to the corresponding
+      Data Layer story key.
 
     ### Dependency summary
-    UX stories have **no blockers** — they are the starting point.
-    Architecture stories are **blocked by** the matching UX story.
-    Engineering stories are **blocked by** the matching Architecture story.
-    QE stories are **blocked by** the matching UX story.
+    Data Persistence stories have **no blockers** — they are the
+    starting point.
+    Data Layer stories are **blocked by** the matching Data Persistence
+    story.
+    Data Presentation stories are **blocked by** the matching Data
+    Layer story.
+    App & Data Security stories are **blocked by** the matching Data
+    Layer story.
+
+    ### Epic Dependencies
+    When creating Epics, also set up ``is_blocked_by_key`` links
+    between Epics as specified in the approved skeleton's dependency
+    list.
 
     Keep each Story small enough to be estimated and completed in one
     sprint.
 
-    **IMPORTANT**: Record every Story key you create — you will need them
-    for the next step where sub-tasks are created.
+    **IMPORTANT**: Record every Story key you create — you will need
+    them for the next step where sub-tasks are created.
   expected_output: >
-    A structured list of all Jira Story keys created, grouped by role,
-    with their URLs.  Format each as:
-      [ROLE] STORY_KEY: Summary — URL
+    A structured list of all Jira Story keys created, grouped by
+    category, with their URLs.  Format each as:
+      [CATEGORY] STORY_KEY: Summary — URL
     followed by a summary of dependency links created.
     If any creation failed, include the error details.
 
 create_jira_tasks_task:
   description: >
     Create Jira Sub-Task tickets under the Stories created in the
-    previous step.  Sub-Tasks are the atomic units of work that the
-    Engineering Squad picks up.  The team does NOT work on User
+    previous step.  Sub-Tasks are the atomic units of work that
+    engineering agents pick up.  The team does NOT work on User
     Stories directly — they work on Sub-Tasks.
 
+    Break each User Story into smaller components that can be done
+    by multiple engineering agents working in parallel.
+
     ## Engineering Squad
-    Your squad has four roles.  Every Sub-Task is assigned to exactly
-    one role:
-      1. **UX Designer** — wireframes, prototypes, design-system
-      2. **Backend Engineer** — APIs, services, database, webhooks
+    Your squad has specialised agents.  Every Sub-Task is assigned to
+    exactly one agent role:
+      1. **Data Engineer** — database schemas, migrations, indexes
+      2. **Backend Engineer** — APIs, services, webhooks, business logic
       3. **Frontend Engineer** — UI components, state, integration
-      4. **Quality Engineer (QE)** — test suites, coverage, validation
+      4. **Security Engineer** — auth, RBAC, validation, hardening
+      5. **Quality Engineer (QE)** — test suites, coverage, validation
 
     ## Agent-Ready Sub-Tasks
     **CRITICAL**: Every Sub-Task description MUST contain enough
@@ -227,21 +329,28 @@ create_jira_tasks_task:
        patterns, constraints, and out-of-scope work
     5. **Definition of Done** — Checklist of acceptance criteria that
        can be verified programmatically
+    6. **Test Cases for QE** — GIVEN/WHEN/THEN scenarios covering
+       happy path, edge cases, and negative cases that the Quality
+       Engineer agent will use to verify this sub-task
+    7. **Unit Test Cases** — Specific unit test cases the implementing
+       agent must write alongside the code
 
-    ## Project Configuration Boundaries
-    Sub-Task descriptions must constrain agents to these tools:
-      - **Claude Opus 4.6 Codex** — the AI agent executing each
-        Sub-Task; all instructions must be Codex-executable
-      - **Schema validator** — every data schema must include a JSON
-        Schema definition that passes validation
-      - **OpenAPI generator** — every API must produce a valid
-        OpenAPI 3.1 specification fragment
-      - **Swagger API documentation** — every endpoint must have
-        request/response examples in Swagger format
-      - **State diagram generator** — every stateful entity must
-        include a Mermaid state diagram
-      - **Crew reflection memory** — reference patterns from
-        previous decompositions to improve ticket quality
+    ## Sub-Task Dependencies
+    **CRITICAL**: Sub-tasks have dependencies on each other that MUST
+    be captured with ``is_blocked_by_key`` links:
+
+    - Data Persistence sub-tasks have **no blockers** — start here
+    - Data Layer sub-tasks are **blocked by** Data Persistence sub-tasks
+      (API endpoints need the database schema to be defined first)
+    - Data Presentation sub-tasks are **blocked by** Data Layer sub-tasks
+      (UI components need API endpoints to integrate with)
+    - API Integration Testing sub-tasks are **blocked by BOTH** Data
+      Layer AND Data Presentation sub-tasks (integration tests verify
+      the full stack works end-to-end)
+    - App & Data Security sub-tasks are **blocked by** Data Layer
+      sub-tasks (security hardening requires endpoints to exist)
+    - QE sub-tasks are **blocked by** the corresponding implementation
+      sub-task
 
     ## Stories Created
     {stories_output}
@@ -256,521 +365,138 @@ create_jira_tasks_task:
 
     ## Instructions
 
-    Use BOTH the functional requirements AND the additional PRD
-    context above (especially non-functional requirements, edge cases,
-    error handling scenarios) to produce maximally detailed sub-tasks.
-
     For each Story created in the previous step, decompose it into
     **3-7 Sub-Tasks**.  Each Sub-Task should be a concrete, atomic,
-    agent-codex-executable work item for one squad member.
+    agent-codex-executable work item.
 
     ---
 
-    ### UX Sub-Tasks (under UX Stories)
-    UX sub-tasks produce the design artefacts that Architecture and
-    Engineering depend on.
-
-    Each UX sub-task description MUST include:
-    - **Reasoning**: Why this design artefact is needed and which
-      user journey it supports
-    - **Deliverables**: Exact list of screens, states, and components
-    - **Sample content**: Representative placeholder text, sample
-      user names, avatar URLs, and mock data for every screen
-    - **Interaction states**: Loading skeleton, empty state, error
-      state, success state — with specific copy for each
-    - **Accessibility requirements**: WCAG 2.1 AA minimum — contrast
-      ratios, focus order, ARIA labels, keyboard navigation
-    - **Guard rails**: Do NOT introduce new colour tokens without
-      design-system review; Do NOT deviate from the existing grid
-
-    Sub-task categories:
-    - User research / persona validation
-    - Wireframe creation for each screen and interaction flow
-    - High-fidelity mockup / clickable prototype
-    - Design-system component specification
-    - Usability testing plan and accessibility annotations
-
-    ---
-
-    ### Architecture Sub-Tasks (under Architecture Stories)
-    Architecture sub-tasks define the **data definitions, API
-    contracts, state machines, webhook architecture, error taxonomy,
-    and observability hooks** that Engineering and QE depend on.
-
-    **CRITICAL**: Architecture sub-tasks must contain the FULL
-    specification — not just a description of what to do, but the
-    actual schema/contract itself with sample data.
+    ### Data Persistence Sub-Tasks (under Data Persistence Stories)
 
     #### Data Schema sub-tasks — prefix: "[Data Schema] …"
     Each schema sub-task description MUST include:
-
-    - **Reasoning**: Why this collection is needed, what entity it
-      models, and why no existing collection suffices
-    - **Collection name**: e.g. ``user_preferences``
-    - **Document structure**: Every field with its BSON type, whether
-      required or optional, default value, and validation rules.
-      Format as a table or structured list:
-      ```
-      Field            | Type     | Required | Default  | Notes
-      _id              | ObjectId | yes      | auto     | Primary key
-      user_id          | String   | yes      | —        | FK to users
-      theme            | String   | no       | "light"  | "light"|"dark"
-      notifications    | Object   | no       | {{}}       | Nested prefs
-        .email         | Boolean  | no       | true     |
-        .push          | Boolean  | no       | false    |
-      created_at       | DateTime | yes      | now()    | ISO 8601
-      updated_at       | DateTime | yes      | now()    | ISO 8601
-      ```
-    - **Indexes**: List every index with fields, direction, and
-      uniqueness.  Example:
-      ``{{ "user_id": 1 }}`` — unique
-      ``{{ "created_at": -1 }}`` — for sorting
-    - **JSON Schema validator** (MongoDB $jsonSchema): Include the
-      full JSON Schema definition so it can be validated:
-      ```json
-      {{
-        "$jsonSchema": {{
-          "bsonType": "object",
-          "required": ["user_id", "created_at"],
-          "properties": {{
-            "user_id": {{ "bsonType": "string" }},
-            "theme": {{ "enum": ["light", "dark"] }}
-          }}
-        }}
-      }}
-      ```
-    - **Sample documents**: Provide 2-3 realistic JSON documents
-    - **Migration strategy**: If modifying existing collections,
-      specify backward-compatible migration steps
-    - **Guard rails**: Do NOT embed unbounded arrays; Do NOT store
-      derived/computed data; Do NOT use schemaless sub-documents
+    - **Collection name** and document structure (every field with
+      BSON type, required/optional, defaults, validation)
+    - **Indexes** with fields, direction, uniqueness
+    - **JSON Schema validator** (MongoDB $jsonSchema)
+    - **Sample documents** (2-3 realistic examples)
+    - **Migration strategy** for existing collections
+    - **Unit Test Cases**: Tests that validate schema enforcement,
+      required field presence, and index effectiveness
 
     #### State Machine sub-tasks — prefix: "[State Machine] …"
-    When a Story involves stateful entities, create a state-machine
-    sub-task that includes:
+    - **Mermaid state diagram** with all states and transitions
+    - **Transition table**: from-state, event, guard, to-state
+    - **Invalid transition handling** with error codes
+    - **Concurrency guards** and optimistic locking strategy
 
-    - **Mermaid state diagram**: Full diagram showing all states
-      and transitions:
-      ```mermaid
-      stateDiagram-v2
-        [*] --> Draft
-        Draft --> PendingReview : submit
-        PendingReview --> Approved : approve
-        PendingReview --> Draft : requestChanges
-        Approved --> Published : publish
-        Published --> [*]
-      ```
-    - **Transition table**: from-state, event, guard condition,
-      to-state, side-effects
-    - **Invalid transition handling**: error code and response for
-      every illegal transition attempt
-    - **Concurrency guards**: optimistic locking strategy, version
-      fields, conflict resolution
-    - **Audit trail**: who changed what, when (fields to capture)
+    ---
+
+    ### Data Layer Sub-Tasks (under Data Layer Stories)
 
     #### API Definition sub-tasks — prefix: "[API Definition] …"
-    Each API sub-task description MUST include:
-
-    - **Reasoning**: Why this endpoint is needed, which user action
-      triggers it
-    - **OpenAPI 3.1 specification fragment** (YAML):
-      ```yaml
-      /api/v1/preferences:
-        post:
-          summary: Create user preferences
-          requestBody:
-            required: true
-            content:
-              application/json:
-                schema:
-                  $ref: '#/components/schemas/CreatePreferences'
-          responses:
-            '201':
-              description: Created
-            '400':
-              description: Validation error
-            '401':
-              description: Unauthorized
-      ```
-    - **Full request example** (headers + body):
-      ```json
-      POST /api/v1/preferences
-      Content-Type: application/json
-      Authorization: Bearer <token>
-      Idempotency-Key: "idem_abc123"
-
-      {{
-        "theme": "dark",
-        "notifications": {{ "email": true, "push": false }}
-      }}
-      ```
-    - **Full success response example**
-    - **Error responses**: Every expected error with status code,
-      structured error code (DOMAIN_CATEGORY_SPECIFIC), and message:
-      ```
-      400 — {{ "error": {{ "code": "PREF_VALIDATION_INVALID_THEME", "message": "theme must be 'light' or 'dark'", "trace_id": "t-xyz" }} }}
-      401 — {{ "error": {{ "code": "AUTH_TOKEN_EXPIRED", "message": "Bearer token missing or expired", "trace_id": "t-xyz" }} }}
-      409 — {{ "error": {{ "code": "PREF_CONFLICT_ALREADY_EXISTS", "message": "Preferences already exist", "trace_id": "t-xyz" }} }}
-      ```
-    - **Idempotency key header specification** (for mutating ops)
-    - **Rate limiting**: requests per minute per user/API key
-    - **Guard rails**: Do NOT return internal ObjectIds; Do NOT
-      accept unvalidated input; Do NOT allow batch-size > 100
+    - **OpenAPI 3.1 specification fragment** (YAML)
+    - **Full request/response examples** (headers + body)
+    - **Error responses** with structured error codes
+    - **Rate limiting** and idempotency key specs
+    - **Unit Test Cases**: Tests for each endpoint's request
+      validation, response format, and error handling
 
     #### Webhook sub-tasks — prefix: "[Webhook] …"
-    When a Story uses webhooks or event-driven patterns, create a
-    webhook sub-task that includes:
+    - **Event type taxonomy** (domain.entity.action)
+    - **Payload JSON schema** with examples
+    - **Retry policy matrix** and dead-letter queue handling
+    - **Signature verification** (HMAC-SHA256)
 
-    - **Event type taxonomy**: domain.entity.action format
-      (e.g. "preferences.user.updated")
-    - **Payload JSON schema** with full example:
-      ```json
-      {{
-        "event_type": "preferences.user.updated",
-        "event_id": "evt_abc123",
-        "timestamp": "2026-03-01T10:00:00Z",
-        "data": {{
-          "user_id": "usr_abc123",
-          "changes": {{ "theme": {{ "old": "light", "new": "dark" }} }}
-        }}
-      }}
-      ```
-    - **Delivery guarantees**: at-least-once with idempotency
-    - **Retry policy matrix**:
-      ```
-      Attempt | Delay    | Max elapsed
-      1       | 1s       | 1s
-      2       | 5s       | 6s
-      3       | 30s      | 36s
-      4       | 5m       | 5m 36s
-      5       | 30m      | 35m 36s
-      ```
-    - **Idempotency key specification**: ``event_id`` header
-    - **Dead-letter queue handling**: after max retries, persist to
-      DLQ collection with full payload for manual replay
-    - **Signature verification**: HMAC-SHA256 of payload body
-    - **Timeout and circuit-breaker thresholds**
-
-    #### Error Taxonomy sub-tasks — prefix: "[Error Taxonomy] …"
-    Define the structured error taxonomy for the feature:
-
-    - **Error code format**: DOMAIN_CATEGORY_SPECIFIC
-    - **HTTP status code mapping table**
-    - **Error response envelope**:
-      ```json
-      {{
-        "error": {{
-          "code": "DOMAIN_CATEGORY_SPECIFIC",
-          "message": "Human-readable description",
-          "details": [],
-          "trace_id": "t-xyz789"
-        }}
-      }}
-      ```
-    - **Classification**: client-actionable vs server-side errors
-    - **Observability**: which errors trigger alerts vs metrics
-
-    #### Observability sub-tasks — prefix: "[Observability] …"
-    Specify the observability requirements for the feature:
-
-    - **Structured log entries**: level, fields, sample log line
-    - **Metrics to emit**: counter/histogram/gauge — name, labels,
-      unit (e.g. ``api_requests_total{method="POST", status="201"}``)
-    - **Trace span names and attributes**
-    - **Health-check endpoints or probes affected**
-    - **Alert thresholds** (e.g. "alert if error rate > 5% for 5min")
-
-    Architecture sub-tasks have **no internal blockers** — they can
-    be worked in parallel under their Architecture story.
+    #### Backend Implementation — prefix: "[Backend] …"
+    - **File paths** and function signatures with type hints
+    - **Database operations** referencing Data Schema sub-tasks
+    - **Error handling** referencing Error Taxonomy
+    - **Unit Test Cases**: Tests for service layer logic,
+      database CRUD operations, and error paths
 
     ---
 
-    ### Engineering Sub-Tasks (under Engineering Stories)
-    Engineering sub-tasks are split into **Frontend** and **Backend**
-    categories.  Create sub-tasks from both categories for each
-    Engineering story.
-
-    **CRITICAL**: Every Engineering sub-task description must be
-    **agent-codex-ready** — an AI agent must be able to read the
-    ticket and start writing production code immediately.
-
-    **IMPORTANT**: Every Frontend and Backend sub-task **is blocked
-    by** the relevant Architecture sub-task(s) — set
-    ``is_blocked_by_key`` to the corresponding Architecture sub-task
-    key so that engineers cannot begin implementation until the data
-    schema, API contract, state machine, and error taxonomy are
-    defined.
-
-    #### Backend sub-tasks — prefix: "[Backend] …"
-    Each Backend sub-task description MUST include:
-
-    - **Reasoning**: Why this service/endpoint/module is needed and
-      which Architecture definition it implements
-    - **Step-by-step implementation instructions**:
-      1. Suggested file path (e.g. ``src/services/preferences.py``)
-      2. Class/function signatures with type hints
-      3. Dependencies to import and install
-      4. Database operations (CRUD with the schema from the
-         Architecture sub-task)
-      5. Error handling — which exceptions to catch, which HTTP
-         status codes to return (referencing the Error Taxonomy)
-      6. Logging — what to log at INFO vs WARNING vs ERROR
-         (referencing the Observability sub-task)
-      7. State transitions — which state-machine transitions this
-         endpoint triggers (referencing the State Machine sub-task)
-      8. Webhook emissions — which events to publish after
-         successful operations (referencing the Webhook sub-task)
-    - **Sample input/output**: Concrete request/response examples
-    - **Idempotency requirements**: Which operations need
-      idempotency keys and how duplicates are detected
-    - **Guard rails**:
-      - Do NOT modify existing middleware or shared utilities
-      - Do NOT add new dependencies without documenting them
-      - Do NOT use raw string queries — use ODM/ORM methods
-      - Do NOT swallow exceptions silently
-      - Do NOT return stack traces in API responses
-    - **Definition of done**:
-      - [ ] Endpoint responds correctly for valid input
-      - [ ] Input validated against JSON Schema
-      - [ ] State transitions follow the state-machine spec
-      - [ ] Error responses match the Error Taxonomy
-      - [ ] Webhook events emitted on state changes
-      - [ ] Idempotency key prevents duplicate processing
-      - [ ] Structured logs emitted per Observability spec
-      - [ ] Auth middleware enforces token verification
-
-    Backend sub-task categories:
-    - Database model/schema implementation (referencing Data Schema)
-    - API endpoint implementation (referencing API Definition)
-    - State-machine implementation (referencing State Machine)
-    - Webhook publisher (referencing Webhook sub-task)
-    - Business-logic / service-layer implementation
-    - Authentication, authorisation, and security hardening
+    ### Data Presentation Sub-Tasks (under Data Presentation Stories)
 
     #### Frontend sub-tasks — prefix: "[Frontend] …"
-    Each Frontend sub-task description MUST include:
+    - **Component hierarchy** and TypeScript props interfaces
+    - **UI states**: Loading, Empty, Success, Error with mock data
+    - **API integration** referencing Data Layer endpoints
+    - **Responsive breakpoints** (mobile, tablet, desktop)
+    - **Accessibility** (WCAG 2.1 AA, ARIA, keyboard nav)
+    - **Unit Test Cases**: Component render tests, state transition
+      tests, and accessibility audit tests
 
-    - **Reasoning**: Why this component/page is needed and which
-      UX wireframe it implements
-    - **Step-by-step implementation instructions**:
-      1. Suggested file path (e.g. ``src/components/Preferences/``)
-      2. Component hierarchy and props interface (TypeScript types)
-      3. State management approach (local state, context, store)
-      4. API integration — which backend endpoint to call (referencing
-         the API Definition), request format, response handling
-      5. Error handling — display errors from the Error Taxonomy
-      6. Responsive breakpoints (mobile, tablet, desktop)
-      7. Accessibility — ARIA labels, keyboard navigation, focus
-    - **Sample UI states**: Loading, Empty, Success, Error — with
-      concrete mock data for each
-    - **Guard rails**:
-      - Do NOT use inline styles — use CSS modules or styled
-        components
-      - Do NOT make API calls in render — use hooks/effects
-      - Do NOT store sensitive data in client-side state
-      - Do NOT hardcode strings — use i18n keys
-    - **Definition of done**:
-      - [ ] Component renders all 4 states correctly
-      - [ ] Responsive layout works at all breakpoints
-      - [ ] Error messages match Error Taxonomy codes
-      - [ ] Keyboard navigation works end-to-end
-      - [ ] State transitions update UI reactively
-
-    Where sub-tasks have natural ordering, use ``is_blocked_by_key``
-    to link them in addition to the Architecture dependency.
+    #### API Integration sub-tasks — prefix: "[API Integration] …"
+    These verify that Data Layer and Data Presentation work together.
+    - **is_blocked_by_key**: Set to BOTH the Data Layer sub-task AND
+      the Data Presentation sub-task keys
+    - **Integration test scenarios** covering the full request flow
+      from UI action → API call → database → response → UI update
+    - **Sample integration test data** with realistic payloads
+    - This sub-task type is specifically for testing the integrated
+      layer after both backend and frontend are complete
 
     ---
 
-    ### QE Sub-Tasks (under QE Stories)
-    QE sub-tasks verify correctness of the Engineering implementation.
-    Create **two categories** of QE sub-tasks for every Engineering
-    sub-task:
+    ### App & Data Security Sub-Tasks (under Security Stories)
 
-    **CRITICAL**: Every QE sub-task must contain concrete test
-    scenarios with sample data that a QA agent can convert directly
-    into test code without inventing test cases from scratch.
+    #### Security sub-tasks — prefix: "[Security] …"
+    - **RBAC definitions** — roles, permissions, middleware guards
+    - **Input validation rules** — sanitization, injection prevention
+    - **Environment config** — secrets management, env var validation
+    - **Auth flows** — token verification, session management
+    - **Unit Test Cases**: Tests for permission enforcement, input
+      rejection, and auth flow edge cases
 
-    **MANDATORY**: In addition to happy-path, edge-case, and negative
-    tests, every QE sub-task MUST include tests for:
-      1. **JSON schema validation** — verify payloads conform to the
-         JSON Schema defined in the Architecture sub-task
-      2. **State transition verification** — verify every valid
-         transition succeeds and every invalid transition returns
-         the correct error (reference State Machine sub-task)
-      3. **API request/response contract** — verify every endpoint
-         matches the OpenAPI spec (reference API Definition sub-task)
-      4. **Webhook retry logic** — verify retry policy, idempotency,
-         and dead-letter queue behaviour (reference Webhook sub-task)
-      5. **Error taxonomy validation** — verify every error response
-         matches the Error Taxonomy (code, message, trace_id)
-      6. **Observability hooks verification** — verify structured
-         logs, metrics, and trace spans are emitted correctly
+    ---
 
-    #### Unit / Integration Test sub-tasks
-    Prefix: "[Unit Test — Backend] …" or "[Unit Test — Frontend] …"
+    ### QE Sub-Tasks (under all Story types)
+    Create QE verification sub-tasks for every implementation sub-task.
 
+    #### Test sub-tasks — prefix: "[Unit Test — …] …"
     Each test sub-task description MUST include:
-
-    - **Reasoning**: Why these tests are needed and which Engineering
-      sub-task they verify
-    - **Reference**: The Engineering sub-task key this test covers
-    - **Happy-path test scenarios** with GIVEN/WHEN/THEN format:
-      ```
-      SCENARIO: Create preferences with valid input
-      GIVEN:  user_id="usr_abc123", payload={{ "theme": "dark" }}
-      WHEN:   POST /api/v1/preferences
-      THEN:   status=201, response.theme=="dark"
-      ```
-    - **Edge-case test scenarios** — boundary conditions:
-      ```
-      SCENARIO: Handle maximum-length theme value
-      GIVEN:  payload={{ "theme": "a" * 256 }}
-      WHEN:   POST /api/v1/preferences
-      THEN:   status=400, error.code="PREF_VALIDATION_INVALID_THEME"
-      ```
-    - **Negative test scenarios** — expected failures with Error
-      Taxonomy codes:
-      ```
-      SCENARIO: Reject unauthenticated request
-      GIVEN:  No Authorization header
-      WHEN:   POST /api/v1/preferences
-      THEN:   status=401, error.code="AUTH_TOKEN_EXPIRED"
-      ```
-    - **JSON schema validation tests**:
-      ```
-      SCENARIO: Reject payload violating JSON Schema
-      GIVEN:  payload={{ "theme": 12345 }}  (type should be string)
-      WHEN:   POST /api/v1/preferences
-      THEN:   status=400, error.code="PREF_VALIDATION_SCHEMA_ERROR"
-      ```
-    - **State transition tests**:
-      ```
-      SCENARIO: Reject invalid state transition
-      GIVEN:  entity in state "Published"
-      WHEN:   attempt transition "submit"
-      THEN:   status=409, error.code="STATE_INVALID_TRANSITION"
-      ```
-    - **Webhook retry tests**:
-      ```
-      SCENARIO: Retry webhook delivery on timeout
-      GIVEN:  webhook endpoint returns 504 on first call
-      WHEN:   retry policy triggers
-      THEN:   second attempt after 1s delay, same idempotency key
-      ```
-    - **Observability tests**:
-      ```
-      SCENARIO: Verify structured log on successful creation
-      GIVEN:  Valid create preferences request
-      WHEN:   POST /api/v1/preferences succeeds
-      THEN:   log entry at INFO with fields: user_id, action, duration_ms
-      ```
-    - **Sample test data fixtures** ready to copy-paste:
-      ```python
-      VALID_PREFERENCE = {{
-          "user_id": "usr_abc123",
-          "theme": "dark",
-          "notifications": {{ "email": True, "push": False }},
-      }}
-      INVALID_PREFERENCE_MISSING_THEME = {{
-          "user_id": "usr_abc123",
-      }}
-      INVALID_PREFERENCE_BAD_TYPE = {{
-          "user_id": "usr_abc123",
-          "theme": 12345,
-      }}
-      ```
-    - **Guard rails**:
-      - Do NOT test implementation details (private methods)
-      - Do NOT use production data — only fixtures defined above
-      - Do NOT mock the unit under test — only mock dependencies
-      - Do NOT write flaky tests that depend on timing
-    - **Definition of done**:
-      - [ ] All happy-path scenarios pass
-      - [ ] All edge-case scenarios pass
-      - [ ] All negative scenarios return expected Error Taxonomy codes
-      - [ ] JSON schema validation tests pass
-      - [ ] State transition tests pass
-      - [ ] Webhook retry logic tests pass
-      - [ ] Observability hooks emit correct logs/metrics
-      - [ ] Test coverage >= 90% for the module under test
-
-    Each QE sub-task must have ``is_blocked_by_key`` set to the
-    corresponding Engineering sub-task key so the QE sub-task cannot
-    start until the implementation exists.
-
-    ---
-
-    ## Sub-Task Dependency Summary
-
-    The dependency chain for sub-tasks mirrors the Story dependency
-    chain but at a finer granularity:
-
-    ```
-    [UX sub-tasks]           — no blockers (starting point)
-         |
-    [Architecture sub-tasks] — blocked by UX sub-tasks
-    (Data Schema, State Machine, API Definition, Webhook,
-     Error Taxonomy, Observability)
-         |
-    [Engineering sub-tasks]  — blocked by Architecture sub-tasks
-    (Backend, Frontend)
-         |
-    [QE sub-tasks]           — blocked by Engineering sub-tasks
-    (Unit Test — Backend, Unit Test — Frontend)
-    ```
+    - **GIVEN/WHEN/THEN** scenarios for happy path, edge cases,
+      negative cases
+    - **JSON schema validation tests**
+    - **API contract verification tests**
+    - **Sample test data fixtures** ready to copy-paste
+    - **Coverage target**: >= 90% for the module under test
+    - **is_blocked_by_key**: Set to the implementation sub-task key
 
     ---
 
     ## Self-Improvement Check
 
-    After creating all sub-tasks for a Story, review them as a batch:
-    1. Could an agent start working on each sub-task without asking
-       a single question?  If not, add more detail.
-    2. Are all blocking dependencies captured with
-       ``is_blocked_by_key``?  If not, add missing links.
-    3. Does every sub-task with state changes include a Mermaid
-       state diagram?  If not, add one.
-    4. Does every QE sub-task reference the exact JSON schema, API
-       contract, error codes, and observability spec?  If not,
-       cross-reference them.
-    5. Does every sub-task specify the tool boundaries (Codex,
-       Schema validator, OpenAPI generator, etc.)?  If not, add
-       the tool constraint.
-    If any check fails, revise the sub-task before moving on.
+    After creating all sub-tasks for a Story, verify:
+    1. Could an agent start each sub-task without asking questions?
+    2. Are all dependency links captured with ``is_blocked_by_key``?
+    3. Does every sub-task include QE test cases and unit test cases?
+    4. Are API Integration sub-tasks blocked by both Data Layer and
+       Data Presentation sub-tasks?
+    5. Is each sub-task small enough for one agent to complete?
 
     ---
 
     For each Sub-Task, call the jira_create_issue tool with:
     - Issue type: "Task"
     - Summary: Specific, actionable title with the appropriate prefix
-      (e.g. "[Data Schema] User preferences collection",
-       "[API Definition] POST /api/v1/preferences",
-       "[State Machine] Preference lifecycle states",
-       "[Webhook] preferences.user.updated event",
-       "[Error Taxonomy] Preferences domain errors",
-       "[Observability] Preferences API metrics & logs",
-       "[Backend] Implement preferences service",
-       "[Frontend] Preferences settings page",
-       "[Unit Test — Backend] Preferences API tests",
-       "[Unit Test — Frontend] Preferences component tests")
-    - Description: MUST include ALL five sections — Reasoning,
-      Step-by-step instructions, Sample data, Guard rails, and
-      Definition of done (as described above for each role).
-      MUST also include QE Acceptance Criteria covering:
-      JSON schema, state transitions, API contracts, webhook retry,
-      error taxonomy, and observability hooks.
+    - Description: MUST include ALL seven sections (Reasoning,
+      Instructions, Sample Data, Guard Rails, Definition of Done,
+      Test Cases for QE, Unit Test Cases)
     - Parent key: The Story key this Sub-Task belongs under
     - Labels: "prd,auto-generated"
     - Run ID: {run_id}
     - Confluence URL: "{confluence_url}"
-    - Component: Same component as the parent Story ("UX",
-      "Architecture", "Engineering", or "QE")
+    - Component: Same component as the parent Story
+    - is_blocked_by_key: Set according to the dependency rules above
 
   expected_output: >
     A structured list of all Jira Sub-Task keys created, grouped by
-    parent Story, with their URLs.  Format:
+    parent Story, with their URLs and dependency links.  Format:
       Story STORY_KEY:
+        - TASK_KEY: Summary — URL (blocked by: TASK_KEY)
         - TASK_KEY: Summary — URL
-        - TASK_KEY: Summary — URL
-    followed by a summary of dependency links created.
+    followed by a summary of all dependency links created.
     If any creation failed, include the error details.

@@ -1,127 +1,42 @@
 "draft_prd_task":
   description: >
     Create a comprehensive Product Requirements Document (PRD) for the
-    following feature idea including researching competitors and technical standards to ensure the PRD is grounded in industry best practices. The idea is provided by the user in the {idea} field.
+    following feature idea including researching competitors and technical
+    standards to ensure the PRD is grounded in industry best practices.
+    The idea is provided by the user in the {idea} field.
 
-    The PRD is summarized into the "Executive Summary". It is iterated before going into the sections step. It is iterated between the minimum and maximum iteration defined count.
+    The PRD starts with the "Executive Summary". It is iterated between
+    the minimum and maximum iteration count before moving to individual
+    sections. The Executive Summary is provided in {executive_summary}.
 
-    The Executive Summary is captured in the {executive_summary} field.
+    Write a compelling, detailed executive summary that:
+    - Clearly articulates the problem being solved
+    - Defines the target audience and key stakeholders
+    - Outlines the proposed solution and its key differentiators
+    - Highlights expected business impact and success criteria
+    - Is consistent with industry best practices for PRD documentation
+    - Is written in clear, professional markdown format
 
-    During this iteration process:
-    - "run_id" use as the unique identifier for the PRD and will be use to resume any unfinished idea iterations.
-    - "idea" is the {idea} being developed that is originally provided by the user.
-    - "finalized_idea" is the final iterated version of the idea.
-    - "executive_summary" is the idea that is iterated by the agent or user. In it, we have an array of all its iteration counts with fields "content", "iteration", "critique", and "updated_date".
-      - "content" is the actual text of the executive summary for that iteration which is {executive_summary}.
-      - "iteration" is the current iteration count and default is 1.
-      - "critique" is the feedback from the critique task, initially null.
-      - "created_date" is the timestamp of creation for the "idea".
-      - "updated_date" is the timestamp of completed date for that iteration.
-      - "completed_at" is the timestamp of completion for the "idea" when user approved all its iterations and "status" is set to "completed".
-      - "status" indicates the current state of the idea. It is default to "new" when the "idea" is created. It is set to "inprogress" when the idea is being worked on and "completed" when the idea is finished.
-
-    After the executive summary is approved, the PRD is broken down into
-    9 individual sections. Each section is stored under the "section"
-    object. Every section has its own array of iteration records with
-    fields "content", "iteration", "critique", and "updated_date".
-    Each section is independently iterated (critique → refine cycles)
-    between the minimum and maximum iteration count.
-
-    Before section drafting, a "requirements_breakdown" pre-processing step
-    decomposes the idea into structured product requirements. Each
-    breakdown iteration is stored in the top-level "requirements_breakdown"
-    array with fields "content", "iteration", "critique", "step", and
-    "updated_date".
+    Output ONLY the executive summary content in markdown format.
+    Do NOT wrap the output in JSON, code fences, or any document structure.
+    Do NOT include metadata fields like run_id, status, timestamps, or
+    iteration tracking — the system handles persistence automatically.
 
   expected_output: >
-    A well-structured PRD document in JSON format covering the initial executive summary with its iterations, the requirements breakdown, and individual section iterations. This is stored in the "workingIdeas" collection.
+    A well-written, comprehensive executive summary in clear, professional
+    markdown format.
 
-    {
-      "run_id": string,
-      "idea": string,
-      "finalized_idea": string,
-      "executive_summary": [{
-        "content": string,
-        "iteration": int | 1,
-        "critique": string | null,
-        "updated_date": string
-      }],
-      "requirements_breakdown": [{
-        "content": string,
-        "iteration": int | 1,
-        "critique": string | null,
-        "step": string,
-        "updated_date": string
-      }],
-      "section": {
-        "problem_statement": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "user_personas": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "functional_requirements": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "non_functional_requirements": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "edge_cases": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "error_handling": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "success_metrics": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "dependencies": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }],
-        "assumptions": [{
-          "content": string,
-          "iteration": int | 1,
-          "critique": string | null,
-          "updated_date": string
-        }]
-      },
-      "created_at": string,
-      "update_date": string | null,
-      "completed_at": string | null,
-      "status": string | "new" | "inprogress" | "completed"
-    }
+    Output ONLY the executive summary body content — no JSON wrapper, no
+    metadata fields, no document structure. The system stores iterations
+    and metadata automatically.
 
   agent: product_manager
 
 critique_prd_task:
   description: >
-    Critically review the following PRD draft and identify gaps,
-    weaknesses, and missing elements. 
-    The Critique is captured in the {critique} field that is generated by this task.
+    Critically review the following PRD executive summary draft and
+    identify gaps, weaknesses, and missing elements.
+    The critique is provided in the {critique} field.
 
     Evaluate against the Definition of Done (DoD) checklist:
     1. Is the problem statement clear and concise?
@@ -137,26 +52,18 @@ critique_prd_task:
     If the PRD scores 8 or higher on ALL criteria, mark it as "READY_FOR_DEV".
     Otherwise mark it as "NEEDS_REFINEMENT".
 
-    Use the {critique} field to iterate and criticize the {executive_summary}.
-    The {executive_summary} field should be updated with the new iteration that has been refined based on the critique.
-    A new iteration is created in the executive summary iterated record is created and updated in the "executive_summary" array field with a new record containing "content", "iteration", "critique", and "updated_date" field. The iteration count should be incremented by 1.
+    Use the provided {executive_summary} as the content to evaluate.
+    Provide your critique as structured feedback that can be used to
+    improve the executive summary in the next iteration.
   expected_output: >
-    Updating the PRD document in the "workingIdeas" collection with the new iteration in the executive summary using "run_id" as a reference.
-    Add a new iterated record into "executive_summary" array field.
-    Update the "update_date" field with the current timestamp.
-    Update the "status" field to "inprogress" if not already set.
+    A structured critique in markdown format containing:
+    - Readiness score (1-10) for each DoD criterion
+    - Overall status: "READY_FOR_DEV" or "NEEDS_REFINEMENT"
+    - List of identified gaps with severity (Critical / Major / Minor)
+    - Specific, actionable recommendations for each gap
 
-    {
-      "run_id": string,
-      "executive_summary": [{
-        "content": string,
-        "iteration": int | 1,
-        "critique": string | null,
-        "updated_date": string
-      }],
-      "update_date": string | null,
-      "status": string | "new" | "inprogress" | "completed"
-    }
+    Output ONLY the critique content in markdown — no JSON wrapper, no
+    metadata fields. The system handles iteration tracking automatically.
   agent: product_manager
 
 # ── Section-level tasks ──────────────────────────────────────

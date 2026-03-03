@@ -9,11 +9,14 @@ from pymongo.errors import ServerSelectionTimeoutError
 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     WORKING_COLLECTION,
     ensure_section_field,
+    fail_unfinalized_on_startup,
     find_completed_without_confluence,
     find_completed_without_output,
+    find_ideas_by_project,
     find_unfinalized,
     get_output_file,
     get_run_documents,
+    mark_archived,
     mark_completed,
     mark_paused,
     save_confluence_url,
@@ -24,6 +27,7 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     save_output_file,
     save_pipeline_step,
     save_project_ref,
+    save_slack_context,
     update_executive_summary_critique,
     update_section_critique,
 )
@@ -37,14 +41,10 @@ def _set_dummy_keys(monkeypatch):
 # ── save_iteration ────────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_iteration_upserts_doc(mock_get_db):
+def test_save_iteration_upserts_doc(wi_mocks):
     """save_iteration should upsert into workingIdeas with $push."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="abc123")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_iteration(
         run_id="run-1", idea="Dark mode", iteration=2, draft={"executive_summary": "# Draft v2"}
@@ -69,14 +69,10 @@ def test_save_iteration_upserts_doc(mock_get_db):
     assert result == "abc123"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_iteration_includes_critique(mock_get_db):
+def test_save_iteration_includes_critique(wi_mocks):
     """Critique field should be saved in the pushed iteration record."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_iteration(
         run_id="r1", idea="X", iteration=1, draft={"exec": "D"}, critique="Needs work"
@@ -88,14 +84,10 @@ def test_save_iteration_includes_critique(mock_get_db):
     assert pushed["critique"] == "Needs work"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_iteration_no_step_field(mock_get_db):
+def test_save_iteration_no_step_field(wi_mocks):
     """Iteration records should not include a 'step' field (matches YAML schema)."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_iteration(
         run_id="r1", idea="X", iteration=1, draft={"exec": "D"}, step="critique"
@@ -108,14 +100,10 @@ def test_save_iteration_no_step_field(mock_get_db):
     assert set(pushed.keys()) == {"content", "iteration", "critique", "updated_date"}
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_iteration_idea_in_setOnInsert(mock_get_db):
+def test_save_iteration_idea_in_setOnInsert(wi_mocks):
     """idea should be in $setOnInsert so it is never overwritten on subsequent updates."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_iteration(run_id="r1", idea="Original idea", iteration=1, draft={"s": "D"})
 
@@ -124,14 +112,10 @@ def test_save_iteration_idea_in_setOnInsert(mock_get_db):
     assert update_ops["$setOnInsert"]["idea"] == "Original idea"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_iteration_finalized_idea_in_set(mock_get_db):
+def test_save_iteration_finalized_idea_in_set(wi_mocks):
     """finalized_idea should be written to $set when provided."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_iteration(
         run_id="r1", idea="Original", iteration=1,
@@ -142,14 +126,10 @@ def test_save_iteration_finalized_idea_in_set(mock_get_db):
     assert update_ops["$set"]["finalized_idea"] == "Refined version"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_iteration_no_finalized_idea_omits_field(mock_get_db):
+def test_save_iteration_no_finalized_idea_omits_field(wi_mocks):
     """When finalized_idea is empty, it should NOT appear in $set."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_iteration(run_id="r1", idea="X", iteration=1, draft={"s": "D"})
 
@@ -157,16 +137,12 @@ def test_save_iteration_no_finalized_idea_omits_field(mock_get_db):
     assert "finalized_idea" not in update_ops["$set"]
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_iteration_returns_none_on_db_error(mock_get_db):
+def test_save_iteration_returns_none_on_db_error(wi_mocks):
     """save_iteration should catch PyMongo errors and return None."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError(
         "connection refused"
     )
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_iteration(
         run_id="r1", idea="X", iteration=1, draft={"exec": "D"}
@@ -177,14 +153,10 @@ def test_save_iteration_returns_none_on_db_error(mock_get_db):
 # ── save_pipeline_step ──────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_pipeline_step_upserts_under_pipeline(mock_get_db):
+def test_save_pipeline_step_upserts_under_pipeline(wi_mocks):
     """save_pipeline_step should store data under pipeline.*, not section.*."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="pipe1")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_pipeline_step(
         run_id="run-1",
@@ -213,14 +185,10 @@ def test_save_pipeline_step_upserts_under_pipeline(mock_get_db):
     assert result == "pipe1"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_pipeline_step_returns_none_on_error(mock_get_db):
+def test_save_pipeline_step_returns_none_on_error(wi_mocks):
     """save_pipeline_step should catch PyMongo errors and return None."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_pipeline_step(
         run_id="run-1", idea="X", pipeline_key="requirements_breakdown",
@@ -232,14 +200,10 @@ def test_save_pipeline_step_returns_none_on_error(mock_get_db):
 # ── save_failed ─────────────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_failed_upserts_doc(mock_get_db):
+def test_save_failed_upserts_doc(wi_mocks):
     """save_failed should upsert a failure record into workingIdeas."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="fail123")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_failed(
         run_id="run-x",
@@ -267,16 +231,12 @@ def test_save_failed_upserts_doc(mock_get_db):
     assert result == "fail123"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_failed_returns_none_on_db_error(mock_get_db):
+def test_save_failed_returns_none_on_db_error(wi_mocks):
     """save_failed should catch PyMongo errors and return None."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError(
         "connection refused"
     )
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_failed(
         run_id="r1", idea="X", iteration=1, error="boom"
@@ -284,14 +244,10 @@ def test_save_failed_returns_none_on_db_error(mock_get_db):
     assert result is None
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_failed_minimal_fields(mock_get_db):
+def test_save_failed_minimal_fields(wi_mocks):
     """save_failed with only required fields should use empty defaults."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="f1")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_failed(run_id="r1", idea="X", iteration=1, error="err")
 
@@ -300,14 +256,10 @@ def test_save_failed_minimal_fields(mock_get_db):
     assert update_ops["$set"]["status"] == "failed"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_failed_sets_error_field(mock_get_db):
+def test_save_failed_sets_error_field(wi_mocks):
     """save_failed should set the error field in the update."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="f2")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_failed(
         run_id="r2", idea="Y", iteration=3, error="quota",
@@ -319,14 +271,10 @@ def test_save_failed_sets_error_field(mock_get_db):
     assert update_ops["$set"]["error"] == "quota"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_failed_initializes_section_on_existing_doc(mock_get_db):
+def test_save_failed_initializes_section_on_existing_doc(wi_mocks):
     """save_failed should ensure section field exists on pre-existing documents."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_failed(run_id="run-existing", idea="X", iteration=1, error="err")
 
@@ -339,14 +287,10 @@ def test_save_failed_initializes_section_on_existing_doc(mock_get_db):
     assert init_args[0][1] == {"$set": {"section": {}}}
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_failed_setOnInsert_includes_section(mock_get_db):
+def test_save_failed_setOnInsert_includes_section(wi_mocks):
     """save_failed $setOnInsert should include section: {} for new documents."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="new")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_failed(run_id="run-new", idea="X", iteration=1, error="err")
 
@@ -357,14 +301,10 @@ def test_save_failed_setOnInsert_includes_section(mock_get_db):
     assert update_ops["$setOnInsert"]["section"] == {}
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_failed_idea_in_setOnInsert(mock_get_db):
+def test_save_failed_idea_in_setOnInsert(wi_mocks):
     """save_failed should store idea in $setOnInsert, not $set."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="new")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_failed(run_id="run-f", idea="My original idea", iteration=1, error="err")
 
@@ -377,14 +317,10 @@ def test_save_failed_idea_in_setOnInsert(mock_get_db):
 # ── save_executive_summary — section initialization ────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_executive_summary_setOnInsert_includes_section(mock_get_db):
+def test_save_executive_summary_setOnInsert_includes_section(wi_mocks):
     """save_executive_summary $setOnInsert should include section: {} for new documents."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="es-new")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_executive_summary(
         run_id="run-init", idea="X", iteration=1, content="summary",
@@ -395,14 +331,10 @@ def test_save_executive_summary_setOnInsert_includes_section(mock_get_db):
     assert ops["$setOnInsert"]["section"] == {}
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_executive_summary_idea_in_setOnInsert(mock_get_db):
+def test_save_executive_summary_idea_in_setOnInsert(wi_mocks):
     """save_executive_summary should store idea in $setOnInsert, not $set."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="es-x")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_executive_summary(
         run_id="run-es", idea="Original user input", iteration=1, content="content",
@@ -416,14 +348,10 @@ def test_save_executive_summary_idea_in_setOnInsert(mock_get_db):
 # ── save_pipeline_step — section initialization ────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_pipeline_step_setOnInsert_includes_section(mock_get_db):
+def test_save_pipeline_step_setOnInsert_includes_section(wi_mocks):
     """save_pipeline_step $setOnInsert should include section: {} for new documents."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="ps-new")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_pipeline_step(
         run_id="run-init", idea="X", pipeline_key="requirements_breakdown",
@@ -435,14 +363,10 @@ def test_save_pipeline_step_setOnInsert_includes_section(mock_get_db):
     assert ops["$setOnInsert"]["section"] == {}
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_pipeline_step_idea_in_setOnInsert(mock_get_db):
+def test_save_pipeline_step_idea_in_setOnInsert(wi_mocks):
     """save_pipeline_step should store idea in $setOnInsert, not $set."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id="ps-x")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_pipeline_step(
         run_id="run-ps", idea="User original", pipeline_key="req",
@@ -454,14 +378,10 @@ def test_save_pipeline_step_idea_in_setOnInsert(mock_get_db):
     assert ops["$setOnInsert"]["idea"] == "User original"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_pipeline_step_finalized_idea(mock_get_db):
+def test_save_pipeline_step_finalized_idea(wi_mocks):
     """save_pipeline_step should write finalized_idea to $set when provided."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_pipeline_step(
         run_id="run-ps2", idea="Original", pipeline_key="req",
@@ -472,14 +392,10 @@ def test_save_pipeline_step_finalized_idea(mock_get_db):
     assert ops["$set"]["finalized_idea"] == "Refined version"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_pipeline_step_no_finalized_idea_omits_field(mock_get_db):
+def test_save_pipeline_step_no_finalized_idea_omits_field(wi_mocks):
     """When finalized_idea is empty, it should NOT appear in $set."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_pipeline_step(
         run_id="run-ps3", idea="X", pipeline_key="req",
@@ -493,14 +409,10 @@ def test_save_pipeline_step_no_finalized_idea_omits_field(mock_get_db):
 # ── update_section_critique ─────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_update_section_critique_updates_record(mock_get_db):
+def test_update_section_critique_updates_record(wi_mocks):
     """update_section_critique should $set critique on the matching iteration record."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = update_section_critique(
         run_id="run-1",
@@ -523,14 +435,10 @@ def test_update_section_critique_updates_record(mock_get_db):
     assert "update_date" in update_set
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_update_section_critique_returns_false_when_no_match(mock_get_db):
+def test_update_section_critique_returns_false_when_no_match(wi_mocks):
     """update_section_critique should return False when no record matches."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=0)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = update_section_critique(
         run_id="run-1",
@@ -542,14 +450,10 @@ def test_update_section_critique_returns_false_when_no_match(mock_get_db):
     assert result is False
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_update_section_critique_returns_false_on_error(mock_get_db):
+def test_update_section_critique_returns_false_on_error(wi_mocks):
     """update_section_critique should catch PyMongo errors and return False."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = update_section_critique(
         run_id="run-1",
@@ -564,8 +468,7 @@ def test_update_section_critique_returns_false_on_error(mock_get_db):
 # ── find_unfinalized ────────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_returns_runs(mock_get_db):
+def test_find_unfinalized_returns_runs(wi_mocks):
     """find_unfinalized should return run summaries with non-completed status."""
     ts = datetime(2025, 6, 1, 12, 0, tzinfo=timezone.utc)
     working_docs = [
@@ -581,14 +484,11 @@ def test_find_unfinalized_returns_runs(mock_get_db):
         }
     ]
 
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = working_docs
     mock_collection.find.return_value = mock_cursor
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert len(runs) == 1
@@ -601,31 +501,28 @@ def test_find_unfinalized_returns_runs(mock_get_db):
     assert runs[0]["req_breakdown_iterations"] == 0  # no top-level array
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_empty_when_all_completed(mock_get_db):
+def test_find_unfinalized_empty_when_all_completed(wi_mocks):
     """find_unfinalized should return empty if every run is completed."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = []
     mock_collection.find.return_value = mock_cursor
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert runs == []
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_returns_empty_on_error(mock_get_db):
+def test_find_unfinalized_returns_empty_on_error(wi_mocks):
     """find_unfinalized should return [] on database errors."""
-    mock_get_db.side_effect = ServerSelectionTimeoutError("timeout")
-    assert find_unfinalized() == []
+    with patch(
+        "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+        side_effect=ServerSelectionTimeoutError("timeout"),
+    ):
+        assert find_unfinalized() == []
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_skips_empty_draft_sections(mock_get_db):
+def test_find_unfinalized_skips_empty_draft_sections(wi_mocks):
     """find_unfinalized should only report sections with iteration data."""
     working_docs = [
         {
@@ -640,14 +537,11 @@ def test_find_unfinalized_skips_empty_draft_sections(mock_get_db):
         }
     ]
 
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = working_docs
     mock_collection.find.return_value = mock_cursor
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert runs[0]["sections"] == ["executive_summary"]
@@ -656,8 +550,7 @@ def test_find_unfinalized_skips_empty_draft_sections(mock_get_db):
 # ── get_run_documents ───────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_run_documents_returns_doc(mock_get_db):
+def test_get_run_documents_returns_doc(wi_mocks):
     """get_run_documents should return the single doc for a run as a list."""
     doc = {
         "run_id": "run-1",
@@ -667,12 +560,9 @@ def test_get_run_documents_returns_doc(mock_get_db):
         },
         "status": "inprogress",
     }
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.find_one.return_value = doc
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = get_run_documents("run-1")
     assert result == [doc]
@@ -681,29 +571,21 @@ def test_get_run_documents_returns_doc(mock_get_db):
     )
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_run_documents_returns_empty_on_error(mock_get_db):
+def test_get_run_documents_returns_empty_on_error(wi_mocks):
     """get_run_documents should return [] on database errors."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.find_one.side_effect = ServerSelectionTimeoutError("timeout")
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = get_run_documents("run-1")
     assert result == []
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_run_documents_empty_result(mock_get_db):
+def test_get_run_documents_empty_result(wi_mocks):
     """get_run_documents should handle not-found result."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.find_one.return_value = None
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = get_run_documents("run-nonexistent")
     assert result == []
@@ -712,14 +594,10 @@ def test_get_run_documents_empty_result(mock_get_db):
 # ── mark_completed ──────────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_mark_completed_updates_document(mock_get_db):
+def test_mark_completed_updates_document(wi_mocks):
     """mark_completed should set status=completed on the doc for the run_id."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     count = mark_completed("run-abc")
 
@@ -734,43 +612,31 @@ def test_mark_completed_updates_document(mock_get_db):
     assert "update_date" in update_set
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_mark_completed_returns_zero_on_db_error(mock_get_db):
+def test_mark_completed_returns_zero_on_db_error(wi_mocks):
     """mark_completed should catch PyMongo errors and return 0."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     count = mark_completed("run-abc")
     assert count == 0
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_mark_completed_returns_zero_when_no_docs(mock_get_db):
+def test_mark_completed_returns_zero_when_no_docs(wi_mocks):
     """mark_completed should return 0 when run_id has no documents."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=0)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     count = mark_completed("run-nonexistent")
     assert count == 0
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_excludes_completed_runs(mock_get_db):
+def test_find_unfinalized_excludes_completed_runs(wi_mocks):
     """find_unfinalized should exclude documents with status=completed but include failed."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = []  # all excluded by query filter
     mock_collection.find.return_value = mock_cursor
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert runs == []
@@ -781,8 +647,7 @@ def test_find_unfinalized_excludes_completed_runs(mock_get_db):
     assert "failed" not in query["status"]["$nin"]
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_counts_exec_summary_array(mock_get_db):
+def test_find_unfinalized_counts_exec_summary_array(wi_mocks):
     """find_unfinalized should count top-level executive_summary iterations."""
     working_docs = [
         {
@@ -800,14 +665,11 @@ def test_find_unfinalized_counts_exec_summary_array(mock_get_db):
         }
     ]
 
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = working_docs
     mock_collection.find.return_value = mock_cursor
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert runs[0]["exec_summary_iterations"] == 4
@@ -817,8 +679,7 @@ def test_find_unfinalized_counts_exec_summary_array(mock_get_db):
     assert runs[0]["req_breakdown_iterations"] == 0  # no requirements_breakdown array
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_counts_req_breakdown_array(mock_get_db):
+def test_find_unfinalized_counts_req_breakdown_array(wi_mocks):
     """find_unfinalized should count top-level requirements_breakdown iterations."""
     working_docs = [
         {
@@ -838,14 +699,11 @@ def test_find_unfinalized_counts_req_breakdown_array(mock_get_db):
         }
     ]
 
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = working_docs
     mock_collection.find.return_value = mock_cursor
 
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert runs[0]["req_breakdown_iterations"] == 3
@@ -855,14 +713,10 @@ def test_find_unfinalized_counts_req_breakdown_array(mock_get_db):
 # ── save_executive_summary ──────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_executive_summary_upserts(mock_get_db):
+def test_save_executive_summary_upserts(wi_mocks):
     """save_executive_summary should push to top-level executive_summary array."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_executive_summary(
         run_id="run-es-1",
@@ -888,14 +742,10 @@ def test_save_executive_summary_upserts(mock_get_db):
     assert call_args[1]["upsert"] is True
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_executive_summary_with_critique(mock_get_db):
+def test_save_executive_summary_with_critique(wi_mocks):
     """save_executive_summary should store critique when provided."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(upserted_id=None)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     save_executive_summary(
         run_id="run-es-2",
@@ -910,14 +760,10 @@ def test_save_executive_summary_with_critique(mock_get_db):
     assert record["iteration"] == 2
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_executive_summary_returns_none_on_error(mock_get_db):
+def test_save_executive_summary_returns_none_on_error(wi_mocks):
     """save_executive_summary should return None on PyMongo error."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_executive_summary(
         run_id="run-err",
@@ -931,14 +777,10 @@ def test_save_executive_summary_returns_none_on_error(mock_get_db):
 # ── update_executive_summary_critique ───────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_update_executive_summary_critique_updates_record(mock_get_db):
+def test_update_executive_summary_critique_updates_record(wi_mocks):
     """update_executive_summary_critique should update critique on matching iteration."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = update_executive_summary_critique(
         run_id="run-crit",
@@ -957,14 +799,10 @@ def test_update_executive_summary_critique_updates_record(mock_get_db):
     assert "update_date" in update
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_update_executive_summary_critique_returns_false_on_error(mock_get_db):
+def test_update_executive_summary_critique_returns_false_on_error(wi_mocks):
     """update_executive_summary_critique should return False on PyMongo error."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = update_executive_summary_critique(
         run_id="run-err",
@@ -977,14 +815,10 @@ def test_update_executive_summary_critique_returns_false_on_error(mock_get_db):
 # ── save_finalized_idea ─────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_finalized_idea_updates_doc(mock_get_db):
+def test_save_finalized_idea_updates_doc(wi_mocks):
     """save_finalized_idea should $set finalized_idea on the document."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_finalized_idea(
         run_id="run-fin",
@@ -999,14 +833,10 @@ def test_save_finalized_idea_updates_doc(mock_get_db):
     assert "update_date" in update_set
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_finalized_idea_returns_false_on_error(mock_get_db):
+def test_save_finalized_idea_returns_false_on_error(wi_mocks):
     """save_finalized_idea should catch PyMongo errors and return False."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_finalized_idea(
         run_id="run-err",
@@ -1018,14 +848,10 @@ def test_save_finalized_idea_returns_false_on_error(mock_get_db):
 # ── save_output_file ──────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_output_file_updates_doc(mock_get_db):
+def test_save_output_file_updates_doc(wi_mocks):
     """save_output_file should $set output_file on the document."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_output_file(
         run_id="run-out",
@@ -1040,27 +866,19 @@ def test_save_output_file_updates_doc(mock_get_db):
     assert "update_date" in update_set
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_output_file_returns_false_on_error(mock_get_db):
+def test_save_output_file_returns_false_on_error(wi_mocks):
     """save_output_file should catch PyMongo errors and return False."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_output_file(run_id="run-err", output_file="some/path.md")
     assert result is False
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_output_file_returns_false_when_no_match(mock_get_db):
+def test_save_output_file_returns_false_when_no_match(wi_mocks):
     """save_output_file should return False when no document matches."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=0)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = save_output_file(run_id="nonexistent", output_file="path.md")
     assert result is False
@@ -1069,20 +887,16 @@ def test_save_output_file_returns_false_when_no_match(mock_get_db):
 # ── find_completed_without_output ─────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_completed_without_output_returns_docs(mock_get_db):
+def test_find_completed_without_output_returns_docs(wi_mocks):
     """Should return completed docs that have no output_file."""
     docs = [
         {"run_id": "run-1", "status": "completed", "idea": "Idea 1"},
         {"run_id": "run-2", "status": "completed", "idea": "Idea 2"},
     ]
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = docs
     mock_collection.find.return_value = mock_cursor
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = find_completed_without_output()
 
@@ -1095,16 +909,12 @@ def test_find_completed_without_output_returns_docs(mock_get_db):
     assert "$or" in query
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_completed_without_output_returns_empty(mock_get_db):
+def test_find_completed_without_output_returns_empty(wi_mocks):
     """Should return empty list when all completed docs have output_file."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = []
     mock_collection.find.return_value = mock_cursor
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = find_completed_without_output()
     assert result == []
@@ -1113,16 +923,12 @@ def test_find_completed_without_output_returns_empty(mock_get_db):
 # ── get_output_file ───────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_output_file_returns_path(mock_get_db):
+def test_get_output_file_returns_path(wi_mocks):
     """Should return the output_file value from the document."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.find_one.return_value = {
         "output_file": "output/prds/2026/02/prd_v1.md",
     }
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = get_output_file("run-1")
 
@@ -1133,62 +939,46 @@ def test_get_output_file_returns_path(mock_get_db):
     )
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_output_file_returns_none_when_missing(mock_get_db):
+def test_get_output_file_returns_none_when_missing(wi_mocks):
     """Should return None when document has no output_file."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.find_one.return_value = {}
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     assert get_output_file("run-1") is None
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_output_file_returns_none_when_empty_string(mock_get_db):
+def test_get_output_file_returns_none_when_empty_string(wi_mocks):
     """Should return None when output_file is empty string."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.find_one.return_value = {"output_file": ""}
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     assert get_output_file("run-1") is None
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_output_file_returns_none_when_no_doc(mock_get_db):
+def test_get_output_file_returns_none_when_no_doc(wi_mocks):
     """Should return None when document is not found."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.find_one.return_value = None
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     assert get_output_file("run-1") is None
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_get_output_file_returns_none_on_error(mock_get_db):
+def test_get_output_file_returns_none_on_error(wi_mocks):
     """Should return None on database error."""
-    mock_db = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_db.__getitem__ = MagicMock(
         side_effect=ServerSelectionTimeoutError("timeout"),
     )
-    mock_get_db.return_value = mock_db
 
     assert get_output_file("run-1") is None
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_completed_without_output_returns_empty_on_error(mock_get_db):
+def test_find_completed_without_output_returns_empty_on_error(wi_mocks):
     """Should return empty list on database error."""
-    mock_db = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_db.__getitem__ = MagicMock(
         side_effect=ServerSelectionTimeoutError("timeout"),
     )
-    mock_get_db.return_value = mock_db
 
     result = find_completed_without_output()
     assert result == []
@@ -1197,14 +987,10 @@ def test_find_completed_without_output_returns_empty_on_error(mock_get_db):
 # ── mark_paused ───────────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_mark_paused_updates_status(mock_get_db):
+def test_mark_paused_updates_status(wi_mocks):
     """mark_paused should set status=paused on the document."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = mark_paused("run-1")
 
@@ -1217,41 +1003,87 @@ def test_mark_paused_updates_status(mock_get_db):
     assert "update_date" in update["$set"]
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_mark_paused_returns_zero_when_no_match(mock_get_db):
+def test_mark_paused_returns_zero_when_no_match(wi_mocks):
     """mark_paused should return 0 when no document matches."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=0)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     assert mark_paused("nonexistent") == 0
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_mark_paused_returns_zero_on_error(mock_get_db):
+def test_mark_paused_returns_zero_on_error(wi_mocks):
     """mark_paused should return 0 on database error."""
-    mock_db = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_db.__getitem__ = MagicMock(
         side_effect=ServerSelectionTimeoutError("timeout"),
     )
-    mock_get_db.return_value = mock_db
 
     assert mark_paused("run-1") == 0
+
+
+# ── mark_archived ─────────────────────────────────────────────
+
+
+def test_mark_archived_updates_status(wi_mocks):
+    """mark_archived should set status=archived on the doc."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+    count = mark_archived("run-archive")
+
+    assert count == 1
+    call_args = mock_collection.update_one.call_args
+    assert call_args[0][0] == {"run_id": "run-archive"}
+    update_set = call_args[0][1]["$set"]
+    assert update_set["status"] == "archived"
+    assert "archived_at" in update_set
+    assert "update_date" in update_set
+
+
+def test_mark_archived_returns_zero_when_no_match(wi_mocks):
+    """mark_archived should return 0 when no doc matches."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(modified_count=0)
+
+    assert mark_archived("run-missing") == 0
+
+
+def test_mark_archived_returns_zero_on_error(wi_mocks):
+    """mark_archived should return 0 on database error."""
+    mock_collection, mock_db = wi_mocks
+    mock_db.__getitem__ = MagicMock(
+        side_effect=ServerSelectionTimeoutError("timeout"),
+    )
+
+    assert mark_archived("run-1") == 0
+
+
+# ── find_unfinalized — archived exclusion ─────────────────────
+
+
+def test_find_unfinalized_excludes_archived(wi_mocks):
+    """find_unfinalized should exclude archived docs (same as completed)."""
+    mock_collection, mock_db = wi_mocks
+    mock_cursor = MagicMock()
+    mock_cursor.sort.return_value = []
+    mock_collection.find.return_value = mock_cursor
+
+    find_unfinalized()
+
+    # Verify the query excludes both "completed" and "archived"
+    call_args = mock_collection.find.call_args
+    query = call_args[0][0]
+    assert "archived" in query["status"]["$nin"]
+    assert "completed" in query["status"]["$nin"]
 
 
 # ── ensure_section_field ──────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_ensure_section_field_creates_missing(mock_get_db):
+def test_ensure_section_field_creates_missing(wi_mocks):
     """ensure_section_field should create section={} when field is missing."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = ensure_section_field("run-1")
 
@@ -1261,28 +1093,20 @@ def test_ensure_section_field_creates_missing(mock_get_db):
     assert call_args[0][1] == {"$set": {"section": {}}}
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_ensure_section_field_noop_when_exists(mock_get_db):
+def test_ensure_section_field_noop_when_exists(wi_mocks):
     """ensure_section_field should return False when section already exists."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=0)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = ensure_section_field("run-1")
 
     assert result is False
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_ensure_section_field_returns_false_on_error(mock_get_db):
+def test_ensure_section_field_returns_false_on_error(wi_mocks):
     """ensure_section_field should return False on database error."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("timeout")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     result = ensure_section_field("run-1")
 
@@ -1292,8 +1116,7 @@ def test_ensure_section_field_returns_false_on_error(mock_get_db):
 # ── find_unfinalized — section_missing flag ───────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_flags_section_missing(mock_get_db):
+def test_find_unfinalized_flags_section_missing(wi_mocks):
     """find_unfinalized should set section_missing=True when section field absent."""
     ts = datetime(2025, 6, 1, 12, 0, tzinfo=timezone.utc)
     # Document WITHOUT a 'section' field at all
@@ -1307,21 +1130,17 @@ def test_find_unfinalized_flags_section_missing(mock_get_db):
         }
     ]
 
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = working_docs
     mock_collection.find.return_value = mock_cursor
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert len(runs) == 1
     assert runs[0]["section_missing"] is True
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_find_unfinalized_section_not_missing_when_present(mock_get_db):
+def test_find_unfinalized_section_not_missing_when_present(wi_mocks):
     """find_unfinalized should set section_missing=False when section field exists."""
     ts = datetime(2025, 6, 1, 12, 0, tzinfo=timezone.utc)
     working_docs = [
@@ -1334,13 +1153,10 @@ def test_find_unfinalized_section_not_missing_when_present(mock_get_db):
         }
     ]
 
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = working_docs
     mock_collection.find.return_value = mock_cursor
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     runs = find_unfinalized()
     assert len(runs) == 1
@@ -1352,13 +1168,9 @@ def test_find_unfinalized_section_not_missing_when_present(mock_get_db):
 
 class TestSaveConfluenceUrl:
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-    def test_updates_document(self, mock_get_db):
-        mock_collection = MagicMock()
+    def test_updates_document(self, wi_mocks):
+        mock_collection, mock_db = wi_mocks
         mock_collection.update_one.return_value = MagicMock(modified_count=1)
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        mock_get_db.return_value = mock_db
 
         result = save_confluence_url(
             run_id="run-1",
@@ -1375,13 +1187,9 @@ class TestSaveConfluenceUrl:
         assert set_fields["confluence_page_id"] == "123"
         assert "confluence_published_at" in set_fields
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-    def test_no_page_id(self, mock_get_db):
-        mock_collection = MagicMock()
+    def test_no_page_id(self, wi_mocks):
+        mock_collection, mock_db = wi_mocks
         mock_collection.update_one.return_value = MagicMock(modified_count=1)
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        mock_get_db.return_value = mock_db
 
         save_confluence_url(
             run_id="r2",
@@ -1391,13 +1199,9 @@ class TestSaveConfluenceUrl:
         set_fields = mock_collection.update_one.call_args[0][1]["$set"]
         assert "confluence_page_id" not in set_fields
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-    def test_returns_false_on_no_match(self, mock_get_db):
-        mock_collection = MagicMock()
+    def test_returns_false_on_no_match(self, wi_mocks):
+        mock_collection, mock_db = wi_mocks
         mock_collection.update_one.return_value = MagicMock(modified_count=0)
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        mock_get_db.return_value = mock_db
 
         result = save_confluence_url(
             run_id="unknown-run",
@@ -1405,16 +1209,17 @@ class TestSaveConfluenceUrl:
         )
         assert result is False
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-    def test_returns_false_on_db_error(self, mock_get_db):
+    def test_returns_false_on_db_error(self, wi_mocks):
         from pymongo.errors import PyMongoError
-        mock_get_db.side_effect = PyMongoError("connection failed")
-
-        result = save_confluence_url(
-            run_id="run-1",
-            confluence_url="https://example.atlassian.net/wiki/pages/123",
-        )
-        assert result is False
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = save_confluence_url(
+                run_id="run-1",
+                confluence_url="https://example.atlassian.net/wiki/pages/123",
+            )
+            assert result is False
 
 
 # ── find_completed_without_confluence ────────────────────────────────
@@ -1422,19 +1227,15 @@ class TestSaveConfluenceUrl:
 
 class TestFindCompletedWithoutConfluence:
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-    def test_returns_matching_docs(self, mock_get_db):
+    def test_returns_matching_docs(self, wi_mocks):
         docs = [
             {"run_id": "r1", "status": "completed", "idea": "idea1"},
             {"run_id": "r2", "status": "completed", "idea": "idea2"},
         ]
         mock_cursor = MagicMock()
         mock_cursor.sort.return_value = docs
-        mock_collection = MagicMock()
+        mock_collection, mock_db = wi_mocks
         mock_collection.find.return_value = mock_cursor
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        mock_get_db.return_value = mock_db
 
         result = find_completed_without_confluence()
 
@@ -1445,39 +1246,34 @@ class TestFindCompletedWithoutConfluence:
         assert query["status"] == "completed"
         assert "$or" in query
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-    def test_returns_empty_on_no_results(self, mock_get_db):
+    def test_returns_empty_on_no_results(self, wi_mocks):
         mock_cursor = MagicMock()
         mock_cursor.sort.return_value = []
-        mock_collection = MagicMock()
+        mock_collection, mock_db = wi_mocks
         mock_collection.find.return_value = mock_cursor
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        mock_get_db.return_value = mock_db
 
         result = find_completed_without_confluence()
         assert result == []
 
-    @patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-    def test_returns_empty_on_db_error(self, mock_get_db):
+    def test_returns_empty_on_db_error(self, wi_mocks):
         from pymongo.errors import PyMongoError
-        mock_get_db.side_effect = PyMongoError("connection failed")
-
-        result = find_completed_without_confluence()
-        assert result == []
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = find_completed_without_confluence()
+            assert result == []
 
 
 # ── save_project_ref ──────────────────────────────────────────────
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_project_ref(mock_get_db):
+def test_save_project_ref(wi_mocks):
     """save_project_ref should $set project_id on the working idea doc."""
-    mock_collection = MagicMock()
-    mock_collection.update_one.return_value = MagicMock(modified_count=1)
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(
+        modified_count=1, upserted_id=None, matched_count=1,
+    )
 
     count = save_project_ref("run-1", "proj-abc")
 
@@ -1488,15 +1284,235 @@ def test_save_project_ref(mock_get_db):
     set_fields = call_args[0][1]["$set"]
     assert set_fields["project_id"] == "proj-abc"
     assert "update_date" in set_fields
+    # Verify upsert is enabled
+    assert call_args[1].get("upsert") is True
+    # $setOnInsert should include run_id and status
+    insert_fields = call_args[0][1]["$setOnInsert"]
+    assert insert_fields["run_id"] == "run-1"
+    assert insert_fields["status"] == "inprogress"
 
 
-@patch("crewai_productfeature_planner.mongodb.working_ideas.repository.get_db")
-def test_save_project_ref_db_error(mock_get_db):
+def test_save_project_ref_upserts_new_doc(wi_mocks):
+    """save_project_ref should create a stub document when none exists."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(
+        modified_count=0, upserted_id="new-obj-id", matched_count=0,
+    )
+
+    count = save_project_ref("run-new", "proj-xyz")
+
+    # Should count the upsert as a modification
+    assert count == 1
+    call_args = mock_collection.update_one.call_args
+    assert call_args[1].get("upsert") is True
+
+
+def test_save_project_ref_db_error(wi_mocks):
     """save_project_ref should return 0 on DB failure."""
-    mock_collection = MagicMock()
+    mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("fail")
-    mock_db = MagicMock()
-    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-    mock_get_db.return_value = mock_db
 
     assert save_project_ref("run-1", "proj-abc") == 0
+
+
+# ── save_slack_context ────────────────────────────────────────────
+
+
+def test_save_slack_context(wi_mocks):
+    """save_slack_context should $set channel/thread and use upsert."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(
+        modified_count=1, upserted_id=None, matched_count=1,
+    )
+
+    count = save_slack_context("run-1", "C123", "ts-1")
+
+    assert count == 1
+    call_args = mock_collection.update_one.call_args
+    assert call_args[0][0] == {"run_id": "run-1"}
+    set_fields = call_args[0][1]["$set"]
+    assert set_fields["slack_channel"] == "C123"
+    assert set_fields["slack_thread_ts"] == "ts-1"
+    assert "update_date" in set_fields
+    # Verify upsert is enabled
+    assert call_args[1].get("upsert") is True
+    # $setOnInsert should include run_id and status
+    insert_fields = call_args[0][1]["$setOnInsert"]
+    assert insert_fields["run_id"] == "run-1"
+    assert insert_fields["status"] == "inprogress"
+
+
+def test_save_slack_context_upserts_new_doc(wi_mocks):
+    """save_slack_context should create a stub document when none exists."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(
+        modified_count=0, upserted_id="new-obj-id", matched_count=0,
+    )
+
+    count = save_slack_context("run-new", "C456", "ts-2")
+
+    # Should count the upsert as a modification
+    assert count == 1
+
+
+def test_save_slack_context_db_error(wi_mocks):
+    """save_slack_context should return 0 on DB failure."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.side_effect = ServerSelectionTimeoutError("fail")
+
+    assert save_slack_context("run-1", "C123", "ts-1") == 0
+
+
+# ── find_ideas_by_project ────────────────────────────────────────
+
+
+class TestFindIdeasByProject:
+
+    def test_returns_ideas_for_project(self, wi_mocks):
+        docs = [
+            {
+                "run_id": "r1", "idea": "idea1", "status": "inprogress",
+                "project_id": "proj-1", "created_at": "2026-03-01T00:00:00Z",
+                "section": {"executive_summary": [{"content": "x", "iteration": 1}]},
+                "executive_summary": [{"content": "y"}],
+            },
+            {
+                "run_id": "r2", "idea": "idea2", "status": "completed",
+                "project_id": "proj-1", "created_at": "2026-02-28T00:00:00Z",
+                "section": {}, "executive_summary": [],
+            },
+        ]
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = docs
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find.return_value = mock_cursor
+
+        result = find_ideas_by_project("proj-1")
+
+        assert len(result) == 2
+        assert result[0]["run_id"] == "r1"
+        assert result[0]["status"] == "inprogress"
+        assert result[0]["sections_done"] == 1
+        assert result[1]["run_id"] == "r2"
+        assert result[1]["status"] == "completed"
+        # Verify query excludes archived
+        query = mock_collection.find.call_args[0][0]
+        assert query["project_id"] == "proj-1"
+        assert query["status"] == {"$ne": "archived"}
+
+    def test_returns_empty_when_no_ideas(self, wi_mocks):
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = []
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find.return_value = mock_cursor
+
+        result = find_ideas_by_project("proj-empty")
+        assert result == []
+
+    def test_returns_empty_on_db_error(self, wi_mocks):
+        from pymongo.errors import PyMongoError
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = find_ideas_by_project("proj-1")
+            assert result == []
+
+
+# ── fail_unfinalized_on_startup ───────────────────────────────
+
+
+class TestFailUnfinalizedOnStartup:
+    """Tests for fail_unfinalized_on_startup."""
+
+    def test_marks_paused_ideas_as_failed(self, wi_mocks):
+        """Paused working ideas should be marked as failed on startup."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find.return_value = [
+            {
+                "_id": "id1",
+                "run_id": "run-1",
+                "idea": "Test idea",
+                "status": "paused",
+                "slack_channel": "C123",
+                "slack_thread_ts": "1234.5678",
+            },
+        ]
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+        result = fail_unfinalized_on_startup()
+
+        assert len(result) == 1
+        assert result[0]["run_id"] == "run-1"
+        assert result[0]["prev_status"] == "paused"
+        assert result[0]["slack_channel"] == "C123"
+        assert result[0]["slack_thread_ts"] == "1234.5678"
+        # Verify update call
+        update_call = mock_collection.update_one.call_args
+        set_fields = update_call[0][1]["$set"]
+        assert set_fields["status"] == "failed"
+        assert "server restarted" in set_fields["error"].lower()
+
+    def test_marks_inprogress_ideas_as_failed(self, wi_mocks):
+        """In-progress working ideas should be marked as failed on startup."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find.return_value = [
+            {
+                "_id": "id2",
+                "run_id": "run-2",
+                "idea": "Another idea",
+                "status": "inprogress",
+            },
+        ]
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+        result = fail_unfinalized_on_startup()
+
+        assert len(result) == 1
+        assert result[0]["run_id"] == "run-2"
+        assert result[0]["prev_status"] == "inprogress"
+
+    def test_skips_completed_archived_failed(self, wi_mocks):
+        """Completed, archived, and failed ideas should not be modified."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find.return_value = []
+
+        result = fail_unfinalized_on_startup()
+
+        assert result == []
+        # Verify the query excludes completed, archived, and failed
+        query = mock_collection.find.call_args[0][0]
+        assert query["status"]["$nin"] == ["completed", "archived", "failed"]
+
+    def test_returns_empty_when_no_unfinalized(self, wi_mocks):
+        """Should return empty list when all ideas are finalized."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find.return_value = []
+
+        result = fail_unfinalized_on_startup()
+        assert result == []
+        mock_collection.update_one.assert_not_called()
+
+    def test_handles_multiple_ideas(self, wi_mocks):
+        """Should mark multiple unfinalized ideas as failed."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find.return_value = [
+            {"_id": "id1", "run_id": "r1", "idea": "Idea 1", "status": "paused"},
+            {"_id": "id2", "run_id": "r2", "idea": "Idea 2", "status": "inprogress"},
+        ]
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+        result = fail_unfinalized_on_startup()
+
+        assert len(result) == 2
+        assert mock_collection.update_one.call_count == 2
+
+    def test_returns_empty_on_db_error(self, wi_mocks):
+        """Should return empty list on database errors."""
+        from pymongo.errors import PyMongoError
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = fail_unfinalized_on_startup()
+            assert result == []

@@ -1,4 +1,8 @@
 {
+    "github.copilot.chat.codeGeneration.instructions": [
+        { "file": "CODEX.md" }
+    ],
+    "chat.instructionFiles.enabled": true,
     "chat.tools.terminal.autoApprove": {
     
         "/^uv run python -c \"from crewai\\.flow\\.flow import Flow, listen, start, router; print\\('Flow imports OK'\\)\" 2>&1 \\| tail -5$/": {

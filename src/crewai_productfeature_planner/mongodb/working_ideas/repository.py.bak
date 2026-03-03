@@ -1,0 +1,1086 @@
+"""Repository for the ``workingIdeas`` collection.
+
+Stores PRD drafts using a single-document-per-run model.  Each run_id
+maps to one document whose ``section`` object contains section keys with
+arrays of iteration records (content, iteration, critique, updated_date).
+"""
+
+from datetime import datetime, timezone
+from typing import Any
+
+from pymongo.errors import PyMongoError
+
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.mongodb.client import get_db
+
+logger = get_logger(__name__)
+
+WORKING_COLLECTION = "workingIdeas"
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def mark_completed(run_id: str) -> int:
+    """Mark the working-idea document for *run_id* as ``completed``.
+
+    Sets ``status`` to ``"completed"`` so that ``find_unfinalized``
+    excludes the run.
+
+    Returns:
+        The number of documents updated (0 or 1), or ``0`` on failure.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "status": "completed",
+                "completed_at": now.isoformat(),
+                "update_date": now.isoformat(),
+            }},
+        )
+        logger.info(
+            "[MongoDB] Marked working-idea doc completed for run_id=%s (matched=%d)",
+            run_id, result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to mark working idea completed for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def mark_paused(run_id: str) -> int:
+    """Mark the working-idea document for *run_id* as ``paused``.
+
+    Called after ``save_progress()`` writes partial output so the
+    document status reflects that the run can be resumed, not that
+    it permanently failed.
+
+    Returns:
+        The number of documents updated (0 or 1), or ``0`` on failure.
+    """
+    try:
+        now = _now_iso()
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "status": "paused",
+                "update_date": now,
+            }},
+        )
+        logger.info(
+            "[MongoDB] Marked working-idea doc paused for run_id=%s (matched=%d)",
+            run_id, result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to mark working idea paused for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def mark_archived(run_id: str) -> int:
+    """Mark the working-idea document for *run_id* as ``archived``.
+
+    Archived runs are preserved for reference but excluded from
+    ``find_unfinalized()`` so they no longer appear as active or
+    resumable.  Used when the user explicitly restarts a PRD flow —
+    the old run is archived and a fresh flow begins with the same idea.
+
+    Returns:
+        The number of documents updated (0 or 1), or ``0`` on failure.
+    """
+    try:
+        now = _now_iso()
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "status": "archived",
+                "archived_at": now,
+                "update_date": now,
+            }},
+        )
+        logger.info(
+            "[MongoDB] Marked working-idea doc archived for run_id=%s (matched=%d)",
+            run_id, result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to mark working idea archived for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def ensure_section_field(run_id: str) -> bool:
+    """Ensure the ``section`` field exists on the working-idea document.
+
+    If the ``section`` object was accidentally deleted or never created,
+    this function re-initialises it to an empty dict so that subsequent
+    ``save_iteration`` / ``$push`` operations work correctly.
+
+    The filter ``section: {$exists: false}`` guarantees we never
+    overwrite real section data.
+
+    Returns:
+        ``True`` if the field was (re-)created, ``False`` if it already
+        existed or on failure.
+    """
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id, "section": {"$exists": False}},
+            {"$set": {"section": {}}},
+        )
+        if result.modified_count > 0:
+            logger.warning(
+                "[MongoDB] Re-initialised missing 'section' field "
+                "for run_id=%s",
+                run_id,
+            )
+            return True
+        return False
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to ensure section field for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def get_output_file(run_id: str) -> str | None:
+    """Return the current ``output_file`` path for *run_id*, or ``None``.
+
+    Used to look up a previously-stored markdown path so the caller
+    can delete the old file before persisting a new one.
+    """
+    try:
+        db = get_db()
+        doc = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id},
+            {"output_file": 1, "_id": 0},
+        )
+        if doc:
+            return doc.get("output_file") or None
+        return None
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to get output_file for run_id=%s: %s",
+            run_id, exc,
+        )
+        return None
+
+
+def save_output_file(run_id: str, output_file: str) -> bool:
+    """Store the generated markdown file path on the working-idea document.
+
+    Called after ``PRDFileWriteTool`` successfully writes a file so that
+    the ``workingIdeas`` document contains a reference to the on-disk
+    output.
+
+    Args:
+        run_id: The run identifier.
+        output_file: Relative or absolute path to the generated markdown
+            file (e.g. ``"output/prds/2026/02/prd_v10_20260223_071542.md"``).
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    "output_file": output_file,
+                    "update_date": now,
+                },
+            },
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Saved output_file for run_id=%s: %s (matched=%d)",
+            run_id, output_file, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save output_file for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def save_confluence_url(run_id: str, confluence_url: str, page_id: str = "") -> bool:
+    """Store the Confluence page URL on the working-idea document.
+
+    Called after a PRD is successfully published to Confluence.
+
+    Args:
+        run_id: The run identifier.
+        confluence_url: URL of the published Confluence page.
+        page_id: Optional Confluence page ID.
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        update_fields: dict[str, Any] = {
+            "confluence_url": confluence_url,
+            "confluence_published_at": now,
+            "update_date": now,
+        }
+        if page_id:
+            update_fields["confluence_page_id"] = page_id
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": update_fields},
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Saved confluence_url for run_id=%s: %s (matched=%d)",
+            run_id, confluence_url, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save confluence_url for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def find_completed_without_confluence() -> list[dict[str, Any]]:
+    """Find completed working ideas that have not been published to Confluence.
+
+    Queries ``workingIdeas`` for documents whose ``status`` is
+    ``"completed"`` and whose ``confluence_url`` field is either
+    missing, null, or empty.
+
+    Returns:
+        A list of full document dicts, or an empty list on failure.
+    """
+    try:
+        db = get_db()
+        query = {
+            "status": "completed",
+            "$or": [
+                {"confluence_url": {"$exists": False}},
+                {"confluence_url": None},
+                {"confluence_url": ""},
+            ],
+        }
+        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+        logger.info(
+            "[MongoDB] Found %d completed idea(s) without Confluence publish",
+            len(docs),
+        )
+        return docs
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to query completed ideas without Confluence: %s",
+            exc,
+        )
+        return []
+
+
+def find_completed_without_output() -> list[dict[str, Any]]:
+    """Find completed working ideas that have no associated output file.
+
+    Queries ``workingIdeas`` for documents whose ``status`` is
+    ``"completed"`` and whose ``output_file`` field is either missing
+    or ``null``.
+
+    Returns:
+        A list of full document dicts, or an empty list on failure.
+    """
+    try:
+        db = get_db()
+        query = {
+            "status": "completed",
+            "$or": [
+                {"output_file": {"$exists": False}},
+                {"output_file": None},
+                {"output_file": ""},
+            ],
+        }
+        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+        logger.info(
+            "[MongoDB] Found %d completed idea(s) without output file",
+            len(docs),
+        )
+        return docs
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to query completed ideas without output: %s",
+            exc,
+        )
+        return []
+
+
+def fail_unfinalized_on_startup() -> list[dict[str, Any]]:
+    """Mark all unfinalized working ideas as ``failed`` on server restart.
+
+    Similar to ``fail_incomplete_jobs_on_startup`` in crew_jobs, this
+    ensures that old PRD runs are not resumed after a server restart.
+    Users can manually restart their PRD flows to pick up new code.
+
+    Returns:
+        A list of dicts ``{"run_id": ..., "idea": ..., "prev_status": ...,
+        "slack_channel": ..., "slack_thread_ts": ...}`` for each idea
+        that was marked as failed.  Empty list when nothing was recovered
+        or on error.
+    """
+    now = _now_iso()
+    recovered: list[dict[str, Any]] = []
+    try:
+        db = get_db()
+        query = {"status": {"$nin": ["completed", "archived", "failed"]}}
+        docs = list(db[WORKING_COLLECTION].find(query))
+        for doc in docs:
+            run_id = doc.get("run_id", "unknown")
+            prev_status = doc.get("status", "unknown")
+            db[WORKING_COLLECTION].update_one(
+                {"_id": doc["_id"]},
+                {"$set": {
+                    "status": "failed",
+                    "error": (
+                        f"Run was in '{prev_status}' status when the server "
+                        f"restarted. Terminated to apply new code changes. "
+                        f"Say 'create prd' to start a fresh run."
+                    ),
+                    "update_date": now,
+                }},
+            )
+            logger.warning(
+                "[MongoDB] Startup recovery: working idea %s (%s -> failed) — "
+                "server restart",
+                run_id, prev_status,
+            )
+            recovered.append({
+                "run_id": run_id,
+                "idea": doc.get("idea", ""),
+                "prev_status": prev_status,
+                "slack_channel": doc.get("slack_channel"),
+                "slack_thread_ts": doc.get("slack_thread_ts"),
+            })
+
+        if recovered:
+            logger.info(
+                "[MongoDB] Startup recovery: %d unfinalized idea(s) marked failed",
+                len(recovered),
+            )
+        else:
+            logger.info("[MongoDB] Startup recovery — no unfinalized ideas found")
+        return recovered
+    except PyMongoError as exc:
+        logger.error("[MongoDB] Startup recovery (unfinalized ideas) failed: %s", exc)
+        return []
+
+
+def find_unfinalized() -> list[dict[str, Any]]:
+    """Find working ideas that have not been finalized.
+
+    Queries ``workingIdeas`` for documents whose status is not
+    ``completed``.  Failed runs are included so they can be
+    resumed — the underlying executive summary and requirements
+    data is still valid.
+
+    Returns:
+        A list of dicts, each containing:
+        ``run_id``, ``idea``, ``iteration``, ``created_at``,
+        ``sections`` (list of section keys that have drafts),
+        and ``exec_summary_iterations`` (number of executive
+        summary iteration records).
+        Returns an empty list on failure.
+    """
+    try:
+        db = get_db()
+
+        query = {
+            "status": {"$nin": ["completed", "archived"]},
+        }
+        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+        runs = []
+        for doc in docs:
+            section_obj = doc.get("section") or {}
+            sections = [k for k, v in section_obj.items() if isinstance(v, list) and v]
+            # Determine latest iteration across all sections
+            max_iter = 0
+            for entries in section_obj.values():
+                if isinstance(entries, list):
+                    for entry in entries:
+                        it = entry.get("iteration", 0) if isinstance(entry, dict) else 0
+                        if it > max_iter:
+                            max_iter = it
+            # Count executive summary iterations (top-level array)
+            raw_exec = doc.get("executive_summary", [])
+            exec_iter_count = len(raw_exec) if isinstance(raw_exec, list) else 0
+            # Count requirements_breakdown iterations (top-level array)
+            raw_reqs = doc.get("requirements_breakdown", [])
+            req_iter_count = len(raw_reqs) if isinstance(raw_reqs, list) else 0
+            # Use whichever is higher for the overall iteration display
+            effective_iter = max(max_iter, exec_iter_count)
+            # Prefer the original idea; fall back to finalized_idea
+            idea_text = doc.get("idea") or doc.get("finalized_idea") or ""
+            runs.append({
+                "run_id": doc.get("run_id", ""),
+                "idea": idea_text,
+                "iteration": effective_iter,
+                "created_at": doc.get("created_at"),
+                "sections": sections,
+                "sections_done": len(sections),
+                "total_sections": 10,
+                "exec_summary_iterations": exec_iter_count,
+                "req_breakdown_iterations": req_iter_count,
+                "section_missing": "section" not in doc,
+                "project_id": doc.get("project_id"),
+                "slack_channel": doc.get("slack_channel"),
+                "slack_thread_ts": doc.get("slack_thread_ts"),
+            })
+        logger.info("[MongoDB] Found %d unfinalized working idea(s)", len(runs))
+        return runs
+    except PyMongoError as exc:
+        logger.error("[MongoDB] Failed to query unfinalized ideas: %s", exc)
+        return []
+
+
+def find_ideas_by_project(project_id: str) -> list[dict[str, Any]]:
+    """Find all working ideas associated with a project.
+
+    Returns ideas in any status (in-progress, paused, completed) except
+    ``archived``.  Results are sorted newest-first.
+
+    Returns:
+        A list of dicts, each containing: ``run_id``, ``idea``,
+        ``status``, ``iteration``, ``created_at``, ``sections_done``,
+        ``total_sections``.  Returns an empty list on failure.
+    """
+    try:
+        db = get_db()
+        query: dict[str, Any] = {
+            "project_id": project_id,
+            "status": {"$ne": "archived"},
+        }
+        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+        ideas: list[dict[str, Any]] = []
+        for doc in docs:
+            section_obj = doc.get("section") or {}
+            sections = [k for k, v in section_obj.items() if isinstance(v, list) and v]
+            # Determine latest iteration across all sections
+            max_iter = 0
+            for entries in section_obj.values():
+                if isinstance(entries, list):
+                    for entry in entries:
+                        it = entry.get("iteration", 0) if isinstance(entry, dict) else 0
+                        if it > max_iter:
+                            max_iter = it
+            raw_exec = doc.get("executive_summary", [])
+            exec_iter_count = len(raw_exec) if isinstance(raw_exec, list) else 0
+            effective_iter = max(max_iter, exec_iter_count)
+            # Prefer the original idea; fall back to finalized_idea
+            # or the crew-job idea for documents created before the idea
+            # field was reliably persisted.
+            idea_text = (
+                doc.get("idea")
+                or doc.get("finalized_idea")
+                or ""
+            )
+            ideas.append({
+                "run_id": doc.get("run_id", ""),
+                "idea": idea_text,
+                "status": doc.get("status", "unknown"),
+                "iteration": effective_iter,
+                "created_at": doc.get("created_at"),
+                "sections_done": len(sections),
+                "total_sections": 10,
+            })
+        logger.info(
+            "[MongoDB] Found %d idea(s) for project_id=%s",
+            len(ideas), project_id,
+        )
+        return ideas
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to query ideas for project_id=%s: %s",
+            project_id, exc,
+        )
+        return []
+
+
+def find_run_any_status(run_id: str) -> dict[str, Any] | None:
+    """Fetch a working-idea document by *run_id* regardless of status.
+
+    Unlike :func:`get_run_documents` this does **not** exclude
+    ``completed`` documents.  Only ``archived`` runs are filtered out.
+
+    Returns:
+        The document dict, or ``None`` if not found.
+    """
+    try:
+        db = get_db()
+        doc = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id, "status": {"$ne": "archived"}}
+        )
+        if doc is None:
+            logger.info("[MongoDB] No document (any status) for run_id=%s", run_id)
+        return doc
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to fetch document (any status) for run_id=%s: %s",
+            run_id, exc,
+        )
+        return None
+
+
+def get_run_documents(run_id: str) -> list[dict[str, Any]]:
+    """Fetch the working-idea document for a given run_id.
+
+    In the single-document model there is at most one document per
+    run_id.  The result is returned as a one-element list for
+    backward-compatibility with callers that expect a list.
+
+    Returns:
+        A list containing the document, or an empty list on failure /
+        not found.
+    """
+    try:
+        db = get_db()
+        doc = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id, "status": {"$ne": "completed"}}
+        )
+        if doc is None:
+            logger.info("[MongoDB] No document found for run_id=%s", run_id)
+            return []
+        logger.info("[MongoDB] Fetched document for run_id=%s", run_id)
+        return [doc]
+    except PyMongoError as exc:
+        logger.error("[MongoDB] Failed to fetch document for run_id=%s: %s", run_id, exc)
+        return []
+
+
+def save_iteration(
+    run_id: str,
+    idea: str,
+    iteration: int,
+    draft: dict[str, str],
+    critique: str = "",
+    step: str = "",
+    finalized_idea: str = "",
+    **extra: Any,
+) -> str | None:
+    """Persist a section iteration to the single ``workingIdeas`` document.
+
+    Uses an upsert to create the document on first call, then appends
+    iteration records into the appropriate ``section.<section_key>`` array
+    on subsequent calls.
+
+    Args:
+        draft: A dict mapping section keys to their content,
+            e.g. ``{"executive_summary": "# Summary ..."}``.  Each
+            call typically contains a single key for the section
+            that was just drafted/refined.
+        iteration: Per-section iteration number (1-based).
+        step: Descriptive step label (e.g. ``"draft_executive_summary"``).
+            Kept for logging only.
+        **extra: Accepts ``section_key`` and any other metadata.
+
+    Returns:
+        The upserted/updated document ``run_id`` as a string, or
+        ``None`` on failure.
+
+    Note:
+        MongoDB errors are caught and logged so the agent flow is never
+        interrupted by a database issue.
+    """
+    now = _now_iso()
+
+    # Determine the section_key from the draft dict or from the step label
+    section_key = extra.get("section_key", "")
+    if not section_key and draft:
+        section_key = next(iter(draft))
+
+    # Build the iteration record to push into the section array
+    iteration_record = {
+        "content": draft.get(section_key, "") if section_key else "",
+        "iteration": iteration,
+        "critique": critique,
+        "updated_date": now,
+    }
+
+    try:
+        db = get_db()
+        set_fields: dict[str, Any] = {
+            "status": "inprogress",
+            "update_date": now,
+        }
+        if finalized_idea:
+            set_fields["finalized_idea"] = finalized_idea
+
+        update_ops: dict[str, Any] = {
+            "$set": set_fields,
+            "$setOnInsert": {
+                "run_id": run_id,
+                "idea": idea,
+                "created_at": now,
+                "completed_at": None,
+            },
+        }
+
+        if section_key:
+            update_ops["$push"] = {f"section.{section_key}": iteration_record}
+
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            update_ops,
+            upsert=True,
+        )
+        doc_id = str(result.upserted_id) if result.upserted_id else run_id
+        logger.info(
+            "[MongoDB] Saved iteration %d (step=%s, section=%s) for run_id=%s",
+            iteration,
+            step or "section",
+            section_key,
+            run_id,
+        )
+        return doc_id
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save iteration %d for run_id=%s: %s",
+            iteration,
+            run_id,
+            exc,
+        )
+        return None
+
+
+def update_section_critique(
+    run_id: str,
+    section_key: str,
+    iteration: int,
+    critique: str,
+) -> bool:
+    """Update the critique field on an existing iteration record.
+
+    Finds the iteration record in ``section.<section_key>`` whose
+    ``iteration`` value matches and sets its ``critique`` and
+    ``updated_date`` fields.  This avoids creating a duplicate
+    array element for the critique step.
+
+    Args:
+        run_id: The run identifier.
+        section_key: The section whose iteration record to update.
+        iteration: The per-section iteration number to match.
+        critique: The critique text to set.
+
+    Returns:
+        ``True`` if the record was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {
+                "run_id": run_id,
+                f"section.{section_key}.iteration": iteration,
+            },
+            {
+                "$set": {
+                    f"section.{section_key}.$.critique": critique,
+                    f"section.{section_key}.$.updated_date": now,
+                    "update_date": now,
+                },
+            },
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Updated critique on section=%s iteration=%d "
+            "for run_id=%s (matched=%d)",
+            section_key, iteration, run_id, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to update critique for section=%s "
+            "run_id=%s: %s",
+            section_key, run_id, exc,
+        )
+        return False
+
+
+def save_executive_summary(
+    run_id: str,
+    idea: str,
+    iteration: int,
+    content: str,
+    critique: str | None = None,
+) -> str | None:
+    """Persist an executive summary iteration to the ``workingIdeas`` document.
+
+    Pushes a new record into the top-level ``executive_summary`` array.
+    This is separate from the ``draft`` object — the executive summary
+    is iterated as the first phase before section-level work begins.
+
+    Args:
+        run_id: The run identifier.
+        idea: The current idea text.
+        iteration: 1-based iteration number.
+        content: The executive summary content for this iteration.
+        critique: Critique feedback (``None`` for the initial draft).
+
+    Returns:
+        The document ``run_id`` as a string, or ``None`` on failure.
+    """
+    now = _now_iso()
+    record = {
+        "content": content,
+        "iteration": iteration,
+        "critique": critique,
+        "updated_date": now,
+    }
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$push": {"executive_summary": record},
+                "$set": {
+                    "status": "inprogress",
+                    "update_date": now,
+                },
+                "$setOnInsert": {
+                    "run_id": run_id,
+                    "idea": idea,
+                    "created_at": now,
+                    "completed_at": None,
+                    "section": {},
+                },
+            },
+            upsert=True,
+        )
+        doc_id = str(result.upserted_id) if result.upserted_id else run_id
+        logger.info(
+            "[MongoDB] Saved executive_summary iteration=%d for run_id=%s",
+            iteration, run_id,
+        )
+        return doc_id
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save executive_summary iteration=%d "
+            "for run_id=%s: %s",
+            iteration, run_id, exc,
+        )
+        return None
+
+
+def update_executive_summary_critique(
+    run_id: str,
+    iteration: int,
+    critique: str,
+) -> bool:
+    """Update the critique field on an existing executive summary record.
+
+    Finds the record in ``executive_summary`` whose ``iteration``
+    matches and sets its ``critique`` and ``updated_date`` fields.
+
+    Args:
+        run_id: The run identifier.
+        iteration: The iteration number to match.
+        critique: The critique text to set.
+
+    Returns:
+        ``True`` if the record was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {
+                "run_id": run_id,
+                "executive_summary.iteration": iteration,
+            },
+            {
+                "$set": {
+                    "executive_summary.$.critique": critique,
+                    "executive_summary.$.updated_date": now,
+                    "update_date": now,
+                },
+            },
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Updated executive_summary critique iteration=%d "
+            "for run_id=%s (matched=%d)",
+            iteration, run_id, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to update executive_summary critique "
+            "run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def save_finalized_idea(
+    run_id: str,
+    finalized_idea: str,
+) -> bool:
+    """Copy the last executive summary content to the top-level ``finalized_idea`` field.
+
+    Called at the end of executive summary iteration to persist the
+    approved content as a standalone field in the ``workingIdeas`` document.
+
+    Args:
+        run_id: The run identifier.
+        finalized_idea: The executive summary content to store.
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    "finalized_idea": finalized_idea,
+                    "update_date": now,
+                },
+            },
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Saved finalized_idea for run_id=%s (matched=%d)",
+            run_id, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save finalized_idea for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def save_pipeline_step(
+    run_id: str,
+    idea: str,
+    pipeline_key: str,
+    iteration: int,
+    content: str,
+    critique: str = "",
+    step: str = "",
+    finalized_idea: str = "",
+) -> str | None:
+    """Persist a pre-PRD pipeline iteration (requirements breakdown, etc.).
+
+    Stores the record under ``<pipeline_key>`` as a top-level array
+    (e.g. ``requirements_breakdown``) — not nested under ``pipeline``
+    — so the document matches the ``draft_prd_task`` JSON schema.
+
+    Args:
+        run_id: The run identifier.
+        idea: The original user-inputted idea text.
+        pipeline_key: Identifier for the pipeline stage
+            (e.g. ``"requirements_breakdown"``).
+        iteration: 1-based iteration number within this pipeline stage.
+        content: The content produced in this iteration.
+        critique: Evaluation / feedback text.
+        step: Descriptive step label for logging.
+
+    Returns:
+        The document ``run_id`` as a string, or ``None`` on failure.
+    """
+    now = _now_iso()
+    record = {
+        "content": content,
+        "iteration": iteration,
+        "critique": critique,
+        "step": step,
+        "updated_date": now,
+    }
+    try:
+        db = get_db()
+        set_fields: dict[str, Any] = {
+            "status": "inprogress",
+            "update_date": now,
+        }
+        if finalized_idea:
+            set_fields["finalized_idea"] = finalized_idea
+
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$push": {f"{pipeline_key}": record},
+                "$set": set_fields,
+                "$setOnInsert": {
+                    "run_id": run_id,
+                    "idea": idea,
+                    "created_at": now,
+                    "completed_at": None,
+                    "section": {},
+                },
+            },
+            upsert=True,
+        )
+        doc_id = str(result.upserted_id) if result.upserted_id else run_id
+        logger.info(
+            "[MongoDB] Saved pipeline step %s iteration=%d for run_id=%s",
+            pipeline_key, iteration, run_id,
+        )
+        return doc_id
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save pipeline step %s for run_id=%s: %s",
+            pipeline_key, run_id, exc,
+        )
+        return None
+
+
+def save_failed(
+    run_id: str,
+    idea: str,
+    iteration: int,
+    error: str,
+    draft: dict[str, str] | None = None,
+    step: str = "",
+    **extra: Any,
+) -> str | None:
+    """Mark a run as failed in ``workingIdeas``.
+
+    Updates the existing document (or inserts one) with ``status=failed``
+    and the error details.
+
+    Returns:
+        The document ``run_id`` as a string, or ``None`` on failure.
+    """
+    now = _now_iso()
+    try:
+        db = get_db()
+        col = db[WORKING_COLLECTION]
+
+        # Ensure the ``section`` field exists on pre-existing documents
+        # that were created before this initialisation was added.  The
+        # filter ``section: {$exists: false}`` guarantees we never
+        # overwrite real section data.
+        col.update_one(
+            {"run_id": run_id, "section": {"$exists": False}},
+            {"$set": {"section": {}}},
+        )
+
+        result = col.update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": error,
+                    "update_date": now,
+                },
+                "$setOnInsert": {
+                    "run_id": run_id,
+                    "idea": idea,
+                    "created_at": now,
+                    "completed_at": None,
+                    "section": {},
+                },
+            },
+            upsert=True,
+        )
+        doc_id = str(result.upserted_id) if result.upserted_id else run_id
+        logger.info(
+            "[MongoDB] Saved failure record for run_id=%s",
+            run_id,
+        )
+        return doc_id
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save failure record for run_id=%s: %s",
+            run_id,
+            exc,
+        )
+        return None
+
+
+def save_project_ref(run_id: str, project_id: str) -> int:
+    """Associate a working-idea document with a project configuration.
+
+    Sets the ``project_id`` field so the run can look up its
+    project-level Confluence space key, Jira project key, and
+    other project config via :func:`get_project_for_run`.
+
+    Returns:
+        Number of documents modified (0 or 1).
+    """
+    try:
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "project_id": project_id,
+                "update_date": _now_iso(),
+            }},
+        )
+        logger.info(
+            "[MongoDB] Saved project_id=%s for run_id=%s (matched=%d)",
+            project_id,
+            run_id,
+            result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save project ref for run_id=%s: %s",
+            run_id,
+            exc,
+        )
+        return 0
+
+
+def save_slack_context(
+    run_id: str,
+    slack_channel: str,
+    slack_thread_ts: str,
+) -> int:
+    """Persist the Slack channel and thread_ts for a working-idea run.
+
+    Called when a Slack-initiated PRD flow starts so the server can
+    notify the same thread on auto-resume after a restart.
+
+    Returns:
+        Number of documents modified (0 or 1).
+    """
+    try:
+        result = get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "slack_channel": slack_channel,
+                "slack_thread_ts": slack_thread_ts,
+                "update_date": _now_iso(),
+            }},
+        )
+        logger.info(
+            "[MongoDB] Saved Slack context for run_id=%s "
+            "(channel=%s, thread_ts=%s, matched=%d)",
+            run_id, slack_channel, slack_thread_ts, result.matched_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save Slack context for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0

@@ -172,12 +172,21 @@ def run_prd_flow(
     idea: str,
     auto_approve: bool = False,
     progress_callback: "Callable[[str, dict], None] | None" = None,
+    exec_summary_user_feedback_callback: "Callable | None" = None,
+    executive_summary_callback: "Callable | None" = None,
 ) -> None:
     """Execute the PRD flow in background and update the run record.
 
     When *auto_approve* is ``True`` the flow runs end-to-end without
     pausing for manual approval (same as the CLI).  Sections auto-iterate
     and are approved when the critique contains ``SECTION_READY``.
+
+    When *exec_summary_user_feedback_callback* is provided, the user is
+    given a chance to iterate or approve after each executive summary
+    iteration — even in auto-approve mode.
+
+    When *executive_summary_callback* is provided, the user is given a
+    final review gate between the executive summary and section drafting.
     """
     from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
     from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
@@ -196,6 +205,10 @@ def run_prd_flow(
         flow.state.run_id = run_id
         if progress_callback is not None:
             flow.progress_callback = progress_callback
+        if exec_summary_user_feedback_callback is not None:
+            flow.exec_summary_user_feedback_callback = exec_summary_user_feedback_callback
+        if executive_summary_callback is not None:
+            flow.executive_summary_callback = executive_summary_callback
         if not auto_approve:
             flow.approval_callback = make_approval_callback(run_id)
         result = flow.kickoff()
@@ -238,6 +251,20 @@ def run_prd_flow(
         run.error = f"INTERNAL_ERROR: {exc}"
         update_job_completed(run_id, status="paused")
         logger.error("[API] PRD flow failed (kept inprogress, run_id=%s): %s", run_id, exc)
+    except BaseException as exc:  # noqa: BLE001
+        # Catch SystemExit / KeyboardInterrupt so a background thread
+        # never takes down the entire server process.
+        run.status = FlowStatus.PAUSED
+        run.error = f"FATAL_ERROR: {type(exc).__name__}: {exc}"
+        try:
+            update_job_completed(run_id, status="paused")
+        except Exception:  # noqa: BLE001
+            pass
+        logger.critical(
+            "[API] PRD flow caught fatal %s (run_id=%s): %s — "
+            "flow paused to prevent server crash",
+            type(exc).__name__, run_id, exc,
+        )
     finally:
         # Sync flow state to in-memory run for GET /flow/runs/{run_id}
         if flow is not None:
@@ -485,6 +512,20 @@ def resume_prd_flow(
         run.error = f"INTERNAL_ERROR: {exc}"
         update_job_completed(run_id, status="paused")
         logger.error("[API] Resumed PRD flow failed (kept inprogress, run_id=%s): %s", run_id, exc)
+    except BaseException as exc:  # noqa: BLE001
+        # Catch SystemExit / KeyboardInterrupt so a background thread
+        # never takes down the entire server process.
+        run.status = FlowStatus.PAUSED
+        run.error = f"FATAL_ERROR: {type(exc).__name__}: {exc}"
+        try:
+            update_job_completed(run_id, status="paused")
+        except Exception:  # noqa: BLE001
+            pass
+        logger.critical(
+            "[API] Resumed PRD flow caught fatal %s (run_id=%s): %s — "
+            "flow paused to prevent server crash",
+            type(exc).__name__, run_id, exc,
+        )
     finally:
         # Sync flow state to in-memory run for GET /flow/runs/{run_id}
         if flow is not None:

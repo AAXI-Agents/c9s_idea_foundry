@@ -31,12 +31,16 @@ class TestBuildPostCompletionCrew:
             "description": "Publish {prd_content} as '{page_title}' ({run_id})",
             "expected_output": "Confluence page URL",
         },
+        "generate_jira_skeleton_task": {
+            "description": "Skeleton for '{page_title}' summary={executive_summary} reqs={functional_requirements} {additional_prd_context}",
+            "expected_output": "Skeleton outline",
+        },
         "create_jira_epic_task": {
             "description": "Create epic '{page_title}' summary={executive_summary} ({run_id}) confluence={confluence_url}",
             "expected_output": "Epic key",
         },
         "create_jira_stories_task": {
-            "description": "Create stories from {functional_requirements} {additional_prd_context} under {epic_key} ({run_id}) confluence={confluence_url}",
+            "description": "Create stories from {approved_skeleton} {functional_requirements} {additional_prd_context} under {epic_key} ({run_id}) confluence={confluence_url}",
             "expected_output": "Story keys",
         },
         "create_jira_tasks_task": {
@@ -232,10 +236,12 @@ class TestBuildPostCompletionCrew:
         fr_section.content = "FR1: Login"
         build_post_completion_crew(flow)
 
-        # Tasks: assess(DM), epic(PM), stories(PM), tasks(ATL) = 4
-        epic_kw = created_tasks[1]  # second task is epic
-        stories_kw = created_tasks[2]  # third is stories
-        tasks_kw = created_tasks[3]  # fourth is tasks
+        # Tasks: assess(DM), skeleton(PM), epic(PM), stories(PM), tasks(ATL) = 5
+        skeleton_kw = created_tasks[1]  # second task is skeleton
+        epic_kw = created_tasks[2]  # third task is epic
+        stories_kw = created_tasks[3]  # fourth is stories
+        tasks_kw = created_tasks[4]  # fifth is tasks
+        assert skeleton_kw["agent"] is pm_agent
         assert epic_kw["agent"] is pm_agent
         assert stories_kw["agent"] is pm_agent
         assert tasks_kw["agent"] is atl_agent

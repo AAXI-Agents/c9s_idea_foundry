@@ -15,7 +15,7 @@ Environment variables:
 * ``IDEA_REFINER_MAX_ITERATIONS`` — maximum refinement iterations
   (default 10).
 * ``IDEA_REFINER_MODEL`` — override the Gemini model used
-  (defaults to ``GEMINI_MODEL`` → ``DEFAULT_GEMINI_MODEL``).
+  (defaults to ``GEMINI_RESEARCH_MODEL`` → ``DEFAULT_GEMINI_RESEARCH_MODEL``).
 """
 
 import os
@@ -52,13 +52,16 @@ def _load_yaml(filename: str) -> dict:
 def _build_refiner_llm() -> LLM:
     """Build the Gemini LLM for the idea refiner agent.
 
+    Uses the **research** model tier because idea refinement involves
+    deep iterative reasoning (3-10 self-critique cycles).
+
     Resolution order for model name:
         1. ``IDEA_REFINER_MODEL`` env var
-        2. ``GEMINI_MODEL`` env var
-        3. Hard-coded default (same as Gemini PM)
+        2. ``GEMINI_RESEARCH_MODEL`` env var
+        3. Hard-coded default (``DEFAULT_GEMINI_RESEARCH_MODEL``)
     """
     from crewai_productfeature_planner.agents.gemini_utils import (
-        DEFAULT_GEMINI_MODEL,
+        DEFAULT_GEMINI_RESEARCH_MODEL,
         ensure_gemini_env,
     )
 
@@ -66,7 +69,7 @@ def _build_refiner_llm() -> LLM:
 
     model_name = os.environ.get(
         "IDEA_REFINER_MODEL",
-        os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+        os.environ.get("GEMINI_RESEARCH_MODEL", DEFAULT_GEMINI_RESEARCH_MODEL),
     ).strip()
     if "/" not in model_name:
         model_name = f"gemini/{model_name}"

@@ -21,6 +21,70 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Idea-number resolution helper
+# ---------------------------------------------------------------------------
+
+
+def _resolve_idea_by_number(
+    idea_number: int,
+    project_id: str,
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+) -> dict | None:
+    """Resolve a 1-based idea number to a run-info dict.
+
+    Uses ``find_ideas_by_project`` which returns ideas in the same
+    newest-first order as ``handle_list_ideas``, so numbering is
+    consistent with what the user sees.
+
+    Returns the matching idea dict (with at least ``run_id``, ``idea``,
+    ``status``, ``sections_done``, ``total_sections``) or ``None``
+    if the number is out of range — in which case an error message is
+    posted to the Slack thread.
+    """
+    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+        find_ideas_by_project,
+    )
+
+    ideas = find_ideas_by_project(project_id)
+
+    if not ideas:
+        send_tool.run(
+            channel=channel,
+            text=(
+                f"<@{user}> :no_entry_sign: No ideas found for this project. "
+                "Start a new one by telling me your idea!"
+            ),
+            thread_ts=thread_ts,
+        )
+        append_to_thread(channel, thread_ts, "assistant", "(no ideas found)")
+        return None
+
+    if idea_number < 1 or idea_number > len(ideas):
+        send_tool.run(
+            channel=channel,
+            text=(
+                f"<@{user}> :warning: Idea #{idea_number} is out of range. "
+                f"There are *{len(ideas)}* idea(s) available. "
+                "Say *list ideas* to see them."
+            ),
+            thread_ts=thread_ts,
+        )
+        append_to_thread(channel, thread_ts, "assistant",
+                         f"(idea #{idea_number} out of range)")
+        return None
+
+    selected = ideas[idea_number - 1]
+    logger.info(
+        "Resolved idea #%d → run_id=%s idea=%r",
+        idea_number, selected.get("run_id"), selected.get("idea", "")[:80],
+    )
+    return selected
+
+
+# ---------------------------------------------------------------------------
 # Progress / heartbeat poster for Slack
 # ---------------------------------------------------------------------------
 
@@ -149,6 +213,27 @@ def make_progress_poster(
             count = details.get("ticket_count", 0)
             msg = f":tickets: *Jira tickets created!* ({count} ticket(s))"
 
+        elif event_type == "jira_skeleton_start":
+            msg = ":pencil: Generating Jira ticket skeleton (Epics & Stories outline)…"
+
+        elif event_type == "jira_skeleton_ready":
+            msg = (
+                ":clipboard: *Jira skeleton ready!* "
+                "Waiting for your approval before creating tickets…"
+            )
+
+        elif event_type == "jira_epics_stories_start":
+            msg = ":hammer_and_wrench: Creating Jira Epics and Stories…"
+
+        elif event_type == "jira_epics_stories_complete":
+            msg = (
+                ":white_check_mark: *Epics & Stories created!* "
+                "Waiting for review before creating sub-tasks…"
+            )
+
+        elif event_type == "jira_subtasks_start":
+            msg = ":gear: Creating detailed Jira sub-tasks with dependencies…"
+
         if msg:
             try:
                 send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
@@ -158,6 +243,270 @@ def make_progress_poster(
                 )
 
     return _post
+
+
+# ---------------------------------------------------------------------------
+# Non-interactive exec summary feedback gate
+# ---------------------------------------------------------------------------
+
+# Module-level state for non-interactive (auto-approve) flows that still
+# want to pause after the executive summary to let the user iterate.
+# Keyed by run_id → dict with channel, thread_ts, event, decision, feedback.
+_pending_exec_feedback: dict[str, dict] = {}
+_exec_feedback_lock = threading.Lock()
+
+
+def resolve_exec_feedback(run_id: str, action: str, feedback_text: str | None = None) -> bool:
+    """Signal a pending exec-summary feedback gate for *run_id*.
+
+    Called by the interactions router (button click) or events router
+    (thread reply).
+
+    *action* is ``"approve"`` or ``"feedback"``.
+
+    Returns ``True`` if the gate was found and signalled.
+    """
+    with _exec_feedback_lock:
+        info = _pending_exec_feedback.get(run_id)
+        if not info:
+            return False
+        info["decision"] = action
+        info["feedback"] = feedback_text
+        info["event"].set()
+        return True
+
+
+def make_exec_summary_gate(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str, str, int], tuple[str, str | None]]":
+    """Return an ``exec_summary_user_feedback_callback`` for auto-approve flows.
+
+    Skips the pre-draft guidance prompt (iteration 0) and after each
+    iteration posts the executive summary with Approve / Feedback buttons
+    so the user can iterate or continue to PRD generation.
+    """
+
+    def _callback(
+        content: str,
+        idea: str,
+        cb_run_id: str,
+        iteration: int,
+    ) -> tuple[str, str | None]:
+        if iteration == 0:
+            # Skip initial guidance — auto mode
+            return ("skip", None)
+
+        # Post the exec summary with feedback blocks
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            exec_summary_feedback_blocks,
+        )
+
+        blocks = exec_summary_feedback_blocks(cb_run_id, content, iteration)
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+            if client:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=f"Executive Summary — Iteration {iteration}",
+                    blocks=blocks,
+                )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to post exec summary feedback blocks", exc_info=True)
+
+        # Register the pending gate
+        gate_event = threading.Event()
+        with _exec_feedback_lock:
+            _pending_exec_feedback[cb_run_id] = {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "user": user,
+                "event": gate_event,
+                "decision": None,
+                "feedback": None,
+            }
+
+        # Wait for user response (10 minutes max)
+        gate_event.wait(timeout=600.0)
+
+        with _exec_feedback_lock:
+            info = _pending_exec_feedback.pop(cb_run_id, {})
+
+        decision = info.get("decision")
+        feedback = info.get("feedback")
+
+        if decision == "approve":
+            logger.info(
+                "[ExecSummaryGate] User approved at iteration %d for "
+                "run_id=%s",
+                iteration, cb_run_id,
+            )
+            return ("approve", None)
+
+        if decision == "feedback" and feedback:
+            logger.info(
+                "[ExecSummaryGate] User feedback at iteration %d for "
+                "run_id=%s (%d chars)",
+                iteration, cb_run_id, len(feedback),
+            )
+            return ("feedback", feedback)
+
+        # Timeout or unknown — auto-approve and continue
+        logger.warning(
+            "[ExecSummaryGate] Timeout for run_id=%s at iteration %d "
+            "— auto-approving",
+            cb_run_id, iteration,
+        )
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    ":hourglass: No response received — auto-approving "
+                    "executive summary and continuing to PRD generation."
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return ("approve", None)
+
+    return _callback
+
+
+# ---------------------------------------------------------------------------
+# Non-interactive exec summary COMPLETION gate
+# ---------------------------------------------------------------------------
+
+# Module-level state for the phase gate between the executive summary
+# and section-level drafting.  Keyed by run_id.
+_pending_exec_completion: dict[str, dict] = {}
+_exec_completion_lock = threading.Lock()
+
+
+def resolve_exec_completion(run_id: str, action: str) -> bool:
+    """Signal a pending exec-summary completion gate for *run_id*.
+
+    Called by the interactions router when the user clicks
+    "Continue to Sections" (``exec_summary_continue``) or "Stop"
+    (``exec_summary_stop``).
+
+    Returns ``True`` if the gate was found and signalled.
+    """
+    with _exec_completion_lock:
+        info = _pending_exec_completion.get(run_id)
+        if not info:
+            return False
+        info["decision"] = action
+        info["event"].set()
+        return True
+
+
+def make_exec_summary_completion_gate(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str, str, list[dict]], bool]":
+    """Return an ``executive_summary_callback`` for auto-approve flows.
+
+    Posts the finalized executive summary with Continue / Stop buttons
+    so the user can review before the flow proceeds to section drafting.
+
+    Returns ``True`` → continue to section drafting.
+    Returns ``False`` → stop after executive summary.
+    """
+
+    def _callback(
+        executive_summary: str,
+        idea: str,
+        cb_run_id: str,
+        iterations: list[dict],
+    ) -> bool:
+        total_iterations = len(iterations)
+
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            exec_summary_completion_blocks,
+        )
+
+        blocks = exec_summary_completion_blocks(
+            cb_run_id, executive_summary, total_iterations,
+        )
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+            if client:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text="Executive Summary — Finalized — awaiting your review",
+                    blocks=blocks,
+                )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to post exec summary completion blocks", exc_info=True)
+
+        # Register the pending gate
+        gate_event = threading.Event()
+        with _exec_completion_lock:
+            _pending_exec_completion[cb_run_id] = {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "user": user,
+                "event": gate_event,
+                "decision": None,
+            }
+
+        # Wait for user response (10 minutes max)
+        gate_event.wait(timeout=600.0)
+
+        with _exec_completion_lock:
+            info = _pending_exec_completion.pop(cb_run_id, {})
+
+        decision = info.get("decision")
+
+        if decision == "exec_summary_stop":
+            logger.info(
+                "[ExecCompletionGate] User chose to stop after exec "
+                "summary for run_id=%s",
+                cb_run_id,
+            )
+            return False
+
+        if decision == "exec_summary_continue":
+            logger.info(
+                "[ExecCompletionGate] User approved continuation to "
+                "sections for run_id=%s",
+                cb_run_id,
+            )
+            return True
+
+        # Timeout — auto-continue to sections
+        logger.warning(
+            "[ExecCompletionGate] Timeout for run_id=%s — "
+            "auto-continuing to section drafting",
+            cb_run_id,
+        )
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    ":hourglass: No response received — auto-continuing "
+                    "to section-level PRD drafting."
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+
+    return _callback
 
 
 # ---------------------------------------------------------------------------
@@ -273,49 +622,81 @@ def handle_resume_prd(
     user: str,
     send_tool,
     project_id: str | None = None,
+    idea_number: int | None = None,
 ) -> None:
     """Find the latest resumable PRD run and resume it in a background thread.
+
+    If *idea_number* is provided (1-based), the numbered idea from
+    the project idea list is selected instead of the most recent
+    unfinalized run.
 
     If no resumable run exists, tells the user.
     """
     try:
-        from crewai_productfeature_planner.mongodb import find_unfinalized
+        # When a specific idea number is given, resolve via the project
+        # idea list (same ordering as handle_list_ideas) so the user
+        # can say "resume idea #2" after viewing the list.
+        if idea_number is not None and project_id:
+            run_info = _resolve_idea_by_number(
+                idea_number, project_id, channel, thread_ts, user, send_tool,
+            )
+            if run_info is None:
+                return  # error already posted
+        else:
+            from crewai_productfeature_planner.mongodb import find_unfinalized
 
-        unfinalized = find_unfinalized()
+            unfinalized = find_unfinalized()
 
-        # Filter to the active project if available
-        if project_id:
-            project_runs = [
-                r for r in unfinalized
-                if r.get("project_id") == project_id
-            ]
-            if project_runs:
-                unfinalized = project_runs
+            # Filter to the active project if available
+            if project_id:
+                project_runs = [
+                    r for r in unfinalized
+                    if r.get("project_id") == project_id
+                ]
+                if project_runs:
+                    unfinalized = project_runs
 
-        if not unfinalized:
+            if not unfinalized:
+                send_tool.run(
+                    channel=channel,
+                    text=(
+                        f"<@{user}> :no_entry_sign: No paused or resumable PRD "
+                        "runs found. Start a new one by telling me your idea!"
+                    ),
+                    thread_ts=thread_ts,
+                )
+                append_to_thread(channel, thread_ts, "assistant",
+                                 "(no resumable runs)")
+                return
+
+            # Pick the most recent run
+            run_info = unfinalized[0]
+        run_id = run_info["run_id"]
+        idea = run_info.get("idea") or "(unknown idea)"
+        status = run_info.get("status", "unknown")
+        sections_done = run_info.get("sections_done", 0)
+        total_sections = run_info.get("total_sections", 10)
+
+        # A completed idea cannot be resumed — suggest rescan instead.
+        if status == "completed":
             send_tool.run(
                 channel=channel,
                 text=(
-                    f"<@{user}> :no_entry_sign: No paused or resumable PRD "
-                    "runs found. Start a new one by telling me your idea!"
+                    f"<@{user}> :white_check_mark: That idea is already "
+                    f"completed! Use *Rescan* to start a fresh PRD flow "
+                    f"with the same idea, or tell me a new idea."
                 ),
                 thread_ts=thread_ts,
             )
             append_to_thread(channel, thread_ts, "assistant",
-                             "(no resumable runs)")
+                             "(idea already completed — suggested rescan)")
             return
 
-        # Pick the most recent run
-        run_info = unfinalized[0]
-        run_id = run_info["run_id"]
-        idea = run_info.get("idea", "(unknown idea)")
-        sections_done = run_info.get("sections_done", 0)
-        total_sections = run_info.get("total_sections", 10)
-
+        idea_preview = idea[:500] + "…" if len(idea) > 500 else idea
         ack = (
             f"<@{user}> :arrows_counterclockwise: Resuming PRD flow "
             f"(run `{run_id}`):\n"
-            f"> _{idea}_\n"
+            f"> _{idea_preview}_\n"
             f"Progress: {sections_done}/{total_sections} sections completed. "
             "I'll continue from where it paused."
         )
@@ -370,15 +751,39 @@ def handle_resume_prd(
                         thread_ts=thread_ts,
                     )
                 elif run and run.status == FlowStatus.PAUSED:
-                    send_tool.run(
-                        channel=channel,
-                        text=(
-                            f":pause_button: PRD flow paused again "
-                            f"(run `{run_id}`). Resume via the API "
-                            "or say *resume prd flow*."
-                        ),
-                        thread_ts=thread_ts,
-                    )
+                    from crewai_productfeature_planner.apis.slack.blocks import flow_paused_blocks
+                    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+                    reason = run.error or ""
+                    blocks = flow_paused_blocks(run_id, reason)
+                    client = _get_slack_client()
+                    if client:
+                        try:
+                            client.chat_postMessage(
+                                channel=channel,
+                                thread_ts=thread_ts,
+                                blocks=blocks,
+                                text=f"PRD flow paused again ({run_id})",
+                            )
+                        except Exception:
+                            logger.debug("Failed to post pause blocks", exc_info=True)
+                            send_tool.run(
+                                channel=channel,
+                                text=(
+                                    f":pause_button: PRD flow paused again "
+                                    f"(run `{run_id}`). Say *resume prd flow* to retry."
+                                ),
+                                thread_ts=thread_ts,
+                            )
+                    else:
+                        send_tool.run(
+                            channel=channel,
+                            text=(
+                                f":pause_button: PRD flow paused again "
+                                f"(run `{run_id}`). Say *resume prd flow* to retry."
+                            ),
+                            thread_ts=thread_ts,
+                        )
                 else:
                     error_msg = run.error if run else "Unknown error"
                     send_tool.run(
@@ -396,6 +801,12 @@ def handle_resume_prd(
                     )
                 except Exception:
                     pass
+            except BaseException as exc:  # noqa: BLE001
+                logger.critical(
+                    "Resume PRD flow %s caught fatal %s: %s — "
+                    "suppressed to protect server",
+                    run_id, type(exc).__name__, exc,
+                )
 
         t = threading.Thread(
             target=_resume_and_notify,
@@ -413,6 +824,241 @@ def handle_resume_prd(
         send_tool.run(channel=channel, text=err_msg, thread_ts=thread_ts)
         append_to_thread(channel, thread_ts, "assistant", err_msg)
         logger.error("Resume PRD intent failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Restart PRD flow from Slack
+# ---------------------------------------------------------------------------
+
+
+def handle_restart_prd(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    event_ts: str,
+    project_id: str | None = None,
+    idea_number: int | None = None,
+) -> None:
+    """Archive the current PRD run and start a fresh flow with the same idea.
+
+    Posts a confirmation prompt (Block Kit buttons) before proceeding.
+    If the user confirms, the current run is archived and a new flow
+    starts.  If the user cancels, no changes are made.
+
+    If *idea_number* is provided (1-based), the numbered idea from
+    the project idea list is selected instead of the most recent
+    unfinalized run.
+
+    If no resumable run exists, tells the user.
+    """
+    try:
+        # When a specific idea number is given, resolve via the project
+        # idea list (same ordering as handle_list_ideas).
+        if idea_number is not None and project_id:
+            run_info = _resolve_idea_by_number(
+                idea_number, project_id, channel, thread_ts, user, send_tool,
+            )
+            if run_info is None:
+                return  # error already posted
+        else:
+            from crewai_productfeature_planner.mongodb import find_unfinalized
+
+            unfinalized = find_unfinalized()
+
+            # Filter to the active project if available
+            if project_id:
+                project_runs = [
+                    r for r in unfinalized
+                    if r.get("project_id") == project_id
+                ]
+                if project_runs:
+                    unfinalized = project_runs
+
+            if not unfinalized:
+                send_tool.run(
+                    channel=channel,
+                    text=(
+                        f"<@{user}> :no_entry_sign: No active PRD runs found "
+                        "to restart. Start a new one by telling me your idea!"
+                    ),
+                    thread_ts=thread_ts,
+                )
+                append_to_thread(channel, thread_ts, "assistant",
+                                 "(no runs to restart)")
+                return
+
+            # Pick the most recent run
+            run_info = unfinalized[0]
+        run_id = run_info["run_id"]
+        idea = run_info.get("idea") or "(unknown idea)"
+        sections_done = run_info.get("sections_done", 0)
+        total_sections = run_info.get("total_sections", 10)
+
+        # Post confirmation buttons
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        client = _get_slack_client()
+        if not client:
+            send_tool.run(
+                channel=channel,
+                text=f"<@{user}> :x: Slack client unavailable.",
+                thread_ts=thread_ts,
+            )
+            return
+
+        # Slack section blocks have a 3000-char limit for the text field.
+        # Truncate the idea to keep the entire block safely under the limit.
+        idea_preview = idea[:500] + "…" if len(idea) > 500 else idea
+
+        confirm_blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"<@{user}> :warning: *Restart PRD Flow?*\n\n"
+                        f"This will *archive* the current run "
+                        f"(`{run_id}`) and start a *brand new* PRD flow "
+                        f"with the same idea:\n"
+                        f"> _{idea_preview}_\n\n"
+                        f"Progress so far: {sections_done}/{total_sections} "
+                        f"sections completed.\n"
+                        f"The archived run will remain available for reference."
+                    ),
+                },
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Yes, restart"},
+                        "style": "danger",
+                        "action_id": "restart_prd_confirm",
+                        "value": run_id,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Cancel"},
+                        "action_id": "restart_prd_cancel",
+                        "value": run_id,
+                    },
+                ],
+            },
+        ]
+
+        client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text="Restart PRD flow?",
+            blocks=confirm_blocks,
+        )
+        append_to_thread(channel, thread_ts, "assistant",
+                         "(restart confirmation prompt)")
+        logger.info(
+            "Posted restart confirmation for run_id=%s idea=%r",
+            run_id, idea[:80],
+        )
+
+    except Exception as exc:
+        err_msg = f"<@{user}> :x: Failed to process restart request: {exc}"
+        send_tool.run(channel=channel, text=err_msg, thread_ts=thread_ts)
+        append_to_thread(channel, thread_ts, "assistant", err_msg)
+        logger.error("Restart PRD intent failed: %s", exc)
+
+
+def execute_restart_prd(
+    run_id: str,
+    channel: str,
+    thread_ts: str,
+    user: str,
+    event_ts: str = "",
+    project_id: str | None = None,
+) -> None:
+    """Archive the given run and kick off a new PRD flow with its idea.
+
+    Called after the user confirms the restart via the confirmation button.
+    """
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_run_any_status,
+            mark_archived,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import (
+            SlackSendMessageTool,
+        )
+
+        # Re-fetch the run to get the idea — use find_run_any_status so
+        # completed runs are included (the user can legitimately restart
+        # a finished idea from the idea list).
+        doc = find_run_any_status(run_id)
+
+        if not doc:
+            send_tool = SlackSendMessageTool()
+            send_tool.run(
+                channel=channel,
+                text=(
+                    f"<@{user}> :x: Could not find run `{run_id}` — "
+                    "it may have already been archived."
+                ),
+                thread_ts=thread_ts,
+            )
+            return
+
+        idea = (
+            doc.get("idea")
+            or doc.get("finalized_idea")
+            or "(unknown idea)"
+        )
+        project_id = project_id or doc.get("project_id")
+
+        # Archive the old run
+        mark_archived(run_id)
+
+        # Also mark the crew job as archived
+        try:
+            from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
+                update_job_status,
+            )
+            update_job_status(run_id, "archived")
+        except Exception:
+            logger.debug("Could not archive crewJob for %s", run_id, exc_info=True)
+
+        send_tool = SlackSendMessageTool()
+        idea_preview = idea[:500] + "…" if len(idea) > 500 else idea
+        send_tool.run(
+            channel=channel,
+            text=(
+                f"<@{user}> :file_folder: Archived run `{run_id}`.\n"
+                f":rocket: Starting a fresh PRD flow for:\n> _{idea_preview}_"
+            ),
+            thread_ts=thread_ts,
+        )
+        append_to_thread(channel, thread_ts, "assistant",
+                         f"(archived {run_id}, starting fresh)")
+
+        # Kick off a new flow with the same idea
+        kick_off_prd_flow(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user,
+            idea=idea,
+            event_ts=event_ts,
+            project_id=project_id,
+        )
+
+    except Exception as exc:
+        logger.error("execute_restart_prd failed for %s: %s", run_id, exc)
+        try:
+            send_tool = SlackSendMessageTool()
+            send_tool.run(
+                channel=channel,
+                text=f"<@{user}> :x: Failed to restart PRD flow: {exc}",
+                thread_ts=thread_ts,
+            )
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

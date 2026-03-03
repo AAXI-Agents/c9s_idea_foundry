@@ -66,8 +66,7 @@ _DEFAULT_MESSAGES: dict[str, str] = {
         "Would you like to set up guardrails, knowledge, or tools?"
     ),
     "create_prd": (
-        "Your project is ready! Would you like to *create a PRD* "
-        "or *iterate on an idea*?"
+        "Your project is ready! Would you like to *iterate on an idea*?"
     ),
     "publish": (
         "You have pending PRDs. Would you like to *publish* them "

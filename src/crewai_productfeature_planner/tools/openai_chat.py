@@ -33,7 +33,8 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
   "intent"  – one of: "create_project", "list_projects", "switch_project", \
               "current_project", "end_session", "configure_memory", \
               "update_config", "create_prd", "resume_prd", "publish", \
-              "check_publish", "help", "greeting", "unknown"
+              "check_publish", "general_question", \
+              "help", "greeting", "unknown"
   "idea"    – the product or feature idea extracted from the message, or null
   "confluence_space_key" – extracted Confluence space key, or null
   "jira_project_key"     – extracted Jira project key, or null
@@ -51,6 +52,10 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
        • "resume_prd" → confirm you will resume the paused/unfinished PRD flow
        • "publish" → confirm you will publish pending PRDs to Confluence and create Jira tickets
        • "check_publish" → confirm you will check the publishing status of pending PRDs
+       • "general_question" → answer the question conversationally; if it \
+         relates to PRDs or product planning, explain that this bot generates \
+         comprehensive Product Requirements Documents by iterating on the \
+         user's idea through multiple refinement rounds
        • "help" → briefly list what you can do
        • "greeting" → respond conversationally and offer help
        • "unknown" → say you didn't understand and show a quick example
@@ -191,7 +196,15 @@ paused or unfinished PRD generation run.
   check which PRDs are pending, or view delivery progress. Keywords: \
   "check publish", "publishing status", "what's pending", "delivery status", \
   "unpublished", "check status", "list pending".
-- If the user asks "what can you do", "how do I use this", etc. → "help".
+- Intent "general_question" is for informational or conceptual questions \
+  about terminology, concepts, or how things work — for example, \
+  "what is a PRD?", "what does PRD stand for?", "what is a product \
+  requirements document?", "explain PRD", "tell me about PRDs".  \
+  These are NOT "help" — the user is asking a knowledge question, not \
+  asking what the bot can do.  Answer the question and mention that \
+  this bot generates PRDs through iterative idea refinement.
+- If the user asks "what can you do", "how do I use this", \
+  "help", "help me" → "help" (the user wants to know the bot's features).
 - If the user says "hi", "hey", "hello", etc. with no idea → "greeting".
 - Always return valid JSON — no markdown fences, no extra text.
 

@@ -45,10 +45,12 @@ You are an intent-classification and entity-extraction assistant for a \
 product feature planning bot. Given a user message (which may be part of \
 an ongoing thread conversation), return a JSON object with EXACTLY these keys:
 
-  "intent"  – one of: "create_project", "list_projects", "switch_project", \
+  "intent"  – one of: "create_project", "list_projects", "list_ideas", \
+              "switch_project", \
               "current_project", "end_session", "configure_memory", \
-              "update_config", "create_prd", "resume_prd", "publish", \
-              "check_publish", "help", "greeting", "unknown"
+              "update_config", "create_prd", "resume_prd", "restart_prd", \
+              "publish", "check_publish", "general_question", \
+              "help", "greeting", "unknown"
   "idea"    – the product or feature idea extracted from the message, or null
   "confluence_space_key" – extracted Confluence space key, or null
   "jira_project_key"     – extracted Jira project key, or null
@@ -56,16 +58,22 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
   "reply"   – a SHORT friendly reply (1-2 sentences) appropriate to the intent:
        • "create_project" → confirm you will create a new project and ask for the project name
        • "list_projects" → confirm you will show the available projects
+       • "list_ideas" → confirm you will show the ideas associated with the current project
        • "switch_project" → confirm you will show the project picker to switch
        • "current_project" → confirm you will show which project is active
        • "end_session" → confirm you will end the current session
        • "configure_memory" → confirm you will open memory configuration
        • "update_config" → confirm you will update the project configuration with the provided keys
-       • "create_prd" with idea → confirm you will start planning
-       • "create_prd" without idea → ask the user for the idea
+       • "create_prd" with idea → confirm you will start iterating on the idea
+       • "create_prd" without idea → ask the user for the idea they want to iterate on
        • "resume_prd" → confirm you will resume the paused/unfinished PRD flow
+       • "restart_prd" → confirm you will archive the current run and start a fresh PRD flow with the same idea
        • "publish" → confirm you will publish pending PRDs to Confluence and create Jira tickets
        • "check_publish" → confirm you will check the publishing status of pending PRDs
+       • "general_question" → answer the question conversationally; if it \
+         relates to PRDs or product planning, explain that this bot generates \
+         comprehensive Product Requirements Documents by iterating on the \
+         user's idea through multiple refinement rounds
        • "help" → briefly list what you can do
        • "greeting" → respond conversationally and offer help
        • "unknown" → say you didn't understand and show a quick example
@@ -96,6 +104,14 @@ the word "project" does not appear.
   "show projects"                         → list_projects
   "available projects"                    → list_projects
   "which projects exist"                  → list_projects
+  "list of ideas"                         → list_ideas
+  "list ideas"                            → list_ideas
+  "show ideas"                            → list_ideas
+  "my ideas"                              → list_ideas
+  "show my ideas"                         → list_ideas
+  "what ideas do I have"                  → list_ideas
+  "ideas in progress"                     → list_ideas
+  "current ideas"                         → list_ideas
   "switch project"                        → switch_project
   "change project"                        → switch_project
   "use a different project"               → switch_project
@@ -147,16 +163,34 @@ the word "project" does not appear.
   "pick up where you left off"            → resume_prd
   "unpause prd"                           → resume_prd
   "resume run"                            → resume_prd
-  "restart prd flow"                      → resume_prd
   "continue flow"                         → resume_prd
+  "restart prd flow"                      → restart_prd
+  "restart prd"                           → restart_prd
+  "restart flow"                          → restart_prd
+  "restart scan"                          → restart_prd
+  "restart from scratch"                  → restart_prd
+  "restart from beginning"                → restart_prd
+  "start over"                            → restart_prd
+  "redo the prd"                          → restart_prd
+  "start the prd over"                    → restart_prd
 
-=== CRITICAL RULE — "resume" vs "create" PRD ===
-When the user says "resume", "continue", "unpause", "restart", or \
+=== CRITICAL RULE — "resume" vs "restart" vs "create" PRD ===
+When the user says "resume", "continue", "unpause", or \
 "pick up where" in relation to a PRD or flow, that is ALWAYS **resume_prd** — \
 not create_prd.  "resume_prd" means the user wants to continue a previously \
-paused or unfinished PRD generation run.
+paused or unfinished PRD generation run from where it left off.
+
+When the user says "restart", "start over", "redo", "from scratch", \
+"from beginning" in relation to a PRD or flow, that is ALWAYS \
+**restart_prd** — not resume_prd or create_prd.  "restart_prd" means \
+the user wants to archive the current run and start a brand new PRD \
+flow with the same idea.
 
 === Other rules ===
+- Intent "list_ideas" means the user wants to SEE, LIST, BROWSE, or \
+  SHOW their ideas (working ideas / PRD runs) in the current project.  \
+  Keywords: "list ideas", "show ideas", "my ideas", "ideas in progress", \
+  "current ideas", "list of ideas".  Do NOT confuse with "list_projects".
 - Intent "list_projects" means the user wants to SEE, LIST, BROWSE, or \
   SHOW existing projects.  Keywords: "list projects", "show projects", \
   "available projects", "what projects", "which projects".
@@ -193,11 +227,16 @@ paused or unfinished PRD generation run.
 - If the user provides ONLY a product idea (no command word), still classify \
   as "create_prd".
 - Intent "resume_prd" means the user wants to RESUME, CONTINUE, UNPAUSE, \
-  or RESTART a previously paused or unfinished PRD flow.  Keywords: \
+  or pick up a previously paused or unfinished PRD flow.  Keywords: \
   "resume prd", "resume flow", "continue prd", "continue flow", \
-  "unpause", "restart prd", "pick up where", "resume run".  \
-  Do NOT confuse with "create_prd" — resume is about continuing an \
-  existing run, not starting a new one.
+  "unpause", "pick up where", "resume run".  \
+  Do NOT confuse with "create_prd" or "restart_prd".
+- Intent "restart_prd" means the user wants to RESTART, START OVER, or \
+  REDO a PRD flow from the beginning — the current run is archived and \
+  a fresh flow begins with the same idea.  Keywords: "restart prd", \
+  "restart flow", "restart scan", "start over", "redo the prd", \
+  "from scratch", "from beginning".  \
+  Do NOT confuse with "resume_prd" (which continues from where it paused).
 - Intent "publish" means the user wants to publish PRDs to Confluence, \
   create Jira tickets, or trigger the delivery pipeline. Keywords: \
   "publish", "deploy", "push to confluence", "create tickets", "deliver", \
@@ -206,7 +245,15 @@ paused or unfinished PRD generation run.
   check which PRDs are pending, or view delivery progress. Keywords: \
   "check publish", "publishing status", "what's pending", "delivery status", \
   "unpublished", "check status", "list pending".
-- If the user asks "what can you do", "how do I use this", etc. → "help".
+- Intent "general_question" is for informational or conceptual questions \
+  about terminology, concepts, or how things work — for example, \
+  "what is a PRD?", "what does PRD stand for?", "what is a product \
+  requirements document?", "explain PRD", "tell me about PRDs".  \
+  These are NOT "help" — the user is asking a knowledge question, not \
+  asking what the bot can do.  Answer the question and mention that \
+  this bot generates PRDs through iterative idea refinement.
+- If the user asks "what can you do", "how do I use this", \
+  "help", "help me" → "help" (the user wants to know the bot's features).
 - If the user says "hi", "hey", "hello", etc. with no idea → "greeting".
 - Always return valid JSON — no markdown fences, no extra text.
 
@@ -378,6 +425,6 @@ def _fallback() -> dict:
         "idea": None,
         "reply": (
             "I'm having trouble understanding right now. "
-            "Try: `@crewai-prd-bot create a PRD for a mobile fitness app`"
+            "Try: `@crewai-prd-bot iterate an idea for a mobile fitness app`"
         ),
     }

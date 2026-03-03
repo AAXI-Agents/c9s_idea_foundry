@@ -20,26 +20,27 @@ from crewai_productfeature_planner.apis.shared import (
 from crewai_productfeature_planner.apis.prd.models import AGENT_GEMINI, AGENT_OPENAI
 
 
+_SHARED_DICTS = (runs, approval_events, approval_decisions,
+                 approval_feedback, approval_selected, pause_requested)
+
+
 @pytest.fixture(autouse=True)
 def _set_dummy_keys(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="module")
 def _mock_crew_jobs():
     """Prevent API tests from writing to real MongoDB crewJobs collection.
 
-    Patches both the router-level imports (kickoff endpoint) and the
-    service-level imports (run_prd_flow / make_approval_callback) so
-    that no test in this module ever touches a real database.
-
-    Also patches ``fail_incomplete_jobs_on_startup`` used in the
-    FastAPI lifespan to prevent a real MongoDB connection on startup.
+    **Module-scoped** — the seven patches are entered once per module
+    instead of once per test.  Individual tests can override specific
+    patches with a local ``with patch(...)`` block.
     """
     with (
-        patch("crewai_productfeature_planner.apis.prd.router.create_job"),
+        patch("crewai_productfeature_planner.apis.prd._route_actions.create_job"),
         patch(
-            "crewai_productfeature_planner.apis.prd.router.find_active_job",
+            "crewai_productfeature_planner.apis.prd._route_actions.find_active_job",
             return_value=None,
         ),
         patch("crewai_productfeature_planner.apis.prd.service.update_job_started"),
@@ -54,23 +55,21 @@ def _mock_crew_jobs():
         yield
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def client():
-    """Provide a fresh TestClient and clear stores between tests."""
-    runs.clear()
-    approval_events.clear()
-    approval_decisions.clear()
-    approval_feedback.clear()
-    approval_selected.clear()
-    pause_requested.clear()
+    """Module-scoped TestClient — avoids repeated ASGI lifespan cycles."""
     with TestClient(app) as c:
         yield c
-    runs.clear()
-    approval_events.clear()
-    approval_decisions.clear()
-    approval_feedback.clear()
-    approval_selected.clear()
-    pause_requested.clear()
+
+
+@pytest.fixture(autouse=True)
+def _clear_shared_state():
+    """Reset shared in-memory stores before each test."""
+    for d in _SHARED_DICTS:
+        d.clear()
+    yield
+    for d in _SHARED_DICTS:
+        d.clear()
 
 
 # ── POST /flow/prd/kickoff ───────────────────────────────────
@@ -78,7 +77,7 @@ def client():
 
 def test_kickoff_prd_returns_202(client):
     """A valid request should return 202 with a run_id."""
-    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+    with patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"):
         resp = client.post(
             "/flow/prd/kickoff",
             json={"idea": "Add dark mode to the dashboard"},
@@ -104,7 +103,7 @@ def test_kickoff_prd_empty_idea(client):
 
 def test_kickoff_prd_registers_run(client):
     """A run record should be stored in the in-memory store."""
-    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+    with patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"):
         resp = client.post(
             "/flow/prd/kickoff",
             json={"idea": "SSO integration"},
@@ -119,7 +118,7 @@ def test_kickoff_prd_registers_run(client):
 
 def test_get_run_status_found(client):
     """Should return the run details when the run_id exists."""
-    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+    with patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"):
         resp = client.post(
             "/flow/prd/kickoff",
             json={"idea": "Webhooks"},
@@ -542,7 +541,7 @@ def test_run_status_includes_agent_tracking(client):
 
 def test_run_status_empty_agents_by_default(client):
     """A new run should have empty agent lists until the flow starts."""
-    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+    with patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"):
         resp = client.post(
             "/flow/prd/kickoff",
             json={"idea": "Agent tracking test"},
@@ -691,7 +690,7 @@ def test_resume_not_found(mock_find, client):
     assert resp.status_code == 404
 
 
-@patch("crewai_productfeature_planner.apis.prd.router.resume_prd_flow")
+@patch("crewai_productfeature_planner.apis.prd._route_actions.resume_prd_flow")
 @patch("crewai_productfeature_planner.mongodb.find_unfinalized")
 def test_resume_success(mock_find, mock_resume, client):
     """Resuming a valid run should return 202."""
@@ -820,7 +819,7 @@ def test_kickoff_rejects_when_active_job_exists(client):
     """Kickoff should return 409 when an active job already exists."""
     active_job = {"job_id": "existing-123", "status": "running"}
     with patch(
-        "crewai_productfeature_planner.apis.prd.router.find_active_job",
+        "crewai_productfeature_planner.apis.prd._route_actions.find_active_job",
         return_value=active_job,
     ):
         resp = client.post(
@@ -850,7 +849,7 @@ def test_endpoints_document_500_503(client):
 
 def test_kickoff_auto_approve_returns_202(client):
     """Kickoff with auto_approve=true should return 202 with auto-approve message."""
-    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+    with patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"):
         resp = client.post(
             "/flow/prd/kickoff",
             json={"idea": "Dark mode", "auto_approve": True},
@@ -865,7 +864,7 @@ def test_kickoff_auto_approve_returns_202(client):
 
 def test_kickoff_no_auto_approve_mentions_approve(client):
     """Kickoff without auto_approve should mention /approve in message."""
-    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+    with patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"):
         resp = client.post(
             "/flow/prd/kickoff",
             json={"idea": "Dark mode"},
@@ -917,7 +916,7 @@ def test_kickoff_manual_approve_sets_callback():
     assert callable(mock_instance.approval_callback)
 
 
-@patch("crewai_productfeature_planner.apis.prd.router.resume_prd_flow")
+@patch("crewai_productfeature_planner.apis.prd._route_actions.resume_prd_flow")
 @patch("crewai_productfeature_planner.mongodb.find_unfinalized")
 def test_resume_auto_approve_returns_202(mock_find, mock_resume, client):
     """Resume with auto_approve=true should return 202 with auto-approve message."""
@@ -940,7 +939,7 @@ def test_resume_auto_approve_returns_202(mock_find, mock_resume, client):
     mock_resume.assert_called_once_with("abc123", True)
 
 
-@patch("crewai_productfeature_planner.apis.prd.router.resume_prd_flow")
+@patch("crewai_productfeature_planner.apis.prd._route_actions.resume_prd_flow")
 @patch("crewai_productfeature_planner.mongodb.find_unfinalized")
 def test_resume_no_auto_approve_default(mock_find, mock_resume, client):
     """Resume without auto_approve defaults to False."""
@@ -1091,7 +1090,7 @@ def test_run_status_includes_executive_summary(client):
 
 def test_run_status_new_fields_default_empty(client):
     """New fields should default to empty values on a fresh FlowRun."""
-    with patch("crewai_productfeature_planner.apis.prd.router.run_prd_flow"):
+    with patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"):
         resp = client.post(
             "/flow/prd/kickoff",
             json={"idea": "New fields test"},

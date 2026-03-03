@@ -1,4 +1,13 @@
-"""Flows package — orchestrates multi-step agent workflows."""
+"""Flows package — orchestrates multi-step agent workflows.
+
+Sub-modules:
+    - ``prd_flow``             — PRDFlow class (slim orchestrator)
+    - ``_constants``           — constants, utilities, exceptions, PRDState
+    - ``_agents``              — agent creation, parallel execution
+    - ``_executive_summary``   — Phase 1 executive summary iteration
+    - ``_section_loop``        — Phase 2 section critique→refine loop
+    - ``_finalization``        — save, finalize, post-completion delivery
+"""
 
 from crewai_productfeature_planner.flows.prd_flow import PRDFlow
 
