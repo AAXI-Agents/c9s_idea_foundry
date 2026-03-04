@@ -1284,12 +1284,32 @@ def test_save_project_ref(wi_mocks):
     set_fields = call_args[0][1]["$set"]
     assert set_fields["project_id"] == "proj-abc"
     assert "update_date" in set_fields
+    # Without idea= the idea field should NOT be set
+    assert "idea" not in set_fields
     # Verify upsert is enabled
     assert call_args[1].get("upsert") is True
     # $setOnInsert should include run_id and status
     insert_fields = call_args[0][1]["$setOnInsert"]
     assert insert_fields["run_id"] == "run-1"
     assert insert_fields["status"] == "inprogress"
+    assert "idea" not in insert_fields
+
+
+def test_save_project_ref_with_idea(wi_mocks):
+    """save_project_ref should persist idea in both $set and $setOnInsert."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(
+        modified_count=1, upserted_id=None, matched_count=1,
+    )
+
+    count = save_project_ref("run-1", "proj-abc", idea="Build a dashboard")
+
+    assert count == 1
+    call_args = mock_collection.update_one.call_args
+    set_fields = call_args[0][1]["$set"]
+    assert set_fields["idea"] == "Build a dashboard"
+    insert_fields = call_args[0][1]["$setOnInsert"]
+    assert insert_fields["idea"] == "Build a dashboard"
 
 
 def test_save_project_ref_upserts_new_doc(wi_mocks):
@@ -1334,12 +1354,32 @@ def test_save_slack_context(wi_mocks):
     assert set_fields["slack_channel"] == "C123"
     assert set_fields["slack_thread_ts"] == "ts-1"
     assert "update_date" in set_fields
+    # Without idea= the idea field should NOT be set
+    assert "idea" not in set_fields
     # Verify upsert is enabled
     assert call_args[1].get("upsert") is True
     # $setOnInsert should include run_id and status
     insert_fields = call_args[0][1]["$setOnInsert"]
     assert insert_fields["run_id"] == "run-1"
     assert insert_fields["status"] == "inprogress"
+    assert "idea" not in insert_fields
+
+
+def test_save_slack_context_with_idea(wi_mocks):
+    """save_slack_context should persist idea in both $set and $setOnInsert."""
+    mock_collection, mock_db = wi_mocks
+    mock_collection.update_one.return_value = MagicMock(
+        modified_count=1, upserted_id=None, matched_count=1,
+    )
+
+    count = save_slack_context("run-1", "C123", "ts-1", idea="Build a dashboard")
+
+    assert count == 1
+    call_args = mock_collection.update_one.call_args
+    set_fields = call_args[0][1]["$set"]
+    assert set_fields["idea"] == "Build a dashboard"
+    insert_fields = call_args[0][1]["$setOnInsert"]
+    assert insert_fields["idea"] == "Build a dashboard"
 
 
 def test_save_slack_context_upserts_new_doc(wi_mocks):

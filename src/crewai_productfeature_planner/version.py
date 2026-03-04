@@ -506,6 +506,21 @@ _CODEX: list[CodexEntry] = [
             "prevent LLM-autonomous uncontrolled file creation."
         ),
     ),
+    CodexEntry(
+        "0.8.4",
+        date(2026, 3, 4),
+        (
+            "Fix original idea not persisted in workingIdeas — "
+            "save_slack_context() and save_project_ref() now accept "
+            "an optional idea= keyword argument and write the original "
+            "idea text on both $set and $setOnInsert. All callers "
+            "(Slack router, interactive flow runner, CLI, resume "
+            "handler) updated to pass the idea. This ensures the "
+            "'idea' field is populated from the very first upsert, "
+            "fixing listing showing 'Untitled' and rescan losing the "
+            "original idea text."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

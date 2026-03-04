@@ -275,7 +275,7 @@ def _run_single_flow(
                 update_job_started(flow.state.run_id)
                 update_job_completed(flow.state.run_id, status="completed")
                 if project_id:
-                    _save_project_link(flow.state.run_id, project_id)
+                    _save_project_link(flow.state.run_id, project_id, idea=idea)
                 print(f"\n  ✦ Idea finalized and saved (run_id={flow.state.run_id})")
                 return
         else:
@@ -296,7 +296,7 @@ def _run_single_flow(
 
         # Link working idea to project configuration
         if project_id:
-            _save_project_link(flow.state.run_id, project_id)
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
 
         # Safety net: if finalize() failed or was skipped, persist here
         if not flow.state.is_ready:
@@ -316,14 +316,14 @@ def _run_single_flow(
         print(f"\nPRD Flow completed. Result:\n{result}")
     except IdeaFinalized:
         if project_id:
-            _save_project_link(flow.state.run_id, project_id)
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
         update_job_completed(flow.state.run_id, status="completed")
         logger.info("Idea finalized without PRD generation (run_id=%s)",
                      flow.state.run_id)
         print(f"\n  ✦ Idea finalized and saved (run_id={flow.state.run_id})")
     except RequirementsFinalized:
         if project_id:
-            _save_project_link(flow.state.run_id, project_id)
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
         update_job_completed(flow.state.run_id, status="completed")
         logger.info(
             "Requirements finalized without PRD generation (run_id=%s)",
@@ -335,7 +335,7 @@ def _run_single_flow(
         )
     except PauseRequested:
         if project_id:
-            _save_project_link(flow.state.run_id, project_id)
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
@@ -348,7 +348,7 @@ def _run_single_flow(
                     flow.state.run_id, approved, total)
     except BillingError as e:
         if project_id:
-            _save_project_link(flow.state.run_id, project_id)
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
@@ -367,7 +367,7 @@ def _run_single_flow(
         print(f"{'=' * 60}")
     except LLMError as e:
         if project_id:
-            _save_project_link(flow.state.run_id, project_id)
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")
@@ -386,7 +386,7 @@ def _run_single_flow(
         print(f"{'=' * 60}")
     except Exception as e:
         if project_id:
-            _save_project_link(flow.state.run_id, project_id)
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
         approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
         total = len(flow.state.draft.sections)
         update_job_completed(flow.state.run_id, status="paused")

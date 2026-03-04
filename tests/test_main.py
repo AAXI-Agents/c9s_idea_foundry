@@ -2000,7 +2000,14 @@ class TestSaveProjectLink:
     )
     def test_calls_save_project_ref(self, mock_save):
         _save_project_link("run123", "proj456")
-        mock_save.assert_called_once_with("run123", "proj456")
+        mock_save.assert_called_once_with("run123", "proj456", idea="")
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.save_project_ref"
+    )
+    def test_calls_save_project_ref_with_idea(self, mock_save):
+        _save_project_link("run123", "proj456", idea="Build a dashboard")
+        mock_save.assert_called_once_with("run123", "proj456", idea="Build a dashboard")
 
     @patch(
         "crewai_productfeature_planner.mongodb.working_ideas.repository.save_project_ref",

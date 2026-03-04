@@ -248,7 +248,7 @@ def _offer_memory_configuration(project_id: str, project_name: str) -> None:
         print("Please enter 'y' to configure or 'n' to skip.")
 
 
-def _save_project_link(run_id: str, project_id: str) -> None:
+def _save_project_link(run_id: str, project_id: str, *, idea: str = "") -> None:
     """Link a working-idea document to its project configuration.
 
     Silently ignores errors so the flow is never interrupted.
@@ -257,6 +257,6 @@ def _save_project_link(run_id: str, project_id: str) -> None:
         from crewai_productfeature_planner.mongodb.working_ideas.repository import (
             save_project_ref,
         )
-        save_project_ref(run_id, project_id)
+        save_project_ref(run_id, project_id, idea=idea)
     except Exception:  # noqa: BLE001
         logger.debug("save_project_ref failed for run_id=%s", run_id, exc_info=True)

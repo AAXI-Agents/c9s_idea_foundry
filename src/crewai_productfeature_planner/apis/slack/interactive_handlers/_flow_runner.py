@@ -86,7 +86,7 @@ def run_interactive_slack_flow(
             from crewai_productfeature_planner.mongodb.working_ideas.repository import (
                 save_project_ref,
             )
-            save_project_ref(run_id, project_id)
+            save_project_ref(run_id, project_id, idea=idea)
         except Exception:  # noqa: BLE001
             logger.debug("early save_project_ref failed for %s", run_id, exc_info=True)
 
@@ -184,7 +184,7 @@ def run_interactive_slack_flow(
                     from crewai_productfeature_planner.mongodb.working_ideas.repository import (
                         save_project_ref,
                     )
-                    save_project_ref(run_id, project_id)
+                    save_project_ref(run_id, project_id, idea=idea)
                 except Exception:  # noqa: BLE001
                     logger.debug("save_project_ref failed for %s", run_id, exc_info=True)
 

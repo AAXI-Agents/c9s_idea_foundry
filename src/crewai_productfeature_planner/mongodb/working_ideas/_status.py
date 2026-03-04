@@ -274,7 +274,7 @@ def save_confluence_url(run_id: str, confluence_url: str, page_id: str = "") -> 
         return False
 
 
-def save_project_ref(run_id: str, project_id: str) -> int:
+def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
     """Associate a working-idea document with a project configuration.
 
     Sets the ``project_id`` field so the run can look up its
@@ -286,23 +286,35 @@ def save_project_ref(run_id: str, project_id: str) -> int:
     document.  This ensures in-progress runs are visible to
     ``find_ideas_by_project`` as soon as the flow starts.
 
+    Args:
+        run_id: The run identifier.
+        project_id: The project configuration identifier.
+        idea: The original user-submitted idea text.  When non-empty
+            the field is written on both insert *and* update so the
+            idea is always available for listing and rescan.
+
     Returns:
         Number of documents modified or created (0 or 1).
     """
     try:
         now = _now_iso()
+        set_fields: dict[str, Any] = {
+            "project_id": project_id,
+            "update_date": now,
+        }
+        insert_fields: dict[str, Any] = {
+            "run_id": run_id,
+            "created_at": now,
+            "status": "inprogress",
+        }
+        if idea:
+            set_fields["idea"] = idea
+            insert_fields["idea"] = idea
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {
-                "$set": {
-                    "project_id": project_id,
-                    "update_date": now,
-                },
-                "$setOnInsert": {
-                    "run_id": run_id,
-                    "created_at": now,
-                    "status": "inprogress",
-                },
+                "$set": set_fields,
+                "$setOnInsert": insert_fields,
             },
             upsert=True,
         )
@@ -328,6 +340,8 @@ def save_slack_context(
     run_id: str,
     slack_channel: str,
     slack_thread_ts: str,
+    *,
+    idea: str = "",
 ) -> int:
     """Persist the Slack channel and thread_ts for a working-idea run.
 
@@ -337,24 +351,37 @@ def save_slack_context(
     Uses ``upsert=True`` so the context can be persisted even before
     the first ``save_iteration`` call creates the full document.
 
+    Args:
+        run_id: The run identifier.
+        slack_channel: The Slack channel ID.
+        slack_thread_ts: The Slack thread timestamp.
+        idea: The original user-submitted idea text.  When non-empty
+            the field is written on both insert *and* update so the
+            idea is always available for listing and rescan.
+
     Returns:
         Number of documents modified or created (0 or 1).
     """
     try:
         now = _now_iso()
+        set_fields: dict[str, Any] = {
+            "slack_channel": slack_channel,
+            "slack_thread_ts": slack_thread_ts,
+            "update_date": now,
+        }
+        insert_fields: dict[str, Any] = {
+            "run_id": run_id,
+            "created_at": now,
+            "status": "inprogress",
+        }
+        if idea:
+            set_fields["idea"] = idea
+            insert_fields["idea"] = idea
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {
-                "$set": {
-                    "slack_channel": slack_channel,
-                    "slack_thread_ts": slack_thread_ts,
-                    "update_date": now,
-                },
-                "$setOnInsert": {
-                    "run_id": run_id,
-                    "created_at": now,
-                    "status": "inprogress",
-                },
+                "$set": set_fields,
+                "$setOnInsert": insert_fields,
             },
             upsert=True,
         )

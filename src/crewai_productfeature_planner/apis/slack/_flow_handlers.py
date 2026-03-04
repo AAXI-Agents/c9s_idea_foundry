@@ -718,7 +718,7 @@ def handle_resume_prd(
             from crewai_productfeature_planner.mongodb.working_ideas.repository import (
                 save_slack_context,
             )
-            save_slack_context(run_id, channel, thread_ts)
+            save_slack_context(run_id, channel, thread_ts, idea=idea)
         except Exception:  # noqa: BLE001
             logger.debug("save_slack_context failed for %s", run_id, exc_info=True)
 
