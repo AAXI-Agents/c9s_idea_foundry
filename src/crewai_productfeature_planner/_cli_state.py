@@ -185,9 +185,35 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
     if exec_summary_draft.latest_content:
         flow.state.finalized_idea = exec_summary_draft.latest_content
 
+    # ── Restore refine_idea iterations ────────────────────────
+    if docs:
+        doc = docs[0]
+        raw_refine = doc.get("refine_idea", [])
+        if isinstance(raw_refine, list) and raw_refine:
+            flow.state.idea_refined = True
+            flow.state.refinement_history = [
+                {
+                    "iteration": entry.get("iteration", i + 1),
+                    "idea": entry.get("content", ""),
+                    "evaluation": entry.get("critique", ""),
+                }
+                for i, entry in enumerate(raw_refine)
+                if isinstance(entry, dict)
+            ]
+            # Use the latest refined idea as the current idea
+            latest_refine = raw_refine[-1]
+            if isinstance(latest_refine, dict) and latest_refine.get("content"):
+                flow.state.idea = latest_refine["content"]
+                flow.state.original_idea = idea
+            logger.info(
+                "Restored refine_idea from %d iteration(s) (%d chars)",
+                len(raw_refine),
+                len(flow.state.idea),
+            )
+
     # If executive summary has iterations the idea was already refined
     # (idea refinement runs before executive summary in the pipeline).
-    if exec_summary_draft.iterations:
+    if not flow.state.idea_refined and exec_summary_draft.iterations:
         flow.state.idea_refined = True
 
     # Restore requirements_breakdown from the top-level array so the

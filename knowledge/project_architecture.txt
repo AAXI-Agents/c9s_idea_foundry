@@ -26,6 +26,12 @@ Tech stack:
     Block Kit interactive messages, token rotation)
   • Atlassian Confluence + Jira (post-completion publishing)
 
+Project configuration notes:
+  • The Slack setup wizard collects only Confluence space key and Jira project key.
+  • Confluence parent page ID is optional and may be provided via project config
+    or the CONFLUENCE_PARENT_ID env var. If unset, PRDs publish at the space root.
+  • LLM prompts should not ask users to provide a parent page ID.
+
 ────────────────────────────────────────────────────────────────────────────────
 2. PROJECT STRUCTURE
 ────────────────────────────────────────────────────────────────────────────────

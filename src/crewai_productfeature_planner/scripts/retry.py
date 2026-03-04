@@ -39,6 +39,19 @@ _BILLING_PATTERNS: list[str] = [
     "account_deactivated",
 ]
 
+# Patterns that indicate the model is temporarily overloaded (503).
+# Not worth retrying immediately — pause the flow and let the
+# periodic resume pick it up in ~5 minutes.
+_MODEL_BUSY_PATTERNS: list[str] = [
+    "currently experiencing high demand",
+    "model is overloaded",
+    "model is currently overloaded",
+    "the model is currently busy",
+    "503 unavailable",
+    "service unavailable",
+    "try again later",
+]
+
 
 class LLMError(RuntimeError):
     """Raised when an OpenAI / LLM error causes all retries to be exhausted.
@@ -53,6 +66,15 @@ class BillingError(LLMError):
 
     Callers should treat this as non-retryable and pause the flow so the
     user can fix their billing before running again.
+    """
+
+
+class ModelBusyError(LLMError):
+    """Raised when the LLM reports a 503 / model-overloaded error.
+
+    Not retried — the flow is paused immediately so the periodic
+    resume (every ~5 minutes) can pick it up when load subsides,
+    avoiding wasted retry waits.
     """
 
 
@@ -110,6 +132,15 @@ def crew_kickoff_with_retry(
                     step_label, exc,
                 )
                 raise BillingError(str(exc)) from exc
+            # Don't retry on 503 model-busy errors — pause immediately
+            # and let the periodic resume pick it up later.
+            if any(pat in exc_str for pat in _MODEL_BUSY_PATTERNS):
+                logger.warning(
+                    "[Retry] %s hit model-busy (503) — pausing flow "
+                    "for later resume: %s",
+                    step_label, exc,
+                )
+                raise ModelBusyError(str(exc)) from exc
             if attempt <= retries:
                 wait = delay * (2 ** (attempt - 1))
                 logger.warning(

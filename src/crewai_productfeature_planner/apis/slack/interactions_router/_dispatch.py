@@ -540,6 +540,29 @@ async def slack_interactions(request: Request) -> JSONResponse:
                     )
                 return JSONResponse({"ok": True})
 
+        # Check non-interactive requirements approval gate
+        if action_id in ("requirements_approve", "requirements_cancel"):
+            from crewai_productfeature_planner.apis.slack._flow_handlers import (
+                resolve_requirements_approval,
+            )
+            if resolve_requirements_approval(run_id, action_id):
+                channel_info = payload.get("channel", {})
+                channel_id = channel_info.get("id", "")
+                message = payload.get("message", {})
+                thread_ts = message.get("thread_ts") or message.get("ts", "")
+                if channel_id:
+                    ack_text = _ack_action(action_id, user_name)
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    loop.run_in_executor(
+                        None,
+                        partial(
+                            _with_team, _team_id,
+                            _post_ack, channel_id, thread_ts, ack_text,
+                        ),
+                    )
+                return JSONResponse({"ok": True})
+
         # Route to the interactive handler
         from crewai_productfeature_planner.apis.slack.interactive_handlers import (
             resolve_interaction,

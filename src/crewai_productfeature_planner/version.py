@@ -521,6 +521,160 @@ _CODEX: list[CodexEntry] = [
             "original idea text."
         ),
     ),
+    CodexEntry(
+        "0.8.5",
+        date(2026, 3, 4),
+        (
+            "Requirements approval gate for auto-approve Slack flows — "
+            "the requirements breakdown stage now pauses for user "
+            "approval in non-interactive (auto-approve) flows, matching "
+            "the existing behaviour in interactive mode. Added "
+            "make_requirements_approval_gate() and "
+            "resolve_requirements_approval() in _flow_handlers.py, "
+            "wired into run_prd_flow(), resume_prd_flow(), "
+            "_run_slack_prd_flow(), and handle_resume_prd(). The "
+            "interactions router dispatches requirements_approve and "
+            "requirements_cancel button clicks to the non-interactive "
+            "gate before falling through to the interactive handler. "
+            "Reuses existing requirements_approval_blocks from "
+            "_flow_blocks.py. Gate waits 10 minutes for user response "
+            "then auto-approves on timeout."
+        ),
+    ),
+    CodexEntry(
+        "0.8.6",
+        date(2026, 3, 4),
+        (
+            "Fix exec summary callbacks lost by CrewAI asyncio.to_thread — "
+            "added module-level _callback_registry in prd_flow.py as a "
+            "safety net for callbacks that CrewAI's Flow.kickoff() loses "
+            "when running @start() methods in thread pool workers. "
+            "PRDFlow._resolve_callback() checks the instance attribute "
+            "first, then falls back to the registry. run_prd_flow() and "
+            "resume_prd_flow() now call register_callbacks() before "
+            "kickoff and cleanup_callbacks() in finally blocks. "
+            "Diagnostic logging added at flow start, service callback "
+            "assignment, and registry recovery events."
+        ),
+    ),
+    CodexEntry(
+        "0.8.7",
+        date(2026, 3, 4),
+        (
+            "Fix in-progress ideas invisible to 'list ideas' (3rd fix) — "
+            "Root cause: find_ideas_by_project() required exact project_id "
+            "match; if save_project_ref() failed silently or was skipped, "
+            "the idea became invisible. Fix: (1) find_ideas_by_project() "
+            "now uses a single $or MongoDB query that matches ideas by "
+            "project_id OR by slack_channel (for orphans without "
+            "project_id), eliminating the dependency on the fragile "
+            "crew-jobs cross-collection lookup. Channel-matched orphans "
+            "get project_id backfilled inline. (2) _backfill_orphaned_ideas "
+            "enhanced to check the document's own slack_channel before "
+            "falling back to crew_jobs lookup. Extracted _do_backfill() "
+            "helper. (3) run_interactive_slack_flow now calls "
+            "save_slack_context() early (was missing) so slack_channel is "
+            "always available for channel-based queries. 7 new regression "
+            "tests covering all 'invisible idea' scenarios."
+        ),
+    ),
+    CodexEntry(
+        "0.8.8",
+        date(2026, 3, 4),
+        (
+            "Fix MongoDB upsert conflict in save_slack_context() and "
+            "save_project_ref() — When the 'idea' parameter was provided, "
+            "the field was placed in both $set and $setOnInsert operators, "
+            "causing MongoDB to reject the upsert with 'Updating the path "
+            "'idea' would create a conflict at 'idea''. This prevented "
+            "the workingIdeas document from being created on the first "
+            "save call, leaving newly created ideas invisible. Fix: "
+            "idea is now only in $set (which applies to both insert and "
+            "update operations)."
+        ),
+    ),
+    CodexEntry(
+        "0.9.0",
+        date(2026, 3, 4),
+        (
+            "Interactive mode by default + orchestrator progress "
+            "notifications. (1) Create PRD flows now default to "
+            "interactive/step-by-step mode with approval gates at "
+            "each stage (idea refinement, requirements breakdown, "
+            "executive summary). Users must explicitly say 'auto', "
+            "'fast', or 'quick' to run without approval checkpoints. "
+            "(2) AgentOrchestrator now accepts a progress_callback "
+            "and fires pipeline_stage_start, pipeline_stage_complete, "
+            "and pipeline_stage_skipped events during the pre-PRD "
+            "pipeline (idea refinement → requirements breakdown). "
+            "build_default_pipeline() wires the flow's progress "
+            "callback so Slack users see heartbeat messages like "
+            "'Starting Idea Refinement...', 'Idea Refinement complete "
+            "(3 iterations)' during stages that were previously "
+            "silent. 24 new tests covering both features."
+        ),
+    ),
+    CodexEntry(
+        "0.9.1",
+        date(2026, 3, 4),
+        (
+            "Idea refinement now saves as 'refine_idea' pipeline key. "
+            "Changed idea_refiner agent, CLI manual refinement, and "
+            "components CLI to use save_pipeline_step with "
+            "pipeline_key='refine_idea' instead of save_executive_summary. "
+            "Updated restore logic in _cli_state, components/resume, and "
+            "apis/prd/service to read from the refine_idea array in MongoDB. "
+            "Separates idea refinement data from executive summary data."
+        ),
+    ),
+    CodexEntry(
+        "0.9.2",
+        date(2026, 3, 4),
+        (
+            "503 model-busy errors now pause immediately instead of "
+            "retrying with backoff. Added ModelBusyError (subclass of "
+            "LLMError) raised on 503 / model-overloaded / service-unavailable "
+            "patterns. The flow pauses at once so the 5-minute periodic "
+            "auto-resume scheduler can retry when load subsides, avoiding "
+            "wasted resources on busy-wait retries."
+        ),
+    ),
+    CodexEntry(
+        "0.9.3",
+        date(2026, 3, 5),
+        (
+            "Confluence parent page ID removed from project setup wizard. "
+            "The 3-step setup (space key, Jira key, parent ID) is now 2 "
+            "steps. Parent ID is still used if available in project config "
+            "or CONFLUENCE_PARENT_ID env var — pages are simply created at "
+            "the space root when unset."
+        ),
+    ),
+    CodexEntry(
+        "0.9.4",
+        date(2026, 3, 5),
+        (
+            "Confluence parent page ID removed from all LLM-facing surfaces. "
+            "Intent classification prompts (Gemini/OpenAI) no longer mention "
+            "confluence_parent_id as a response field or update_config entity. "
+            "Next-step prediction context no longer includes has_confluence_parent "
+            "or confluence_parent_id. The Slack orchestrator will no longer ask "
+            "users to provide a parent page ID before publishing."
+        ),
+    ),
+    CodexEntry(
+        "0.9.5",
+        date(2026, 3, 5),
+        (
+            "Jira skeleton next-step hint after publishing. "
+            "handle_publish_intent now suggests 'create jira tickets' "
+            "when Confluence was published but no Jira tickets were "
+            "created, guiding users to the phased Jira skeleton flow "
+            "(Epics & User Stories review/approval). PRD result tool "
+            "updated with improved Jira hint wording. Next-step "
+            "prediction adds create_jira_skeleton category."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

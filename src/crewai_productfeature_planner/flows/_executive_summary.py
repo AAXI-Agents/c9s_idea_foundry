@@ -28,6 +28,7 @@ from crewai_productfeature_planner.mongodb import (
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.scripts.retry import (
     BillingError,
+    ModelBusyError,
     crew_kickoff_with_retry,
 )
 
@@ -51,9 +52,11 @@ def exec_summary_user_gate(
         ``str``    — user-provided feedback text to inject into the
                      next refine step.
     """
-    assert flow.exec_summary_user_feedback_callback is not None
+    assert flow.exec_summary_user_feedback_callback is not None or \
+        flow._resolve_callback("exec_summary_user_feedback_callback") is not None
+    cb = flow._resolve_callback("exec_summary_user_feedback_callback")
     try:
-        action, feedback_text = flow.exec_summary_user_feedback_callback(
+        action, feedback_text = cb(
             content,
             flow.state.idea,
             flow.state.run_id,
@@ -168,9 +171,10 @@ def iterate_executive_summary(
 
     # ── Pre-draft user feedback (optional) ────────────────
     initial_guidance: str | None = None
-    if flow.exec_summary_user_feedback_callback is not None:
+    user_fb_cb = flow._resolve_callback("exec_summary_user_feedback_callback")
+    if user_fb_cb is not None:
         try:
-            action, feedback_text = flow.exec_summary_user_feedback_callback(
+            action, feedback_text = user_fb_cb(
                 "",              # no content yet
                 flow.state.idea,
                 flow.state.run_id,
@@ -268,7 +272,8 @@ def iterate_executive_summary(
 
     # ── Post-initial-draft user feedback (optional) ───────
     pending_user_feedback: str | None = None
-    if flow.exec_summary_user_feedback_callback is not None:
+    user_fb_cb = flow._resolve_callback("exec_summary_user_feedback_callback")
+    if user_fb_cb is not None:
         pending_user_feedback = exec_summary_user_gate(
             flow, current_content, 1,
         )
@@ -309,7 +314,7 @@ def iterate_executive_summary(
             critique_result = crew_kickoff_with_retry(
                 crew, step_label=f"critique_exec_summary_iter{iteration}",
             )
-        except BillingError:
+        except (BillingError, ModelBusyError):
             raise  # Non-transient — must pause
         except Exception as exc:
             logger.error(
@@ -398,7 +403,7 @@ def iterate_executive_summary(
                 crew,
                 step_label=f"refine_exec_summary_iter{iteration}",
             )
-        except BillingError:
+        except (BillingError, ModelBusyError):
             raise  # Non-transient — must pause
         except Exception as exc:
             logger.error(
@@ -456,7 +461,8 @@ def iterate_executive_summary(
         })
 
         # ── Post-iteration user feedback (optional) ──────
-        if flow.exec_summary_user_feedback_callback is not None:
+        user_fb_cb = flow._resolve_callback("exec_summary_user_feedback_callback")
+        if user_fb_cb is not None:
             pending_user_feedback = exec_summary_user_gate(
                 flow, current_content, iteration,
             )

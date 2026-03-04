@@ -38,7 +38,6 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
   "idea"    – the product or feature idea extracted from the message, or null
   "confluence_space_key" – extracted Confluence space key, or null
   "jira_project_key"     – extracted Jira project key, or null
-  "confluence_parent_id" – extracted Confluence parent page ID, or null
   "reply"   – a SHORT friendly reply (1-2 sentences) appropriate to the intent:
        • "create_project" → confirm you will create a new project and ask for the project name
        • "list_projects" → confirm you will show the available projects
@@ -113,7 +112,6 @@ the word "project" does not appear.
   "add confluence project space key CrewAITS and jira project key CJT" → update_config  (confluence_space_key="CrewAITS", jira_project_key="CJT")
   "set confluence key ABC and jira key DEF" → update_config  (confluence_space_key="ABC", jira_project_key="DEF")
   "jira key is MYPROJ"                    → update_config  (jira_project_key="MYPROJ")
-  "confluence parent page id 12345"       → update_config  (confluence_parent_id="12345")
   "update project config confluence XYZ jira ABC" → update_config
   "configure confluence key"              → update_config  (ask for value if missing)
   "create a PRD for a fitness app"        → create_prd
@@ -164,13 +162,13 @@ paused or unfinished PRD generation run.
   Keywords: "memory", "configure memory", "setup memory", "edit memory", \
   "view memory", "show memory", "project memory".
 - Intent "update_config" means the user wants to SET, ADD, or UPDATE \
-  specific project configuration keys — Confluence space key, Jira \
-  project key, or Confluence parent page ID.  The user may provide one \
+  specific project configuration keys — Confluence space key or Jira \
+  project key.  The user may provide one \
   or more key values inline.  Extract the values into \
-  "confluence_space_key", "jira_project_key", and/or "confluence_parent_id" \
+  "confluence_space_key" and/or "jira_project_key" \
   fields.  Keywords: "confluence key", "confluence space key", "jira key", \
   "jira project key", "set confluence", "add jira", "project key", \
-  "space key", "parent id", "parent page", "update config", "set config", \
+  "space key", "update config", "set config", \
   "configure confluence", "configure jira".  \
   IMPORTANT: Do NOT confuse "update_config" with "configure_memory". \
   "update_config" is specifically about Confluence/Jira key values, \
@@ -310,7 +308,6 @@ def interpret_message(
         "reply": result.get("reply", ""),
         "confluence_space_key": result.get("confluence_space_key") or None,
         "jira_project_key": result.get("jira_project_key") or None,
-        "confluence_parent_id": result.get("confluence_parent_id") or None,
     }
 
 

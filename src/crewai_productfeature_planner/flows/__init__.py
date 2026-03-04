@@ -9,6 +9,10 @@ Sub-modules:
     - ``_finalization``        — save, finalize, post-completion delivery
 """
 
-from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+from crewai_productfeature_planner.flows.prd_flow import (
+    PRDFlow,
+    cleanup_callbacks,
+    register_callbacks,
+)
 
-__all__ = ["PRDFlow"]
+__all__ = ["PRDFlow", "cleanup_callbacks", "register_callbacks"]

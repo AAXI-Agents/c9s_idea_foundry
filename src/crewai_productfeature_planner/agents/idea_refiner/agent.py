@@ -255,14 +255,18 @@ def refine_idea(
         # Persist to workingIdeas when run_id is available
         if run_id:
             try:
-                from crewai_productfeature_planner.mongodb import save_executive_summary
+                from crewai_productfeature_planner.mongodb import (
+                    save_pipeline_step,
+                )
 
-                save_executive_summary(
+                save_pipeline_step(
                     run_id=run_id,
                     idea=raw_idea,
+                    pipeline_key="refine_idea",
                     iteration=iteration,
                     content=current_idea,
                     critique=evaluation,
+                    step=f"refine_idea_{iteration}",
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

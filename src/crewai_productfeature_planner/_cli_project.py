@@ -98,15 +98,11 @@ def _create_project_interactive() -> tuple[str, str]:
     jira_project_key = input(
         "  Jira project key (press Enter to skip): "
     ).strip()
-    confluence_parent_id = input(
-        "  Confluence parent page ID (press Enter to skip): "
-    ).strip()
 
     project_id = create_project(
         name=name,
         confluence_space_key=confluence_space_key,
         jira_project_key=jira_project_key,
-        confluence_parent_id=confluence_parent_id,
     )
 
     if not project_id:

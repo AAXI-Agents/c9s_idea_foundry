@@ -174,12 +174,17 @@ def run_prd_flow(
     progress_callback: "Callable[[str, dict], None] | None" = None,
     exec_summary_user_feedback_callback: "Callable | None" = None,
     executive_summary_callback: "Callable | None" = None,
+    requirements_approval_callback: "Callable | None" = None,
 ) -> None:
     """Execute the PRD flow in background and update the run record.
 
     When *auto_approve* is ``True`` the flow runs end-to-end without
     pausing for manual approval (same as the CLI).  Sections auto-iterate
     and are approved when the critique contains ``SECTION_READY``.
+
+    When *requirements_approval_callback* is provided, the user is
+    given a chance to approve or cancel after the requirements breakdown
+    — before the executive summary begins.
 
     When *exec_summary_user_feedback_callback* is provided, the user is
     given a chance to iterate or approve after each executive summary
@@ -188,8 +193,12 @@ def run_prd_flow(
     When *executive_summary_callback* is provided, the user is given a
     final review gate between the executive summary and section drafting.
     """
-    from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
-    from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
+    from crewai_productfeature_planner.flows.prd_flow import (
+        PauseRequested, PRDFlow, register_callbacks, cleanup_callbacks,
+    )
+    from crewai_productfeature_planner.scripts.retry import (
+        BillingError, LLMError, ModelBusyError,
+    )
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
@@ -197,6 +206,17 @@ def run_prd_flow(
 
     # Track job lifecycle in crewJobs
     update_job_started(run_id)
+
+    # Register callbacks in the module-level registry so they survive
+    # CrewAI's asyncio.to_thread execution which can lose Flow instance
+    # attributes set after __init__.
+    register_callbacks(
+        run_id,
+        progress_callback=progress_callback,
+        exec_summary_user_feedback_callback=exec_summary_user_feedback_callback,
+        executive_summary_callback=executive_summary_callback,
+        requirements_approval_callback=requirements_approval_callback,
+    )
 
     flow: PRDFlow | None = None
     try:
@@ -209,8 +229,21 @@ def run_prd_flow(
             flow.exec_summary_user_feedback_callback = exec_summary_user_feedback_callback
         if executive_summary_callback is not None:
             flow.executive_summary_callback = executive_summary_callback
+        if requirements_approval_callback is not None:
+            flow.requirements_approval_callback = requirements_approval_callback
         if not auto_approve:
             flow.approval_callback = make_approval_callback(run_id)
+
+        logger.info(
+            "[API] Callbacks set on flow: exec_feedback=%s, exec_completion=%s, "
+            "requirements=%s, progress=%s (run_id=%s)",
+            flow.exec_summary_user_feedback_callback is not None,
+            flow.executive_summary_callback is not None,
+            flow.requirements_approval_callback is not None,
+            flow.progress_callback is not None,
+            run_id,
+        )
+
         result = flow.kickoff()
         run.result = result
         run.status = FlowStatus.COMPLETED
@@ -236,6 +269,15 @@ def run_prd_flow(
         update_job_completed(run_id, status="paused")
         logger.error(
             "[API] PRD flow paused due to billing error (run_id=%s): %s",
+            run_id, exc,
+        )
+    except ModelBusyError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"MODEL_BUSY: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.warning(
+            "[API] PRD flow paused — model busy (run_id=%s): %s. "
+            "Will auto-resume on next periodic scan.",
             run_id, exc,
         )
     except LLMError as exc:
@@ -275,9 +317,11 @@ def run_prd_flow(
         approval_feedback.pop(run_id, None)
         approval_selected.pop(run_id, None)
         pause_requested.pop(run_id, None)
+        # Cleanup callback registry
+        cleanup_callbacks(run_id)
 
 
-def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDraft", str, list[dict]]:
+def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDraft", str, list[dict], list[dict]]:
     """Rebuild a PRDDraft from MongoDB documents for a given run_id.
 
     Mirrors the full restore logic in :func:`main._restore_prd_state` so
@@ -400,17 +444,38 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDr
                     len(requirements_breakdown),
                 )
 
+    # ── Restore refine_idea iterations ─────────────────────────
+    refinement_history: list[dict] = []
+    if docs:
+        doc = docs[0]
+        raw_refine = doc.get("refine_idea", [])
+        if isinstance(raw_refine, list) and raw_refine:
+            refinement_history = [
+                {
+                    "iteration": entry.get("iteration", i + 1),
+                    "idea": entry.get("content", ""),
+                    "evaluation": entry.get("critique", ""),
+                }
+                for i, entry in enumerate(raw_refine)
+                if isinstance(entry, dict)
+            ]
+            logger.info(
+                "Restored refine_idea from %d iteration(s)",
+                len(raw_refine),
+            )
+
     approved_count = sum(1 for s in draft.sections if s.is_approved)
     exec_iter_count = len(exec_summary_draft.iterations)
     logger.info(
         "Restored PRD state: run_id=%s, %d/%d sections approved, "
         "iteration=%d, exec_summary_iterations=%d, "
-        "requirements_breakdown_iterations=%d",
+        "requirements_breakdown_iterations=%d, "
+        "refine_idea_iterations=%d",
         run_id, approved_count, len(draft.sections), total_iterations,
-        exec_iter_count, len(breakdown_history),
+        exec_iter_count, len(breakdown_history), len(refinement_history),
     )
 
-    return idea, draft, exec_summary_draft, requirements_breakdown, breakdown_history
+    return idea, draft, exec_summary_draft, requirements_breakdown, breakdown_history, refinement_history
 
 
 def resume_prd_flow(
@@ -419,11 +484,16 @@ def resume_prd_flow(
     progress_callback: "Callable[[str, dict], None] | None" = None,
     exec_summary_user_feedback_callback: "Callable | None" = None,
     executive_summary_callback: "Callable | None" = None,
+    requirements_approval_callback: "Callable | None" = None,
 ) -> None:
     """Resume a previously paused/unfinalized PRD flow from MongoDB state.
 
     When *auto_approve* is ``True`` the flow runs end-to-end without
     pausing for manual approval.
+
+    When *requirements_approval_callback* is provided, the user is
+    given a chance to approve or cancel after the requirements breakdown
+    — before the executive summary begins.
 
     When *exec_summary_user_feedback_callback* is provided, the user is
     given a chance to iterate or approve after each executive summary
@@ -432,8 +502,12 @@ def resume_prd_flow(
     When *executive_summary_callback* is provided, the user is given a
     final review gate between the executive summary and section drafting.
     """
-    from crewai_productfeature_planner.flows.prd_flow import PauseRequested, PRDFlow
-    from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
+    from crewai_productfeature_planner.flows.prd_flow import (
+        PauseRequested, PRDFlow, register_callbacks, cleanup_callbacks,
+    )
+    from crewai_productfeature_planner.scripts.retry import (
+        BillingError, LLMError, ModelBusyError,
+    )
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
@@ -443,9 +517,18 @@ def resume_prd_flow(
     reactivate_job(run_id)
     update_job_started(run_id)
 
+    # Register callbacks in the module-level registry
+    register_callbacks(
+        run_id,
+        progress_callback=progress_callback,
+        exec_summary_user_feedback_callback=exec_summary_user_feedback_callback,
+        executive_summary_callback=executive_summary_callback,
+        requirements_approval_callback=requirements_approval_callback,
+    )
+
     flow: PRDFlow | None = None
     try:
-        idea, draft, exec_summary, requirements_breakdown, breakdown_history = (
+        idea, draft, exec_summary, requirements_breakdown, breakdown_history, refinement_history = (
             restore_prd_state(run_id)
         )
 
@@ -465,13 +548,24 @@ def resume_prd_flow(
             flow.exec_summary_user_feedback_callback = exec_summary_user_feedback_callback
         if executive_summary_callback is not None:
             flow.executive_summary_callback = executive_summary_callback
+        if requirements_approval_callback is not None:
+            flow.requirements_approval_callback = requirements_approval_callback
 
         # Set finalized_idea from the last executive summary iteration
         if exec_summary.latest_content:
             flow.state.finalized_idea = exec_summary.latest_content
 
-        # If exec summary has iterations, idea was already refined
-        if exec_summary.iterations:
+        # Restore refine_idea state
+        if refinement_history:
+            flow.state.idea_refined = True
+            flow.state.refinement_history = refinement_history
+            flow.state.original_idea = idea
+            # Use the latest refined idea as the current idea
+            latest = refinement_history[-1]
+            if latest.get("idea"):
+                flow.state.idea = latest["idea"]
+        # Fallback: if exec summary has iterations, idea was already refined
+        elif exec_summary.iterations:
             flow.state.idea_refined = True
 
         next_section = draft.next_section()
@@ -512,6 +606,15 @@ def resume_prd_flow(
             "[API] Resumed PRD flow paused due to billing error (run_id=%s): %s",
             run_id, exc,
         )
+    except ModelBusyError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"MODEL_BUSY: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.warning(
+            "[API] Resumed PRD flow paused — model busy (run_id=%s): %s. "
+            "Will auto-resume on next periodic scan.",
+            run_id, exc,
+        )
     except LLMError as exc:
         run.status = FlowStatus.PAUSED
         run.error = f"LLM_ERROR: {exc}"
@@ -547,3 +650,5 @@ def resume_prd_flow(
         approval_decisions.pop(run_id, None)
         approval_feedback.pop(run_id, None)
         pause_requested.pop(run_id, None)
+        # Cleanup callback registry
+        cleanup_callbacks(run_id)

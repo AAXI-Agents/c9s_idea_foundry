@@ -34,7 +34,7 @@ Predict ONE next step for a PRD planning bot user. Return JSON:
 "confidence":<0-1>,"reason":"<brief>"}
 
 Categories: configure_confluence | configure_jira | configure_memory | \
-create_prd | publish | configure_missing_keys | review_prd | none
+create_prd | publish | create_jira_skeleton | configure_missing_keys | review_prd | none
 
 Rules:
 - No Confluence key + user may publish → configure_confluence
@@ -42,6 +42,7 @@ Rules:
 - New project, no memory → configure_memory
 - Project ready, no recent PRD → create_prd
 - Pending PRDs + keys set → publish
+- Confluence published + no Jira tickets + Jira key set → create_jira_skeleton
 - Pending PRDs + keys missing → configure_missing_keys
 - Very active user → none
 
@@ -71,6 +72,11 @@ _DEFAULT_MESSAGES: dict[str, str] = {
     "publish": (
         "You have pending PRDs. Would you like to *publish* them "
         "to Confluence and create Jira tickets?"
+    ),
+    "create_jira_skeleton": (
+        "Your PRD is published to Confluence. Would you like to "
+        "*create jira tickets*? I'll generate a skeleton of Epics & "
+        "User Stories for your review and approval first."
     ),
     "configure_missing_keys": (
         "You have PRDs ready but Confluence/Jira keys aren't set. "
@@ -138,7 +144,6 @@ def _gather_context(
         "session_active": project_id is not None,
         "has_confluence_key": False,
         "has_jira_key": False,
-        "has_confluence_parent": False,
         "has_memory_entries": False,
         "pending_prds": 0,
         "recent_intents": [],
@@ -148,7 +153,6 @@ def _gather_context(
     if project_config:
         context["has_confluence_key"] = bool(project_config.get("confluence_space_key"))
         context["has_jira_key"] = bool(project_config.get("jira_project_key"))
-        context["has_confluence_parent"] = bool(project_config.get("confluence_parent_id"))
     elif project_id:
         try:
             from crewai_productfeature_planner.mongodb.project_config import get_project
@@ -156,7 +160,6 @@ def _gather_context(
             if proj:
                 context["has_confluence_key"] = bool(proj.get("confluence_space_key"))
                 context["has_jira_key"] = bool(proj.get("jira_project_key"))
-                context["has_confluence_parent"] = bool(proj.get("confluence_parent_id"))
                 project_config = proj
         except Exception:
             logger.debug("Failed to load project config for next-step", exc_info=True)
@@ -200,7 +203,6 @@ def _gather_context(
             "name": project_config.get("name", ""),
             "confluence_space_key": project_config.get("confluence_space_key", ""),
             "jira_project_key": project_config.get("jira_project_key", ""),
-            "confluence_parent_id": project_config.get("confluence_parent_id", ""),
         }
 
     return context

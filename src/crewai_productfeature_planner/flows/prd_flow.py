@@ -101,6 +101,36 @@ from crewai_productfeature_planner.flows._finalization import (
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level callback registry — safety net for CrewAI Flow execution.
+#
+# CrewAI Flow runs @start() methods via asyncio.to_thread which can lose
+# instance attributes set after __init__ (e.g. callbacks assigned in
+# run_prd_flow).  This registry persists callbacks keyed by run_id so
+# generate_sections() can retrieve them regardless.
+# ---------------------------------------------------------------------------
+_callback_registry: dict[str, dict] = {}
+
+
+def register_callbacks(run_id: str, **callbacks) -> None:
+    """Store callbacks in the module-level registry for *run_id*."""
+    _callback_registry[run_id] = callbacks
+    logger.debug(
+        "[CallbackRegistry] Registered %d callback(s) for run_id=%s: %s",
+        len(callbacks), run_id, list(callbacks.keys()),
+    )
+
+
+def _get_registered_callback(run_id: str, name: str):
+    """Retrieve a callback from the registry (or ``None``)."""
+    return _callback_registry.get(run_id, {}).get(name)
+
+
+def cleanup_callbacks(run_id: str) -> None:
+    """Remove callbacks for *run_id* from the registry."""
+    if _callback_registry.pop(run_id, None) is not None:
+        logger.debug("[CallbackRegistry] Cleaned up run_id=%s", run_id)
+
 
 class PRDFlow(Flow[PRDState]):
     """CrewAI Flow that drafts, critiques, and refines a PRD section by section.
@@ -207,13 +237,44 @@ class PRDFlow(Flow[PRDState]):
     ) = None
 
     # ------------------------------------------------------------------
+    # Callback resolution — instance attribute with registry fallback
+    # ------------------------------------------------------------------
+    def _resolve_callback(self, name: str):
+        """Return the callback for *name*, falling back to the registry.
+
+        CrewAI Flow runs ``@start()`` methods via ``asyncio.to_thread``
+        which can lose instance attributes set after ``__init__``.
+        The module-level ``_callback_registry`` is populated by
+        ``run_prd_flow()`` as a safety net.
+        """
+        # 1. Instance attribute (fast path — works when CrewAI behaves)
+        value = getattr(self, name, None)
+        if value is not None:
+            return value
+        # 2. Module-level registry (fallback)
+        run_id = getattr(getattr(self, "state", None), "run_id", "") or ""
+        if run_id:
+            value = _get_registered_callback(run_id, name)
+            if value is not None:
+                logger.info(
+                    "[CallbackRegistry] Recovered '%s' from registry "
+                    "for run_id=%s (instance attr was None)",
+                    name, run_id,
+                )
+                # Re-attach so subsequent lookups skip the registry
+                setattr(self, name, value)
+                return value
+        return None
+
+    # ------------------------------------------------------------------
     # Helper — notify progress
     # ------------------------------------------------------------------
     def _notify_progress(self, event_type: str, details: dict | None = None) -> None:
         """Fire the progress callback if set, swallowing errors."""
-        if self.progress_callback is not None:
+        cb = self._resolve_callback("progress_callback")
+        if cb is not None:
             try:
-                self.progress_callback(event_type, details or {})
+                cb(event_type, details or {})
             except Exception:  # noqa: BLE001
                 logger.debug("progress_callback failed for %s", event_type, exc_info=True)
 
@@ -350,6 +411,20 @@ class PRDFlow(Flow[PRDState]):
         orchestrator = build_default_pipeline(self)
         orchestrator.run_pipeline()
 
+        # Diagnostic: log callback state at start of section generation.
+        # This helps debug cases where CrewAI's asyncio.to_thread loses
+        # instance attributes set before kickoff().
+        logger.info(
+            "[Callbacks] exec_summary_user_feedback=%s, "
+            "executive_summary=%s, requirements_approval=%s, "
+            "progress=%s, run_id=%s",
+            self.exec_summary_user_feedback_callback is not None,
+            self.executive_summary_callback is not None,
+            self.requirements_approval_callback is not None,
+            self.progress_callback is not None,
+            self.state.run_id,
+        )
+
         # Resolve project_id for memory enrichment across all agents
         project_id = resolve_project_id(self.state.run_id)
 
@@ -408,8 +483,9 @@ class PRDFlow(Flow[PRDState]):
             )
 
             # ── Still let the user review before moving to Phase 2 ──
-            if self.executive_summary_callback is not None:
-                continue_to_sections = self.executive_summary_callback(
+            exec_cb = self._resolve_callback("executive_summary_callback")
+            if exec_cb is not None:
+                continue_to_sections = exec_cb(
                     self.state.executive_summary.latest_content,
                     self.state.idea,
                     self.state.run_id,
@@ -444,8 +520,9 @@ class PRDFlow(Flow[PRDState]):
             )
 
             # ── User decision gate — continue to sections? ───────
-            if self.executive_summary_callback is not None:
-                continue_to_sections = self.executive_summary_callback(
+            exec_cb = self._resolve_callback("executive_summary_callback")
+            if exec_cb is not None:
+                continue_to_sections = exec_cb(
                     self.state.executive_summary.latest_content,
                     self.state.idea,
                     self.state.run_id,

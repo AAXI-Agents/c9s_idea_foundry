@@ -92,11 +92,12 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
             return False
         return (
             flow.state.requirements_broken_down
-            and flow.requirements_approval_callback is not None
+            and flow._resolve_callback("requirements_approval_callback") is not None
         )
 
     def _get_approval() -> bool:
-        return flow.requirements_approval_callback(
+        cb = flow._resolve_callback("requirements_approval_callback")
+        return cb(
             flow.state.requirements_breakdown,
             flow.state.idea,
             flow.state.run_id,

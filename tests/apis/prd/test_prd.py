@@ -249,6 +249,30 @@ def test_run_prd_flow_llm_error():
     assert "model overloaded" in run.error
 
 
+def test_run_prd_flow_model_busy_error():
+    """ModelBusyError should set status to PAUSED with MODEL_BUSY code."""
+    from crewai_productfeature_planner.apis.prd.service import run_prd_flow
+    from crewai_productfeature_planner.scripts.retry import ModelBusyError
+
+    runs.clear()
+    run = FlowRun(run_id="test-busy", flow_name="prd")
+    runs["test-busy"] = run
+
+    with patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow:
+        mock_instance = MagicMock()
+        mock_instance.kickoff.side_effect = ModelBusyError(
+            "503 UNAVAILABLE. This model is currently experiencing high demand."
+        )
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        run_prd_flow("test-busy", "Busy idea")
+
+    assert run.status == FlowStatus.PAUSED
+    assert run.error.startswith("MODEL_BUSY:")
+    assert "high demand" in run.error
+
+
 # ── make_approval_callback agent syncing ─────────────────────
 
 
@@ -1437,8 +1461,8 @@ def test_restore_prd_state_returns_five_tuple():
 
         result = restore_prd_state("r1")
 
-    assert len(result) == 5
-    idea, draft, exec_summary, requirements, breakdown_history = result
+    assert len(result) == 6
+    idea, draft, exec_summary, requirements, breakdown_history, refinement_history = result
     assert idea == "Test idea"
     assert draft.get_section("executive_summary").content == "ES content"
     assert draft.get_section("problem_statement").content == "PS content"
@@ -1463,7 +1487,7 @@ def test_restore_prd_state_no_exec_summary():
         mock_unf.return_value = [{"run_id": "r2", "idea": "Idea"}]
         mock_docs.return_value = [{"section": {}}]
 
-        idea, draft, exec_summary, requirements, breakdown_history = restore_prd_state("r2")
+        idea, draft, exec_summary, requirements, breakdown_history, refinement_history = restore_prd_state("r2")
 
     assert idea == "Idea"
     assert len(exec_summary.iterations) == 0
@@ -1541,7 +1565,7 @@ def test_job_detail_null_for_missing_output_fields(client):
 
 
 def test_resume_prd_flow_restores_full_state():
-    """resume_prd_flow should restore exec_summary and requirements from 5-tuple."""
+    """resume_prd_flow should restore exec_summary, requirements, and refine_idea from 6-tuple."""
     from crewai_productfeature_planner.apis.prd.models import (
         ExecutiveSummaryDraft,
         ExecutiveSummaryIteration,
@@ -1571,6 +1595,7 @@ def test_resume_prd_flow_restores_full_state():
             exec_summary,
             "structured requirements",
             [{"iteration": 1, "requirements": "req v1"}],
+            [{"iteration": 1, "idea": "refined v1", "evaluation": "good"}],
         )
         mock_instance = MagicMock()
         mock_instance.approval_callback = None
@@ -1588,6 +1613,10 @@ def test_resume_prd_flow_restores_full_state():
     assert mock_instance.state.requirements_broken_down is True
     assert mock_instance.state.finalized_idea == "exec v1"
     assert mock_instance.state.idea_refined is True
+    assert mock_instance.state.refinement_history == [
+        {"iteration": 1, "idea": "refined v1", "evaluation": "good"},
+    ]
+    assert mock_instance.state.original_idea == "idea"
     runs.clear()
 
 

@@ -79,6 +79,16 @@ def run_interactive_slack_flow(
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
     create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts)
 
+    # Persist Slack context so channel-based orphan detection works
+    # and auto-resume can notify the same thread.
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_slack_context,
+        )
+        save_slack_context(run_id, channel, thread_ts, idea=idea)
+    except Exception:  # noqa: BLE001
+        logger.debug("save_slack_context failed for %s", run_id, exc_info=True)
+
     # Link working idea to project early so in-progress runs appear in
     # find_ideas_by_project queries (e.g. "list ideas").
     if project_id:
@@ -145,7 +155,9 @@ def run_interactive_slack_flow(
             update_job_completed,
             update_job_started,
         )
-        from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
+        from crewai_productfeature_planner.scripts.retry import (
+            BillingError, LLMError, ModelBusyError,
+        )
 
         runs[run_id].status = FlowStatus.RUNNING
         update_job_started(run_id)
@@ -265,9 +277,14 @@ def run_interactive_slack_flow(
             runs[run_id].error = str(exc)
             if notify:
                 from crewai_productfeature_planner.apis.slack.blocks import flow_paused_blocks
+                is_busy = isinstance(exc, ModelBusyError)
+                extra = (
+                    " The model is currently busy — will auto-resume shortly."
+                    if is_busy else ""
+                )
                 blocks = flow_paused_blocks(run_id, str(exc))
                 _post_blocks(channel, thread_ts, blocks,
-                             text=f"PRD flow paused due to error ({run_id})")
+                             text=f"PRD flow paused due to error ({run_id}).{extra}")
 
     except Exception as exc:
         logger.error("Interactive Slack PRD flow %s failed: %s", run_id, exc)

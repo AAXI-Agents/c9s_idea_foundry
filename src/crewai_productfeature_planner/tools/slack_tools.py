@@ -317,7 +317,8 @@ class SlackPostPRDResultTool(BaseTool):
             )
         if not jira_output:
             next_steps.append(
-                "\u2022 Say *create jira tickets* to generate Jira tickets"
+                "\u2022 Say *create jira tickets* to view a skeleton of "
+                "Epics & User Stories for your approval before creating tickets"
             )
         if next_steps:
             blocks.append({"type": "divider"})

@@ -421,7 +421,6 @@ def pop_pending_memory(user_id: str) -> dict[str, str] | None:
 _SETUP_STEPS = (
     "confluence_space_key",
     "jira_project_key",
-    "confluence_parent_id",
 )
 
 
@@ -442,7 +441,6 @@ def mark_pending_setup(
             "step": _SETUP_STEPS[0],
             "confluence_space_key": "",
             "jira_project_key": "",
-            "confluence_parent_id": "",
         }
 
 

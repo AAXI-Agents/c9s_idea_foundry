@@ -1,6 +1,6 @@
 # CrewAI Product Feature Planner
 
-> **v0.1.6** — AI-powered PRD generation with Slack integration, Confluence publishing, and Jira ticketing.
+> **v0.9.4** — AI-powered PRD generation with Slack integration, Confluence publishing, and Jira ticketing.
 
 Take a simple product idea and generate a detailed Product Requirements Document (PRD) with associated engineering tickets — powered by [crewAI](https://crewai.com), Gemini, and OpenAI.
 
@@ -140,7 +140,7 @@ When a `webhook_url` is provided on `/slack/kickoff` or `/slack/kickoff/sync`, t
 
 The bot supports natural language interaction in Slack, powered by a 12-intent LLM classification system with text-phrase safety nets.
 
-### Intent Classification (v0.1.6)
+### Intent Classification (v0.9.4)
 
 Every message mentioning the bot is classified by Gemini (with OpenAI fallback) into one of 12 intents:
 
@@ -161,12 +161,15 @@ Every message mentioning the bot is classified by Gemini (with OpenAI fallback) 
 
 Each intent is supported by both LLM classification **and** text-phrase safety nets — so natural phrasing like "show me available projects" works even if the LLM misclassifies.
 
-### Project Setup Wizard (v0.1.5)
+### Project Setup Wizard (v0.9.3)
 
-After creating a project, the bot walks through a 3-step setup wizard:
+After creating a project, the bot walks through a 2-step setup wizard:
 1. **Confluence space key** — where PRD pages are published
 2. **Jira project key** — where engineering tickets are created
-3. **Confluence parent page ID** — parent page for PRD pages
+
+Confluence parent page ID is optional. If provided via project config or the
+`CONFLUENCE_PARENT_ID` env var, pages publish under that parent; otherwise they
+publish at the space root.
 
 ### Standard Mode (default)
 
@@ -259,7 +262,7 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 | `ATLASSIAN_USERNAME` | **Yes**\* | — | Atlassian account email |
 | `ATLASSIAN_API_TOKEN` | **Yes**\* | — | Atlassian API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens)) |
 | `CONFLUENCE_SPACE_KEY` | No | — | Fallback Confluence space key. Project-level `confluence_space_key` (from `projectConfig`) takes priority |
-| `CONFLUENCE_PARENT_ID` | No | — | Fallback parent page ID. Project-level `confluence_parent_id` takes priority |
+| `CONFLUENCE_PARENT_ID` | No | — | Optional fallback parent page ID. Project-level `confluence_parent_id` takes priority; if unset, pages publish at the space root |
 | `JIRA_PROJECT_KEY` | No | — | Fallback Jira project key. Project-level `jira_project_key` (from `projectConfig`) takes priority |
 | `NGROK_AUTHTOKEN` | No | — | Required for ngrok remote access |
 | `LLM_TIMEOUT` | No | `300` | LLM request timeout in seconds |
@@ -280,6 +283,8 @@ The application uses semantic versioning (`Major.Minor.Iteration`). The full cod
 
 | Version | Date | Summary |
 |---|---|---|
+| 0.9.4 | 2026-03-05 | LLM prompts no longer request Confluence parent page IDs; publishing proceeds without parent ID |
+| 0.9.3 | 2026-03-05 | Project setup wizard simplified to Confluence space key + Jira project key (parent ID optional) |
 | 0.1.6 | 2026-02-28 | Comprehensive intent audit — 5 new LLM intents (`list_projects`, `switch_project`, `end_session`, `current_project`, `configure_memory`), phrase-based routing, improved help text |
 | 0.1.5 | 2026-02-28 | Intent fix & project setup wizard — "iterate an idea" fix, 3-step Confluence/Jira setup |
 | 0.1.4 | 2026-02-28 | Thread reply awareness — pending-state routing, session isolation |

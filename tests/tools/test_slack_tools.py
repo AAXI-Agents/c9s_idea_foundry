@@ -189,6 +189,7 @@ class TestSlackPostPRDResultTool:
         next_steps_text = blocks[-1]["text"]["text"]
         assert "publish" in next_steps_text
         assert "jira tickets" in next_steps_text
+        assert "skeleton" in next_steps_text.lower()
 
     def test_sends_blocks_to_slack(self):
         mock_client = MagicMock()

@@ -164,12 +164,6 @@ def project_setup_step_blocks(
             "This is used when creating Jira tickets for PRDs.\n\n"
             "_Type `skip` to leave blank and use the default._"
         ),
-        "confluence_parent_id": (
-            ":page_facing_up: *Confluence Parent Page ID*\n\n"
-            "Enter the numeric ID of the Confluence parent page under "
-            "which PRDs will be created (e.g. `123456`).\n\n"
-            "_Type `skip` to leave blank and use the default._"
-        ),
     }
     label = _STEP_LABELS.get(step, f"*{step}*")
     return [

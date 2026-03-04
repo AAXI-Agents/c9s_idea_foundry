@@ -153,7 +153,7 @@ class TestManualIdeaRefinement:
         out = capsys.readouterr().out
         assert out.count("Please enter") == 2
 
-    @patch("crewai_productfeature_planner._cli_refinement.save_executive_summary")
+    @patch("crewai_productfeature_planner._cli_refinement.save_pipeline_step")
     def test_saves_iterations_with_run_id(self, mock_save):
         """When run_id is provided, iterations should be saved to workingIdeas."""
         inputs = [
@@ -176,10 +176,11 @@ class TestManualIdeaRefinement:
         assert first_call["run_id"] == "run_abc"
         assert first_call["idea"] == "Original"
         assert first_call["content"] == "Revised v1"
+        assert first_call["pipeline_key"] == "refine_idea"
 
-    @patch("crewai_productfeature_planner._cli_refinement.save_executive_summary")
+    @patch("crewai_productfeature_planner._cli_refinement.save_pipeline_step")
     def test_no_run_id_skips_save(self, mock_save):
-        """Without run_id, no save_executive_summary calls should be made."""
+        """Without run_id, no save_pipeline_step calls should be made."""
         inputs = ["e", "Revised", "", "", "y"]
         with patch("builtins.input", side_effect=inputs):
             _manual_idea_refinement("Original")  # no run_id
@@ -1944,7 +1945,7 @@ class TestCreateProjectInteractive:
     @patch(f"{_PC_MODULE}.create_project", return_value="p-abc")
     def test_creates_with_all_fields(self, mock_create, capsys):
         with patch("builtins.input", side_effect=[
-            "My App", "SPACE1", "JIRA1", "12345",
+            "My App", "SPACE1", "JIRA1",
         ]):
             pid, pname = _create_project_interactive()
         assert pid == "p-abc"
@@ -1953,12 +1954,11 @@ class TestCreateProjectInteractive:
             name="My App",
             confluence_space_key="SPACE1",
             jira_project_key="JIRA1",
-            confluence_parent_id="12345",
         )
 
     @patch(f"{_PC_MODULE}.create_project", return_value="p-xyz")
     def test_creates_with_optional_fields_empty(self, mock_create):
-        with patch("builtins.input", side_effect=["Simple", "", "", ""]):
+        with patch("builtins.input", side_effect=["Simple", "", ""]):
             pid, pname = _create_project_interactive()
         assert pid == "p-xyz"
         assert pname == "Simple"
@@ -1966,13 +1966,12 @@ class TestCreateProjectInteractive:
             name="Simple",
             confluence_space_key="",
             jira_project_key="",
-            confluence_parent_id="",
         )
 
     @patch(f"{_PC_MODULE}.create_project", return_value=None)
     def test_fallback_on_create_failure(self, mock_create, capsys):
         """When create_project returns None, a local UUID is generated."""
-        with patch("builtins.input", side_effect=["Offline", "", "", ""]):
+        with patch("builtins.input", side_effect=["Offline", "", ""]):
             pid, pname = _create_project_interactive()
         assert pname == "Offline"
         assert len(pid) == 32  # uuid hex
@@ -1982,7 +1981,7 @@ class TestCreateProjectInteractive:
     @patch(f"{_PC_MODULE}.create_project", return_value="p1")
     def test_empty_name_retries(self, mock_create, capsys):
         """Entering empty name is rejected; user must re-enter."""
-        with patch("builtins.input", side_effect=["", "", "Finally", "", "", ""]):
+        with patch("builtins.input", side_effect=["", "", "Finally", "", ""]):
             pid, pname = _create_project_interactive()
         assert pname == "Finally"
         out = capsys.readouterr().out

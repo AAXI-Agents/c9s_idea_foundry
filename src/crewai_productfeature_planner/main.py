@@ -42,7 +42,9 @@ from crewai_productfeature_planner.mongodb.crew_jobs import (
     update_job_started,
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger
-from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
+from crewai_productfeature_planner.scripts.retry import (
+    BillingError, LLMError, ModelBusyError,
+)
 
 # ── Re-export sub-module symbols into this namespace ─────────────────
 # Tests use @patch("crewai_productfeature_planner.main.<name>") to mock
@@ -364,6 +366,25 @@ def _run_single_flow(
             print(f"  {progress_file}")
         print(f"  Please fix your OpenAI billing or quota and then run")
         print(f"  'crewai run' to resume from where you left off.")
+        print(f"{'=' * 60}")
+    except ModelBusyError as e:
+        if project_id:
+            _save_project_link(flow.state.run_id, project_id, idea=idea)
+        approved = sum(1 for s in flow.state.draft.sections if s.is_approved)
+        total = len(flow.state.draft.sections)
+        update_job_completed(flow.state.run_id, status="paused")
+        progress_file = flow.save_progress()
+        logger.warning("PRD flow paused — model busy (run_id=%s): %s",
+                       flow.state.run_id, e)
+        print(f"\n{'=' * 60}")
+        print(f"  MODEL BUSY — PAUSED FOR AUTO-RESUME")
+        print(f"{'=' * 60}")
+        print(f"  {e}")
+        print(f"\n  Your progress has been saved ({approved}/{total} sections approved).")
+        if progress_file:
+            print(f"  {progress_file}")
+        print(f"  The flow will auto-resume when the model is available,")
+        print(f"  or run 'crewai run' to resume manually.")
         print(f"{'=' * 60}")
     except LLMError as e:
         if project_id:

@@ -36,8 +36,9 @@ def build_default_pipeline(flow: "PRDFlow") -> AgentOrchestrator:
         1. Idea Refinement   — auto-iterates until idea is polished
         2. Requirements Breakdown — decomposes idea into product requirements
 
-    To extend, create a new ``build_*_stage`` factory and register it
-    here at the desired position.
+    When the flow has a ``progress_callback``, stage lifecycle events
+    (``pipeline_stage_start``, ``pipeline_stage_complete``, etc.) are
+    forwarded to it so callers (e.g. Slack) can post heartbeat messages.
 
     Args:
         flow: The :class:`PRDFlow` instance whose state will be read
@@ -47,7 +48,11 @@ def build_default_pipeline(flow: "PRDFlow") -> AgentOrchestrator:
         A fully-configured :class:`AgentOrchestrator` ready for
         :meth:`~AgentOrchestrator.run_pipeline`.
     """
-    orchestrator = AgentOrchestrator()
+    progress_cb = getattr(flow, "progress_callback", None)
+    # Also check the callback registry in case CrewAI lost the attribute
+    if progress_cb is None:
+        progress_cb = flow._resolve_callback("progress_callback")
+    orchestrator = AgentOrchestrator(progress_callback=progress_cb)
     orchestrator.register(build_idea_refinement_stage(flow))
     orchestrator.register(build_requirements_breakdown_stage(flow))
     return orchestrator

@@ -123,7 +123,38 @@ def make_progress_poster(
     def _post(event_type: str, details: dict) -> None:
         msg: str | None = None
 
-        if event_type == "section_start":
+        # ── Orchestrator pipeline stage events ────────────────────
+        if event_type == "pipeline_stage_start":
+            stage = details.get("stage", "")
+            desc = details.get("description", "")
+            if stage == "idea_refinement":
+                msg = ":bulb: Starting *Idea Refinement* — iterating until the idea is polished…"
+            elif stage == "requirements_breakdown":
+                msg = ":mag: Starting *Requirements Breakdown* — decomposing idea into detailed requirements…"
+            else:
+                msg = f":gear: Starting *{desc or stage}*…"
+
+        elif event_type == "pipeline_stage_complete":
+            stage = details.get("stage", "")
+            iters = details.get("iterations", 0)
+            if stage == "idea_refinement":
+                msg = (
+                    f":white_check_mark: *Idea Refinement* complete "
+                    f"({iters} iteration(s)). Moving to requirements breakdown…"
+                )
+            elif stage == "requirements_breakdown":
+                msg = (
+                    f":white_check_mark: *Requirements Breakdown* complete "
+                    f"({iters} iteration(s))."
+                )
+            else:
+                msg = f":white_check_mark: *{stage}* complete ({iters} iteration(s))."
+
+        elif event_type == "pipeline_stage_skipped":
+            stage = details.get("stage", "")
+            msg = f":fast_forward: *{stage}* skipped (already done or not needed)."
+
+        elif event_type == "section_start":
             title = details.get("section_title", "")
             step = details.get("section_step", 0)
             total = details.get("total_sections", 0)
@@ -510,6 +541,139 @@ def make_exec_summary_completion_gate(
 
 
 # ---------------------------------------------------------------------------
+# Non-interactive requirements approval gate
+# ---------------------------------------------------------------------------
+
+# Module-level state for requirements approval in auto-approve flows.
+# Keyed by run_id → dict with channel, thread_ts, event, decision.
+_pending_requirements_approval: dict[str, dict] = {}
+_requirements_approval_lock = threading.Lock()
+
+
+def resolve_requirements_approval(run_id: str, action: str) -> bool:
+    """Signal a pending requirements-approval gate for *run_id*.
+
+    Called by the interactions router when the user clicks
+    "Approve" (``requirements_approve``) or "Cancel"
+    (``requirements_cancel``).
+
+    Returns ``True`` if the gate was found and signalled.
+    """
+    with _requirements_approval_lock:
+        info = _pending_requirements_approval.get(run_id)
+        if not info:
+            return False
+        info["decision"] = action
+        info["event"].set()
+        return True
+
+
+def make_requirements_approval_gate(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str, str, list[dict] | None], bool]":
+    """Return a ``requirements_approval_callback`` for auto-approve flows.
+
+    Posts the requirements breakdown with Approve / Cancel buttons
+    so the user can review before the flow proceeds to the executive
+    summary and section drafting.
+
+    Returns ``False`` → approved, continue to executive summary.
+    Returns ``True``  → finalized/cancelled (raises RequirementsFinalized).
+    """
+
+    def _callback(
+        requirements: str,
+        idea: str,
+        cb_run_id: str,
+        breakdown_history: list[dict] | None = None,
+    ) -> bool:
+        iteration_count = len(breakdown_history) if breakdown_history else 0
+
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            requirements_approval_blocks,
+        )
+
+        blocks = requirements_approval_blocks(
+            cb_run_id, requirements, iteration_count,
+        )
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+            if client:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text="Requirements Breakdown Complete — awaiting your review",
+                    blocks=blocks,
+                )
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "Failed to post requirements approval blocks", exc_info=True,
+            )
+
+        # Register the pending gate
+        gate_event = threading.Event()
+        with _requirements_approval_lock:
+            _pending_requirements_approval[cb_run_id] = {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "user": user,
+                "event": gate_event,
+                "decision": None,
+            }
+
+        # Wait for user response (10 minutes max)
+        gate_event.wait(timeout=600.0)
+
+        with _requirements_approval_lock:
+            info = _pending_requirements_approval.pop(cb_run_id, {})
+
+        decision = info.get("decision")
+
+        if decision == "requirements_cancel":
+            logger.info(
+                "[RequirementsGate] User cancelled requirements for "
+                "run_id=%s",
+                cb_run_id,
+            )
+            return True  # finalize → raises RequirementsFinalized
+
+        if decision == "requirements_approve":
+            logger.info(
+                "[RequirementsGate] User approved requirements for "
+                "run_id=%s",
+                cb_run_id,
+            )
+            return False  # continue to executive summary
+
+        # Timeout — auto-approve to avoid blocking forever
+        logger.warning(
+            "[RequirementsGate] Timeout for run_id=%s — "
+            "auto-approving requirements",
+            cb_run_id,
+        )
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    ":hourglass: No response received — auto-approving "
+                    "requirements and continuing to executive summary."
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+    return _callback
+
+
+# ---------------------------------------------------------------------------
 # Publish intent handlers
 # ---------------------------------------------------------------------------
 
@@ -558,6 +722,16 @@ def handle_publish_intent(channel: str, thread_ts: str, user: str, send_tool) ->
         else:
             msg = jira.get("message", "No pending Jira deliveries")
             lines.append(f"*Jira:* {msg}")
+
+        # Next-step hint: suggest phased Jira skeleton flow when
+        # Confluence was published but no Jira tickets were created.
+        if pub_count and not jira_count:
+            lines.append("")
+            lines.append(
+                ":bulb: *Next step:* Say *create jira tickets* to "
+                "generate a skeleton of Epics & User Stories for your "
+                "review and approval before creating tickets."
+            )
 
         summary = "\n".join(lines)
         send_tool.run(channel=channel, text=summary, thread_ts=thread_ts)
@@ -750,6 +924,16 @@ def handle_resume_prd(
             run_id=run_id,
         )
 
+        # Build requirements approval gate so the user can review
+        # the requirements breakdown before proceeding.
+        requirements_cb = make_requirements_approval_gate(
+            channel=channel,
+            thread_ts=thread_ts,
+            user=user,
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+
         def _resume_and_notify():
             try:
                 resume_prd_flow(
@@ -758,6 +942,7 @@ def handle_resume_prd(
                     progress_callback=progress_cb,
                     exec_summary_user_feedback_callback=exec_summary_cb,
                     executive_summary_callback=exec_completion_cb,
+                    requirements_approval_callback=requirements_cb,
                 )
 
                 run = runs.get(run_id)

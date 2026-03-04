@@ -290,8 +290,8 @@ def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
         run_id: The run identifier.
         project_id: The project configuration identifier.
         idea: The original user-submitted idea text.  When non-empty
-            the field is written on both insert *and* update so the
-            idea is always available for listing and rescan.
+            the field is persisted via ``$set`` so the idea is always
+            available for listing and rescan.
 
     Returns:
         Number of documents modified or created (0 or 1).
@@ -309,7 +309,6 @@ def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
         }
         if idea:
             set_fields["idea"] = idea
-            insert_fields["idea"] = idea
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {
@@ -356,8 +355,8 @@ def save_slack_context(
         slack_channel: The Slack channel ID.
         slack_thread_ts: The Slack thread timestamp.
         idea: The original user-submitted idea text.  When non-empty
-            the field is written on both insert *and* update so the
-            idea is always available for listing and rescan.
+            the field is persisted via ``$set`` so the idea is always
+            available for listing and rescan.
 
     Returns:
         Number of documents modified or created (0 or 1).
@@ -376,7 +375,6 @@ def save_slack_context(
         }
         if idea:
             set_fields["idea"] = idea
-            insert_fields["idea"] = idea
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {

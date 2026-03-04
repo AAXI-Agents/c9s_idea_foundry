@@ -876,11 +876,6 @@ class TestProjectSetupWizard:
         # Step 2: jira_project_key
         entry = advance_pending_setup("U1", "FEAT")
         assert entry["jira_project_key"] == "FEAT"
-        assert entry["step"] == "confluence_parent_id"
-
-        # Step 3: confluence_parent_id
-        entry = advance_pending_setup("U1", "123456")
-        assert entry["confluence_parent_id"] == "123456"
         assert entry["step"] == "done"
 
         # After done, the entry is removed
@@ -895,12 +890,9 @@ class TestProjectSetupWizard:
         mark_pending_setup("U1", "C1", "T1", "proj1", "Test")
         advance_pending_setup("U1", "")  # skip confluence
         entry = advance_pending_setup("U1", "")  # skip jira
-        assert entry["step"] == "confluence_parent_id"
-        entry = advance_pending_setup("U1", "")  # skip parent
         assert entry["step"] == "done"
         assert entry["confluence_space_key"] == ""
         assert entry["jira_project_key"] == ""
-        assert entry["confluence_parent_id"] == ""
 
     def test_has_pending_state_includes_setup(self):
         from crewai_productfeature_planner.apis.slack.session_manager import (
@@ -976,10 +968,9 @@ class TestProjectSetupWizard:
             mock_client = MagicMock()
             mock_client_fn.return_value = mock_client
 
-            # Step through all 3 steps
+            # Step through all 2 steps
             er._handle_project_setup_reply("C1", "T1", "U1", "ENG")
             er._handle_project_setup_reply("C1", "T1", "U1", "FEAT")
-            er._handle_project_setup_reply("C1", "T1", "U1", "123456")
 
         # Entry should be cleared
         assert get_pending_setup("U1") is None
@@ -989,7 +980,6 @@ class TestProjectSetupWizard:
             "proj1",
             confluence_space_key="ENG",
             jira_project_key="FEAT",
-            confluence_parent_id="123456",
         )
 
         # Channel session should be activated
@@ -1005,10 +995,10 @@ class TestProjectSetupWizard:
             project_setup_step_blocks,
         )
 
-        blocks = project_setup_step_blocks("My Project", "jira_project_key", 2, 3)
+        blocks = project_setup_step_blocks("My Project", "jira_project_key", 2, 2)
         text = blocks[0]["text"]["text"]
         assert "Jira Project Key" in text
-        assert "step 2/3" in text
+        assert "step 2/2" in text
 
     def test_setup_complete_blocks_show_keys(self):
         from crewai_productfeature_planner.apis.slack.blocks import (
@@ -1018,7 +1008,6 @@ class TestProjectSetupWizard:
         blocks = project_setup_complete_blocks("My Project", {
             "confluence_space_key": "ENG",
             "jira_project_key": "FEAT",
-            "confluence_parent_id": "",
         })
         text = blocks[0]["text"]["text"]
         assert "ENG" in text

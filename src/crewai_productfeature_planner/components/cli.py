@@ -7,7 +7,7 @@ and approval gates.
 
 import sys
 
-from crewai_productfeature_planner.mongodb import save_executive_summary
+from crewai_productfeature_planner.mongodb import save_pipeline_step
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -170,11 +170,13 @@ def _manual_idea_refinement(idea: str, run_id: str = "") -> tuple[str, list[dict
         refinement_history.append({"iteration": iteration, "idea": current})
         if run_id:
             try:
-                save_executive_summary(
+                save_pipeline_step(
                     run_id=run_id,
                     idea=idea,
+                    pipeline_key="refine_idea",
                     iteration=iteration,
                     content=current,
+                    step=f"refine_idea_{iteration}",
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

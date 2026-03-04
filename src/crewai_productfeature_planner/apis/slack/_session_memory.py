@@ -120,7 +120,6 @@ def handle_update_config(
     *,
     confluence_space_key: str | None = None,
     jira_project_key: str | None = None,
-    confluence_parent_id: str | None = None,
 ) -> None:
     """Update project configuration with Confluence/Jira keys.
 
@@ -144,16 +143,13 @@ def handle_update_config(
         fields["confluence_space_key"] = confluence_space_key
     if jira_project_key:
         fields["jira_project_key"] = jira_project_key
-    if confluence_parent_id:
-        fields["confluence_parent_id"] = confluence_parent_id
 
     if not fields:
         reply(
             channel, thread_ts,
             f"<@{user}> I can update your project configuration. "
             "Please provide the values, for example:\n"
-            ">  _\"set confluence key MYSPACE and jira key PROJ\"_\n"
-            ">  _\"confluence parent page id 12345\"_",
+            ">  _\"set confluence key MYSPACE and jira key PROJ\"_",
         )
         return
 
@@ -165,8 +161,6 @@ def handle_update_config(
             parts.append(f"Confluence space key → `{confluence_space_key}`")
         if jira_project_key:
             parts.append(f"Jira project key → `{jira_project_key}`")
-        if confluence_parent_id:
-            parts.append(f"Confluence parent page ID → `{confluence_parent_id}`")
         summary = "\n".join(f"• {p}" for p in parts)
         reply(
             channel, thread_ts,

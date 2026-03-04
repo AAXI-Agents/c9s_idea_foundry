@@ -76,19 +76,30 @@ class AgentOrchestrator:
     Register stages with :meth:`register`, then call
     :meth:`run_pipeline` to execute the full chain.
 
+    When a *progress_callback* is provided, stage lifecycle events are
+    fired so callers (e.g. Slack) can keep users informed:
+
+    * ``pipeline_stage_start``  — ``{"stage": name, "description": desc}``
+    * ``pipeline_stage_complete`` — ``{"stage": name, "iterations": n}``
+    * ``pipeline_stage_skipped`` — ``{"stage": name}``
+
     Example::
 
-        orchestrator = AgentOrchestrator()
+        orchestrator = AgentOrchestrator(progress_callback=my_cb)
         orchestrator.register(idea_stage)
         orchestrator.register(requirements_stage)
         orchestrator.run_pipeline()
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        progress_callback: "Callable[[str, dict], None] | None" = None,
+    ) -> None:
         self._stages: list[AgentStage] = []
         self._completed: list[str] = []
         self._skipped: list[str] = []
         self._failed: list[str] = []
+        self._progress_callback = progress_callback
 
     # ── Registration ──────────────────────────────────────────────
 
@@ -144,6 +155,17 @@ class AgentOrchestrator:
 
     # ── Internal ──────────────────────────────────────────────────
 
+    def _fire_progress(self, event_type: str, details: dict) -> None:
+        """Fire the progress callback if set, swallowing errors."""
+        if self._progress_callback is not None:
+            try:
+                self._progress_callback(event_type, details)
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "progress_callback failed for %s", event_type,
+                    exc_info=True,
+                )
+
     def _execute_stage(self, stage: AgentStage) -> None:
         """Run a single stage: skip → execute → apply → approve.
 
@@ -157,6 +179,9 @@ class AgentOrchestrator:
         if stage.should_skip():
             logger.info("[Orchestrator] Skipping '%s'", stage.name)
             self._skipped.append(stage.name)
+            self._fire_progress("pipeline_stage_skipped", {
+                "stage": stage.name,
+            })
         else:
             # 2. Execute
             logger.info(
@@ -164,6 +189,10 @@ class AgentOrchestrator:
                 stage.name,
                 stage.description,
             )
+            self._fire_progress("pipeline_stage_start", {
+                "stage": stage.name,
+                "description": stage.description,
+            })
             try:
                 result = stage.run()
             except Exception:
@@ -179,6 +208,10 @@ class AgentOrchestrator:
             stage.apply(result)
             self._completed.append(stage.name)
             logger.info("[Orchestrator] Stage '%s' completed", stage.name)
+            self._fire_progress("pipeline_stage_complete", {
+                "stage": stage.name,
+                "iterations": len(result.history) if result.history else 0,
+            })
 
         # 4. Approval gate — fires for completed AND skipped stages
         #    (skipped = already done from a prior/resumed run)

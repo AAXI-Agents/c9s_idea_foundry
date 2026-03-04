@@ -160,6 +160,7 @@ def _run_slack_prd_flow(
         make_exec_summary_completion_gate,
         make_exec_summary_gate,
         make_progress_poster,
+        make_requirements_approval_gate,
     )
 
     send_tool = SlackSendMessageTool()
@@ -184,6 +185,16 @@ def _run_slack_prd_flow(
 
     # Build exec summary completion gate (Phase 1 → Phase 2 pause)
     exec_completion_cb = make_exec_summary_completion_gate(
+        channel=channel,
+        thread_ts=thread_ts or "",
+        user="",
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+
+    # Build requirements approval gate so the user can review
+    # the requirements breakdown before proceeding.
+    requirements_cb = make_requirements_approval_gate(
         channel=channel,
         thread_ts=thread_ts or "",
         user="",
@@ -230,6 +241,7 @@ def _run_slack_prd_flow(
             progress_callback=progress_cb,
             exec_summary_user_feedback_callback=exec_summary_cb,
             executive_summary_callback=exec_completion_cb,
+            requirements_approval_callback=requirements_cb,
         )
 
         # Link working idea to project (safety-net re-apply after flow

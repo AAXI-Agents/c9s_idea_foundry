@@ -10,6 +10,7 @@ from crewai_productfeature_planner.scripts.retry import (
     DEFAULT_RETRY_BASE_DELAY,
     BillingError,
     LLMError,
+    ModelBusyError,
     crew_kickoff_with_retry,
 )
 
@@ -198,11 +199,72 @@ def test_billing_error_is_llm_error():
 
 def test_exhausted_retries_wraps_original():
     """LLMError raised after retry exhaustion should chain the original exception."""
-    original = RuntimeError("model overloaded")
+    original = RuntimeError("LLM timeout after 30s")
     crew = _make_crew(side_effect=original)
-    with pytest.raises(LLMError, match="model overloaded") as exc_info:
+    with pytest.raises(LLMError, match="LLM timeout after 30s") as exc_info:
         crew_kickoff_with_retry(crew, step_label="test", max_retries=0)
     assert exc_info.value.__cause__ is original
+
+
+# ── Model Busy (503) ──────────────────────────────────────────────
+
+
+def test_model_busy_503_not_retried():
+    """503 'model is currently experiencing high demand' should raise ModelBusyError
+    immediately without retrying."""
+    crew = _make_crew(
+        side_effect=RuntimeError(
+            "503 UNAVAILABLE. {'error': {'code': 503, 'message': "
+            "'This model is currently experiencing high demand. "
+            "Spikes in demand are usually temporary. "
+            "Please try again later.', 'status': 'UNAVAILABLE'}}"
+        ),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(ModelBusyError, match="high demand"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_model_busy_service_unavailable_not_retried():
+    """'service unavailable' variant should also raise ModelBusyError."""
+    crew = _make_crew(
+        side_effect=RuntimeError("The service unavailable, please retry"),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(ModelBusyError):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_model_busy_try_again_later_not_retried():
+    """'try again later' variant should also raise ModelBusyError."""
+    crew = _make_crew(
+        side_effect=RuntimeError("Please try again later"),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(ModelBusyError):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_model_busy_error_is_llm_error():
+    """ModelBusyError should be a subclass of LLMError."""
+    assert issubclass(ModelBusyError, LLMError)
+
+
+def test_model_busy_error_is_runtime_error():
+    """ModelBusyError should be a subclass of RuntimeError."""
+    assert issubclass(ModelBusyError, RuntimeError)
 
 
 # ── Defaults ──────────────────────────────────────────────────

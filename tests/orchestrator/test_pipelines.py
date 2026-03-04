@@ -1,6 +1,6 @@
 """Tests for orchestrator._pipelines — default and post-completion pipelines."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -188,3 +188,79 @@ class TestBuildPostCompletionPipeline:
         assert "confluence_publish" in orch.skipped
         assert "jira_ticketing" in orch.skipped
         assert orch.completed == []
+
+
+# ── Progress callback wiring ─────────────────────────────────────────
+
+
+class TestOrchestratorProgressCallback:
+    """Progress callback is fired by the orchestrator during stage lifecycle."""
+
+    def test_fires_start_and_complete_events(self, monkeypatch):
+        """Stage start and complete events are forwarded to the callback."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+
+        flow = PRDFlow()
+        flow.state.idea = "raw idea"
+        cb = MagicMock()
+        flow.progress_callback = cb
+
+        with patch(
+            "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+            return_value=("refined", [{"iteration": 1}]),
+        ), patch(
+            "crewai_productfeature_planner.agents.requirements_breakdown"
+            ".breakdown_requirements",
+            return_value=("## Req", [{"iteration": 1}, {"iteration": 2}]),
+        ):
+            orch = build_default_pipeline(flow)
+            orch.run_pipeline()
+
+        event_types = [c[0][0] for c in cb.call_args_list]
+        assert "pipeline_stage_start" in event_types
+        assert "pipeline_stage_complete" in event_types
+
+        # Verify details on the idea_refinement complete event
+        complete_calls = [
+            c for c in cb.call_args_list
+            if c[0][0] == "pipeline_stage_complete"
+        ]
+        idea_complete = [
+            c for c in complete_calls if c[0][1]["stage"] == "idea_refinement"
+        ]
+        assert len(idea_complete) == 1
+        assert idea_complete[0][0][1]["iterations"] == 1
+
+        req_complete = [
+            c for c in complete_calls
+            if c[0][1]["stage"] == "requirements_breakdown"
+        ]
+        assert len(req_complete) == 1
+        assert req_complete[0][0][1]["iterations"] == 2
+
+    def test_fires_skipped_event(self, monkeypatch):
+        """Skipped stages fire pipeline_stage_skipped."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+
+        flow = PRDFlow()
+        flow.state.idea = "done"
+        flow.state.idea_refined = True
+        flow.state.requirements_broken_down = True
+        cb = MagicMock()
+        flow.progress_callback = cb
+
+        orch = build_default_pipeline(flow)
+        orch.run_pipeline()
+
+        event_types = [c[0][0] for c in cb.call_args_list]
+        assert event_types.count("pipeline_stage_skipped") == 2
+
+    def test_no_callback_no_error(self, monkeypatch):
+        """Pipeline runs fine without a progress callback."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+        flow = PRDFlow()
+        flow.state.idea = "test"
+        orch = build_default_pipeline(flow)
+        orch.run_pipeline()  # should not raise

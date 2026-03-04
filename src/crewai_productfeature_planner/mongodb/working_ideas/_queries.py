@@ -221,10 +221,11 @@ def _backfill_orphaned_ideas(
     """Find working ideas missing ``project_id`` that belong to *channel*.
 
     Looks for non-archived working-idea documents whose ``project_id``
-    is absent or null.  For each, checks whether a corresponding crew
-    job exists with the given *channel*.  Matching documents get their
-    ``project_id`` back-filled in MongoDB so future queries find them
-    normally.
+    is absent or null.  For each, checks whether the document's own
+    ``slack_channel`` matches the given *channel*.  If the document
+    has no ``slack_channel``, falls back to checking the corresponding
+    crew job.  Matching documents get their ``project_id`` back-filled
+    in MongoDB so future queries find them normally.
 
     Returns:
         The list of matching raw MongoDB documents (already updated).
@@ -256,38 +257,54 @@ def _backfill_orphaned_ideas(
             run_id = doc.get("run_id", "")
             if not run_id:
                 continue
-            # Check if the crew job lives in the same channel
+            # Primary check: does the document's own slack_channel match?
+            doc_channel = doc.get("slack_channel") or ""
+            if doc_channel == channel:
+                _do_backfill(db, run_id, project_id, channel, doc, matched)
+                continue
+            # Fallback: check the crew job's channel
             job = find_job(run_id)
             if not job:
                 continue
             job_channel = job.get("slack_channel") or ""
             if job_channel != channel:
                 continue
-            # Backfill project_id
-            try:
-                db[WORKING_COLLECTION].update_one(
-                    {"run_id": run_id},
-                    {"$set": {
-                        "project_id": project_id,
-                        "update_date": _now_iso(),
-                    }},
-                )
-                doc["project_id"] = project_id
-                logger.info(
-                    "[MongoDB] Backfilled project_id=%s on orphaned "
-                    "working idea run_id=%s (channel=%s)",
-                    project_id, run_id, channel,
-                )
-            except PyMongoError:
-                logger.debug(
-                    "Backfill project_id failed for run_id=%s",
-                    run_id, exc_info=True,
-                )
-            matched.append(doc)
+            _do_backfill(db, run_id, project_id, channel, doc, matched)
         return matched
     except PyMongoError as exc:
         logger.debug("_backfill_orphaned_ideas failed: %s", exc)
         return []
+
+
+def _do_backfill(
+    db,
+    run_id: str,
+    project_id: str,
+    channel: str,
+    doc: dict,
+    matched: list,
+) -> None:
+    """Backfill ``project_id`` on a single orphaned document."""
+    try:
+        db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "project_id": project_id,
+                "update_date": _now_iso(),
+            }},
+        )
+        doc["project_id"] = project_id
+        logger.info(
+            "[MongoDB] Backfilled project_id=%s on orphaned "
+            "working idea run_id=%s (channel=%s)",
+            project_id, run_id, channel,
+        )
+    except PyMongoError:
+        logger.debug(
+            "Backfill project_id failed for run_id=%s",
+            run_id, exc_info=True,
+        )
+    matched.append(doc)
 
 
 def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
@@ -331,10 +348,11 @@ def find_ideas_by_project(
     Returns ideas in any status (in-progress, paused, completed, failed)
     except ``archived``.  Results are sorted newest-first.
 
-    If *channel* is provided, also checks for orphaned working ideas
-    (those missing ``project_id``) whose crew job lives in the same
-    channel.  Any matches are back-filled with *project_id* so future
-    queries find them without the channel hint.
+    When *channel* is provided the query also matches orphaned ideas
+    (those missing ``project_id``) that live in the same Slack channel
+    — either by their own ``slack_channel`` field or via the crew-job
+    collection.  Matched orphans are back-filled with *project_id* so
+    subsequent queries find them without the channel hint.
 
     Returns:
         A list of dicts, each containing: ``run_id``, ``idea``,
@@ -343,20 +361,68 @@ def find_ideas_by_project(
     """
     try:
         db = _common.get_db()
+
+        # Build an $or query that catches both project-matched AND
+        # channel-matched orphan ideas in a single round-trip so that
+        # in-progress ideas without project_id are never invisible.
+        or_conditions: list[dict[str, Any]] = [
+            {"project_id": project_id},
+        ]
+        if channel:
+            _no_project = {
+                "$or": [
+                    {"project_id": {"$exists": False}},
+                    {"project_id": None},
+                    {"project_id": ""},
+                ],
+            }
+            or_conditions.append(
+                {"slack_channel": channel, **_no_project},
+            )
+
         query: dict[str, Any] = {
-            "project_id": project_id,
             "status": {"$ne": "archived"},
+            "$or": or_conditions,
         }
+
         docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
         known_run_ids = {doc.get("run_id") for doc in docs}
 
-        # Attempt to rescue orphaned ideas that lack project_id
+        # Attempt to rescue orphaned ideas whose slack_channel is also
+        # missing — falls back to crew-jobs channel lookup.
         if channel:
             orphan_docs = _backfill_orphaned_ideas(project_id, channel)
             for od in orphan_docs:
                 if od.get("run_id") not in known_run_ids:
                     docs.append(od)
                     known_run_ids.add(od.get("run_id"))
+
+        # Backfill project_id on any docs found via the channel match
+        # so future queries find them by project_id alone.
+        for doc in docs:
+            _pid = doc.get("project_id")
+            if _pid in (None, "") or "project_id" not in doc:
+                _rid = doc.get("run_id", "")
+                if _rid:
+                    try:
+                        db[WORKING_COLLECTION].update_one(
+                            {"run_id": _rid},
+                            {"$set": {
+                                "project_id": project_id,
+                                "update_date": _now_iso(),
+                            }},
+                        )
+                        doc["project_id"] = project_id
+                        logger.info(
+                            "[MongoDB] Inline backfilled project_id=%s "
+                            "for run_id=%s",
+                            project_id, _rid,
+                        )
+                    except PyMongoError:
+                        logger.debug(
+                            "Inline backfill failed for run_id=%s",
+                            _rid, exc_info=True,
+                        )
 
         ideas = [_doc_to_idea_dict(doc) for doc in docs]
         # Re-sort by created_at descending (orphans may be interleaved)

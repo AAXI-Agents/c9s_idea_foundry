@@ -257,7 +257,6 @@ def _interpret_and_act_inner(
             channel, thread_ts, user, session,
             confluence_space_key=interpretation.get("confluence_space_key"),
             jira_project_key=interpretation.get("jira_project_key"),
-            confluence_parent_id=interpretation.get("confluence_parent_id"),
         )
         tracked_response = "(update config)"
         log_tracked_interaction(
@@ -430,10 +429,13 @@ def _interpret_and_act_inner(
             tracked_response = ask_text
         else:
             lower_text = clean_text.lower()
-            interactive = any(
+            # Interactive (step-by-step) is the DEFAULT.  The user must
+            # explicitly opt-out with "auto", "fast", "quick", etc.
+            auto_mode = any(
                 kw in lower_text
-                for kw in ("interactive", "step by step", "step-by-step", "guided")
+                for kw in ("auto", "fast", "quick", "auto-approve", "no approval")
             )
+            interactive = not auto_mode
 
             if interactive:
                 ack_text = (

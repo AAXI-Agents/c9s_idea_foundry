@@ -28,6 +28,7 @@ from crewai_productfeature_planner.mongodb import (
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.scripts.retry import (
     BillingError,
+    ModelBusyError,
     crew_kickoff_with_retry,
 )
 
@@ -181,7 +182,7 @@ def section_approval_loop(
                 critique_result = crew_kickoff_with_retry(
                     crew, step_label=f"critique_{section.key}",
                 )
-            except BillingError:
+            except (BillingError, ModelBusyError):
                 raise  # Non-transient — must pause
             except Exception as exc:
                 logger.error(
@@ -275,7 +276,7 @@ def section_approval_loop(
             refine_result = crew_kickoff_with_retry(
                 crew, step_label=f"refine_{section.key}",
             )
-        except BillingError:
+        except (BillingError, ModelBusyError):
             raise  # Non-transient — must pause
         except Exception as exc:
             logger.error(

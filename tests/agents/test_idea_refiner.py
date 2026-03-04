@@ -342,6 +342,9 @@ def test_refine_idea_saves_iterations_with_run_id(monkeypatch):
     first_call = mock_collection.update_one.call_args_list[0]
     assert first_call[0][0] == {"run_id": "test_run_123"}
     assert first_call[1].get("upsert") is True
+    # Verify iterations are pushed under the "refine_idea" pipeline key
+    update_doc = first_call[0][1]
+    assert "refine_idea" in update_doc.get("$push", {})
 
 
 def test_refine_idea_no_run_id_skips_save(monkeypatch):

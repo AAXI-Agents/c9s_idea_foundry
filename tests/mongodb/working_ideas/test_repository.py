@@ -1296,7 +1296,7 @@ def test_save_project_ref(wi_mocks):
 
 
 def test_save_project_ref_with_idea(wi_mocks):
-    """save_project_ref should persist idea in both $set and $setOnInsert."""
+    """save_project_ref should persist idea only in $set (not $setOnInsert)."""
     mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(
         modified_count=1, upserted_id=None, matched_count=1,
@@ -1309,7 +1309,7 @@ def test_save_project_ref_with_idea(wi_mocks):
     set_fields = call_args[0][1]["$set"]
     assert set_fields["idea"] == "Build a dashboard"
     insert_fields = call_args[0][1]["$setOnInsert"]
-    assert insert_fields["idea"] == "Build a dashboard"
+    assert "idea" not in insert_fields
 
 
 def test_save_project_ref_upserts_new_doc(wi_mocks):
@@ -1366,7 +1366,7 @@ def test_save_slack_context(wi_mocks):
 
 
 def test_save_slack_context_with_idea(wi_mocks):
-    """save_slack_context should persist idea in both $set and $setOnInsert."""
+    """save_slack_context should persist idea only in $set (not $setOnInsert)."""
     mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(
         modified_count=1, upserted_id=None, matched_count=1,
@@ -1379,7 +1379,7 @@ def test_save_slack_context_with_idea(wi_mocks):
     set_fields = call_args[0][1]["$set"]
     assert set_fields["idea"] == "Build a dashboard"
     insert_fields = call_args[0][1]["$setOnInsert"]
-    assert insert_fields["idea"] == "Build a dashboard"
+    assert "idea" not in insert_fields
 
 
 def test_save_slack_context_upserts_new_doc(wi_mocks):
@@ -1435,10 +1435,11 @@ class TestFindIdeasByProject:
         assert result[0]["sections_done"] == 1
         assert result[1]["run_id"] == "r2"
         assert result[1]["status"] == "completed"
-        # Verify query excludes archived
+        # Verify query uses $or with project_id and excludes archived
         query = mock_collection.find.call_args[0][0]
-        assert query["project_id"] == "proj-1"
         assert query["status"] == {"$ne": "archived"}
+        assert "$or" in query
+        assert {"project_id": "proj-1"} in query["$or"]
 
     def test_returns_empty_when_no_ideas(self, wi_mocks):
         mock_cursor = MagicMock()
@@ -1498,7 +1499,7 @@ class TestFindIdeasByProject:
         )
 
     def test_no_backfill_when_channel_not_provided(self, wi_mocks):
-        """Without channel, no backfill should occur."""
+        """Without channel, no backfill should occur and $or has only project_id."""
         mock_collection, mock_db = wi_mocks
 
         proj_cursor = MagicMock()
@@ -1508,8 +1509,11 @@ class TestFindIdeasByProject:
         result = find_ideas_by_project("proj-1")
 
         assert result == []
-        # .find() called only once (for project query, not orphan query)
+        # .find() called only once (main query, no orphan backfill)
         assert mock_collection.find.call_count == 1
+        # The query $or should only contain the project_id condition
+        query = mock_collection.find.call_args[0][0]
+        assert len(query["$or"]) == 1
 
     def test_backfill_skips_wrong_channel(self, wi_mocks):
         """Orphaned ideas whose crew job is in a different channel
@@ -1627,6 +1631,182 @@ class TestFindIdeasByProject:
         # Should still return the existing idea
         assert len(result) == 1
         assert result[0]["run_id"] == "r1"
+
+    # -- Regression tests: inprogress ideas must always appear ----------
+
+    def test_inprogress_without_project_id_found_via_channel(self, wi_mocks):
+        """An inprogress idea that lacks project_id but has a matching
+        slack_channel must appear in the list when channel is given.
+
+        Regression test — this scenario caused invisible ideas in v0.7.0.
+        """
+        mock_collection, mock_db = wi_mocks
+
+        # The main $or query now returns this orphan directly
+        # because it matches slack_channel + no project_id.
+        orphan_doc = {
+            "run_id": "orphan-inprogress",
+            "idea": "Running idea without project",
+            "status": "inprogress",
+            "slack_channel": "C123",
+            "created_at": "2026-03-02T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = [orphan_doc]
+
+        # Backfill orphan query returns empty (already found in main)
+        mock_collection.find.side_effect = [proj_cursor, []]
+
+        result = find_ideas_by_project("proj-1", channel="C123")
+
+        assert len(result) == 1
+        assert result[0]["run_id"] == "orphan-inprogress"
+        assert result[0]["status"] == "inprogress"
+
+        # Verify the main query includes the channel-based $or condition
+        query = mock_collection.find.call_args_list[0][0][0]
+        assert "$or" in query
+        assert len(query["$or"]) == 2  # project_id + channel orphan
+
+    def test_channel_condition_in_or_query(self, wi_mocks):
+        """When channel is provided, the $or query must include a
+        condition for orphan ideas matching that channel."""
+        mock_collection, mock_db = wi_mocks
+
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = []
+        mock_collection.find.side_effect = [proj_cursor, []]
+
+        find_ideas_by_project("proj-1", channel="C999")
+
+        query = mock_collection.find.call_args_list[0][0][0]
+        or_conds = query["$or"]
+        # Should have project_id condition + channel orphan condition
+        assert {"project_id": "proj-1"} in or_conds
+        # Second condition should match slack_channel + no project_id
+        channel_cond = [c for c in or_conds if c.get("slack_channel") == "C999"]
+        assert len(channel_cond) == 1
+        assert "$or" in channel_cond[0]  # nested $or for null/missing project_id
+
+    def test_inline_backfill_sets_project_id_on_orphan(self, wi_mocks):
+        """Orphaned ideas found via channel match should get their
+        project_id backfilled inline."""
+        mock_collection, mock_db = wi_mocks
+
+        orphan_doc = {
+            "run_id": "orphan-needs-backfill",
+            "idea": "Orphan needing backfill",
+            "status": "inprogress",
+            "slack_channel": "C123",
+            "created_at": "2026-03-02T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+            # No project_id field at all
+        }
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = [orphan_doc]
+        mock_collection.find.side_effect = [proj_cursor, []]
+
+        result = find_ideas_by_project("proj-1", channel="C123")
+
+        assert len(result) == 1
+        # Verify update_one was called to backfill project_id
+        update_calls = mock_collection.update_one.call_args_list
+        backfill_calls = [
+            c for c in update_calls
+            if c[0][0] == {"run_id": "orphan-needs-backfill"}
+        ]
+        assert len(backfill_calls) >= 1
+        assert backfill_calls[0][0][1]["$set"]["project_id"] == "proj-1"
+
+    def test_inprogress_with_project_id_always_listed(self, wi_mocks):
+        """An inprogress idea WITH the correct project_id must always
+        be returned regardless of channel."""
+        mock_collection, mock_db = wi_mocks
+
+        doc = {
+            "run_id": "running-idea",
+            "idea": "Currently running idea",
+            "status": "inprogress",
+            "project_id": "proj-1",
+            "created_at": "2026-03-02T12:00:00Z",
+            "section": {"executive_summary": [{"content": "x", "iteration": 1}]},
+            "executive_summary": [{"content": "y"}],
+        }
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = [doc]
+        mock_collection.find.return_value = proj_cursor
+
+        # No channel — the project_id match alone should work
+        result = find_ideas_by_project("proj-1")
+
+        assert len(result) == 1
+        assert result[0]["run_id"] == "running-idea"
+        assert result[0]["status"] == "inprogress"
+
+    def test_all_non_archived_statuses_listed(self, wi_mocks):
+        """All statuses except 'archived' must appear in results:
+        inprogress, paused, completed, failed."""
+        mock_collection, mock_db = wi_mocks
+
+        docs = [
+            {"run_id": "r-ip", "idea": "I1", "status": "inprogress",
+             "project_id": "proj-1", "created_at": "2026-03-04T04:00:00Z",
+             "section": {}, "executive_summary": []},
+            {"run_id": "r-pa", "idea": "I2", "status": "paused",
+             "project_id": "proj-1", "created_at": "2026-03-04T03:00:00Z",
+             "section": {}, "executive_summary": []},
+            {"run_id": "r-co", "idea": "I3", "status": "completed",
+             "project_id": "proj-1", "created_at": "2026-03-04T02:00:00Z",
+             "section": {}, "executive_summary": []},
+            {"run_id": "r-fa", "idea": "I4", "status": "failed",
+             "project_id": "proj-1", "created_at": "2026-03-04T01:00:00Z",
+             "section": {}, "executive_summary": []},
+        ]
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = docs
+        mock_collection.find.return_value = proj_cursor
+
+        result = find_ideas_by_project("proj-1")
+
+        assert len(result) == 4
+        statuses = {r["status"] for r in result}
+        assert statuses == {"inprogress", "paused", "completed", "failed"}
+
+    def test_backfill_uses_doc_slack_channel_first(self, wi_mocks):
+        """_backfill_orphaned_ideas should match on the document's own
+        slack_channel before falling back to crew_jobs lookup."""
+        mock_collection, mock_db = wi_mocks
+
+        # Main query returns nothing
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = []
+
+        # Orphan has slack_channel set directly
+        orphan_doc = {
+            "run_id": "orphan-sc",
+            "idea": "Orphan with slack_channel",
+            "status": "inprogress",
+            "slack_channel": "C123",
+            "created_at": "2026-03-02T00:00:00Z",
+            "section": {},
+            "executive_summary": [],
+        }
+        mock_collection.find.side_effect = [proj_cursor, [orphan_doc]]
+
+        # find_job should NOT need to be called because the document's
+        # own slack_channel matches.
+        with patch(
+            "crewai_productfeature_planner.mongodb.crew_jobs.repository.find_job",
+        ) as mock_find_job:
+            result = find_ideas_by_project("proj-1", channel="C123")
+
+        assert len(result) == 1
+        assert result[0]["run_id"] == "orphan-sc"
+        # find_job was never called — matched on document's slack_channel
+        mock_find_job.assert_not_called()
 
 
 # ── fail_unfinalized_on_startup ───────────────────────────────

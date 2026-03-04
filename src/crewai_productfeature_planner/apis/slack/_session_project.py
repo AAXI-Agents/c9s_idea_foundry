@@ -265,7 +265,7 @@ def handle_project_setup_reply(
     if step == "done":
         # Finalise: persist keys and activate session
         update_fields: dict[str, str] = {}
-        for key in ("confluence_space_key", "jira_project_key", "confluence_parent_id"):
+        for key in ("confluence_space_key", "jira_project_key"):
             if entry.get(key):
                 update_fields[key] = entry[key]
         if update_fields:
