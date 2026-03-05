@@ -145,10 +145,9 @@ def create_jira_issue(
                         "reused": True,
                     }
 
-    # Build full description with Confluence link when provided
+    # Build full description with Confluence link when provided.
+    # Strip emails first, then construct the raw text before ADF conversion.
     full_description = _helpers_mod._strip_emails(description) if description else ""
-    if full_description:
-        full_description = _helpers_mod._markdown_to_wiki(full_description)
     if confluence_url:
         conf_line = f"PRD Confluence page: {confluence_url}"
         if full_description:
@@ -163,7 +162,8 @@ def create_jira_issue(
     }
 
     if full_description:
-        fields["description"] = full_description
+        # Jira API v3 requires description in Atlassian Document Format
+        fields["description"] = _helpers_mod._markdown_to_adf(full_description)
     if labels:
         fields["labels"] = labels
     if priority:

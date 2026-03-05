@@ -92,6 +92,244 @@ def _markdown_to_wiki(text: str) -> str:
     return "\n".join(result)
 
 
+# ── Atlassian Document Format (ADF) ─────────────────────────────────
+
+
+def _inline_marks(text: str) -> list[dict]:
+    """Parse inline Markdown formatting into ADF text nodes.
+
+    Handles ``**bold**``, `` `code` ``, and ``[text](url)`` —
+    the most common patterns found in LLM-generated descriptions.
+    Everything else is emitted as plain text.
+    """
+    nodes: list[dict] = []
+    # Pattern matches: **bold**, `code`, [text](url), or plain text
+    pattern = re.compile(
+        r"(\*\*(.+?)\*\*)"    # group 1,2: bold
+        r"|(`([^`]+)`)"       # group 3,4: inline code
+        r"|(\[([^\]]+)\]\(([^)]+)\))"  # group 5,6,7: link
+        r"|([^*`\[]+)"        # group 8: plain text
+        r"|(.)"               # group 9: fallback single char
+    )
+    for m in pattern.finditer(text):
+        if m.group(2):  # bold
+            nodes.append({
+                "type": "text",
+                "text": m.group(2),
+                "marks": [{"type": "strong"}],
+            })
+        elif m.group(4):  # inline code
+            nodes.append({
+                "type": "text",
+                "text": m.group(4),
+                "marks": [{"type": "code"}],
+            })
+        elif m.group(6):  # link
+            nodes.append({
+                "type": "text",
+                "text": m.group(6),
+                "marks": [{"type": "link", "attrs": {"href": m.group(7)}}],
+            })
+        else:  # plain text or fallback
+            txt = m.group(8) or m.group(9) or ""
+            if txt:
+                # Merge with previous text node if both plain
+                if nodes and "marks" not in nodes[-1]:
+                    nodes[-1]["text"] += txt
+                else:
+                    nodes.append({"type": "text", "text": txt})
+    return nodes
+
+
+def _markdown_to_adf(text: str) -> dict:
+    """Convert Markdown text to an Atlassian Document Format (ADF) document.
+
+    Jira REST API v3 requires the ``description`` field in ADF rather
+    than plain text or wiki markup.  This function performs best-effort
+    conversion of the most common Markdown constructs.
+
+    Supported conversions:
+
+    - Headings (``# H1`` … ``###### H6``)
+    - Bold (``**text**``)
+    - Inline code (`` `code` ``)
+    - Fenced code blocks (````` ```lang … ``` `````)
+    - Unordered lists (``- item``, nested by indentation)
+    - Ordered lists (``1. item``)
+    - Links (``[text](url)``)
+    - Horizontal rules (``---``, ``***``, ``___``)
+    - Paragraphs (blank-line separated blocks)
+
+    Returns:
+        A dict conforming to the ADF ``doc`` schema (version 1).
+    """
+    if not text or not text.strip():
+        return {
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": " "}]}
+            ],
+        }
+
+    content: list[dict] = []
+
+    # Extract fenced code blocks first, replacing them with placeholders
+    code_blocks: list[tuple[str, str]] = []  # (lang, code)
+
+    def _store_code_block(m: re.Match) -> str:
+        lang = m.group(1) or ""
+        code = m.group(2)
+        idx = len(code_blocks)
+        code_blocks.append((lang, code))
+        return f"\n__CODE_BLOCK_{idx}__\n"
+
+    text = re.sub(
+        r"```(\w*)\n(.*?)```",
+        _store_code_block,
+        text,
+        flags=re.DOTALL,
+    )
+
+    # Split into lines for block-level processing
+    lines = text.split("\n")
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        # ── Code block placeholder ──
+        cb_match = re.match(r"^__CODE_BLOCK_(\d+)__$", line.strip())
+        if cb_match:
+            idx = int(cb_match.group(1))
+            lang, code = code_blocks[idx]
+            node: dict = {
+                "type": "codeBlock",
+                "content": [{"type": "text", "text": code.rstrip("\n")}],
+            }
+            if lang:
+                node["attrs"] = {"language": lang}
+            content.append(node)
+            i += 1
+            continue
+
+        # ── Horizontal rule ──
+        if re.match(r"^\s*([-*_])\s*\1\s*\1[\s\-*_]*$", line):
+            content.append({"type": "rule"})
+            i += 1
+            continue
+
+        # ── Heading ──
+        heading_match = re.match(r"^(#{1,6})\s+(.*)", line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            heading_text = heading_match.group(2)
+            nodes = _inline_marks(heading_text)
+            content.append({
+                "type": "heading",
+                "attrs": {"level": level},
+                "content": nodes if nodes else [{"type": "text", "text": heading_text}],
+            })
+            i += 1
+            continue
+
+        # ── Unordered list (- item) ──
+        ul_match = re.match(r"^(\s*)- (.*)", line)
+        if ul_match:
+            list_items: list[dict] = []
+            while i < len(lines):
+                m = re.match(r"^(\s*)- (.*)", lines[i])
+                if not m:
+                    break
+                item_nodes = _inline_marks(m.group(2))
+                list_items.append({
+                    "type": "listItem",
+                    "content": [{
+                        "type": "paragraph",
+                        "content": item_nodes if item_nodes else [
+                            {"type": "text", "text": m.group(2)}
+                        ],
+                    }],
+                })
+                i += 1
+            content.append({
+                "type": "bulletList",
+                "content": list_items,
+            })
+            continue
+
+        # ── Ordered list (1. item) ──
+        ol_match = re.match(r"^\s*\d+\.\s+(.*)", line)
+        if ol_match:
+            list_items = []
+            while i < len(lines):
+                m = re.match(r"^\s*\d+\.\s+(.*)", lines[i])
+                if not m:
+                    break
+                item_nodes = _inline_marks(m.group(1))
+                list_items.append({
+                    "type": "listItem",
+                    "content": [{
+                        "type": "paragraph",
+                        "content": item_nodes if item_nodes else [
+                            {"type": "text", "text": m.group(1)}
+                        ],
+                    }],
+                })
+                i += 1
+            content.append({
+                "type": "orderedList",
+                "content": list_items,
+            })
+            continue
+
+        # ── Blank line (skip) ──
+        if not line.strip():
+            i += 1
+            continue
+
+        # ── Paragraph (default) ──
+        para_lines: list[str] = []
+        while i < len(lines):
+            l = lines[i]
+            # Stop at blank lines, headings, lists, code placeholders, rules
+            if (
+                not l.strip()
+                or re.match(r"^#{1,6}\s+", l)
+                or re.match(r"^\s*- ", l)
+                or re.match(r"^\s*\d+\.\s+", l)
+                or re.match(r"^__CODE_BLOCK_\d+__$", l.strip())
+                or re.match(r"^\s*([-*_])\s*\1\s*\1[\s\-*_]*$", l)
+            ):
+                break
+            para_lines.append(l)
+            i += 1
+
+        if para_lines:
+            # Join lines with hard breaks for multi-line paragraphs
+            para_content: list[dict] = []
+            for j, pl in enumerate(para_lines):
+                if j > 0:
+                    para_content.append({"type": "hardBreak"})
+                nodes = _inline_marks(pl)
+                para_content.extend(nodes if nodes else [{"type": "text", "text": pl}])
+            content.append({
+                "type": "paragraph",
+                "content": para_content,
+            })
+
+    if not content:
+        content = [
+            {"type": "paragraph", "content": [{"type": "text", "text": " "}]}
+        ]
+
+    return {
+        "type": "doc",
+        "version": 1,
+        "content": content,
+    }
+
+
 # ── Field retry helpers ──────────────────────────────────────────────
 
 # Fields that may be safely stripped on a 400 retry.  If Jira reports

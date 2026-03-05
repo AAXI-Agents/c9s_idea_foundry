@@ -23,6 +23,8 @@ from crewai_productfeature_planner.tools.jira._helpers import (
     _RETRYABLE_FIELDS,
     _drop_rejected_fields,
     _fetch_priority_scheme,
+    _inline_marks,
+    _markdown_to_adf,
     _normalize_priority,
     _priority_id_cache,
     _resolve_priority_field,
@@ -54,6 +56,8 @@ __all__ = [
     # _helpers
     "_strip_emails",
     "_markdown_to_wiki",
+    "_markdown_to_adf",
+    "_inline_marks",
     "_RETRYABLE_FIELDS",
     "_drop_rejected_fields",
     "_JIRA_PRIORITIES",

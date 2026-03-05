@@ -911,6 +911,22 @@ _CODEX: list[CodexEntry] = [
             "Updated preflight.py Jira health check from v2 to v3 API."
         ),
     ),
+    CodexEntry(
+        "0.12.0",
+        date(2026, 3, 5),
+        (
+            "Fix Jira API v3 400 errors — ticket descriptions now use "
+            "Atlassian Document Format (ADF) instead of plain wiki "
+            "markup strings. Added _markdown_to_adf() converter in "
+            "_helpers.py that transforms Markdown to ADF with support "
+            "for headings, bold, inline code, fenced code blocks, "
+            "bullet/ordered lists, links, horizontal rules, and "
+            "multi-line paragraphs. Updated create_jira_issue() in "
+            "_operations.py to emit ADF for the description field. "
+            "Also fixed a pre-existing flaky retry test caused by "
+            "background thread time.sleep() interception."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

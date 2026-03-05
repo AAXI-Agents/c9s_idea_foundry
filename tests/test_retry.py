@@ -95,7 +95,13 @@ def test_exponential_backoff_delays():
         )
 
     assert result.raw == "ok"
-    delays = [call.args[0] for call in mock_sleep.call_args_list]
+    # Filter out noise from background threads that may call time.sleep()
+    # while the mock is active (the patch intercepts ALL time.sleep calls
+    # since retry.time IS the global time module).
+    delays = [
+        call.args[0] for call in mock_sleep.call_args_list
+        if call.args[0] >= 1.0
+    ]
     assert delays == [2.0, 4.0, 8.0]  # 2^0 * 2, 2^1 * 2, 2^2 * 2
 
 

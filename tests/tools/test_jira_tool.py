@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import json
+
 import crewai_productfeature_planner.tools.jira_tool as _jira_mod
 import crewai_productfeature_planner.tools.jira._helpers as _jira_helpers_mod
 from crewai_productfeature_planner.tools.jira_tool import (
@@ -14,6 +16,8 @@ from crewai_productfeature_planner.tools.jira_tool import (
     _fetch_priority_scheme,
     _get_jira_env,
     _has_jira_credentials,
+    _inline_marks,
+    _markdown_to_adf,
     _markdown_to_wiki,
     _normalize_priority,
     _project_key_ctx,
@@ -26,6 +30,20 @@ from crewai_productfeature_planner.tools.jira_tool import (
     search_jira_issues,
     set_jira_project_key,
 )
+
+
+def _adf_to_text(adf: dict) -> str:
+    """Recursively extract all text from an ADF document for assertions."""
+    if not isinstance(adf, dict):
+        return ""
+    parts: list[str] = []
+    if adf.get("type") == "text":
+        parts.append(adf.get("text", ""))
+    if adf.get("type") == "hardBreak":
+        parts.append("\n")
+    for child in adf.get("content", []):
+        parts.append(_adf_to_text(child))
+    return "".join(parts)
 
 
 @pytest.fixture(autouse=True)
@@ -208,7 +226,11 @@ class TestCreateJiraIssue:
         payload = mock_request.call_args_list[1][1]["data"]
         assert payload["fields"]["issuetype"]["name"] == "Story"
         assert payload["fields"]["summary"] == "Add dark mode"
-        assert payload["fields"]["description"] == "Implement dark mode toggle"
+        # description is now ADF (Atlassian Document Format)
+        desc = payload["fields"]["description"]
+        assert desc["type"] == "doc"
+        assert desc["version"] == 1
+        assert _adf_to_text(desc) == "Implement dark mode toggle"
         # run_id label should be auto-attached
         assert "prd-run-run-1" in payload["fields"]["labels"]
 
@@ -320,9 +342,11 @@ class TestCreateJiraIssue:
 
         payload = mock_request.call_args[1]["data"]
         desc = payload["fields"]["description"]
-        assert "https://wiki.example.com/page/123" in desc
-        assert "Some requirement details" in desc
-        assert "PRD Confluence page:" in desc
+        assert desc["type"] == "doc"
+        desc_text = _adf_to_text(desc)
+        assert "https://wiki.example.com/page/123" in desc_text
+        assert "Some requirement details" in desc_text
+        assert "PRD Confluence page:" in desc_text
 
     @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_confluence_url_without_description(self, mock_request):
@@ -336,8 +360,10 @@ class TestCreateJiraIssue:
 
         payload = mock_request.call_args[1]["data"]
         desc = payload["fields"]["description"]
-        assert "https://wiki.example.com/page/456" in desc
-        assert desc.startswith("PRD Confluence page:")
+        assert desc["type"] == "doc"
+        desc_text = _adf_to_text(desc)
+        assert "https://wiki.example.com/page/456" in desc_text
+        assert "PRD Confluence page:" in desc_text
 
     @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_no_confluence_url_omits_link(self, mock_request):
@@ -349,7 +375,8 @@ class TestCreateJiraIssue:
         )
 
         payload = mock_request.call_args[1]["data"]
-        assert "PRD Confluence page:" not in payload["fields"]["description"]
+        desc_text = _adf_to_text(payload["fields"]["description"])
+        assert "PRD Confluence page:" not in desc_text
 
     @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_component_sets_components_field(self, mock_request):
@@ -767,6 +794,163 @@ class TestMarkdownToWiki:
         assert _markdown_to_wiki("") == ""
 
 
+# ── _inline_marks ────────────────────────────────────────────────────
+
+
+class TestInlineMarks:
+    """Tests for _inline_marks helper — inline Markdown → ADF text nodes."""
+
+    def test_plain_text(self):
+        nodes = _inline_marks("Hello world")
+        assert len(nodes) == 1
+        assert nodes[0] == {"type": "text", "text": "Hello world"}
+
+    def test_bold(self):
+        nodes = _inline_marks("This is **bold** text")
+        assert any(
+            n.get("marks") == [{"type": "strong"}] and n["text"] == "bold"
+            for n in nodes
+        )
+
+    def test_inline_code(self):
+        nodes = _inline_marks("Use `my_func()`")
+        assert any(
+            n.get("marks") == [{"type": "code"}] and n["text"] == "my_func()"
+            for n in nodes
+        )
+
+    def test_link(self):
+        nodes = _inline_marks("[Click](https://example.com)")
+        assert any(
+            n.get("marks") == [{"type": "link", "attrs": {"href": "https://example.com"}}]
+            and n["text"] == "Click"
+            for n in nodes
+        )
+
+    def test_mixed_formatting(self):
+        nodes = _inline_marks("Start **bold** mid `code` end")
+        texts = [n["text"] for n in nodes]
+        assert "bold" in texts
+        assert "code" in texts
+
+
+# ── _markdown_to_adf ────────────────────────────────────────────────
+
+
+class TestMarkdownToAdf:
+    """Tests for _markdown_to_adf — Markdown → Atlassian Document Format."""
+
+    def test_returns_doc_structure(self):
+        result = _markdown_to_adf("Hello")
+        assert result["type"] == "doc"
+        assert result["version"] == 1
+        assert isinstance(result["content"], list)
+
+    def test_plain_paragraph(self):
+        result = _markdown_to_adf("Hello world")
+        assert result["content"][0]["type"] == "paragraph"
+        assert _adf_to_text(result) == "Hello world"
+
+    def test_heading_h1(self):
+        result = _markdown_to_adf("# Title")
+        h = result["content"][0]
+        assert h["type"] == "heading"
+        assert h["attrs"]["level"] == 1
+        assert _adf_to_text(h) == "Title"
+
+    def test_heading_h3(self):
+        result = _markdown_to_adf("### Subsection")
+        h = result["content"][0]
+        assert h["type"] == "heading"
+        assert h["attrs"]["level"] == 3
+
+    def test_unordered_list(self):
+        result = _markdown_to_adf("- Item 1\n- Item 2")
+        bl = result["content"][0]
+        assert bl["type"] == "bulletList"
+        assert len(bl["content"]) == 2
+        assert bl["content"][0]["type"] == "listItem"
+        assert _adf_to_text(bl["content"][0]) == "Item 1"
+
+    def test_ordered_list(self):
+        result = _markdown_to_adf("1. First\n2. Second")
+        ol = result["content"][0]
+        assert ol["type"] == "orderedList"
+        assert len(ol["content"]) == 2
+
+    def test_fenced_code_block_with_lang(self):
+        md = "```python\nprint('hello')\n```"
+        result = _markdown_to_adf(md)
+        cb = [n for n in result["content"] if n["type"] == "codeBlock"]
+        assert len(cb) == 1
+        assert cb[0]["attrs"]["language"] == "python"
+        assert _adf_to_text(cb[0]) == "print('hello')"
+
+    def test_fenced_code_block_no_lang(self):
+        md = "```\nsome code\n```"
+        result = _markdown_to_adf(md)
+        cb = [n for n in result["content"] if n["type"] == "codeBlock"]
+        assert len(cb) == 1
+        assert "attrs" not in cb[0]
+        assert _adf_to_text(cb[0]) == "some code"
+
+    def test_horizontal_rule(self):
+        result = _markdown_to_adf("---")
+        assert result["content"][0]["type"] == "rule"
+
+    def test_bold_in_paragraph(self):
+        result = _markdown_to_adf("Start **bold** end")
+        para = result["content"][0]
+        assert para["type"] == "paragraph"
+        bold_nodes = [
+            n for n in para["content"]
+            if n.get("marks") == [{"type": "strong"}]
+        ]
+        assert len(bold_nodes) == 1
+        assert bold_nodes[0]["text"] == "bold"
+
+    def test_inline_code_in_paragraph(self):
+        result = _markdown_to_adf("Use `my_func()`")
+        para = result["content"][0]
+        code_nodes = [
+            n for n in para["content"]
+            if n.get("marks") == [{"type": "code"}]
+        ]
+        assert len(code_nodes) == 1
+        assert code_nodes[0]["text"] == "my_func()"
+
+    def test_empty_string(self):
+        result = _markdown_to_adf("")
+        assert result["type"] == "doc"
+        assert result["version"] == 1
+        assert len(result["content"]) >= 1
+
+    def test_combined_document(self):
+        md = "# Title\n\nSome **bold** text\n\n- Item 1\n- Item 2\n\n```json\n{}\n```"
+        result = _markdown_to_adf(md)
+        types = [n["type"] for n in result["content"]]
+        assert "heading" in types
+        assert "paragraph" in types
+        assert "bulletList" in types
+        assert "codeBlock" in types
+
+    def test_multi_line_paragraph(self):
+        result = _markdown_to_adf("Line 1\nLine 2")
+        para = result["content"][0]
+        assert para["type"] == "paragraph"
+        # Should have hardBreak between lines
+        has_break = any(n.get("type") == "hardBreak" for n in para["content"])
+        assert has_break
+        assert _adf_to_text(result) == "Line 1\nLine 2"
+
+    def test_valid_json_serialisable(self):
+        """ADF output must be JSON-serialisable for the Jira API."""
+        md = "# H\n\n**Bold** `code`\n\n- A\n- B\n\n```py\nx=1\n```\n\n---"
+        result = _markdown_to_adf(md)
+        serialised = json.dumps(result)
+        assert isinstance(serialised, str)
+
+
 # ── create_jira_issue email sanitisation ─────────────────────────────
 
 
@@ -800,8 +984,9 @@ class TestCreateJiraIssueEmailSanitisation:
         )
 
         payload = mock_request.call_args[1]["data"]
-        assert "@" not in payload["fields"]["description"]
-        assert "[redacted]" in payload["fields"]["description"]
+        desc_text = _adf_to_text(payload["fields"]["description"])
+        assert "@" not in desc_text
+        assert "[redacted]" in desc_text
 
     @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_preserves_clean_summary(self, mock_request):
