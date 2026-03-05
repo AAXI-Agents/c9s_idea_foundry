@@ -3084,3 +3084,169 @@ def test_exec_summary_critique_failure_force_approves(
 
     assert flow.state.executive_summary.is_approved is True
     mock_save_failed.assert_called_once()
+
+
+# ------------------------------------------------------------------
+# ModelBusyError (503) must propagate — never force-approve
+# ------------------------------------------------------------------
+
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_failed")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
+def test_section_critique_503_propagates(
+    _mock_task, _mock_crew, mock_kickoff, _mock_save_failed, _mock_update_crit,
+    monkeypatch,
+):
+    """ModelBusyError (503) during critique must propagate — not force-approve."""
+    import pytest
+    from crewai_productfeature_planner.scripts.retry import ModelBusyError
+
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "2")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "5")
+
+    mock_kickoff.side_effect = ModelBusyError("503 unavailable")
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-503-critique"
+
+    section = flow.state.draft.sections[0]
+    section.content = "Existing drafted content"
+    section.agent_results = {AGENT_OPENAI: "Existing drafted content"}
+    section.selected_agent = AGENT_OPENAI
+    section.iteration = 1
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "critique_section_task": {
+            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "A critique",
+        },
+        "refine_section_task": {
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    with pytest.raises(ModelBusyError):
+        flow._section_approval_loop(section, agents, task_configs)
+
+    # Section must NOT be force-approved — flow pauses for later resume
+    assert section.is_approved is False
+
+
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_failed")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
+def test_section_refine_503_propagates(
+    _mock_task, _mock_crew, mock_kickoff, _mock_save_failed, _mock_update_crit,
+    _mock_save_iter, monkeypatch,
+):
+    """ModelBusyError (503) during refine must propagate — not force-approve."""
+    import pytest
+    from crewai_productfeature_planner.scripts.retry import ModelBusyError
+
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "2")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "5")
+
+    call_count = {"n": 0}
+
+    def _kickoff(crew, step_label=""):
+        call_count["n"] += 1
+        result = MagicMock()
+        if "critique" in step_label:
+            result.raw = "Score 4/10 — NEEDS_REFINEMENT"
+            return result
+        # Refine hits 503
+        raise ModelBusyError("model is currently overloaded")
+
+    mock_kickoff.side_effect = _kickoff
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-503-refine"
+
+    section = flow.state.draft.sections[0]
+    section.content = "Existing drafted content"
+    section.agent_results = {AGENT_OPENAI: "Existing drafted content"}
+    section.selected_agent = AGENT_OPENAI
+    section.iteration = 1
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "critique_section_task": {
+            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "A critique",
+        },
+        "refine_section_task": {
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    with pytest.raises(ModelBusyError):
+        flow._section_approval_loop(section, agents, task_configs)
+
+    # Section must NOT be force-approved — flow pauses for later resume
+    assert section.is_approved is False
+    # Content preserved for resume
+    assert section.content == "Existing drafted content"
+
+
+@patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
+@patch("crewai_productfeature_planner.flows._executive_summary.save_failed")
+@patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
+@patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
+@patch("crewai_productfeature_planner.flows._executive_summary.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._executive_summary.Crew")
+@patch("crewai_productfeature_planner.flows._executive_summary.Task")
+def test_exec_summary_503_propagates(
+    _mock_task, _mock_crew, mock_kickoff, _mock_save_fin,
+    _mock_update_crit, _mock_save_failed, _mock_save_exec,
+    monkeypatch,
+):
+    """ModelBusyError (503) during exec summary critique must propagate."""
+    import pytest
+    from crewai_productfeature_planner.scripts.retry import ModelBusyError
+
+    monkeypatch.setenv("PRD_EXEC_MIN_ITERATIONS", "1")
+    monkeypatch.setenv("PRD_EXEC_MAX_ITERATIONS", "3")
+
+    call_count = {"n": 0}
+
+    def _kickoff(crew, step_label=""):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            result = MagicMock()
+            result.raw = "Great executive summary content"
+            return result
+        raise ModelBusyError("service unavailable")
+
+    mock_kickoff.side_effect = _kickoff
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "test-exec-503"
+
+    agents = {AGENT_OPENAI: MagicMock()}
+    task_configs = {
+        "draft_prd_task": {
+            "description": "Draft exec for: {idea} with {executive_summary}",
+            "expected_output": "Executive summary",
+        },
+        "critique_prd_task": {
+            "description": "Critique: {critique} exec: {executive_summary}",
+            "expected_output": "Critique",
+        },
+    }
+
+    with pytest.raises(ModelBusyError):
+        flow._iterate_executive_summary(agents, task_configs)
+
+    # Should NOT be force-approved — flow pauses for later resume
+    assert flow.state.executive_summary.is_approved is False

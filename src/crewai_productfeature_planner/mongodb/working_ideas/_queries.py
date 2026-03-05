@@ -21,29 +21,51 @@ from crewai_productfeature_planner.mongodb.working_ideas._common import (
 def find_completed_without_confluence() -> list[dict[str, Any]]:
     """Find completed working ideas that have not been published to Confluence.
 
-    Queries ``workingIdeas`` for documents whose ``status`` is
-    ``"completed"`` and whose ``confluence_url`` field is either
-    missing, null, or empty.
+    Queries ``workingIdeas`` for completed documents, then excludes any
+    whose ``run_id`` has a delivery record in ``productRequirements``
+    with ``confluence_published`` set to ``True``.
 
     Returns:
         A list of full document dicts, or an empty list on failure.
     """
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        PRODUCT_REQUIREMENTS_COLLECTION,
+    )
+
     try:
         db = _common.get_db()
-        query = {
-            "status": "completed",
-            "$or": [
-                {"confluence_url": {"$exists": False}},
-                {"confluence_url": None},
-                {"confluence_url": ""},
-            ],
-        }
-        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+        completed = list(
+            db[WORKING_COLLECTION]
+            .find({"status": "completed"})
+            .sort("created_at", -1)
+        )
+        if not completed:
+            return []
+
+        # Gather run_ids that already have Confluence published
+        run_ids = [d["run_id"] for d in completed if d.get("run_id")]
+        published_ids: set[str] = set()
+        if run_ids:
+            published_docs = db[PRODUCT_REQUIREMENTS_COLLECTION].find(
+                {
+                    "run_id": {"$in": run_ids},
+                    "confluence_published": True,
+                },
+                {"run_id": 1},
+            )
+            published_ids = {
+                d["run_id"] for d in published_docs if d.get("run_id")
+            }
+
+        result = [
+            d for d in completed
+            if d.get("run_id") and d["run_id"] not in published_ids
+        ]
         logger.info(
             "[MongoDB] Found %d completed idea(s) without Confluence publish",
-            len(docs),
+            len(result),
         )
-        return docs
+        return result
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to query completed ideas without Confluence: %s",
@@ -310,8 +332,24 @@ def _do_backfill(
 def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
     """Convert a raw working-idea document to the dict format
     returned by :func:`find_ideas_by_project`."""
+    total_sections = 10
+    status = doc.get("status", "unknown")
+
     section_obj = doc.get("section") or {}
     sections = [k for k, v in section_obj.items() if isinstance(v, list) and v]
+    # The executive summary is stored at the document root, not
+    # inside the ``section`` object.  Count it as a completed section
+    # when present, but avoid double-counting if it also appears
+    # under ``section`` (unlikely but defensive).
+    raw_exec = doc.get("executive_summary", [])
+    has_exec = isinstance(raw_exec, list) and len(raw_exec) > 0
+    exec_already_counted = "executive_summary" in sections
+    sections_done = len(sections) + (1 if has_exec and not exec_already_counted else 0)
+
+    # A completed idea has all sections done by definition.
+    if status == "completed":
+        sections_done = total_sections
+
     max_iter = 0
     for entries in section_obj.values():
         if isinstance(entries, list):
@@ -319,7 +357,6 @@ def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
                 it = entry.get("iteration", 0) if isinstance(entry, dict) else 0
                 if it > max_iter:
                     max_iter = it
-    raw_exec = doc.get("executive_summary", [])
     exec_iter_count = len(raw_exec) if isinstance(raw_exec, list) else 0
     effective_iter = max(max_iter, exec_iter_count)
     idea_text = (
@@ -330,11 +367,11 @@ def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
     return {
         "run_id": doc.get("run_id", ""),
         "idea": idea_text,
-        "status": doc.get("status", "unknown"),
+        "status": status,
         "iteration": effective_iter,
         "created_at": doc.get("created_at"),
-        "sections_done": len(sections),
-        "total_sections": 10,
+        "sections_done": sections_done,
+        "total_sections": total_sections,
     }
 
 
@@ -345,8 +382,9 @@ def find_ideas_by_project(
 ) -> list[dict[str, Any]]:
     """Find all working ideas associated with a project.
 
-    Returns ideas in any status (in-progress, paused, completed, failed)
-    except ``archived``.  Results are sorted newest-first.
+    Returns ideas that are still actionable (in-progress, paused,
+    failed) — excludes ``archived`` and ``completed`` statuses.
+    Results are sorted newest-first.
 
     When *channel* is provided the query also matches orphaned ideas
     (those missing ``project_id``) that live in the same Slack channel
@@ -381,7 +419,7 @@ def find_ideas_by_project(
             )
 
         query: dict[str, Any] = {
-            "status": {"$ne": "archived"},
+            "status": {"$nin": ["archived", "completed"]},
             "$or": or_conditions,
         }
 
@@ -438,6 +476,104 @@ def find_ideas_by_project(
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to query ideas for project_id=%s: %s",
+            project_id, exc,
+        )
+        return []
+
+
+def _doc_to_product_dict(doc: dict[str, Any], delivery: dict[str, Any] | None) -> dict[str, Any]:
+    """Convert a completed working-idea doc to a product summary dict.
+
+    Enriches the basic idea dict with delivery status fields from the
+    ``productRequirements`` delivery record.
+    """
+    base = _doc_to_idea_dict(doc)
+    base["confluence_url"] = (
+        doc.get("confluence_url")
+        or (delivery.get("confluence_url") if delivery else None)
+        or ""
+    )
+    base["jira_phase"] = doc.get("jira_phase") or ""
+    base["confluence_published"] = bool(
+        (delivery and delivery.get("confluence_published"))
+        or base["confluence_url"]
+    )
+    # Trust jira_completed only when there is corroborating evidence:
+    # either the interactive flow finished (jira_phase == "subtasks_done")
+    # or actual ticket records exist.  The scheduler may mark
+    # jira_completed=True before any tickets are persisted — treat
+    # that as incomplete so the interactive flow buttons appear.
+    raw_jira_done = bool(delivery and delivery.get("jira_completed"))
+    jira_tickets = (delivery.get("jira_tickets") or []) if delivery else []
+    if raw_jira_done and not jira_tickets and base["jira_phase"] != "subtasks_done":
+        base["jira_completed"] = False
+    else:
+        base["jira_completed"] = raw_jira_done
+    base["jira_tickets"] = jira_tickets
+    return base
+
+
+def find_completed_ideas_by_project(
+    project_id: str,
+    *,
+    channel: str | None = None,
+) -> list[dict[str, Any]]:
+    """Find all *completed* (not archived) working ideas for a project.
+
+    This powers the "list products" intent — showing ideas that are
+    ready for delivery manager actions (Confluence publish, Jira
+    skeleton review, Jira epic/story & sub-task creation).
+
+    Returns:
+        A list of dicts with idea info plus delivery status fields.
+        Sorted newest-first.  Returns an empty list on failure.
+    """
+    try:
+        db = _common.get_db()
+
+        or_conditions: list[dict[str, Any]] = [
+            {"project_id": project_id},
+        ]
+        if channel:
+            _no_project = {
+                "$or": [
+                    {"project_id": {"$exists": False}},
+                    {"project_id": None},
+                    {"project_id": ""},
+                ],
+            }
+            or_conditions.append(
+                {"slack_channel": channel, **_no_project},
+            )
+
+        query: dict[str, Any] = {
+            "status": "completed",
+            "$or": or_conditions,
+        }
+
+        docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
+
+        # Enrich each doc with its delivery record
+        from crewai_productfeature_planner.mongodb.product_requirements import (
+            get_delivery_record,
+        )
+
+        products: list[dict[str, Any]] = []
+        for doc in docs:
+            run_id = doc.get("run_id", "")
+            if not run_id:
+                continue
+            record = get_delivery_record(run_id)
+            products.append(_doc_to_product_dict(doc, record))
+
+        logger.info(
+            "[MongoDB] Found %d completed product(s) for project_id=%s",
+            len(products), project_id,
+        )
+        return products
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to query completed products for project_id=%s: %s",
             project_id, exc,
         )
         return []

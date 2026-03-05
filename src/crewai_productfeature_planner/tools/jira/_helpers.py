@@ -146,7 +146,7 @@ _priority_id_cache: dict[str, str] | None = None
 def _fetch_priority_scheme(auth_header: str, base_url: str) -> dict[str, str]:
     """Fetch available priorities from Jira and build a name→id map.
 
-    Calls ``GET /rest/api/2/priority`` once and caches the result for
+    Calls ``GET /rest/api/3/priority`` once and caches the result for
     the lifetime of the process.  The returned dict maps **lower-cased**
     priority names to their string IDs.
 
@@ -157,7 +157,7 @@ def _fetch_priority_scheme(auth_header: str, base_url: str) -> dict[str, str]:
     if _priority_id_cache is not None:
         return _priority_id_cache
 
-    url = f"{base_url}/rest/api/2/priority"
+    url = f"{base_url}/rest/api/3/priority"
     try:
         result = _http_mod._jira_request("GET", url, auth_header=auth_header)
         _priority_id_cache = {

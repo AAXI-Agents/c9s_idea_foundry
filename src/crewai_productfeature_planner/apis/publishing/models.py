@@ -19,7 +19,7 @@ class PendingPRDItem(BaseModel):
     confluence_url: str = Field("", description="URL of the Confluence page (empty if unpublished).")
     jira_completed: bool = Field(False, description="Whether Jira tickets have been created.")
     jira_tickets: list[dict] = Field(default_factory=list, description="List of Jira ticket dicts.")
-    status: str = Field("pending", description="Delivery status: pending | partial | completed.")
+    status: str = Field("new", description="Delivery status: new | inprogress | completed.")
 
 
 class PendingListResponse(BaseModel):
@@ -87,7 +87,7 @@ class DeliveryStatusResponse(BaseModel):
     confluence_page_id: str = Field("", description="Confluence page ID.")
     jira_completed: bool = Field(False, description="Jira tickets created.")
     jira_tickets: list[dict] = Field(default_factory=list, description="Created Jira tickets.")
-    status: str = Field("pending", description="pending | partial | completed.")
+    status: str = Field("new", description="new | inprogress | completed.")
     error: str | None = Field(None, description="Last error if any.")
 
 

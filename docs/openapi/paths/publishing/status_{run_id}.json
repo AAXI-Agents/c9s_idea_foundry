@@ -3,7 +3,7 @@
     "tags": ["Publishing"],
     "summary": "Get delivery status for a run",
     "operationId": "publishing_status",
-    "description": "Returns the delivery status for a specific flow run — whether the PRD has been published to Confluence, whether Jira tickets have been created, and the overall delivery status (pending / partial / completed).",
+    "description": "Returns the delivery status for a specific flow run — whether the PRD has been published to Confluence, whether Jira tickets have been created, and the overall delivery status (new / inprogress / completed).",
     "parameters": [
       {
         "name": "run_id",

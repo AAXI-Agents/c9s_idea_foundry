@@ -29,6 +29,9 @@ from ._session_memory import (
 # Idea listing
 from ._session_ideas import _backfill_missing_idea_titles, handle_list_ideas
 
+# Product listing (completed ideas for delivery)
+from ._session_products import handle_list_products
+
 __all__ = [
     "reply",
     "INTRO_MESSAGE",
@@ -45,4 +48,5 @@ __all__ = [
     "handle_update_config",
     "_backfill_missing_idea_titles",
     "handle_list_ideas",
+    "handle_list_products",
 ]

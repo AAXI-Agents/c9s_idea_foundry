@@ -49,8 +49,22 @@ _MODEL_BUSY_PATTERNS: list[str] = [
     "the model is currently busy",
     "503 unavailable",
     "service unavailable",
-    "try again later",
 ]
+
+# Patterns that indicate a rate-limit / resource exhaustion (429).
+# These are transient — retry with extended backoff before pausing.
+_RATE_LIMIT_PATTERNS: list[str] = [
+    "resource_exhausted",
+    "resource exhausted",
+    "rate_limit_exceeded",
+    "rate limit exceeded",
+    "too many requests",
+    "try again later",
+    "quota exceeded",
+]
+
+DEFAULT_RATE_LIMIT_RETRIES = 5
+DEFAULT_RATE_LIMIT_BASE_DELAY = 30  # seconds
 
 
 class LLMError(RuntimeError):
@@ -110,30 +124,35 @@ def crew_kickoff_with_retry(
     retries = max_retries if max_retries is not None else _get_max_retries()
     delay = base_delay if base_delay is not None else _get_base_delay()
     last_exc: Exception | None = None
+    attempt = 0  # normal-retry counter (excludes rate-limit retries)
+    rate_limit_attempts = 0
 
-    for attempt in range(1, retries + 2):  # attempt 1 = first try, +retries
+    while True:
         try:
             result = crew.kickoff()
-            if attempt > 1:
+            if attempt > 0 or rate_limit_attempts > 0:
                 logger.info(
-                    "[Retry] %s succeeded on attempt %d/%d",
+                    "[Retry] %s succeeded on attempt %d/%d "
+                    "(rate-limit retries: %d)",
                     step_label,
-                    attempt,
+                    attempt + 1,
                     retries + 1,
+                    rate_limit_attempts,
                 )
             return result
         except Exception as exc:
             last_exc = exc
-            # Don't retry on non-transient billing / account errors
             exc_str = str(exc).lower()
+
+            # ── Non-retryable: billing / account errors ──
             if any(pat in exc_str for pat in _BILLING_PATTERNS):
                 logger.error(
                     "[Retry] %s hit a non-retryable billing error: %s",
                     step_label, exc,
                 )
                 raise BillingError(str(exc)) from exc
-            # Don't retry on 503 model-busy errors — pause immediately
-            # and let the periodic resume pick it up later.
+
+            # ── Non-retryable: 503 model-busy errors ──
             if any(pat in exc_str for pat in _MODEL_BUSY_PATTERNS):
                 logger.warning(
                     "[Retry] %s hit model-busy (503) — pausing flow "
@@ -141,6 +160,36 @@ def crew_kickoff_with_retry(
                     step_label, exc,
                 )
                 raise ModelBusyError(str(exc)) from exc
+
+            # ── Rate-limit (429) — separate retry budget ──
+            if any(pat in exc_str for pat in _RATE_LIMIT_PATTERNS):
+                rate_limit_attempts += 1
+                if rate_limit_attempts <= DEFAULT_RATE_LIMIT_RETRIES:
+                    wait = DEFAULT_RATE_LIMIT_BASE_DELAY * (
+                        2 ** (rate_limit_attempts - 1)
+                    )
+                    logger.warning(
+                        "[Retry] %s hit rate-limit (429) — "
+                        "attempt %d/%d, retrying in %.0fs: %s",
+                        step_label,
+                        rate_limit_attempts,
+                        DEFAULT_RATE_LIMIT_RETRIES,
+                        wait,
+                        exc,
+                    )
+                    time.sleep(wait)
+                    continue  # Does not count against normal retries
+                logger.warning(
+                    "[Retry] %s exhausted rate-limit retries (%d) — "
+                    "pausing flow for later resume: %s",
+                    step_label,
+                    DEFAULT_RATE_LIMIT_RETRIES,
+                    exc,
+                )
+                raise ModelBusyError(str(exc)) from exc
+
+            # ── Generic transient error — normal retry budget ──
+            attempt += 1
             if attempt <= retries:
                 wait = delay * (2 ** (attempt - 1))
                 logger.warning(
@@ -159,5 +208,4 @@ def crew_kickoff_with_retry(
                     retries + 1,
                     exc,
                 )
-
-    raise LLMError(str(last_exc)) from last_exc  # type: ignore[misc]
+                raise LLMError(str(last_exc)) from last_exc

@@ -26,14 +26,14 @@ def _set_dummy_keys(monkeypatch):
 class TestComputeStatus:
     """Tests for the status computation helper."""
 
-    def test_both_false_is_pending(self):
-        assert _compute_status(False, False) == "pending"
+    def test_both_false_is_new(self):
+        assert _compute_status(False, False) == "new"
 
-    def test_confluence_only_is_partial(self):
-        assert _compute_status(True, False) == "partial"
+    def test_confluence_only_is_inprogress(self):
+        assert _compute_status(True, False) == "inprogress"
 
-    def test_jira_only_is_partial(self):
-        assert _compute_status(False, True) == "partial"
+    def test_jira_only_is_inprogress(self):
+        assert _compute_status(False, True) == "inprogress"
 
     def test_both_true_is_completed(self):
         assert _compute_status(True, True) == "completed"
@@ -53,14 +53,14 @@ def test_collection_name():
 def test_get_delivery_record_found(mock_get_db):
     """Should return the document when it exists."""
     mock_col = MagicMock()
-    mock_col.find_one.return_value = {"run_id": "r1", "status": "pending"}
+    mock_col.find_one.return_value = {"run_id": "r1", "status": "new"}
     mock_db = MagicMock()
     mock_db.__getitem__ = MagicMock(return_value=mock_col)
     mock_get_db.return_value = mock_db
 
     result = get_delivery_record("r1")
 
-    assert result == {"run_id": "r1", "status": "pending"}
+    assert result == {"run_id": "r1", "status": "new"}
     mock_col.find_one.assert_called_once_with({"run_id": "r1"})
 
 
@@ -95,10 +95,10 @@ def test_get_delivery_record_handles_error(mock_get_db):
 
 @patch("crewai_productfeature_planner.mongodb.product_requirements.repository.get_db")
 def test_find_pending_delivery_returns_docs(mock_get_db):
-    """Should return pending and partial delivery records."""
+    """Should return new and inprogress delivery records."""
     docs = [
-        {"run_id": "r1", "status": "pending"},
-        {"run_id": "r2", "status": "partial"},
+        {"run_id": "r1", "status": "new"},
+        {"run_id": "r2", "status": "inprogress"},
     ]
     mock_cursor = MagicMock()
     mock_cursor.sort.return_value = docs
@@ -112,7 +112,7 @@ def test_find_pending_delivery_returns_docs(mock_get_db):
 
     assert len(result) == 2
     mock_col.find.assert_called_once_with(
-        {"status": {"$in": ["pending", "partial"]}}
+        {"status": {"$in": ["new", "inprogress"]}}
     )
 
 
@@ -173,7 +173,7 @@ def test_upsert_creates_new_record(mock_get_db):
     assert set_fields["confluence_published"] is True
     assert set_fields["confluence_url"] == "https://wiki.test.com/page/1"
     assert set_fields["jira_completed"] is False
-    assert set_fields["status"] == "partial"  # confluence=True, jira=False
+    assert set_fields["status"] == "inprogress"  # confluence=True, jira=False
     assert call_args[1]["upsert"] is True
 
 
@@ -185,7 +185,7 @@ def test_upsert_updates_existing_record(mock_get_db):
         "run_id": "r1",
         "confluence_published": True,
         "jira_completed": False,
-        "status": "partial",
+        "status": "inprogress",
     }
     mock_col.update_one.return_value = MagicMock(
         upserted_id=None, modified_count=1,
@@ -232,7 +232,7 @@ def test_upsert_only_updates_provided_fields(mock_get_db):
 def test_upsert_records_error(mock_get_db):
     """Should store error message when passed."""
     mock_col = MagicMock()
-    mock_col.find_one.return_value = {"run_id": "r1", "status": "pending"}
+    mock_col.find_one.return_value = {"run_id": "r1", "status": "new"}
     mock_col.update_one.return_value = MagicMock(
         upserted_id=None, modified_count=1,
     )
@@ -352,6 +352,72 @@ def test_append_jira_ticket_handles_error(mock_get_db):
     result = append_jira_ticket("r1", {"key": "PRD-10", "type": "Epic"})
 
     assert result is False
+
+
+@patch("crewai_productfeature_planner.mongodb.product_requirements.repository.get_db")
+def test_append_jira_ticket_auto_populates_url(mock_get_db, monkeypatch):
+    """Should auto-populate url from ATLASSIAN_BASE_URL when not provided."""
+    monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net")
+
+    mock_col = MagicMock()
+    mock_col.find_one.return_value = None
+    mock_col.update_one.return_value = MagicMock(
+        upserted_id=None, modified_count=1,
+    )
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_col)
+    mock_get_db.return_value = mock_db
+
+    result = append_jira_ticket("r1", {"key": "PRD-10", "type": "Epic"})
+
+    assert result is True
+    pushed = mock_col.update_one.call_args[0][1]["$push"]["jira_tickets"]
+    assert pushed["url"] == "https://example.atlassian.net/browse/PRD-10"
+
+
+@patch("crewai_productfeature_planner.mongodb.product_requirements.repository.get_db")
+def test_append_jira_ticket_preserves_explicit_url(mock_get_db, monkeypatch):
+    """Should NOT overwrite url when caller provides one explicitly."""
+    monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net")
+
+    mock_col = MagicMock()
+    mock_col.find_one.return_value = None
+    mock_col.update_one.return_value = MagicMock(
+        upserted_id=None, modified_count=1,
+    )
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_col)
+    mock_get_db.return_value = mock_db
+
+    explicit_url = "https://custom.atlassian.net/browse/PRD-10"
+    result = append_jira_ticket("r1", {
+        "key": "PRD-10", "type": "Epic", "url": explicit_url,
+    })
+
+    assert result is True
+    pushed = mock_col.update_one.call_args[0][1]["$push"]["jira_tickets"]
+    assert pushed["url"] == explicit_url
+
+
+@patch("crewai_productfeature_planner.mongodb.product_requirements.repository.get_db")
+def test_append_jira_ticket_no_url_without_base_url(mock_get_db, monkeypatch):
+    """Should not add url when ATLASSIAN_BASE_URL is not configured."""
+    monkeypatch.delenv("ATLASSIAN_BASE_URL", raising=False)
+
+    mock_col = MagicMock()
+    mock_col.find_one.return_value = None
+    mock_col.update_one.return_value = MagicMock(
+        upserted_id=None, modified_count=1,
+    )
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_col)
+    mock_get_db.return_value = mock_db
+
+    result = append_jira_ticket("r1", {"key": "PRD-10", "type": "Epic"})
+
+    assert result is True
+    pushed = mock_col.update_one.call_args[0][1]["$push"]["jira_tickets"]
+    assert "url" not in pushed
 
 
 # ── get_jira_tickets ─────────────────────────────────────────

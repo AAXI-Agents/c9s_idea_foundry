@@ -1697,6 +1697,47 @@ class TestRunStartupDelivery:
         """Should return 0 when discovery fails."""
         assert _run_startup_delivery() == 0
 
+    # ── sets jira_phase on workingIdeas after Jira completion ──
+
+    @patch(_STATUS)
+    @patch(_UPSERT, return_value=True)
+    @patch(_GET_REC, return_value=None)
+    @patch(_KICKOFF)
+    @patch(_BUILD_CREW)
+    @patch(_DISCOVER)
+    @patch(_CONF, return_value=True)
+    @patch(_JIRA, return_value=True)
+    def test_sets_jira_phase_subtasks_done_after_jira_completion(
+        self, _j, _c, mock_disc, mock_build, mock_kickoff,
+        _rec, _ups, _status,
+    ):
+        """Should call save_jira_phase('subtasks_done') when Jira completion is detected."""
+        mock_disc.return_value = [
+            {
+                "run_id": "r1",
+                "idea": "Phase test",
+                "content": "# PRD content",
+                "confluence_done": True,
+                "confluence_url": "https://co.atlassian.net/wiki/pages/1",
+                "jira_done": False,
+                "finalized_idea": "ES",
+                "func_reqs": "FR1",
+                "doc": {"run_id": "r1"},
+            },
+        ]
+
+        mock_crew = MagicMock()
+        mock_build.return_value = mock_crew
+        mock_result = MagicMock()
+        mock_result.raw = "Created Epic PROJ-1. Story PROJ-2."
+        mock_kickoff.return_value = mock_result
+
+        _SAVE_PHASE = "crewai_productfeature_planner.mongodb.working_ideas.repository.save_jira_phase"
+        with patch(_SAVE_PHASE) as mock_save_phase:
+            _run_startup_delivery()
+
+            mock_save_phase.assert_called_once_with("r1", "subtasks_done")
+
     # ── jira_output must NOT leak into workingIdeas ─────────────
 
     @patch(_STATUS)
@@ -1744,7 +1785,11 @@ class TestRunStartupDelivery:
 
         # Ensure no raw write to workingIdeas for jira_output
         mock_db = fresh_mock_db
-        for call in mock_db.__getitem__.call_args_list:
+        # Snapshot call list to avoid infinite loop — iterating
+        # call_args_list while calling mock_db[col_name] would
+        # mutate the list during iteration.
+        getitem_calls = list(mock_db.__getitem__.call_args_list)
+        for call in getitem_calls:
             col_name = call[0][0] if call[0] else ""
             if col_name == "workingIdeas":
                 wi_col = mock_db[col_name]

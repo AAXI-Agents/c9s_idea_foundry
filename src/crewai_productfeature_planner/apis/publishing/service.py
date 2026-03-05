@@ -30,7 +30,7 @@ def _prd_summary(item: dict, *, delivery: dict | None = None) -> dict[str, Any]:
         "confluence_url": rec.get("confluence_url") or item.get("confluence_url", ""),
         "jira_completed": rec.get("jira_completed", False),
         "jira_tickets": rec.get("jira_tickets") or [],
-        "status": rec.get("status", "pending"),
+        "status": rec.get("status", "new"),
     }
 
 
@@ -104,7 +104,9 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
     from crewai_productfeature_planner.components.document import assemble_prd_from_doc
     from crewai_productfeature_planner.mongodb import (
         find_completed_without_confluence,
-        save_confluence_url,
+    )
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        upsert_delivery_record,
     )
     from crewai_productfeature_planner.mongodb.project_config import (
         get_project_for_run,
@@ -151,10 +153,11 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
             run_id=run_id,
         )
 
-    save_confluence_url(
+    upsert_delivery_record(
         run_id=run_id,
+        confluence_published=True,
         confluence_url=result["url"],
-        page_id=result["page_id"],
+        confluence_page_id=result["page_id"],
     )
 
     logger.info(
@@ -216,13 +219,16 @@ def publish_confluence_all() -> dict[str, Any]:
                     run_id=item.get("run_id", ""),
                 )
 
-            # Persist URL in MongoDB if run_id is known
+            # Persist delivery record in productRequirements
             if item.get("run_id"):
-                from crewai_productfeature_planner.mongodb import save_confluence_url
-                save_confluence_url(
+                from crewai_productfeature_planner.mongodb.product_requirements import (
+                    upsert_delivery_record as _upsert_dr,
+                )
+                _upsert_dr(
                     run_id=item["run_id"],
+                    confluence_published=True,
                     confluence_url=result["url"],
-                    page_id=result["page_id"],
+                    confluence_page_id=result["page_id"],
                 )
 
             published.append({

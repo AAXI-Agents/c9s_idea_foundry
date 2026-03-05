@@ -21,7 +21,7 @@ from crewai_productfeature_planner.mongodb.working_ideas._status import (  # noq
     mark_archived,
     mark_completed,
     mark_paused,
-    save_confluence_url,
+    save_jira_phase,
     save_output_file,
     save_project_ref,
     save_slack_context,
@@ -30,6 +30,7 @@ from crewai_productfeature_planner.mongodb.working_ideas._status import (  # noq
 # -- Query / lookup operations ----------------------------------------------
 from crewai_productfeature_planner.mongodb.working_ideas._queries import (  # noqa: F401
     fail_unfinalized_on_startup,
+    find_completed_ideas_by_project,
     find_completed_without_confluence,
     find_completed_without_output,
     find_ideas_by_project,
@@ -57,12 +58,13 @@ __all__ = [
     "mark_archived",
     "mark_completed",
     "mark_paused",
-    "save_confluence_url",
+    "save_jira_phase",
     "save_output_file",
     "save_project_ref",
     "save_slack_context",
     # _queries
     "fail_unfinalized_on_startup",
+    "find_completed_ideas_by_project",
     "find_completed_without_confluence",
     "find_completed_without_output",
     "find_ideas_by_project",

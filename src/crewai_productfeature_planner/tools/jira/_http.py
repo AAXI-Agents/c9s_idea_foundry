@@ -53,7 +53,10 @@ def _jira_request(
 
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
-            return json.loads(resp.read().decode())
+            raw = resp.read().decode()
+            if not raw.strip():
+                return {}
+            return json.loads(raw)
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode() if exc.fp else ""
         logger.error(

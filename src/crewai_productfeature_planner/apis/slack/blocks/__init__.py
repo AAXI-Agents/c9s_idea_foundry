@@ -42,6 +42,12 @@ Action ID conventions (used in :mod:`interactions_router`):
 
     flow_retry         – Retry / resume a paused PRD flow
 
+    product_confluence_<N>     – Publish idea #N to Confluence
+    product_jira_skeleton_<N>  – Review Jira skeleton for idea #N
+    product_jira_epics_<N>     – Publish Jira epics & stories for idea #N
+    product_jira_subtasks_<N>  – Publish Jira sub-tasks for idea #N
+    product_view_<N>           – View delivery details for idea #N
+
 Sub-modules
 -----------
 _flow_blocks         – Refinement mode, idea/requirements approval, flow status
@@ -51,6 +57,7 @@ _next_step_blocks    – Proactive next-step suggestion
 _exec_summary_blocks – Executive summary pre-feedback & feedback
 _jira_blocks         – Jira phased approval (skeleton, review)
 _idea_list_blocks    – Idea listing with interactive per-idea buttons
+_product_list_blocks – Product listing for delivery manager actions
 _retry_blocks        – Flow-paused notification with retry button
 """
 
@@ -88,10 +95,14 @@ from crewai_productfeature_planner.apis.slack.blocks._exec_summary_blocks import
 from crewai_productfeature_planner.apis.slack.blocks._jira_blocks import (
     jira_review_blocks,
     jira_skeleton_approval_blocks,
+    jira_subtask_review_blocks,
 )
 from crewai_productfeature_planner.apis.slack.blocks._idea_list_blocks import (
     _IDEA_STATUS_EMOJI,
     idea_list_blocks,
+)
+from crewai_productfeature_planner.apis.slack.blocks._product_list_blocks import (
+    product_list_blocks,
 )
 from crewai_productfeature_planner.apis.slack.blocks._retry_blocks import (
     flow_paused_blocks,
@@ -127,9 +138,12 @@ __all__ = [
     # Jira
     "jira_skeleton_approval_blocks",
     "jira_review_blocks",
+    "jira_subtask_review_blocks",
     # Idea list
     "_IDEA_STATUS_EMOJI",
     "idea_list_blocks",
+    # Product list
+    "product_list_blocks",
     # Retry / resume
     "flow_paused_blocks",
 ]

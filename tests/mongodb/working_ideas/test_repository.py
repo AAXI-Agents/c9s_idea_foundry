@@ -19,11 +19,11 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     mark_archived,
     mark_completed,
     mark_paused,
-    save_confluence_url,
     save_executive_summary,
     save_failed,
     save_finalized_idea,
     save_iteration,
+    save_jira_phase,
     save_output_file,
     save_pipeline_step,
     save_project_ref,
@@ -1163,88 +1163,57 @@ def test_find_unfinalized_section_not_missing_when_present(wi_mocks):
     assert runs[0]["section_missing"] is False
 
 
-# ── save_confluence_url ───────────────────────────────────────
-
-
-class TestSaveConfluenceUrl:
-
-    def test_updates_document(self, wi_mocks):
-        mock_collection, mock_db = wi_mocks
-        mock_collection.update_one.return_value = MagicMock(modified_count=1)
-
-        result = save_confluence_url(
-            run_id="run-1",
-            confluence_url="https://example.atlassian.net/wiki/pages/123",
-            page_id="123",
-        )
-
-        assert result is True
-        mock_collection.update_one.assert_called_once()
-        call_args = mock_collection.update_one.call_args
-        assert call_args[0][0] == {"run_id": "run-1"}
-        set_fields = call_args[0][1]["$set"]
-        assert set_fields["confluence_url"] == "https://example.atlassian.net/wiki/pages/123"
-        assert set_fields["confluence_page_id"] == "123"
-        assert "confluence_published_at" in set_fields
-
-    def test_no_page_id(self, wi_mocks):
-        mock_collection, mock_db = wi_mocks
-        mock_collection.update_one.return_value = MagicMock(modified_count=1)
-
-        save_confluence_url(
-            run_id="r2",
-            confluence_url="https://example.atlassian.net/wiki/pages/456",
-        )
-
-        set_fields = mock_collection.update_one.call_args[0][1]["$set"]
-        assert "confluence_page_id" not in set_fields
-
-    def test_returns_false_on_no_match(self, wi_mocks):
-        mock_collection, mock_db = wi_mocks
-        mock_collection.update_one.return_value = MagicMock(modified_count=0)
-
-        result = save_confluence_url(
-            run_id="unknown-run",
-            confluence_url="https://example.atlassian.net/wiki/pages/000",
-        )
-        assert result is False
-
-    def test_returns_false_on_db_error(self, wi_mocks):
-        from pymongo.errors import PyMongoError
-        with patch(
-            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
-            side_effect=PyMongoError("connection failed"),
-        ):
-            result = save_confluence_url(
-                run_id="run-1",
-                confluence_url="https://example.atlassian.net/wiki/pages/123",
-            )
-            assert result is False
-
-
 # ── find_completed_without_confluence ────────────────────────────────
 
 
 class TestFindCompletedWithoutConfluence:
 
-    def test_returns_matching_docs(self, wi_mocks):
-        docs = [
+    def test_returns_docs_not_published(self, wi_mocks):
+        """Returns completed docs whose run_id has no published delivery record."""
+        mock_collection, mock_db = wi_mocks
+        completed_docs = [
             {"run_id": "r1", "status": "completed", "idea": "idea1"},
             {"run_id": "r2", "status": "completed", "idea": "idea2"},
         ]
+        # workingIdeas.find(...).sort(...) returns completed docs
         mock_cursor = MagicMock()
-        mock_cursor.sort.return_value = docs
-        mock_collection, mock_db = wi_mocks
+        mock_cursor.sort.return_value = completed_docs
         mock_collection.find.return_value = mock_cursor
+
+        # productRequirements collection — no published records
+        mock_pr_col = MagicMock()
+        mock_pr_col.find.return_value = []
+        mock_db.__getitem__ = lambda self, name: (
+            mock_pr_col if name == "productRequirements" else mock_collection
+        )
 
         result = find_completed_without_confluence()
 
         assert len(result) == 2
         assert result[0]["run_id"] == "r1"
-        # Verify query has correct structure
-        query = mock_collection.find.call_args[0][0]
-        assert query["status"] == "completed"
-        assert "$or" in query
+
+    def test_excludes_published_runs(self, wi_mocks):
+        """Runs with confluence_published=True in productRequirements are excluded."""
+        mock_collection, mock_db = wi_mocks
+        completed_docs = [
+            {"run_id": "r1", "status": "completed", "idea": "idea1"},
+            {"run_id": "r2", "status": "completed", "idea": "idea2"},
+        ]
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = completed_docs
+        mock_collection.find.return_value = mock_cursor
+
+        # productRequirements: r1 is already published
+        mock_pr_col = MagicMock()
+        mock_pr_col.find.return_value = [{"run_id": "r1"}]
+        mock_db.__getitem__ = lambda self, name: (
+            mock_pr_col if name == "productRequirements" else mock_collection
+        )
+
+        result = find_completed_without_confluence()
+
+        assert len(result) == 1
+        assert result[0]["run_id"] == "r2"
 
     def test_returns_empty_on_no_results(self, wi_mocks):
         mock_cursor = MagicMock()
@@ -1413,11 +1382,11 @@ class TestFindIdeasByProject:
             {
                 "run_id": "r1", "idea": "idea1", "status": "inprogress",
                 "project_id": "proj-1", "created_at": "2026-03-01T00:00:00Z",
-                "section": {"executive_summary": [{"content": "x", "iteration": 1}]},
+                "section": {"problem_statement": [{"content": "x", "iteration": 1}]},
                 "executive_summary": [{"content": "y"}],
             },
             {
-                "run_id": "r2", "idea": "idea2", "status": "completed",
+                "run_id": "r2", "idea": "idea2", "status": "paused",
                 "project_id": "proj-1", "created_at": "2026-02-28T00:00:00Z",
                 "section": {}, "executive_summary": [],
             },
@@ -1432,12 +1401,14 @@ class TestFindIdeasByProject:
         assert len(result) == 2
         assert result[0]["run_id"] == "r1"
         assert result[0]["status"] == "inprogress"
-        assert result[0]["sections_done"] == 1
+        # problem_statement (1) + executive_summary top-level (1) = 2
+        assert result[0]["sections_done"] == 2
         assert result[1]["run_id"] == "r2"
-        assert result[1]["status"] == "completed"
-        # Verify query uses $or with project_id and excludes archived
+        assert result[1]["status"] == "paused"
+        assert result[1]["sections_done"] == 0
+        # Verify query uses $or with project_id and excludes archived+completed
         query = mock_collection.find.call_args[0][0]
-        assert query["status"] == {"$ne": "archived"}
+        assert query["status"] == {"$nin": ["archived", "completed"]}
         assert "$or" in query
         assert {"project_id": "proj-1"} in query["$or"]
 
@@ -1809,6 +1780,168 @@ class TestFindIdeasByProject:
         mock_find_job.assert_not_called()
 
 
+# ── _doc_to_idea_dict ────────────────────────────────────────────
+
+
+class TestDocToIdeaDict:
+    """Tests for _doc_to_idea_dict helper used by find_ideas_by_project."""
+
+    def _call(self, doc):
+        from crewai_productfeature_planner.mongodb.working_ideas._queries import (
+            _doc_to_idea_dict,
+        )
+        return _doc_to_idea_dict(doc)
+
+    def test_counts_executive_summary_as_section(self):
+        """Top-level executive_summary should count toward sections_done."""
+        doc = {
+            "run_id": "r1",
+            "idea": "test",
+            "status": "inprogress",
+            "section": {
+                "problem_statement": [{"content": "x", "iteration": 1}],
+            },
+            "executive_summary": [{"content": "y"}],
+        }
+        result = self._call(doc)
+        # 1 section key + 1 executive_summary = 2
+        assert result["sections_done"] == 2
+
+    def test_no_double_count_executive_summary(self):
+        """If executive_summary appears in both section obj and top-level,
+        it should only be counted once."""
+        doc = {
+            "run_id": "r1",
+            "idea": "test",
+            "status": "inprogress",
+            "section": {
+                "executive_summary": [{"content": "x", "iteration": 1}],
+                "problem_statement": [{"content": "y", "iteration": 1}],
+            },
+            "executive_summary": [{"content": "z"}],
+        }
+        result = self._call(doc)
+        # executive_summary already counted in section obj, not double-counted
+        assert result["sections_done"] == 2
+
+    def test_completed_forces_full_sections(self):
+        """A completed idea should show sections_done == total_sections."""
+        doc = {
+            "run_id": "r1",
+            "idea": "done idea",
+            "status": "completed",
+            "section": {},
+            "executive_summary": [],
+        }
+        result = self._call(doc)
+        assert result["sections_done"] == result["total_sections"]
+        assert result["sections_done"] == 10
+
+    def test_nine_sections_plus_exec_gives_ten(self):
+        """Nine section keys + executive_summary = 10/10."""
+        section_keys = [
+            "problem_statement", "user_personas",
+            "functional_requirements", "no_functional_requirements",
+            "edge_cases", "error_handling", "success_metrics",
+            "dependencies", "assumptions",
+        ]
+        doc = {
+            "run_id": "r1",
+            "idea": "full draft",
+            "status": "inprogress",
+            "section": {k: [{"content": "x", "iteration": 1}] for k in section_keys},
+            "executive_summary": [{"content": "y"}],
+        }
+        result = self._call(doc)
+        assert result["sections_done"] == 10
+        assert result["total_sections"] == 10
+
+    def test_no_exec_summary_gives_nine(self):
+        """Nine section keys but no executive_summary = 9/10."""
+        section_keys = [
+            "problem_statement", "user_personas",
+            "functional_requirements", "no_functional_requirements",
+            "edge_cases", "error_handling", "success_metrics",
+            "dependencies", "assumptions",
+        ]
+        doc = {
+            "run_id": "r1",
+            "idea": "missing exec",
+            "status": "inprogress",
+            "section": {k: [{"content": "x", "iteration": 1}] for k in section_keys},
+            "executive_summary": [],
+        }
+        result = self._call(doc)
+        assert result["sections_done"] == 9
+
+
+# ── _doc_to_product_dict ─────────────────────────────────────
+
+
+class TestDocToProductDict:
+    """Tests for _doc_to_product_dict — smart jira_completed logic."""
+
+    _BASE_DOC = {
+        "run_id": "r1",
+        "idea": "test idea",
+        "status": "completed",
+        "section": {},
+        "executive_summary": [],
+    }
+
+    def _call(self, doc, delivery):
+        from crewai_productfeature_planner.mongodb.working_ideas._queries import (
+            _doc_to_product_dict,
+        )
+        return _doc_to_product_dict(doc, delivery)
+
+    def test_bogus_jira_completed_treated_as_false(self):
+        """When jira_completed=True but no tickets and phase != subtasks_done,
+        the product dict should report jira_completed=False."""
+        delivery = {
+            "jira_completed": True,
+            "jira_tickets": [],
+        }
+        result = self._call(self._BASE_DOC, delivery)
+        assert result["jira_completed"] is False
+
+    def test_subtasks_done_honours_jira_completed(self):
+        """When jira_phase='subtasks_done' and jira_completed=True,
+        jira_completed should be True even without ticket records."""
+        doc = {**self._BASE_DOC, "jira_phase": "subtasks_done"}
+        delivery = {
+            "jira_completed": True,
+            "jira_tickets": [],
+        }
+        result = self._call(doc, delivery)
+        assert result["jira_completed"] is True
+
+    def test_real_tickets_honours_jira_completed(self):
+        """When jira_completed=True and tickets exist,
+        jira_completed should be True."""
+        delivery = {
+            "jira_completed": True,
+            "jira_tickets": [{"key": "PROJ-1"}],
+        }
+        result = self._call(self._BASE_DOC, delivery)
+        assert result["jira_completed"] is True
+
+    def test_jira_not_completed_stays_false(self):
+        """When jira_completed=False, jira_completed should be False."""
+        delivery = {
+            "jira_completed": False,
+            "jira_tickets": [],
+        }
+        result = self._call(self._BASE_DOC, delivery)
+        assert result["jira_completed"] is False
+
+    def test_no_delivery_record(self):
+        """When there is no delivery record at all, jira_completed=False."""
+        result = self._call(self._BASE_DOC, None)
+        assert result["jira_completed"] is False
+        assert result["jira_tickets"] == []
+
+
 # ── fail_unfinalized_on_startup ───────────────────────────────
 
 
@@ -1906,3 +2039,193 @@ class TestFailUnfinalizedOnStartup:
         ):
             result = fail_unfinalized_on_startup()
             assert result == []
+
+
+# ── save_jira_phase ───────────────────────────────────────────
+
+
+class TestSaveJiraPhase:
+    """Tests for save_jira_phase."""
+
+    def test_persists_phase_to_document(self, wi_mocks):
+        """Should update the jira_phase field on the working idea doc."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+        result = save_jira_phase("run-abc", "skeleton_pending")
+
+        assert result == 1
+        call_args = mock_collection.update_one.call_args
+        assert call_args[0][0] == {"run_id": "run-abc"}
+        set_fields = call_args[0][1]["$set"]
+        assert set_fields["jira_phase"] == "skeleton_pending"
+        assert "update_date" in set_fields
+
+    def test_clears_phase_with_empty_string(self, wi_mocks):
+        """Should allow clearing the phase (rejection case)."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+        result = save_jira_phase("run-abc", "")
+
+        assert result == 1
+        set_fields = mock_collection.update_one.call_args[0][1]["$set"]
+        assert set_fields["jira_phase"] == ""
+
+    def test_returns_zero_when_no_match(self, wi_mocks):
+        """Should return 0 when no document matches the run_id."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(modified_count=0)
+
+        result = save_jira_phase("nonexistent", "skeleton_pending")
+        assert result == 0
+
+    def test_returns_zero_on_db_error(self, wi_mocks):
+        """Should catch PyMongoError and return 0."""
+        from pymongo.errors import PyMongoError
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = save_jira_phase("run-abc", "skeleton_pending")
+            assert result == 0
+
+
+# ── find_completed_ideas_by_project ───────────────────────────
+
+
+class TestFindCompletedIdeasByProject:
+    """Tests for the find_completed_ideas_by_project query."""
+
+    def test_returns_enriched_products(self, wi_mocks):
+        """Should return enriched product dicts for completed ideas."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_completed_ideas_by_project,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = [
+            {
+                "run_id": "run-x",
+                "idea": "Test idea",
+                "status": "completed",
+                "created_at": "2026-03-05T00:00:00Z",
+                "executive_summary": [{"iteration": 1, "content": "exec"}],
+                "section": {},
+                "confluence_url": "https://wiki/page",
+                "jira_phase": "skeleton_approved",
+            },
+        ]
+        mock_collection.find.return_value = mock_cursor
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.get_delivery_record",
+            return_value={
+                "confluence_published": True,
+                "jira_completed": False,
+                "jira_tickets": ["PROJ-1"],
+            },
+        ):
+            result = find_completed_ideas_by_project("proj-1")
+
+        assert len(result) == 1
+        product = result[0]
+        assert product["run_id"] == "run-x"
+        assert product["confluence_published"] is True
+        assert product["jira_completed"] is False
+        assert product["jira_phase"] == "skeleton_approved"
+        assert product["jira_tickets"] == ["PROJ-1"]
+
+    def test_returns_empty_on_no_results(self, wi_mocks):
+        """Should return empty list when no completed ideas exist."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_completed_ideas_by_project,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = []
+        mock_collection.find.return_value = mock_cursor
+
+        result = find_completed_ideas_by_project("proj-empty")
+        assert result == []
+
+    def test_skips_docs_without_run_id(self, wi_mocks):
+        """Documents without run_id should be skipped."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_completed_ideas_by_project,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = [
+            {"status": "completed", "idea": "No run_id"},
+        ]
+        mock_collection.find.return_value = mock_cursor
+
+        result = find_completed_ideas_by_project("proj-1")
+        assert result == []
+
+    def test_query_uses_completed_status(self, wi_mocks):
+        """The MongoDB query should filter for status='completed'."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_completed_ideas_by_project,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = []
+        mock_collection.find.return_value = mock_cursor
+
+        find_completed_ideas_by_project("proj-1")
+
+        query = mock_collection.find.call_args[0][0]
+        assert query["status"] == "completed"
+
+    def test_returns_empty_on_db_error(self):
+        """Should return empty list on PyMongoError."""
+        from pymongo.errors import PyMongoError
+
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_completed_ideas_by_project,
+        )
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = find_completed_ideas_by_project("proj-1")
+            assert result == []
+
+    def test_delivery_record_none_uses_defaults(self, wi_mocks):
+        """When no delivery record exists, defaults should be used."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_completed_ideas_by_project,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = [
+            {
+                "run_id": "run-y",
+                "idea": "New idea",
+                "status": "completed",
+                "executive_summary": [],
+                "section": {},
+            },
+        ]
+        mock_collection.find.return_value = mock_cursor
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.get_delivery_record",
+            return_value=None,
+        ):
+            result = find_completed_ideas_by_project("proj-1")
+
+        assert len(result) == 1
+        product = result[0]
+        assert product["confluence_published"] is False
+        assert product["jira_completed"] is False
+        assert product["jira_tickets"] == []

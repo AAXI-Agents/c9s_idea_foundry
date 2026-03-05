@@ -170,13 +170,16 @@ def _publish_pending_confluence() -> int:
                     run_id=item.get("run_id", ""),
                 )
 
-                # Persist URL
+                # Persist delivery record in productRequirements
                 if item.get("run_id"):
-                    from crewai_productfeature_planner.mongodb import save_confluence_url
-                    save_confluence_url(
+                    from crewai_productfeature_planner.mongodb.product_requirements import (
+                        upsert_delivery_record,
+                    )
+                    upsert_delivery_record(
                         run_id=item["run_id"],
+                        confluence_published=True,
                         confluence_url=result["url"],
-                        page_id=result["page_id"],
+                        confluence_page_id=result["page_id"],
                     )
 
                 published += 1

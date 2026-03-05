@@ -50,7 +50,7 @@ def search_jira_issues(
 
     jql = " AND ".join(jql_parts)
     url = (
-        f"{env['base_url']}/rest/api/2/search?"
+        f"{env['base_url']}/rest/api/3/search/jql?"
         f"jql={urllib.parse.quote(jql)}"
         f"&fields=key,summary,issuetype&maxResults=100"
     )
@@ -184,7 +184,7 @@ def create_jira_issue(
         fields["components"] = [{"name": component}]
 
     payload = {"fields": fields}
-    url = f"{env['base_url']}/rest/api/2/issue"
+    url = f"{env['base_url']}/rest/api/3/issue"
 
     logger.info(
         "[Jira] Creating %s '%s' in %s (run_id=%s)",
@@ -242,7 +242,7 @@ def create_issue_link(
 ) -> None:
     """Create a dependency link between two Jira issues.
 
-    Uses the Jira REST API ``/rest/api/2/issueLink`` endpoint.
+    Uses the Jira REST API ``/rest/api/3/issueLink`` endpoint.
 
     Args:
         inward_issue_key: The issue key that *is blocked by* or depends
@@ -264,7 +264,7 @@ def create_issue_link(
         "outwardIssue": {"key": outward_issue_key},
     }
 
-    url = f"{env['base_url']}/rest/api/2/issueLink"
+    url = f"{env['base_url']}/rest/api/3/issueLink"
 
     logger.info(
         "[Jira] Linking %s → %s (type=%s)",

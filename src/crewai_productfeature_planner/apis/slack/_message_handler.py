@@ -29,6 +29,7 @@ from crewai_productfeature_planner.apis.slack._handler_proxies import (
     _handle_current_project,
     _handle_end_session,
     _handle_list_ideas,
+    _handle_list_products,
     _handle_publish_intent,
     _handle_restart_prd,
     _handle_resume_prd,
@@ -45,6 +46,7 @@ from crewai_productfeature_planner.apis.slack._intent_phrases import (
     _END_SESSION_PHRASES,
     _IDEA_PHRASES,
     _LIST_IDEAS_PHRASES,
+    _LIST_PRODUCTS_PHRASES,
     _LIST_PROJECTS_PHRASES,
     _RESTART_PRD_PHRASES,
     _RESUME_PRD_PHRASES,
@@ -184,6 +186,7 @@ def _interpret_and_act_inner(
     has_current_phrase = any(p in lower_text_bare for p in _CURRENT_PROJECT_PHRASES)
     has_memory_phrase = any(p in lower_text_bare for p in _CONFIGURE_MEMORY_PHRASES)
     has_config_phrase = any(p in lower_text_bare for p in _UPDATE_CONFIG_PHRASES)
+    has_list_products_phrase = any(p in lower_text_bare for p in _LIST_PRODUCTS_PHRASES)
     has_resume_phrase = any(p in lower_text_bare for p in _RESUME_PRD_PHRASES)
     has_restart_phrase = any(p in lower_text_bare for p in _RESTART_PRD_PHRASES)
 
@@ -200,6 +203,17 @@ def _interpret_and_act_inner(
         intent = "create_prd"
 
     # ── Session-management & navigation intents ──
+
+    # ── List products (must be checked BEFORE list_ideas) ──
+    if intent == "list_products_intent" or (not has_idea_phrase and has_list_products_phrase):
+        _handle_list_products(channel, thread_ts, user, session)
+        tracked_response = "(list products)"
+        log_tracked_interaction(
+            log_interaction, "slack", clean_text, "list_products_intent",
+            tracked_response, None, None, session_project_id,
+            channel, thread_ts, user, history,
+        )
+        return
 
     # ── List ideas (must be checked BEFORE list_projects) ──
     if intent == "list_ideas" or (not has_idea_phrase and has_list_ideas_phrase):
@@ -297,6 +311,7 @@ def _interpret_and_act_inner(
             "*Idea Iteration & PRD Generation*\n"
             "\u2022 Iterate on an idea — just describe your product idea\n"
             "\u2022 List ideas for the current project\n"
+            "\u2022 List completed products & delivery status\n"
             "\u2022 Publish PRDs to Confluence & create Jira tickets\n"
             "\u2022 Check publishing status\n\n"
             "*Configuration*\n"

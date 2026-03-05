@@ -30,6 +30,20 @@ if TYPE_CHECKING:
     from crewai_productfeature_planner.flows.prd_flow import PRDFlow
 
 
+def _persist_jira_phase(run_id: str, phase: str) -> None:
+    """Persist Jira phase to MongoDB so the scheduler can gate on it."""
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_jira_phase,
+        )
+        save_jira_phase(run_id, phase)
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "Failed to persist jira_phase=%s for run_id=%s",
+            phase, run_id, exc_info=True,
+        )
+
+
 def _extract_issue_keys(text: str) -> list[str]:
     """Extract Jira issue keys (e.g. ``PRD-42``) from *text*."""
     return re.findall(r"[A-Z]{2,10}-\d+", text)
@@ -170,6 +184,7 @@ def build_jira_skeleton_stage(flow: "PRDFlow") -> AgentStage:
     def _apply(result: StageResult) -> None:
         flow.state.jira_skeleton = result.output
         flow.state.jira_phase = "skeleton_pending"
+        _persist_jira_phase(flow.state.run_id, "skeleton_pending")
         logger.info(
             "[JiraSkeleton] Skeleton generated (%d chars) — awaiting approval",
             len(result.output),
@@ -331,6 +346,7 @@ def build_jira_epics_stories_stage(flow: "PRDFlow") -> AgentStage:
     def _apply(result: StageResult) -> None:
         flow.state.jira_epics_stories_output = result.output
         flow.state.jira_phase = "epics_stories_done"
+        _persist_jira_phase(flow.state.run_id, "epics_stories_done")
         logger.info(
             "[JiraEpicsStories] Epics and Stories created (%d chars) — "
             "paused for review before sub-task creation",
@@ -424,7 +440,7 @@ def build_jira_subtasks_stage(flow: "PRDFlow") -> AgentStage:
                     if tkey not in known:
                         append_jira_ticket(flow.state.run_id, {
                             "key": tkey,
-                            "type": "Task",
+                            "type": "Sub-task",
                         })
             except Exception:  # noqa: BLE001
                 pass
@@ -439,6 +455,7 @@ def build_jira_subtasks_stage(flow: "PRDFlow") -> AgentStage:
             f"Sub-Tasks: {result.output}"
         )
         flow.state.jira_phase = "subtasks_done"
+        _persist_jira_phase(flow.state.run_id, "subtasks_done")
         logger.info(
             "[JiraSubtasks] Sub-tasks created (%d chars) — complete",
             len(result.output),
@@ -496,6 +513,7 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
             orig_skeleton_apply(result)
             # Move past "skeleton_pending" so Phase 2 runs
             flow.state.jira_phase = "skeleton_approved"
+            _persist_jira_phase(flow.state.run_id, "skeleton_approved")
 
         skeleton.apply = _auto_approve_apply
 
@@ -505,6 +523,7 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
         def _auto_approve_subtasks(result: StageResult) -> None:
             orig_es_apply(result)
             flow.state.jira_phase = "subtasks_ready"
+            _persist_jira_phase(flow.state.run_id, "subtasks_ready")
 
         epics_stories.apply = _auto_approve_subtasks
 

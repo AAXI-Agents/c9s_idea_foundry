@@ -675,6 +675,242 @@ _CODEX: list[CodexEntry] = [
             "prediction adds create_jira_skeleton category."
         ),
     ),
+    CodexEntry(
+        "0.9.6",
+        date(2026, 3, 5),
+        (
+            "Fix KeyError 'approved_skeleton' in startup delivery. "
+            "build_startup_delivery_crew was missing the approved_skeleton "
+            "format parameter when interpolating the create_jira_stories_task "
+            "description, causing Jira ticket creation to fail on server "
+            "restart for pending deliveries. Now passes a fallback instruction "
+            "for the agent to derive the structure from functional requirements."
+        ),
+    ),
+    CodexEntry(
+        "0.9.7",
+        date(2026, 3, 5),
+        (
+            "Fix Confluence data persisted to wrong collection. "
+            "save_confluence_url was writing confluence_url, "
+            "confluence_page_id, and confluence_published_at to "
+            "workingIdeas instead of productRequirements. Removed "
+            "save_confluence_url entirely; all call sites now use "
+            "upsert_delivery_record in the productRequirements "
+            "collection. Refactored find_completed_without_confluence "
+            "to cross-reference productRequirements.confluence_published "
+            "instead of checking workingIdeas.confluence_url. Added "
+            "migration script scripts/migrate_confluence_to_product_"
+            "requirements.py to move existing data."
+        ),
+    ),
+    CodexEntry(
+        "0.9.8",
+        date(2026, 3, 5),
+        (
+            "Standardise productRequirements status values. "
+            "Replaced pending/partial/completed with new/inprogress/"
+            "completed. 'new' = first created, 'inprogress' = being "
+            "updated (Confluence published or Jira in progress), "
+            "'completed' = all Jira tickets including sub-tasks done. "
+            "Updated _compute_status, find_pending_delivery query, "
+            "API models, OpenAPI docs, and migrated existing DB records."
+        ),
+    ),
+    CodexEntry(
+        "0.9.9",
+        date(2026, 3, 4),
+        (
+            "Fix 503 retry resume — ModelBusyError (503) now propagates "
+            "from section critique/refine and executive summary loops "
+            "instead of being swallowed by the generic except-Exception "
+            "handler that force-approves sections. This allows the flow "
+            "to pause cleanly on 503 and resume at the exact section "
+            "and iteration where it left off, rather than force-approving "
+            "with incomplete content. Updated _section_loop.py and "
+            "_executive_summary.py to catch (BillingError, ModelBusyError) "
+            "before the generic Exception handler."
+        ),
+    ),
+    CodexEntry(
+        "0.9.10",
+        date(2026, 3, 5),
+        (
+            "Fix idea list: exclude completed/archived ideas and fix "
+            "sections_done count — find_ideas_by_project now uses $nin "
+            "to exclude both 'archived' and 'completed' statuses so "
+            "only actionable ideas are shown. _doc_to_idea_dict now "
+            "counts the top-level executive_summary as a section "
+            "(was previously only counting keys under the section "
+            "object, giving 9/10 for fully drafted ideas) and forces "
+            "sections_done=total_sections when status is 'completed'."
+        ),
+    ),
+    CodexEntry(
+        "0.9.11",
+        date(2026, 3, 5),
+        (
+            "Fix autonomous Jira creation bypassing user approval — "
+            "the startup delivery scheduler was creating Jira tickets "
+            "(Epics, Stories, Sub-tasks) without approval when the "
+            "interactive phased flow owned the Jira lifecycle. Added "
+            "save_jira_phase() to MongoDB working_ideas to persist the "
+            "jira_phase field across server restarts. All phase "
+            "transitions in _jira.py and _finalization.py now persist "
+            "jira_phase. _discover_pending_deliveries() now checks "
+            "jira_phase and skips items managed by the interactive "
+            "flow, preventing the scheduler from creating duplicate "
+            "or unapproved Jira tickets."
+        ),
+    ),
+    CodexEntry(
+        "0.9.12",
+        date(2026, 3, 5),
+        (
+            "Add 'list products' intent — new Slack intent to list all "
+            "completed (non-archived) ideas with delivery manager "
+            "interaction buttons. Users can resume Confluence publish, "
+            "review Jira skeleton, publish Jira epics & stories, and "
+            "publish Jira sub-tasks directly from the product list. "
+            "Includes new MongoDB query find_completed_ideas_by_project, "
+            "Block Kit builder with contextual delivery buttons, "
+            "interactive button dispatch handler, dual-layer intent "
+            "classification (LLM + phrase fallback), and full event "
+            "routing wiring."
+        ),
+    ),
+    CodexEntry(
+        "0.9.13",
+        date(2026, 3, 5),
+        (
+            "Fix 3 product list issues — (1) Confluence URL in view "
+            "details now falls back to the productRequirements delivery "
+            "record when the workingIdeas doc lacks the URL. "
+            "(2) Jira Ticketing status uses differentiated icons: "
+            ":arrow_forward: for not started, :arrows_counterclockwise: "
+            "for in-progress phases, :white_check_mark: only when "
+            "completed; label changed from 'Jira' to 'Jira Ticketing'. "
+            "(3) View details now shows ticket type counts "
+            "(e.g. '2 Epics, 3 Stories, 1 Sub-task') instead of "
+            "listing individual ticket keys."
+        ),
+    ),
+    CodexEntry(
+        "0.9.14",
+        date(2026, 3, 5),
+        (
+            "Product list: only completed delivery steps show static "
+            ":white_check_mark: status text; incomplete steps appear "
+            "solely as interactive buttons (Start/Resume). Confluence "
+            "and Jira status removed from section text when not yet "
+            "completed — users click the button to take action instead "
+            "of seeing a misleading status indicator."
+        ),
+    ),    CodexEntry(
+        "0.9.15",
+        date(2026, 3, 5),
+        (
+            "Fix 3 product list display issues \u2014 (1) View details now "
+            "checks confluence_published flag when URL is missing, showing "
+            "'Published (URL not available)' instead of 'Not published'. "
+            "(2) Jira sub-task creation now stores type as 'Sub-task' "
+            "instead of 'Task'. (3) View details normalises legacy ticket "
+            "types: 'Task'\u2192'Sub-task', 'unknown'\u2192'Sub-task', ensuring "
+            "correct breakdown counts."
+        ),
+    ),
+    CodexEntry(
+        "0.9.16",
+        date(2026, 3, 5),
+        (
+            "Fix Confluence URL display with native Slack URL button "
+            "(always clickable regardless of mrkdwn rendering). Fix Jira "
+            "ticket type resolution: replace blind 'unknown'\u2192'Sub-task' "
+            "normalisation with live Jira API lookup via "
+            "search_jira_issues, persisting corrected types back to "
+            "MongoDB for future queries."
+        ),
+    ),
+    CodexEntry(
+        "0.10.0",
+        date(2026, 3, 5),
+        (
+            "Jira phased-approval overhaul: (1) Skeleton reject regenerates "
+            "instead of skipping Jira. (2) Skeleton approve immediately "
+            "creates Epics & Stories instead of requiring another button. "
+            "(3) New sub-task review step — after sub-tasks are generated, "
+            "user reviews and can approve or regenerate before finalising. "
+            "New action IDs: jira_subtask_approve, jira_subtask_reject. "
+            "New jira_phase value: subtasks_pending. "
+            "(4) Fixed jira_phase=None from MongoDB hiding skeleton button."
+        ),
+    ),
+    CodexEntry(
+        "0.10.1",
+        date(2026, 3, 5),
+        (
+            "Fix missing Jira skeleton button in product list: "
+            "smart jira_completed check — don't trust jira_completed=True "
+            "when jira_tickets is empty and jira_phase != subtasks_done "
+            "(scheduler race condition). Fallback button for unrecognised "
+            "jira_phase values shows Restart Jira Skeleton."
+        ),
+    ),
+    CodexEntry(
+        "0.10.2",
+        date(2026, 3, 5),
+        (
+            "Migrate Jira REST API from deprecated v2 to v3: search uses "
+            "/rest/api/3/search/jql (fixes 410 Gone that broke duplicate "
+            "detection, causing massive ticket duplication on every server "
+            "restart). Issue creation and linking also migrated to v3. "
+            "Fix empty response body crash in _jira_request for link "
+            "creation 201 responses (return {} instead of JSON parse error)."
+        ),
+    ),
+    CodexEntry(
+        "0.11.0",
+        date(2026, 3, 5),
+        (
+            "Fix autonomous Jira delivery re-creating tickets from scratch "
+            "on every server restart: after successful autonomous Jira "
+            "completion, set jira_phase='subtasks_done' on workingIdeas "
+            "document so _discover_pending_deliveries skips the run on "
+            "next restart. Applied to components/startup.py, _cli_startup.py, "
+            "and flows/_finalization.py. Also auto-populate Jira ticket URL "
+            "(ATLASSIAN_BASE_URL/browse/KEY) in append_jira_ticket when not "
+            "explicitly provided — all callers now store full browse URLs "
+            "in the productRequirements.jira_tickets array."
+        ),
+    ),
+    CodexEntry(
+        "0.11.1",
+        date(2026, 3, 5),
+        (
+            "Fix 'update knowledge' intent misclassification — added "
+            "'knowledge' synonyms to _CONFIGURE_MEMORY_PHRASES in "
+            "_intent_phrases.py and to LLM system prompts in "
+            "gemini_chat.py / openai_chat.py so that phrases like "
+            "'update knowledge', 'project knowledge', 'configure "
+            "knowledge', etc. are correctly classified as "
+            "configure_memory intent (same as 'update memory')."
+        ),
+    ),
+    CodexEntry(
+        "0.11.2",
+        date(2026, 3, 5),
+        (
+            "Fix PRD section generation pausing prematurely on 429 "
+            "RESOURCE_EXHAUSTED rate-limit errors. Separated "
+            "_RATE_LIMIT_PATTERNS from _MODEL_BUSY_PATTERNS in retry.py "
+            "so that rate-limit errors get 5 retries with 30s-base "
+            "exponential backoff (30s, 60s, 120s, 240s, 480s) before "
+            "pausing the flow, instead of pausing immediately. Also "
+            "refactored retry loop from for-loop to while-loop so "
+            "rate-limit retries don't consume the normal retry budget. "
+            "Updated preflight.py Jira health check from v2 to v3 API."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

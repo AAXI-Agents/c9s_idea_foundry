@@ -262,19 +262,16 @@ def _run_startup_delivery() -> int:
                 error=None,
             )
 
-            # Persist confluence_url to workingIdeas if new
-            if new_conf_done and not item["doc"].get("confluence_url"):
-                conf_url = _extract_confluence_url(raw_output)
-                if conf_url:
-                    try:
-                        from crewai_productfeature_planner.mongodb import save_confluence_url
-                        save_confluence_url(
-                            run_id=run_id,
-                            confluence_url=conf_url,
-                            page_id="",
-                        )
-                    except Exception:
-                        pass
+            # Mark jira_phase on workingIdeas so the startup
+            # scheduler won't re-create tickets on next restart.
+            if new_jira_done:
+                try:
+                    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                        save_jira_phase,
+                    )
+                    save_jira_phase(run_id, "subtasks_done")
+                except Exception:  # noqa: BLE001
+                    pass
 
             if new_conf_done and new_jira_done:
                 delivered += 1
@@ -457,7 +454,9 @@ def _publish_unpublished_prds() -> int:
     try:
         from crewai_productfeature_planner.mongodb import (
             find_completed_without_confluence,
-            save_confluence_url,
+        )
+        from crewai_productfeature_planner.mongodb.product_requirements import (
+            upsert_delivery_record,
         )
         docs = find_completed_without_confluence()
     except Exception as exc:
@@ -490,10 +489,11 @@ def _publish_unpublished_prds() -> int:
                 markdown_content=content,
                 run_id=run_id,
             )
-            save_confluence_url(
+            upsert_delivery_record(
                 run_id=run_id,
+                confluence_published=True,
                 confluence_url=result["url"],
-                page_id=result["page_id"],
+                confluence_page_id=result["page_id"],
             )
             published += 1
             logger.info(

@@ -7,6 +7,8 @@ import pytest
 
 from crewai_productfeature_planner.scripts.retry import (
     DEFAULT_MAX_RETRIES,
+    DEFAULT_RATE_LIMIT_BASE_DELAY,
+    DEFAULT_RATE_LIMIT_RETRIES,
     DEFAULT_RETRY_BASE_DELAY,
     BillingError,
     LLMError,
@@ -243,18 +245,21 @@ def test_model_busy_service_unavailable_not_retried():
     mock_sleep.assert_not_called()
 
 
-def test_model_busy_try_again_later_not_retried():
-    """'try again later' variant should also raise ModelBusyError."""
+def test_try_again_later_is_rate_limit_not_model_busy():
+    """'try again later' should be treated as a rate-limit (retried with backoff)
+    rather than a model-busy error (paused immediately)."""
+    ok = MagicMock(raw="recovered")
     crew = _make_crew(
-        side_effect=RuntimeError("Please try again later"),
+        side_effect=[RuntimeError("Please try again later"), ok],
     )
     with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
-        with pytest.raises(ModelBusyError):
-            crew_kickoff_with_retry(
-                crew, step_label="test", max_retries=3, base_delay=5.0,
-            )
-    assert crew.kickoff.call_count == 1
-    mock_sleep.assert_not_called()
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=5.0,
+        )
+    assert result.raw == "recovered"
+    assert crew.kickoff.call_count == 2
+    # First rate-limit retry should wait DEFAULT_RATE_LIMIT_BASE_DELAY
+    mock_sleep.assert_called_once_with(DEFAULT_RATE_LIMIT_BASE_DELAY)
 
 
 def test_model_busy_error_is_llm_error():
@@ -267,6 +272,97 @@ def test_model_busy_error_is_runtime_error():
     assert issubclass(ModelBusyError, RuntimeError)
 
 
+# ── Rate-limit retries (429 / RESOURCE_EXHAUSTED) ────────────
+
+
+def test_rate_limit_resource_exhausted_retried():
+    """429 RESOURCE_EXHAUSTED should be retried with extended backoff."""
+    ok = MagicMock(raw="done")
+    crew = _make_crew(
+        side_effect=[
+            RuntimeError("429 RESOURCE_EXHAUSTED: out of quota"),
+            ok,
+        ],
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=5.0,
+        )
+    assert result.raw == "done"
+    assert crew.kickoff.call_count == 2
+    # First rate-limit attempt: 30s base delay
+    mock_sleep.assert_called_once_with(DEFAULT_RATE_LIMIT_BASE_DELAY)
+
+
+def test_rate_limit_exponential_backoff():
+    """Consecutive rate-limit errors should use exponential backoff
+    (30s, 60s, 120s …) before eventually raising ModelBusyError."""
+    errors = [
+        RuntimeError("resource_exhausted") for _ in range(DEFAULT_RATE_LIMIT_RETRIES)
+    ]
+    crew = _make_crew(side_effect=errors + [MagicMock(raw="ok")])
+
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=5.0,
+        )
+    assert result.raw == "ok"
+    delays = [call.args[0] for call in mock_sleep.call_args_list]
+    expected = [DEFAULT_RATE_LIMIT_BASE_DELAY * (2 ** i) for i in range(DEFAULT_RATE_LIMIT_RETRIES)]
+    assert delays == expected
+
+
+def test_rate_limit_exhausted_raises_model_busy():
+    """After exhausting rate-limit retries, should raise ModelBusyError."""
+    errors = [
+        RuntimeError("resource exhausted") for _ in range(DEFAULT_RATE_LIMIT_RETRIES + 1)
+    ]
+    crew = _make_crew(side_effect=errors)
+
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
+        with pytest.raises(ModelBusyError, match="resource exhausted"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    # Should have attempted DEFAULT_RATE_LIMIT_RETRIES + 1 (initial) calls
+    # But rate-limit retries don't count against normal retries,
+    # so it's the rate-limit path that exhausts.
+    assert crew.kickoff.call_count == DEFAULT_RATE_LIMIT_RETRIES + 1
+
+
+def test_rate_limit_does_not_consume_normal_retries():
+    """Rate-limit retries should not count against normal retry budget."""
+    ok = MagicMock(raw="ok")
+    crew = _make_crew(
+        side_effect=[
+            RuntimeError("rate limit exceeded"),  # rate-limit retry 1
+            RuntimeError("rate limit exceeded"),  # rate-limit retry 2
+            RuntimeError("generic LLM error"),    # normal retry 1
+            ok,                                     # success
+        ],
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=0,
+        )
+    assert result.raw == "ok"
+    assert crew.kickoff.call_count == 4
+
+
+def test_rate_limit_too_many_requests():
+    """'too many requests' should trigger rate-limit retry path."""
+    ok = MagicMock(raw="ok")
+    crew = _make_crew(
+        side_effect=[RuntimeError("429: too many requests"), ok],
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=5.0,
+        )
+    assert result.raw == "ok"
+    mock_sleep.assert_called_once_with(DEFAULT_RATE_LIMIT_BASE_DELAY)
+
+
 # ── Defaults ──────────────────────────────────────────────────
 
 
@@ -274,3 +370,9 @@ def test_defaults():
     """Module-level defaults should be sensible."""
     assert DEFAULT_MAX_RETRIES == 3
     assert DEFAULT_RETRY_BASE_DELAY == 5
+
+
+def test_rate_limit_defaults():
+    """Rate-limit defaults should be sensible."""
+    assert DEFAULT_RATE_LIMIT_RETRIES == 5
+    assert DEFAULT_RATE_LIMIT_BASE_DELAY == 30

@@ -44,6 +44,15 @@ _LIST_IDEAS_PHRASES = (
     "ideas in progress", "what ideas",
     "which ideas", "view ideas",
 )
+_LIST_PRODUCTS_PHRASES = (
+    "list products", "show products", "list completed",
+    "show completed ideas", "completed ideas",
+    "completed products", "show completed",
+    "my products", "show my products",
+    "delivery status", "ready for delivery",
+    "products ready", "what products",
+    "which products", "view products",
+)
 _SWITCH_PROJECT_PHRASES = (
     "switch project", "change project", "different project",
     "another project", "swap project", "switch to project",
@@ -65,6 +74,12 @@ _CONFIGURE_MEMORY_PHRASES = (
     "edit memory", "update memory", "view memory",
     "show memory", "add memory", "add more memory",
     "manage memory", "memory configuration",
+    "configure knowledge", "configure more knowledge",
+    "project knowledge", "setup knowledge",
+    "set up knowledge", "knowledge settings", "knowledge config",
+    "edit knowledge", "update knowledge", "view knowledge",
+    "show knowledge", "add knowledge", "add more knowledge",
+    "manage knowledge", "knowledge configuration",
 )
 _UPDATE_CONFIG_PHRASES = (
     "confluence key", "confluence space key", "jira key",
@@ -103,6 +118,7 @@ _PHRASE_INTENT_MAP: list[tuple[tuple[str, ...], str]] = [
     (_CONFIGURE_MEMORY_PHRASES, "configure_memory"),
     (_UPDATE_CONFIG_PHRASES, "update_config"),
     (_LIST_IDEAS_PHRASES, "list_ideas"),
+    (_LIST_PRODUCTS_PHRASES, "list_products_intent"),
     (_LIST_PROJECTS_PHRASES, "list_projects"),
     (_SWITCH_PROJECT_PHRASES, "switch_project"),
     (_END_SESSION_PHRASES, "end_session"),

@@ -82,6 +82,16 @@ _RETRY_ACTIONS = frozenset({
     "flow_retry",
 })
 
+# Jira phased-approval actions (from product list skeleton / review blocks)
+_JIRA_APPROVAL_ACTIONS = frozenset({
+    "jira_skeleton_approve",
+    "jira_skeleton_reject",
+    "jira_review_approve",
+    "jira_review_skip",
+    "jira_subtask_approve",
+    "jira_subtask_reject",
+})
+
 
 def _extract_payload(body: bytes) -> dict | None:
     """Parse the ``payload`` field from a Slack interaction POST.
@@ -130,6 +140,12 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "archive_idea_confirm": ":file_folder: Idea archived",
         "archive_idea_cancel": ":no_entry_sign: Archive cancelled",
         "flow_retry": ":arrows_counterclockwise: Retrying PRD flow",
+        "jira_skeleton_approve": ":white_check_mark: Jira skeleton approved — creating Epics & Stories",
+        "jira_skeleton_reject": ":arrows_counterclockwise: Regenerating Jira skeleton",
+        "jira_review_approve": ":white_check_mark: Epics & Stories approved — creating sub-tasks",
+        "jira_review_skip": ":fast_forward: Sub-tasks skipped",
+        "jira_subtask_approve": ":white_check_mark: Sub-tasks approved — Jira ticketing complete",
+        "jira_subtask_reject": ":arrows_counterclockwise: Regenerating Jira sub-tasks",
     }
     label = labels.get(action_id, action_id)
     # Dynamic action IDs for idea list buttons
@@ -139,6 +155,16 @@ def _ack_action(action_id: str, user_name: str) -> str:
         label = f":arrows_counterclockwise: Restarting idea #{action_id.removeprefix('idea_restart_')}"
     elif action_id.startswith("idea_archive_"):
         label = f":file_folder: Archiving idea #{action_id.removeprefix('idea_archive_')}"
+    elif action_id.startswith("product_confluence_"):
+        label = ":confluence: Publishing to Confluence"
+    elif action_id.startswith("product_jira_skeleton_"):
+        label = ":jira: Reviewing Jira skeleton"
+    elif action_id.startswith("product_jira_epics_"):
+        label = ":jira: Publishing Jira epics & stories"
+    elif action_id.startswith("product_jira_subtasks_"):
+        label = ":jira: Publishing Jira sub-tasks"
+    elif action_id.startswith("product_view_"):
+        label = ":mag: Viewing product details"
     return f"{label} by {user_name}"
 
 
@@ -366,6 +392,78 @@ async def slack_interactions(request: Request) -> JSONResponse:
                     action_id, run_id, user_id, channel_id, thread_ts,
                 ),
             )
+
+            return JSONResponse({"ok": True})
+
+        # ── Product list delivery actions ──
+        _PRODUCT_PREFIXES = (
+            "product_confluence_", "product_jira_skeleton_",
+            "product_jira_epics_", "product_jira_subtasks_",
+            "product_view_",
+        )
+        if any(action_id.startswith(p) for p in _PRODUCT_PREFIXES):
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack product list action: action=%s user=%s value=%s",
+                action_id, user_name, run_id,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_product_list_action,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_product_list_action,
+                    action_id, run_id, user_id, channel_id, thread_ts,
+                ),
+            )
+
+            return JSONResponse({"ok": True})
+
+        # ── Jira phased-approval actions (skeleton / review) ──
+        if action_id in _JIRA_APPROVAL_ACTIONS:
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack Jira approval action: action=%s user=%s run_id=%s",
+                action_id, user_name, run_id,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack.interactions_router._jira_approval_handler import (
+                _handle_jira_approval_action,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_jira_approval_action,
+                    action_id, run_id, user_id, channel_id, thread_ts,
+                ),
+            )
+
+            if channel_id:
+                ack_text = _ack_action(action_id, user_name)
+                loop.run_in_executor(
+                    None,
+                    partial(_with_team, _team_id, _post_ack, channel_id, thread_ts, ack_text),
+                )
 
             return JSONResponse({"ok": True})
 

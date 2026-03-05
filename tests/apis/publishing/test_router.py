@@ -205,7 +205,7 @@ class TestGetStatus:
             "confluence_page_id": "123",
             "jira_completed": False,
             "jira_tickets": [],
-            "status": "partial",
+            "status": "inprogress",
         }
         with patch(
             "crewai_productfeature_planner.apis.publishing.service.get_delivery_status",
@@ -213,7 +213,7 @@ class TestGetStatus:
         ):
             resp = client.get("/publishing/status/abc123")
         assert resp.status_code == 200
-        assert resp.json()["status"] == "partial"
+        assert resp.json()["status"] == "inprogress"
 
     def test_not_found(self, client):
         with patch(

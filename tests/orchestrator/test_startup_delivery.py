@@ -151,7 +151,7 @@ class TestDiscoverPendingDeliveries:
             },
         ])
         mock_rec.return_value = {
-            "status": "partial",
+            "status": "inprogress",
             "confluence_published": False,
             "jira_completed": True,
         }
@@ -236,6 +236,85 @@ class TestDiscoverPendingDeliveries:
         ])
         assert _discover_pending_deliveries() == []
 
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_skips_item_with_interactive_jira_phase(self, mock_db, _rec, _asm):
+        """Items with a non-empty jira_phase (interactive flow) should be
+        skipped — the scheduler must not create tickets autonomously."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Interactive Jira",
+                "jira_phase": "skeleton_pending",
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert items == []
+
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_skips_epics_stories_done_phase(self, mock_db, _rec, _asm):
+        """Items awaiting user review (epics_stories_done) should be skipped."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Awaiting review",
+                "jira_phase": "epics_stories_done",
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert items == []
+
+    @patch(_UPSERT_REC)
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_marks_jira_completed_when_subtasks_done(
+        self, mock_db, _rec, _asm, mock_upsert,
+    ):
+        """Items with jira_phase='subtasks_done' should be marked
+        jira_completed and skipped from autonomous delivery."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Jira done",
+                "jira_phase": "subtasks_done",
+                "confluence_url": "https://wiki.test.com/p/1",
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert items == []
+        mock_upsert.assert_called_once_with(
+            "r1",
+            jira_completed=True,
+            confluence_published=True,
+            confluence_url="https://wiki.test.com/p/1",
+        )
+
+    @patch(f"{_MOD}._has_jira_credentials", return_value=True)
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_allows_item_without_jira_phase(self, mock_db, _rec, _asm, _jira):
+        """Items without jira_phase (no interactive flow started Jira)
+        should proceed normally for autonomous delivery."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "No interactive Jira",
+                "executive_summary": [{"content": "ES", "iteration": 1}],
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert len(items) == 1
+        assert items[0]["run_id"] == "r1"
+
 
 # ── build_startup_delivery_crew ──────────────────────────────────────
 
@@ -263,7 +342,7 @@ class TestBuildStartupDeliveryCrew:
             "expected_output": "Epic key",
         },
         "create_jira_stories_task": {
-            "description": "Create stories from {functional_requirements} {additional_prd_context} under {epic_key} ({run_id}) confluence={confluence_url}",
+            "description": "Create stories from {approved_skeleton} {functional_requirements} {additional_prd_context} under {epic_key} ({run_id}) confluence={confluence_url}",
             "expected_output": "Story keys",
         },
         "create_jira_tasks_task": {

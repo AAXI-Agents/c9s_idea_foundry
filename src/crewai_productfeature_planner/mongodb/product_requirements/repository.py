@@ -14,7 +14,7 @@ Document schema::
         "jira_completed":        bool,      # True once Jira tickets exist
         "jira_output":           str | "",   # Agent summary of created tickets
         "jira_tickets":          list[dict], # [{key, type, summary, reused?}]
-        "status":                str,       # "pending" | "partial" | "completed"
+        "status":                str,       # "new" | "inprogress" | "completed"
         "created_at":            str,       # ISO-8601
         "updated_at":            str,       # ISO-8601
         "error":                 str | None # last error message (if any)
@@ -45,8 +45,8 @@ def _compute_status(confluence_published: bool, jira_completed: bool) -> str:
     if confluence_published and jira_completed:
         return "completed"
     if confluence_published or jira_completed:
-        return "partial"
-    return "pending"
+        return "inprogress"
+    return "new"
 
 
 # ── Queries ───────────────────────────────────────────────────────────
@@ -69,14 +69,14 @@ def get_delivery_record(run_id: str) -> dict[str, Any] | None:
 def find_pending_delivery() -> list[dict[str, Any]]:
     """Find delivery records that are not yet fully completed.
 
-    Returns records whose ``status`` is ``"pending"`` or ``"partial"``
+    Returns records whose ``status`` is ``"new"`` or ``"inprogress"``
     — i.e. Confluence publish or Jira ticketing is still outstanding.
     """
     try:
         db = get_db()
         docs = list(
             db[PRODUCT_REQUIREMENTS_COLLECTION]
-            .find({"status": {"$in": ["pending", "partial"]}})
+            .find({"status": {"$in": ["new", "inprogress"]}})
             .sort("created_at", 1)
         )
         logger.info(
@@ -193,6 +193,13 @@ def append_jira_ticket(
     Returns:
         ``True`` on success, ``False`` on error.
     """
+    # Auto-populate URL from ATLASSIAN_BASE_URL if not provided.
+    if ticket.get("key") and not ticket.get("url"):
+        import os
+        base_url = os.getenv("ATLASSIAN_BASE_URL", "")
+        if base_url:
+            ticket = {**ticket, "url": f"{base_url.rstrip('/')}/browse/{ticket['key']}"}
+
     now = _now_iso()
     try:
         db = get_db()

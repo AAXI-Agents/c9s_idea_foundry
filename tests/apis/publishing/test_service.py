@@ -146,8 +146,8 @@ class TestPublishConfluenceSingle:
                 return_value=publish_result,
             ),
             patch(
-                "crewai_productfeature_planner.mongodb.save_confluence_url",
-            ) as mock_save,
+                "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record",
+            ) as mock_upsert,
         ):
             from crewai_productfeature_planner.apis.publishing.service import (
                 publish_confluence_single,
@@ -156,7 +156,7 @@ class TestPublishConfluenceSingle:
 
         assert result["url"] == "https://example.com/page/1"
         assert result["action"] == "created"
-        mock_save.assert_called_once()
+        mock_upsert.assert_called_once()
 
 
 # ── publish_confluence_all ───────────────────────────────────────────
@@ -203,7 +203,7 @@ class TestGetDeliveryStatus:
             "run_id": "r1",
             "confluence_published": True,
             "confluence_url": "https://example.com",
-            "status": "partial",
+            "status": "inprogress",
         }
         with patch(
             "crewai_productfeature_planner.mongodb.product_requirements.get_delivery_record",

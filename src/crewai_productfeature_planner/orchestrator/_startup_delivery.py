@@ -59,6 +59,38 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
         if not run_id:
             continue
 
+        # ── Respect interactive Jira phase ────────────────────────
+        # If the interactive flow started phased Jira ticketing,
+        # ``jira_phase`` is persisted on the workingIdeas document.
+        # The scheduler must NOT create tickets autonomously —
+        # the user is expected to approve each phase via Slack.
+        jira_phase = doc.get("jira_phase", "")
+        if jira_phase:
+            if jira_phase == "subtasks_done":
+                # Interactive flow completed Jira — mark done.
+                from crewai_productfeature_planner.mongodb.product_requirements import (
+                    upsert_delivery_record,
+                )
+                upsert_delivery_record(
+                    run_id,
+                    jira_completed=True,
+                    confluence_published=bool(doc.get("confluence_url")),
+                    confluence_url=doc.get("confluence_url", ""),
+                )
+                logger.info(
+                    "[StartupDelivery] run_id=%s — jira_phase is "
+                    "'subtasks_done'; marked jira_completed",
+                    run_id,
+                )
+            else:
+                logger.info(
+                    "[StartupDelivery] Skipping run_id=%s — interactive "
+                    "Jira flow owns lifecycle (jira_phase=%s)",
+                    run_id,
+                    jira_phase,
+                )
+            continue
+
         record = get_delivery_record(run_id)
 
         # A record may have been prematurely marked "completed" by
@@ -360,6 +392,9 @@ def build_startup_delivery_crew(
 
             stories_task = Task(
                 description=task_configs["create_jira_stories_task"]["description"].format(
+                    approved_skeleton="(No pre-approved skeleton available "
+                        "— derive the Epic/Story structure from the "
+                        "functional requirements and PRD context below.)",
                     functional_requirements=effective_func_reqs,
                     additional_prd_context=additional_ctx,
                     epic_key=existing_epic_key or "{epic_key from previous task}",

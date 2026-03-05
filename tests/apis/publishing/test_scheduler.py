@@ -156,7 +156,7 @@ class TestPublishPendingConfluence:
                 return_value={"url": "https://example.com", "page_id": "1"},
             ),
             patch(
-                "crewai_productfeature_planner.mongodb.save_confluence_url",
+                "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record",
             ),
         ):
             assert scheduler._publish_pending_confluence() == 1

@@ -227,7 +227,8 @@ class PRDState(BaseModel):
             "Current Jira ticketing phase: '' (not started), "
             "'skeleton_pending' (skeleton generated, awaiting approval), "
             "'epics_stories_done' (Epics+Stories created, paused for review), "
-            "'subtasks_done' (sub-tasks created, fully complete)."
+            "'subtasks_pending' (sub-tasks generated, awaiting approval), "
+            "'subtasks_done' (sub-tasks approved, fully complete)."
         ),
     )
 

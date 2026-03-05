@@ -689,6 +689,12 @@ class TestNewIntentRouting:
         "project memory",
         "edit memory",
         "show memory",
+        "update knowledge",
+        "configure knowledge",
+        "project knowledge",
+        "edit knowledge",
+        "show knowledge",
+        "add knowledge",
     ])
     def test_configure_memory_text_phrase(self, text):
         """Natural phrasing triggers configure_memory."""

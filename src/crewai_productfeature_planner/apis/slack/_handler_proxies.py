@@ -58,6 +58,10 @@ def _handle_list_ideas(channel, thread_ts, user, session):
     return _er()._handle_list_ideas(channel, thread_ts, user, session)
 
 
+def _handle_list_products(channel, thread_ts, user, session):
+    return _er()._handle_list_products(channel, thread_ts, user, session)
+
+
 def _handle_check_publish_intent(channel, thread_ts, user, send_tool):
     return _er()._handle_check_publish_intent(channel, thread_ts, user, send_tool)
 

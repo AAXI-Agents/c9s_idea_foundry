@@ -1143,7 +1143,7 @@
           "confluence_url": { "type": "string", "title": "Confluence Url", "default": "" },
           "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": false },
           "jira_tickets": { "type": "array", "items": { "type": "object" }, "title": "Jira Tickets", "default": [] },
-          "status": { "type": "string", "title": "Status", "description": "pending | partial | completed.", "default": "pending" }
+          "status": { "type": "string", "title": "Status", "description": "new | inprogress | completed.", "default": "new" }
         }
       },
       "PendingListResponse": {
@@ -1227,7 +1227,7 @@
           "confluence_page_id": { "type": "string", "title": "Confluence Page Id", "default": "" },
           "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": false },
           "jira_tickets": { "type": "array", "items": { "type": "object" }, "title": "Jira Tickets", "default": [] },
-          "status": { "type": "string", "title": "Status", "description": "pending | partial | completed.", "default": "pending" },
+          "status": { "type": "string", "title": "Status", "description": "new | inprogress | completed.", "default": "new" },
           "error": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Error" }
         }
       },

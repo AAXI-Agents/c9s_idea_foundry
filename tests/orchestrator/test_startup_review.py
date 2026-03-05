@@ -30,9 +30,9 @@ _PUBLISH = (
     "crewai_productfeature_planner.tools.confluence_tool"
     ".publish_to_confluence"
 )
-_SAVE_URL = (
-    "crewai_productfeature_planner.mongodb"
-    ".save_confluence_url"
+_UPSERT_DR = (
+    "crewai_productfeature_planner.mongodb.product_requirements"
+    ".upsert_delivery_record"
 )
 
 
@@ -148,7 +148,7 @@ class TestStartupMarkdownReviewStage:
         stage = build_startup_markdown_review_stage()
         assert stage.should_skip() is False
 
-    @patch(_SAVE_URL)
+    @patch(_UPSERT_DR)
     @patch(
         _PUBLISH,
         return_value={"url": "https://wiki/page/1", "page_id": "1", "action": "created"},
@@ -166,7 +166,7 @@ class TestStartupMarkdownReviewStage:
         ],
     )
     @patch(_HAS_CONF, return_value=True)
-    def test_run_publishes_and_saves_url(self, _hc, _disc, mock_pub, mock_save):
+    def test_run_publishes_and_saves_url(self, _hc, _disc, mock_pub, mock_upsert):
         stage = build_startup_markdown_review_stage()
         assert stage.should_skip() is False  # prime _ctx
         result = stage.run()
@@ -176,10 +176,11 @@ class TestStartupMarkdownReviewStage:
             markdown_content="# PRD content",
             run_id="r1",
         )
-        mock_save.assert_called_once_with(
+        mock_upsert.assert_called_once_with(
             run_id="r1",
+            confluence_published=True,
             confluence_url="https://wiki/page/1",
-            page_id="1",
+            confluence_page_id="1",
         )
         assert "Published 1 PRD(s)" in result.output
 
@@ -201,7 +202,7 @@ class TestStartupMarkdownReviewStage:
     )
     @patch(_HAS_CONF, return_value=True)
     def test_run_disk_item_skips_save_url(self, _hc, _disc, mock_pub):
-        """Disk items without a run_id should not call save_confluence_url."""
+        """Disk items without a run_id should not call upsert_delivery_record."""
         stage = build_startup_markdown_review_stage()
         stage.should_skip()  # prime _ctx
         result = stage.run()
@@ -232,7 +233,7 @@ class TestStartupMarkdownReviewStage:
         with pytest.raises(RuntimeError, match="All 1 Confluence publish"):
             stage.run()
 
-    @patch(_SAVE_URL)
+    @patch(_UPSERT_DR)
     @patch(
         _PUBLISH,
         return_value={"url": "https://wiki/p/1", "page_id": "1", "action": "created"},
@@ -257,13 +258,13 @@ class TestStartupMarkdownReviewStage:
         ],
     )
     @patch(_HAS_CONF, return_value=True)
-    def test_run_publishes_multiple(self, _hc, _disc, mock_pub, mock_save):
+    def test_run_publishes_multiple(self, _hc, _disc, mock_pub, mock_upsert):
         stage = build_startup_markdown_review_stage()
         stage.should_skip()  # prime _ctx
         result = stage.run()
 
         assert mock_pub.call_count == 2
-        assert mock_save.call_count == 2
+        assert mock_upsert.call_count == 2
         assert "Published 2 PRD(s)" in result.output
 
     def test_apply_is_noop(self):
@@ -298,7 +299,7 @@ class TestStartupPipeline:
         assert pipeline.skipped == ["startup_markdown_review"]
         assert pipeline.completed == []
 
-    @patch(_SAVE_URL)
+    @patch(_UPSERT_DR)
     @patch(
         _PUBLISH,
         return_value={"url": "https://wiki/p/1", "page_id": "1", "action": "created"},
@@ -317,7 +318,7 @@ class TestStartupPipeline:
     )
     @patch(_HAS_CONF, return_value=True)
     def test_pipeline_completes_with_publishable_prds(
-        self, _hc, _disc, _pub, _save,
+        self, _hc, _disc, _pub, _upsert,
     ):
         pipeline = build_startup_pipeline()
         pipeline.run_pipeline()

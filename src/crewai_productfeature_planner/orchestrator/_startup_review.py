@@ -190,16 +190,17 @@ def build_startup_markdown_review_stage() -> AgentStage:
 
                 published_urls.append(f"{item['title']}: {url}")
 
-                # Persist confluence_url in MongoDB when run_id is known
+                # Persist Confluence delivery in productRequirements
                 if item.get("run_id"):
-                    from crewai_productfeature_planner.mongodb import (
-                        save_confluence_url,
+                    from crewai_productfeature_planner.mongodb.product_requirements import (
+                        upsert_delivery_record,
                     )
 
-                    save_confluence_url(
+                    upsert_delivery_record(
                         run_id=item["run_id"],
+                        confluence_published=True,
                         confluence_url=url,
-                        page_id=page_id,
+                        confluence_page_id=page_id,
                     )
 
                 logger.info(

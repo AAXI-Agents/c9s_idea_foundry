@@ -92,17 +92,20 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
         )
 
     def _apply(result: StageResult) -> None:
-        from crewai_productfeature_planner.mongodb import save_confluence_url
+        from crewai_productfeature_planner.mongodb.product_requirements import (
+            upsert_delivery_record,
+        )
 
         parts = result.output.split("|", 2)
         page_id = parts[1] if len(parts) > 1 else ""
         page_url = parts[2] if len(parts) > 2 else result.output
 
         flow.state.confluence_url = page_url
-        save_confluence_url(
+        upsert_delivery_record(
             run_id=flow.state.run_id,
+            confluence_published=True,
             confluence_url=page_url,
-            page_id=page_id,
+            confluence_page_id=page_id,
         )
 
     return AgentStage(

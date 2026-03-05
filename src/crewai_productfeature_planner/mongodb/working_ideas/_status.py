@@ -2,7 +2,7 @@
 
 Functions that change the status of a working-idea document (completed,
 paused, archived) or update simple scalar fields (output_file,
-confluence_url, project_id, slack_context).
+project_id, slack_context).
 """
 
 from __future__ import annotations
@@ -233,47 +233,6 @@ def save_output_file(run_id: str, output_file: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def save_confluence_url(run_id: str, confluence_url: str, page_id: str = "") -> bool:
-    """Store the Confluence page URL on the working-idea document.
-
-    Called after a PRD is successfully published to Confluence.
-
-    Args:
-        run_id: The run identifier.
-        confluence_url: URL of the published Confluence page.
-        page_id: Optional Confluence page ID.
-
-    Returns:
-        ``True`` if the document was updated, ``False`` otherwise.
-    """
-    now = _now_iso()
-    try:
-        db = _common.get_db()
-        update_fields: dict[str, Any] = {
-            "confluence_url": confluence_url,
-            "confluence_published_at": now,
-            "update_date": now,
-        }
-        if page_id:
-            update_fields["confluence_page_id"] = page_id
-        result = db[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
-            {"$set": update_fields},
-        )
-        updated = result.modified_count > 0
-        logger.info(
-            "[MongoDB] Saved confluence_url for run_id=%s: %s (matched=%d)",
-            run_id, confluence_url, result.modified_count,
-        )
-        return updated
-    except PyMongoError as exc:
-        logger.error(
-            "[MongoDB] Failed to save confluence_url for run_id=%s: %s",
-            run_id, exc,
-        )
-        return False
-
-
 def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
     """Associate a working-idea document with a project configuration.
 
@@ -394,6 +353,45 @@ def save_slack_context(
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to save Slack context for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def save_jira_phase(run_id: str, phase: str) -> int:
+    """Persist the current Jira ticketing phase on a working-idea document.
+
+    The phase is stored at ``workingIdeas.jira_phase`` so the startup
+    delivery scheduler can detect when an interactive flow is managing
+    the Jira lifecycle and avoid creating tickets autonomously.
+
+    Phase values:
+        ``""``                  Not started / rejected
+        ``"skeleton_pending"``  Skeleton generated, awaiting user approval
+        ``"skeleton_approved"`` User approved, Phase 2 may proceed
+        ``"epics_stories_done"`` Epics & Stories created, awaiting review
+        ``"subtasks_ready"``    User approved, Phase 3 may proceed
+        ``"subtasks_done"``     All Jira phases complete
+
+    Returns:
+        Number of documents modified (0 or 1).
+    """
+    try:
+        result = _common.get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "jira_phase": phase,
+                "update_date": _now_iso(),
+            }},
+        )
+        logger.info(
+            "[MongoDB] Saved jira_phase=%s for run_id=%s (matched=%d)",
+            phase, run_id, result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save jira_phase for run_id=%s: %s",
             run_id, exc,
         )
         return 0

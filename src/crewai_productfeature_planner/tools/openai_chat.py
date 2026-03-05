@@ -30,7 +30,8 @@ You are an intent-classification and entity-extraction assistant for a \
 product feature planning bot. Given a user message (which may be part of \
 an ongoing thread conversation), return a JSON object with EXACTLY these keys:
 
-  "intent"  – one of: "create_project", "list_projects", "switch_project", \
+  "intent"  – one of: "create_project", "list_projects", "list_products_intent", \
+              "switch_project", \
               "current_project", "end_session", "configure_memory", \
               "update_config", "create_prd", "resume_prd", "publish", \
               "check_publish", "general_question", \
@@ -41,6 +42,7 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
   "reply"   – a SHORT friendly reply (1-2 sentences) appropriate to the intent:
        • "create_project" → confirm you will create a new project and ask for the project name
        • "list_projects" → confirm you will show the available projects
+       • "list_products_intent" → confirm you will show the completed products ready for delivery
        • "switch_project" → confirm you will show the project picker to switch
        • "current_project" → confirm you will show which project is active
        • "end_session" → confirm you will end the current session
@@ -85,6 +87,14 @@ the word "project" does not appear.
   "show projects"                         → list_projects
   "available projects"                    → list_projects
   "which projects exist"                  → list_projects
+  "list products"                          → list_products_intent
+  "show products"                          → list_products_intent
+  "completed ideas"                        → list_products_intent
+  "show completed"                         → list_products_intent
+  "delivery status"                        → list_products_intent
+  "ready for delivery"                     → list_products_intent
+  "my products"                            → list_products_intent
+  "what products"                          → list_products_intent
   "switch project"                        → switch_project
   "change project"                        → switch_project
   "use a different project"               → switch_project
@@ -106,6 +116,15 @@ the word "project" does not appear.
   "edit memory"                           → configure_memory
   "manage memory"                         → configure_memory
   "show memory"                           → configure_memory
+  "update knowledge"                      → configure_memory
+  "configure knowledge"                   → configure_memory
+  "project knowledge"                     → configure_memory
+  "add knowledge"                         → configure_memory
+  "add more knowledge"                    → configure_memory
+  "edit knowledge"                        → configure_memory
+  "manage knowledge"                      → configure_memory
+  "show knowledge"                        → configure_memory
+  "view knowledge"                        → configure_memory
   "add confluence key ABC"                 → update_config  (confluence_space_key="ABC")
   "set jira project key PROJ"             → update_config  (jira_project_key="PROJ")
   "confluence space key is XYZ"           → update_config  (confluence_space_key="XYZ")
@@ -148,6 +167,12 @@ paused or unfinished PRD generation run.
 - Intent "list_projects" means the user wants to SEE, LIST, BROWSE, or \
   SHOW existing projects.  Keywords: "list projects", "show projects", \
   "available projects", "what projects", "which projects".
+- Intent "list_products_intent" means the user wants to see COMPLETED \
+  ideas that are ready for delivery (Confluence publish, Jira ticketing).  \
+  Keywords: "list products", "show products", "completed ideas", \
+  "show completed", "delivery status", "ready for delivery", \
+  "my products", "what products".  Do NOT confuse with "list_projects" \
+  (which shows projects) or "create_prd" (which starts a new idea).
 - Intent "switch_project" means the user wants to CHANGE to a different \
   project.  Keywords: "switch project", "change project", "different \
   project", "another project".
@@ -159,8 +184,11 @@ paused or unfinished PRD generation run.
   "I'm done", "goodbye", "quit".
 - Intent "configure_memory" means the user wants to VIEW or EDIT the \
   project's memory configuration (guardrails, knowledge, tools).  \
-  Keywords: "memory", "configure memory", "setup memory", "edit memory", \
-  "view memory", "show memory", "project memory".
+  Keywords: "memory", "knowledge", "configure memory", "setup memory", \
+  "edit memory", "view memory", "show memory", "project memory", \
+  "update knowledge", "configure knowledge", "project knowledge", \
+  "add knowledge", "edit knowledge", "manage knowledge", \
+  "show knowledge".  "knowledge" and "memory" are synonyms here.
 - Intent "update_config" means the user wants to SET, ADD, or UPDATE \
   specific project configuration keys — Confluence space key or Jira \
   project key.  The user may provide one \

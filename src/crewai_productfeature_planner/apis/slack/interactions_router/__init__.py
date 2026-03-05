@@ -13,10 +13,12 @@ _next_step_handler   – Next-step suggestion feedback handler
 _restart_handler     – Restart PRD confirmation handler
 _archive_handler     – Archive idea confirmation handler
 _idea_list_handler   – Idea list resume/restart/archive handler
+_jira_approval_handler – Jira skeleton/review approval handler
 """
 
 from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
     _ARCHIVE_ACTIONS,
+    _JIRA_APPROVAL_ACTIONS,
     _KNOWN_ACTIONS,
     _MEMORY_ACTIONS,
     _NEXT_STEP_ACTIONS,
@@ -47,6 +49,9 @@ from crewai_productfeature_planner.apis.slack.interactions_router._project_handl
 from crewai_productfeature_planner.apis.slack.interactions_router._restart_handler import (
     _handle_restart_prd_action,
 )
+from crewai_productfeature_planner.apis.slack.interactions_router._jira_approval_handler import (
+    _handle_jira_approval_action,
+)
 
 __all__ = [
     # Core
@@ -58,6 +63,7 @@ __all__ = [
     "_NEXT_STEP_ACTIONS",
     "_RESTART_PRD_ACTIONS",
     "_ARCHIVE_ACTIONS",
+    "_JIRA_APPROVAL_ACTIONS",
     "_extract_payload",
     "_with_team",
     "_ack_action",
@@ -69,4 +75,5 @@ __all__ = [
     "_handle_restart_prd_action",
     "_handle_archive_action",
     "_handle_idea_list_action",
+    "_handle_jira_approval_action",
 ]

@@ -49,6 +49,7 @@ from crewai_productfeature_planner.apis.slack._session_handlers import (
     handle_current_project,
     handle_end_session,
     handle_list_ideas,
+    handle_list_products,
     handle_memory_reply,
     handle_project_name_reply,
     handle_project_setup_reply,
@@ -100,6 +101,7 @@ _handle_end_session = handle_end_session
 _handle_switch_project = handle_switch_project
 _handle_update_config = handle_update_config
 _handle_list_ideas = handle_list_ideas
+_handle_list_products = handle_list_products
 _handle_publish_intent = handle_publish_intent
 _handle_check_publish_intent = handle_check_publish_intent
 _handle_resume_prd = handle_resume_prd

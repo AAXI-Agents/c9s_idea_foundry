@@ -226,6 +226,7 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
     )
     from crewai_productfeature_planner.orchestrator._jira import (
         _check_jira_prerequisites,
+        _persist_jira_phase,
         build_jira_epics_stories_stage,
         build_jira_skeleton_stage,
         build_jira_subtasks_stage,
@@ -286,12 +287,14 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
         if action == "reject":
             logger.info("[PhasedJira] User rejected skeleton — skipping Jira")
             flow.state.jira_phase = ""
+            _persist_jira_phase(flow.state.run_id, "")
             return
 
         # Apply edits if provided
         if edited:
             flow.state.jira_skeleton = edited
         flow.state.jira_phase = "skeleton_approved"
+        _persist_jira_phase(flow.state.run_id, "skeleton_approved")
         logger.info("[PhasedJira] Skeleton approved — proceeding to Phase 2")
 
     # ── Phase 2: Create Epics & Stories ───────────────────────
@@ -326,6 +329,7 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
                 )
                 return
         flow.state.jira_phase = "subtasks_ready"
+        _persist_jira_phase(flow.state.run_id, "subtasks_ready")
 
     # ── Phase 3: Create Sub-tasks ─────────────────────────────
     flow._notify_progress("jira_subtasks_start", {})
@@ -424,6 +428,16 @@ def persist_post_completion(flow: PRDFlow, result: object) -> None:
                     })
                 except Exception:  # noqa: BLE001
                     pass
+
+            # Mark jira_phase on workingIdeas so the startup
+            # scheduler won't re-create tickets on next restart.
+            try:
+                from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                    save_jira_phase,
+                )
+                save_jira_phase(flow.state.run_id, "subtasks_done")
+            except Exception:  # noqa: BLE001
+                pass
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[PostCompletion] Failed to persist delivery record: %s",

@@ -170,7 +170,7 @@ class TestCheckJira:
         )
         ok, _ = preflight.check_jira()
         assert ok is True
-        assert urls_called[0] == "https://example.atlassian.net/rest/api/2/project/PRJ"
+        assert urls_called[0] == "https://example.atlassian.net/rest/api/3/project/PRJ"
 
     def test_sends_basic_auth(self, monkeypatch: pytest.MonkeyPatch):
         import base64

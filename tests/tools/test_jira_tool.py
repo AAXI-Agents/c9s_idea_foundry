@@ -81,6 +81,69 @@ class TestGetJiraEnv:
         assert env["base_url"] == "https://example.atlassian.net"
 
 
+# ── _jira_request (HTTP layer) ────────────────────────────────────────
+
+
+class TestJiraRequest:
+    """Tests for the low-level _jira_request function."""
+
+    @patch("crewai_productfeature_planner.tools.jira._http.urllib.request.urlopen")
+    def test_empty_response_body_returns_empty_dict(self, mock_urlopen):
+        """201 Created with an empty body (e.g. issue-link) must not crash."""
+        from crewai_productfeature_planner.tools.jira._http import _jira_request
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b""
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        result = _jira_request(
+            "POST",
+            "https://example.atlassian.net/rest/api/3/issueLink",
+            auth_header="Basic dGVzdA==",
+            data={"type": {"name": "Blocks"}, "inwardIssue": {"key": "A-1"}, "outwardIssue": {"key": "A-2"}},
+        )
+        assert result == {}
+
+    @patch("crewai_productfeature_planner.tools.jira._http.urllib.request.urlopen")
+    def test_whitespace_only_body_returns_empty_dict(self, mock_urlopen):
+        """Body with only whitespace/newlines should also return {}."""
+        from crewai_productfeature_planner.tools.jira._http import _jira_request
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"  \n  "
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        result = _jira_request(
+            "GET",
+            "https://example.atlassian.net/rest/api/3/issue/X-1",
+            auth_header="Basic dGVzdA==",
+        )
+        assert result == {}
+
+    @patch("crewai_productfeature_planner.tools.jira._http.urllib.request.urlopen")
+    def test_json_body_parsed_normally(self, mock_urlopen):
+        """Normal JSON body parsing still works."""
+        from crewai_productfeature_planner.tools.jira._http import _jira_request
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"key": "X-1"}'
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        result = _jira_request(
+            "POST",
+            "https://example.atlassian.net/rest/api/3/issue",
+            auth_header="Basic dGVzdA==",
+            data={"fields": {}},
+        )
+        assert result == {"key": "X-1"}
+
+
 # ── _has_jira_credentials ────────────────────────────────────────────
 
 
@@ -413,7 +476,7 @@ class TestCreateIssueLink:
         mock_request.assert_called_once()
         call_args = mock_request.call_args
         assert call_args[0][0] == "POST"
-        assert "/issueLink" in call_args[0][1]
+        assert "/rest/api/3/issueLink" in call_args[0][1]
         payload = call_args[1]["data"]
         assert payload["type"]["name"] == "Blocks"
         assert payload["inwardIssue"]["key"] == "PRD-102"
@@ -1037,6 +1100,17 @@ class TestSearchJiraIssues:
         # Verify JQL includes label
         call_url = mock_request.call_args[0][1]
         assert "prd-run-run-1" in call_url
+
+    @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
+    def test_uses_v3_search_endpoint(self, mock_request):
+        """Search must use /rest/api/3/search/jql (not deprecated v2)."""
+        mock_request.return_value = {"issues": []}
+
+        search_jira_issues("run-1")
+
+        call_url = mock_request.call_args[0][1]
+        assert "/rest/api/3/search/jql?" in call_url
+        assert "/rest/api/2/" not in call_url
 
     @patch("crewai_productfeature_planner.tools.jira._http._jira_request")
     def test_returns_empty_on_failure(self, mock_request):

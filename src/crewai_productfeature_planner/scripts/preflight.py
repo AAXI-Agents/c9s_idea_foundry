@@ -240,7 +240,7 @@ def check_jira() -> tuple[bool, str]:
 
     Requires ``ATLASSIAN_BASE_URL``, ``ATLASSIAN_USERNAME``,
     ``ATLASSIAN_API_TOKEN``, and ``JIRA_PROJECT_KEY``.  Sends a
-    ``GET /rest/api/2/project/{key}`` request to verify the
+    ``GET /rest/api/3/project/{key}`` request to verify the
     credentials can access the configured project.
 
     Returns:
@@ -269,7 +269,7 @@ def check_jira() -> tuple[bool, str]:
     encoded = base64.b64encode(credentials.encode()).decode()
     auth_header = f"Basic {encoded}"
 
-    url = f"{base_url}/rest/api/2/project/{project_key}"
+    url = f"{base_url}/rest/api/3/project/{project_key}"
     headers = {
         "Authorization": auth_header,
         "Accept": "application/json",
