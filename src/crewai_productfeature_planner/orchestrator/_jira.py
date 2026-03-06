@@ -284,8 +284,11 @@ def build_jira_epics_stories_stage(flow: "PRDFlow") -> AgentStage:
                         "type": "Epic",
                         "summary": page_title,
                     })
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[JiraEpicsStories] Failed to persist Epic %s: %s",
+                        epic_key, exc,
+                    )
 
             # ── Create Stories ────────────────────────────────
             func_req_section = flow.state.draft.get_section("functional_requirements")
@@ -327,8 +330,11 @@ def build_jira_epics_stories_stage(flow: "PRDFlow") -> AgentStage:
                                 "key": skey,
                                 "type": "Story",
                             })
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[JiraEpicsStories] Failed to persist Stories: %s",
+                        exc,
+                    )
 
                 output = (
                     f"Epic: {epic_result.raw}\n"
@@ -442,8 +448,11 @@ def build_jira_subtasks_stage(flow: "PRDFlow") -> AgentStage:
                             "key": tkey,
                             "type": "Sub-task",
                         })
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[JiraSubtasks] Failed to persist Sub-tasks: %s",
+                    exc,
+                )
 
             return StageResult(output=tasks_result.raw)
         finally:

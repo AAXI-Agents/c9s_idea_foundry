@@ -706,6 +706,72 @@ class TestJiraCreateIssueTool:
         assert "created" in result
         assert "PRD-115" in result
 
+    @patch(
+        "crewai_productfeature_planner.tools.jira._tool.append_jira_ticket",
+        create=True,
+    )
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_run_persists_ticket_when_run_id_provided(self, mock_create, mock_append):
+        """Ticket should be persisted to MongoDB when run_id is provided."""
+        mock_create.return_value = {
+            "issue_key": "PRD-200",
+            "issue_id": "20000",
+            "url": "https://example.atlassian.net/browse/PRD-200",
+            "reused": False,
+        }
+
+        tool = JiraCreateIssueTool()
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append_db:
+            result = tool._run(summary="Persisted Story", run_id="test-run-1")
+
+        assert "created" in result
+        mock_append_db.assert_called_once_with("test-run-1", {
+            "key": "PRD-200",
+            "type": "Story",
+            "summary": "Persisted Story",
+            "url": "https://example.atlassian.net/browse/PRD-200",
+            "reused": False,
+        })
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_run_skips_persistence_without_run_id(self, mock_create):
+        """Ticket should NOT be persisted when run_id is empty."""
+        mock_create.return_value = {
+            "issue_key": "PRD-201",
+            "issue_id": "20100",
+            "url": "https://example.atlassian.net/browse/PRD-201",
+        }
+
+        tool = JiraCreateIssueTool()
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append_db:
+            result = tool._run(summary="No Run ID")
+
+        assert "created" in result
+        mock_append_db.assert_not_called()
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_run_persistence_failure_does_not_fail_tool(self, mock_create):
+        """MongoDB persistence failure should not fail the tool."""
+        mock_create.return_value = {
+            "issue_key": "PRD-202",
+            "issue_id": "20200",
+            "url": "https://example.atlassian.net/browse/PRD-202",
+        }
+
+        tool = JiraCreateIssueTool()
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+            side_effect=RuntimeError("MongoDB down"),
+        ):
+            result = tool._run(summary="Resilient Story", run_id="test-run-2")
+
+        assert "created" in result
+        assert "PRD-202" in result
+
 
 # ── _strip_emails ────────────────────────────────────────────────────
 

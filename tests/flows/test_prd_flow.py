@@ -2864,6 +2864,78 @@ class TestPersistPostCompletion:
         # No exception is fine
 
 
+class TestPhasedJiraMarksComplete:
+    """_run_phased_post_completion should mark jira_completed=True."""
+
+    @patch(
+        "crewai_productfeature_planner.orchestrator._jira._check_jira_prerequisites",
+        return_value=None,
+    )
+    @patch(
+        "crewai_productfeature_planner.orchestrator._jira._persist_jira_phase",
+    )
+    @patch(
+        "crewai_productfeature_planner.orchestrator._jira.build_jira_subtasks_stage",
+    )
+    @patch(
+        "crewai_productfeature_planner.orchestrator._jira.build_jira_epics_stories_stage",
+    )
+    @patch(
+        "crewai_productfeature_planner.orchestrator._jira.build_jira_skeleton_stage",
+    )
+    @patch(
+        "crewai_productfeature_planner.orchestrator._helpers._has_gemini_credentials",
+        return_value=True,
+    )
+    @patch(
+        "crewai_productfeature_planner.orchestrator._helpers._has_confluence_credentials",
+        return_value=False,
+    )
+    @patch(
+        "crewai_productfeature_planner.mongodb.product_requirements.get_jira_tickets",
+        return_value=[{"key": "PRD-1"}, {"key": "PRD-2"}],
+    )
+    @patch(
+        "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record",
+    )
+    def test_marks_jira_completed_after_all_phases(
+        self,
+        mock_upsert,
+        mock_get_tickets,
+        _mock_conf_creds,
+        _mock_gem_creds,
+        mock_skel,
+        mock_es,
+        mock_sub,
+        _mock_persist_phase,
+        _mock_prereqs,
+    ):
+        """After all 3 phases, upsert_delivery_record(jira_completed=True)."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _run_phased_post_completion,
+        )
+
+        flow = PRDFlow()
+        flow.state.run_id = "phased-test-1"
+        flow.state.jira_output = "Epic: PRD-1\nStories: PRD-2"
+        flow.state.jira_phase = "subtasks_done"
+        flow.jira_skeleton_approval_callback = MagicMock()
+
+        # Make all stages report "should skip" (phases already done)
+        for mock_stage in (mock_skel, mock_es, mock_sub):
+            stage = MagicMock()
+            stage.should_skip.return_value = True
+            mock_stage.return_value = stage
+
+        _run_phased_post_completion(flow)
+
+        mock_upsert.assert_called_once_with(
+            "phased-test-1",
+            jira_completed=True,
+            jira_output="Epic: PRD-1\nStories: PRD-2",
+        )
+
+
 def test_prd_state_confluence_url_default():
     """PRDState should have empty confluence_url by default."""
     state = PRDState()

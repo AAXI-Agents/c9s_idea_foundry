@@ -348,6 +348,29 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
             ),
         })
 
+    # ── Mark Jira delivery complete in productRequirements ────
+    if flow.state.jira_phase == "subtasks_done":
+        try:
+            from crewai_productfeature_planner.mongodb.product_requirements import (
+                get_jira_tickets,
+                upsert_delivery_record,
+            )
+            tickets = get_jira_tickets(flow.state.run_id)
+            upsert_delivery_record(
+                flow.state.run_id,
+                jira_completed=True,
+                jira_output=flow.state.jira_output or "",
+            )
+            logger.info(
+                "[PhasedJira] Marked jira_completed=True for run_id=%s "
+                "(%d tickets persisted)",
+                flow.state.run_id, len(tickets),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[PhasedJira] Failed to mark jira_completed: %s", exc,
+            )
+
 
 # ------------------------------------------------------------------
 # Post-completion output persistence

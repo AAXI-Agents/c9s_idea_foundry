@@ -927,6 +927,26 @@ _CODEX: list[CodexEntry] = [
             "background thread time.sleep() interception."
         ),
     ),
+    CodexEntry(
+        "0.12.1",
+        date(2026, 3, 5),
+        (
+            "Fix Jira ticket persistence to productRequirements. "
+            "Root cause: JiraCreateIssueTool._run() created tickets via "
+            "REST API but never persisted them to MongoDB — all "
+            "persistence relied on fragile regex parsing of crew output "
+            "text. Additionally, the phased Jira path never called "
+            "upsert_delivery_record(jira_completed=True) after all "
+            "phases completed, leaving the delivery status incomplete. "
+            "Fix: (1) Tool now calls append_jira_ticket() immediately "
+            "after successful Jira API creation when run_id is provided. "
+            "(2) _run_phased_post_completion() now calls "
+            "upsert_delivery_record(jira_completed=True) after all 3 "
+            "phases complete. (3) Replaced silent except:pass in "
+            "_jira.py stage persistence with proper logger.warning() "
+            "calls for observability."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

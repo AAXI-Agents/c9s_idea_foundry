@@ -123,6 +123,25 @@ class JiraCreateIssueTool(BaseTool):
 
             created_key = result["issue_key"]
 
+            # ── Persist ticket to MongoDB immediately ─────────
+            if run_id and created_key:
+                try:
+                    from crewai_productfeature_planner.mongodb.product_requirements import (
+                        append_jira_ticket,
+                    )
+                    append_jira_ticket(run_id, {
+                        "key": created_key,
+                        "type": issue_type,
+                        "summary": summary,
+                        "url": result.get("url", ""),
+                        "reused": result.get("reused", False),
+                    })
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[Jira] Failed to persist ticket %s to MongoDB: %s",
+                        created_key, exc,
+                    )
+
             # Create dependency links if requested
             if blocks_key:
                 try:
