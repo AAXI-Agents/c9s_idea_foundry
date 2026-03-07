@@ -548,6 +548,40 @@ class PRDFlow(Flow[PRDState]):
                     "auto-continuing to section drafting"
                 )
 
+        # ── Requirements Breakdown (runs after exec summary approval) ──
+        from crewai_productfeature_planner.orchestrator._requirements import (
+            build_requirements_breakdown_stage,
+        )
+
+        req_stage = build_requirements_breakdown_stage(self)
+        if not req_stage.should_skip():
+            logger.info(
+                "[Requirements] Running requirements breakdown after "
+                "executive summary approval",
+            )
+            req_result = req_stage.run()
+            req_stage.apply(req_result)
+        else:
+            logger.info(
+                "[Requirements] Skipping — already broken down or "
+                "no credentials",
+            )
+
+        # Approval gate — fires for both completed AND skipped stages
+        # (a resumed run may have requirements already broken down but
+        # needs the user to approve before proceeding to sections).
+        if (
+            req_stage.get_approval is not None
+            and req_stage.requires_approval is not None
+            and req_stage.requires_approval()
+        ):
+            should_finalize = req_stage.get_approval()
+            if should_finalize and req_stage.finalized_exc is not None:
+                logger.info(
+                    "[Requirements] User finalized at requirements approval"
+                )
+                raise req_stage.finalized_exc()
+
         # ── Phase 2: Section-by-section drafting ─────────────
         # Carry the Phase 1 executive summary into the PRDDraft so it
         # is not re-drafted by the section loop.

@@ -186,6 +186,24 @@ def run_interactive_slack_flow(
         )
         flow.jira_review_callback = make_slack_jira_review_callback(run_id)
 
+        # Register callbacks in the module-level registry so they
+        # survive CrewAI's asyncio.to_thread (which can lose instance
+        # attributes set after __init__).
+        from crewai_productfeature_planner.flows.prd_flow import (
+            register_callbacks,
+            cleanup_callbacks,
+        )
+        _cb_kwargs: dict = {
+            "requirements_approval_callback": flow.requirements_approval_callback,
+            "exec_summary_user_feedback_callback": flow.exec_summary_user_feedback_callback,
+            "executive_summary_callback": flow.executive_summary_callback,
+            "jira_skeleton_approval_callback": flow.jira_skeleton_approval_callback,
+            "jira_review_callback": flow.jira_review_callback,
+        }
+        if flow.idea_approval_callback is not None:
+            _cb_kwargs["idea_approval_callback"] = flow.idea_approval_callback
+        register_callbacks(run_id, **_cb_kwargs)
+
         try:
             result = flow.kickoff()
 
@@ -322,4 +340,10 @@ def run_interactive_slack_flow(
                 error=run.error if run else None,
                 webhook_url=webhook_url,
             )
+        # Clean up module-level callback registry
+        try:
+            from crewai_productfeature_planner.flows.prd_flow import cleanup_callbacks
+            cleanup_callbacks(run_id)
+        except Exception:  # noqa: BLE001
+            pass
         cleanup_interactive_run(run_id)

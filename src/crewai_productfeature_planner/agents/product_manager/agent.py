@@ -32,11 +32,8 @@ from crewai_productfeature_planner.scripts.knowledge_sources import (
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.scripts.memory_loader import enrich_backstory
-from crewai_productfeature_planner.tools.search_tool import create_search_tool
-from crewai_productfeature_planner.tools.scrape_tool import create_scrape_tool
 from crewai_productfeature_planner.tools.file_read_tool import create_file_read_tool
 from crewai_productfeature_planner.tools.directory_read_tool import create_directory_read_tool
-from crewai_productfeature_planner.tools.website_search_tool import create_website_search_tool
 
 logger = get_logger(__name__)
 CONFIG_DIR = Path(__file__).parent / "config"
@@ -62,23 +59,22 @@ def _build_tools() -> list:
     """Assemble the full toolkit for the Product Manager agent.
 
     Tools included:
-        - SerperDevTool: Google search for market & competitor research
-        - ScrapeWebsiteTool: Extract content from competitor/product pages
         - FileReadTool: Read knowledge files, existing PRDs, reference docs
         - DirectoryReadTool: List output and knowledge directories
-        - WebsiteSearchTool: RAG-based semantic search within a website
 
     Note: PRDFileWriteTool is intentionally excluded — file writing is
     handled programmatically by finalize() and save_progress() to
     prevent the LLM from creating uncontrolled output files.
+
+    Web research tools (SerperDevTool, ScrapeWebsiteTool,
+    WebsiteSearchTool) were removed — the PRD workflow generates
+    content from the user's idea and knowledge sources; the LLM never
+    invoked internet search during section drafting.
     """
-    logger.debug("Assembling Product Manager toolkit (5 tools)")
+    logger.debug("Assembling Product Manager toolkit (2 tools)")
     return [
-        create_search_tool(),
-        create_scrape_tool(),
         create_file_read_tool(),
         create_directory_read_tool(directory="output/prds"),
-        create_website_search_tool(),
     ]
 
 

@@ -17,9 +17,6 @@ from crewai_productfeature_planner.orchestrator._idea_refinement import (
 from crewai_productfeature_planner.orchestrator._jira import (
     build_jira_ticketing_stage,
 )
-from crewai_productfeature_planner.orchestrator._requirements import (
-    build_requirements_breakdown_stage,
-)
 from crewai_productfeature_planner.orchestrator.orchestrator import (
     AgentOrchestrator,
 )
@@ -34,7 +31,11 @@ def build_default_pipeline(flow: "PRDFlow") -> AgentOrchestrator:
     Current chain::
 
         1. Idea Refinement   — auto-iterates until idea is polished
-        2. Requirements Breakdown — decomposes idea into product requirements
+
+    Requirements Breakdown is **not** included here — it runs after
+    Phase 1 (Executive Summary) inside ``generate_sections()`` so the
+    user can review the executive summary before the (potentially
+    expensive) requirements agent starts.
 
     When the flow has a ``progress_callback``, stage lifecycle events
     (``pipeline_stage_start``, ``pipeline_stage_complete``, etc.) are
@@ -54,7 +55,6 @@ def build_default_pipeline(flow: "PRDFlow") -> AgentOrchestrator:
         progress_cb = flow._resolve_callback("progress_callback")
     orchestrator = AgentOrchestrator(progress_callback=progress_cb)
     orchestrator.register(build_idea_refinement_stage(flow))
-    orchestrator.register(build_requirements_breakdown_stage(flow))
     return orchestrator
 
 

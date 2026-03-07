@@ -279,3 +279,77 @@ class TestDirectedAtOtherUser:
             er._handle_thread_message(event)
 
         mock_inner.assert_called_once_with("C100", "9999.0", "U_SENDER", "sounds good", "9999.1")
+
+
+# ---- thread_broadcast subtype handling ----
+
+
+class TestThreadBroadcast:
+    """Verify that thread_broadcast messages are processed, not dropped."""
+
+    def test_thread_broadcast_processed_by_handle_thread_message(self):
+        """A thread_broadcast message should pass through the subtype
+        filter in _handle_thread_message and be processed normally."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        event = {
+            "channel": "C100",
+            "text": "list of ideas",
+            "user": "U_SENDER",
+            "thread_ts": "8888.0",
+            "ts": "8888.1",
+            "subtype": "thread_broadcast",
+        }
+
+        with patch.object(er, "get_bot_user_id", return_value="U_BOT"), \
+             patch.object(er, "_handle_thread_message_inner") as mock_inner:
+            er._handle_thread_message(event)
+
+        mock_inner.assert_called_once()
+
+    def test_message_changed_still_ignored_by_handle_thread_message(self):
+        """message_changed subtype should still be dropped."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        event = {
+            "channel": "C100",
+            "text": "edited text",
+            "user": "U_SENDER",
+            "thread_ts": "8888.0",
+            "ts": "8888.2",
+            "subtype": "message_changed",
+        }
+
+        with patch.object(er, "get_bot_user_id", return_value="U_BOT"), \
+             patch.object(er, "_handle_thread_message_inner") as mock_inner:
+            er._handle_thread_message(event)
+
+        mock_inner.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_thread_broadcast_dispatches_at_router_level(self):
+        """A thread_broadcast message in a known thread should reach
+        _handle_thread_message, not be silently dropped by the router."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        # Seed a conversation so the thread is recognized
+        er._append_to_thread("C99", "7777.0", "user", "initial message")
+
+        payload = {
+            "type": "event_callback",
+            "event_id": "Ev_TBRC1",
+            "event": {
+                "type": "message",
+                "channel": "C99",
+                "user": "U7",
+                "text": "list of ideas",
+                "ts": "7777.1",
+                "thread_ts": "7777.0",
+                "subtype": "thread_broadcast",
+            },
+        }
+        with patch(
+            "crewai_productfeature_planner.apis.slack.events_router._handle_thread_message",
+        ) as mock_handle:
+            resp = await _post(payload)()
+        assert resp.status_code == 200
+        mock_handle.assert_called_once()

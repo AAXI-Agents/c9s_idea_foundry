@@ -74,16 +74,9 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
         flow.state.requirements_broken_down = True
 
     def _requires_approval() -> bool:
-        # On resume: if executive summary iterations or section content
-        # already exist, the user previously approved requirements —
-        # skip the gate so they aren't re-prompted.
-        if flow.state.executive_summary.iterations:
-            logger.info(
-                "[RequirementsBreakdown] Auto-approving — executive "
-                "summary already has %d iteration(s) (resumed run)",
-                len(flow.state.executive_summary.iterations),
-            )
-            return False
+        # On resume: if section content already exists, the user
+        # previously approved requirements — skip the gate so they
+        # aren't re-prompted.
         if any(s.content for s in flow.state.draft.sections):
             logger.info(
                 "[RequirementsBreakdown] Auto-approving — sections "

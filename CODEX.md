@@ -395,8 +395,16 @@ Deep-thinking models for complex, multi-iteration tasks:
 
 ---
 
-## Recent Changes (2026-03-01)
+## Recent Changes (2026-03-07)
 
+- **Removed unused web research tools** (v0.13.0): Removed SerperDevTool,
+  ScrapeWebsiteTool, and WebsiteSearchTool from the Product Manager agent —
+  never invoked during PRD flows. Deleted tool factory modules, SERPER_API_KEY
+  preflight check, and .env entry. Agent toolkit reduced from 5 to 2 tools.
+- **Fix hallucinated Confluence URLs in Jira tickets** (v0.13.1): The LLM
+  frequently invented fake Confluence URLs (e.g. `confluence.internal`,
+  `confluence.example.com`) instead of using the real URL. The Jira tool now
+  resolves the authoritative URL from MongoDB before creating tickets.
 - **Phased Jira ticketing**: Replaced single-step Jira creation with a
   3-phase approach: (1) Skeleton outline for user approval, (2) Epics with
   inter-Epic dependencies + Stories categorised as Data Persistence / Data

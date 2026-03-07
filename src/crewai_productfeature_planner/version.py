@@ -947,6 +947,114 @@ _CODEX: list[CodexEntry] = [
             "calls for observability."
         ),
     ),
+    CodexEntry(
+        "0.12.2",
+        date(2026, 3, 6),
+        (
+            "Fix interactive agent-mode flow skipping executive summary "
+            "review gate. Root cause: run_interactive_slack_flow() set "
+            "callbacks directly on the PRDFlow instance but never called "
+            "register_callbacks() — CrewAI's asyncio.to_thread lost the "
+            "instance attributes, so _resolve_callback() returned None "
+            "and the flow auto-continued without pausing. Fix: (1) "
+            "Register all callbacks in the module-level registry in "
+            "_flow_runner.py so they survive asyncio.to_thread. (2) "
+            "Clean up registered callbacks in the finally block. (3) "
+            "Use _resolve_callback() for Jira callbacks in "
+            "_finalization.py (same bug pattern — direct attribute "
+            "access subject to asyncio.to_thread loss)."
+        ),
+    ),
+    CodexEntry(
+        version="0.12.3",
+        date=date(2026, 3, 5),
+        summary=(
+            "Fix flow ordering: requirements breakdown now runs after "
+            "executive summary approval. Removed requirements_breakdown "
+            "from build_default_pipeline() — pipeline now only contains "
+            "idea_refinement. Added requirements breakdown as a direct "
+            "stage call inside generate_sections() after the exec "
+            "summary approval gate. Removed stale exec-summary-iterations "
+            "auto-skip from _requires_approval() in _requirements.py."
+        ),
+    ),
+    CodexEntry(
+        version="0.12.4",
+        date=date(2026, 3, 6),
+        summary=(
+            "Acknowledge user feedback on executive summary. When a "
+            "user replies to the exec summary with feedback in Slack, "
+            "the bot now posts a confirmation message before starting "
+            "the next iteration. Applied to both interactive-mode "
+            "callback (_callbacks.py) and auto-mode gate "
+            "(_flow_handlers.py)."
+        ),
+    ),
+    CodexEntry(
+        version="0.12.5",
+        date=date(2026, 3, 7),
+        summary=(
+            "Fix thread_broadcast messages being silently dropped. "
+            "Slack sends subtype=thread_broadcast when a user replies "
+            "to a thread and also posts to the channel. The blanket "
+            "subtype filter in events_router.py and "
+            "_event_handlers.py dropped these messages, causing "
+            "commands like 'list of ideas' to produce no response "
+            "when sent as a broadcast reply. Fix: allow "
+            "thread_broadcast through while still filtering other "
+            "subtypes (message_changed, bot_message, etc.)."
+        ),
+    ),
+    CodexEntry(
+        version="0.13.0",
+        date=date(2026, 3, 7),
+        summary=(
+            "Remove unused web research tools from Product Manager agent. "
+            "SerperDevTool (Google search), ScrapeWebsiteTool, and "
+            "WebsiteSearchTool were never invoked during PRD flows — the "
+            "LLM generates content from the user's idea and knowledge "
+            "sources without internet search. Removed: tool factory "
+            "modules (search_tool.py, scrape_tool.py, "
+            "website_search_tool.py), SERPER_API_KEY preflight check, "
+            "and .env entry. Agent toolkit reduced from 5 to 2 tools "
+            "(FileReadTool + DirectoryReadTool), saving LLM context tokens."
+        ),
+    ),
+    CodexEntry(
+        version="0.13.1",
+        date=date(2026, 3, 7),
+        summary=(
+            "Fix hallucinated Confluence URLs in Jira tickets. The LLM "
+            "frequently invents fake URLs like "
+            "'https://confluence.internal/pages/...' or "
+            "'https://confluence.example.com/display/...' instead of "
+            "using the real Confluence URL provided in the task "
+            "description. Fix: the JiraCreateIssueTool now resolves the "
+            "authoritative Confluence URL from MongoDB (set by the "
+            "actual Confluence publish step) before creating tickets, "
+            "ignoring whatever the LLM passes. Added "
+            "_resolve_confluence_url() helper with 7 tests."
+        ),
+    ),
+    CodexEntry(
+        version="0.13.2",
+        date=date(2026, 3, 8),
+        summary=(
+            "Fix TokenManager and CrewJobs resume bugs from log review. "
+            "(1) Static xoxb- tokens (no refresh_token) were wrongly "
+            "treated as expired on every call, causing 61 unnecessary "
+            "MongoDB round-trips and warning log entries per session. "
+            "Fix: detect non-rotating tokens and cache with 24h TTL. "
+            "(2) Fallback cache TTL was immediately stale because "
+            "time.time()+300 minus _REFRESH_BUFFER_SECONDS(300) = now, "
+            "so _needs_refresh always returned True. Fix: add buffer to "
+            "the TTL so entries survive the subtraction. "
+            "(3) resume_prd_flow silently failed to track jobs when no "
+            "crewJobs document existed — reactivate_job returned False "
+            "and update_job_started also failed. Fix: fall back to "
+            "create_job when reactivate_job returns False."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

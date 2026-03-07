@@ -148,6 +148,50 @@ class TestGetValidToken:
         # Returns the expired token as a last resort
         assert token == "xoxb-abc"
 
+    def test_static_token_cached_with_long_ttl(self):
+        """Static (non-rotating) tokens with no refresh_token bypass expiry checks."""
+        doc = _fake_team_doc(
+            access_token="xoxb-static",
+            refresh_token=None,
+            expires_at=time.time() - 1000,  # expired long ago
+        )
+        with patch(f"{_REPO}.get_team", return_value=doc) as mock_get, \
+             patch(f"{_REPO}.get_all_teams"):
+            t1 = tm.get_valid_token(TEAM_A)
+
+        assert t1 == "xoxb-static"
+        # Token should be cached with a long TTL (24h)
+        cached = tm._cache_entry(TEAM_A)
+        assert cached is not None
+        assert cached["expires_at"] > time.time() + 80000  # ~24 h
+
+        # Second call should hit cache — no MongoDB round-trip
+        mock_get.reset_mock()
+        t2 = tm.get_valid_token(TEAM_A)
+        assert t2 == "xoxb-static"
+        mock_get.assert_not_called()
+
+    def test_fallback_cache_ttl_survives_buffer_subtraction(self):
+        """Fallback short-TTL cache entry should survive _needs_refresh check."""
+        # Setup: rotating token that can't be refreshed (no client creds)
+        doc = _fake_team_doc(
+            access_token="xoxe.xoxb-expired",
+            refresh_token="xoxr-tok",
+            expires_at=time.time() - 100,
+        )
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"):
+            t1 = tm.get_valid_token(TEAM_A)
+
+        assert t1 == "xoxe.xoxb-expired"
+        # The cached entry should NOT be immediately stale
+        cached = tm._cache_entry(TEAM_A)
+        assert cached is not None
+        assert not tm._needs_refresh(cached), (
+            "Fallback cache entry should survive at least one "
+            "_needs_refresh check (TTL must account for buffer)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # invalidate

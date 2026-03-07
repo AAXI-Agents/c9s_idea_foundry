@@ -386,6 +386,20 @@ def make_exec_summary_gate(
                 "run_id=%s (%d chars)",
                 iteration, cb_run_id, len(feedback),
             )
+            try:
+                from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+                client = _get_slack_client()
+                if client:
+                    client.chat_postMessage(
+                        channel=channel,
+                        thread_ts=thread_ts,
+                        text=(
+                            ":memo: Got it! Incorporating your feedback "
+                            "into the next iteration\u2026"
+                        ),
+                    )
+            except Exception:  # noqa: BLE001
+                pass
             return ("feedback", feedback)
 
         # Timeout or unknown — auto-approve and continue

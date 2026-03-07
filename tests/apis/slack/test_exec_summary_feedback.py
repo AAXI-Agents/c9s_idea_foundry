@@ -318,7 +318,10 @@ class TestMakeSlackExecSummaryFeedbackCallback:
     @patch(
         "crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks._post_blocks",
     )
-    def test_pre_draft_feedback_via_thread_reply(self, mock_post):
+    @patch(
+        "crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks._post_text",
+    )
+    def test_pre_draft_feedback_via_thread_reply(self, mock_post_text, mock_post):
         from crewai_productfeature_planner.apis.slack.interactive_handlers import (
             make_slack_exec_summary_feedback_callback,
             submit_manual_refinement,
@@ -340,6 +343,10 @@ class TestMakeSlackExecSummaryFeedbackCallback:
 
         assert action == "feedback"
         assert text == "Focus on mobile users"
+        # Verify acknowledgment was posted
+        mock_post_text.assert_called_once()
+        ack_text = mock_post_text.call_args[1].get("text") or mock_post_text.call_args[0][2]
+        assert "feedback" in ack_text.lower() or "got it" in ack_text.lower()
         cleanup("es_guide")
 
     @patch(
@@ -371,7 +378,10 @@ class TestMakeSlackExecSummaryFeedbackCallback:
     @patch(
         "crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks._post_blocks",
     )
-    def test_post_iteration_feedback_via_reply(self, mock_post):
+    @patch(
+        "crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks._post_text",
+    )
+    def test_post_iteration_feedback_via_reply(self, mock_post_text, mock_post):
         from crewai_productfeature_planner.apis.slack.interactive_handlers import (
             make_slack_exec_summary_feedback_callback,
             submit_manual_refinement,
@@ -394,6 +404,10 @@ class TestMakeSlackExecSummaryFeedbackCallback:
 
         assert action == "feedback"
         assert text == "Add more about scalability"
+        # Verify acknowledgment was posted
+        mock_post_text.assert_called_once()
+        ack_text = mock_post_text.call_args[1].get("text") or mock_post_text.call_args[0][2]
+        assert "feedback" in ack_text.lower() or "got it" in ack_text.lower()
         cleanup("es_reply")
 
     @patch(

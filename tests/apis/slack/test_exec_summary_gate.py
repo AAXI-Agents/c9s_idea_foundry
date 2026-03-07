@@ -147,9 +147,13 @@ class TestMakeExecSummaryGate:
         assert text is None
         t.join(timeout=2)
 
-    @patch(f"{_SLACK_TOOLS}._get_slack_client", return_value=None)
-    def test_iteration_1_feedback_returns_user_text(self, _mock_client):
-        """When user provides feedback, the callback should return it."""
+    @patch(f"{_SLACK_TOOLS}._get_slack_client")
+    def test_iteration_1_feedback_returns_user_text(self, mock_get_client):
+        """When user provides feedback, the callback should return it
+        and post an acknowledgment message to Slack."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
             _exec_feedback_lock,
             _pending_exec_feedback,
@@ -173,6 +177,12 @@ class TestMakeExecSummaryGate:
         action, text = cb("# Summary", "idea", "run_C", 1)
         assert action == "feedback"
         assert text == "Add more detail about security"
+        # Verify acknowledgment posted to Slack
+        ack_calls = [
+            c for c in mock_client.chat_postMessage.call_args_list
+            if "got it" in str(c).lower() or "feedback" in str(c).lower()
+        ]
+        assert len(ack_calls) >= 1, "Expected an acknowledgment message"
         t.join(timeout=2)
 
     @patch(f"{_SLACK_TOOLS}._get_slack_client", return_value=MagicMock())

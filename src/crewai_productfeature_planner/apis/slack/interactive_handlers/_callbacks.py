@@ -11,6 +11,7 @@ from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state im
 )
 from crewai_productfeature_planner.apis.slack.interactive_handlers._slack_helpers import (
     _post_blocks,
+    _post_text,
     _wait_for_decision,
 )
 
@@ -308,6 +309,11 @@ def make_slack_exec_summary_feedback_callback(run_id: str):
                 "Exec summary user feedback at iteration %d for "
                 "run_id=%s (%d chars)",
                 iteration, run_id, len(revised_text),
+            )
+            _post_text(
+                channel, thread_ts,
+                ":memo: Got it! Incorporating your feedback into "
+                "the next iteration\u2026",
             )
             return ("feedback", revised_text)
 

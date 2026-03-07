@@ -43,6 +43,8 @@ def _mock_crew_jobs():
             "crewai_productfeature_planner.apis.prd._route_actions.find_active_job",
             return_value=None,
         ),
+        patch("crewai_productfeature_planner.apis.prd.service.reactivate_job", return_value=True),
+        patch("crewai_productfeature_planner.apis.prd.service.create_job"),
         patch("crewai_productfeature_planner.apis.prd.service.update_job_started"),
         patch("crewai_productfeature_planner.apis.prd.service.update_job_completed"),
         patch("crewai_productfeature_planner.apis.prd.service.update_job_status"),
@@ -1617,6 +1619,53 @@ def test_resume_prd_flow_restores_full_state():
         {"iteration": 1, "idea": "refined v1", "evaluation": "good"},
     ]
     assert mock_instance.state.original_idea == "idea"
+    runs.clear()
+
+
+def test_resume_creates_job_when_reactivate_fails():
+    """When reactivate_job returns False (no existing document), create a fresh job."""
+    from crewai_productfeature_planner.apis.prd.models import (
+        ExecutiveSummaryDraft,
+        PRDDraft,
+    )
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="resume-no-job", flow_name="prd", original_idea="my idea")
+    runs["resume-no-job"] = run
+
+    with (
+        patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.restore_prd_state"
+        ) as mock_restore,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.reactivate_job",
+            return_value=False,
+        ) as mock_reactivate,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.create_job",
+        ) as mock_create,
+    ):
+        draft = PRDDraft.create_empty()
+        mock_restore.return_value = (
+            "my idea", draft,
+            ExecutiveSummaryDraft(), "", [], [],
+        )
+        mock_instance = MagicMock()
+        mock_instance.approval_callback = None
+        mock_instance.kickoff.return_value = "# PRD"
+        mock_instance.state = MagicMock()
+        mock_instance.state.final_prd = ""
+        mock_instance.state.is_ready = True
+        MockFlow.return_value = mock_instance
+
+        resume_prd_flow("resume-no-job", auto_approve=True)
+
+    mock_reactivate.assert_called_once_with("resume-no-job")
+    mock_create.assert_called_once_with(
+        job_id="resume-no-job", flow_name="prd", idea="my idea",
+    )
     runs.clear()
 
 

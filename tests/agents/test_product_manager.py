@@ -162,17 +162,9 @@ def test_create_product_manager_gemini_requires_key(monkeypatch):
 # ── Tool assembly tests ──────────────────────────────────────
 
 
-def test_build_tools_returns_five_items():
-    """_build_tools should assemble exactly five tools (no PRDFileWriteTool)."""
+def test_build_tools_returns_two_items():
+    """_build_tools should assemble exactly two tools (FileRead + DirectoryRead)."""
     patches = [
-        patch(
-            "crewai_productfeature_planner.agents.product_manager.agent.create_search_tool",
-            return_value=_StubTool(name="search"),
-        ),
-        patch(
-            "crewai_productfeature_planner.agents.product_manager.agent.create_scrape_tool",
-            return_value=_StubTool(name="scrape"),
-        ),
         patch(
             "crewai_productfeature_planner.agents.product_manager.agent.create_file_read_tool",
             return_value=_StubTool(name="file_read"),
@@ -180,10 +172,6 @@ def test_build_tools_returns_five_items():
         patch(
             "crewai_productfeature_planner.agents.product_manager.agent.create_directory_read_tool",
             return_value=_StubTool(name="dir_read"),
-        ),
-        patch(
-            "crewai_productfeature_planner.agents.product_manager.agent.create_website_search_tool",
-            return_value=_StubTool(name="web_search"),
         ),
     ]
 
@@ -194,7 +182,7 @@ def test_build_tools_returns_five_items():
     with stack:
         tools = _build_tools()
 
-    assert len(tools) == 5
+    assert len(tools) == 2
 
 
 # ── Task configuration tests ─────────────────────────────────

@@ -11,7 +11,6 @@ from pymongo import MongoClient
 ENV_FILE = ".env"
 
 API_KEYS = {
-    "SERPER_API_KEY": "Serper",
     "OPENAI_API_KEY": "OpenAI",
     "SONNET_API_KEY": "Sonnet",
     "GEOAPIFY_API_KEY": "Geoapify",
@@ -76,17 +75,6 @@ def check_openai() -> tuple[bool, str]:
     url = "https://api.openai.com/v1/models"
     headers = {"Authorization": f"Bearer {api_key}"}
     status, _ = http_request(url, headers=headers)
-    return status == 200, f"HTTP {status}"
-
-
-def check_serper() -> tuple[bool, str]:
-    api_key = os.environ.get("SERPER_API_KEY", "")
-    if not api_key:
-        return False, "SERPER_API_KEY is empty"
-    url = "https://google.serper.dev/search"
-    headers = {"X-API-KEY": api_key}
-    body = {"q": "product feature research"}
-    status, _ = http_request(url, method="POST", headers=headers, body=body)
     return status == 200, f"HTTP {status}"
 
 
@@ -160,7 +148,6 @@ def check_firecrawl() -> tuple[bool, str]:
 
 
 CHECKS = {
-    "SERPER_API_KEY": check_serper,
     "OPENAI_API_KEY": check_openai,
     "SONNET_API_KEY": check_sonnet,
     "GEOAPIFY_API_KEY": check_geoapify,

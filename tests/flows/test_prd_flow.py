@@ -1152,7 +1152,14 @@ def test_prd_state_requirements_fields():
 
 
 def test_requirements_approval_callback_finalize_raises(monkeypatch):
-    """When requirements_approval_callback returns True, RequirementsFinalized should be raised."""
+    """When requirements_approval_callback returns True, RequirementsFinalized should be raised.
+
+    Requirements breakdown now runs *after* the executive summary in
+    generate_sections(), so we need to mock the agent creation and
+    exec summary iteration to reach the requirements approval gate.
+    """
+    from unittest.mock import MagicMock
+
     from crewai_productfeature_planner.flows.prd_flow import RequirementsFinalized
 
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -1164,16 +1171,38 @@ def test_requirements_approval_callback_finalize_raises(monkeypatch):
     flow.state.original_idea = "Raw idea"
     flow.state.requirements_broken_down = True
     flow.state.requirements_breakdown = "## Feature 1"
+    # Pre-populate exec summary so Phase 1 is skipped (threshold met)
+    from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
+    flow.state.executive_summary.iterations = [
+        ExecutiveSummaryIteration(iteration=i, content=f"Exec summary v{i}")
+        for i in range(1, 4)  # 3 iterations meets DEFAULT_EXEC_RESUME_THRESHOLD
+    ]
+    flow.state.executive_summary.is_approved = True
 
     flow.idea_approval_callback = lambda refined, original, run_id, history: False
     flow.requirements_approval_callback = lambda reqs, idea, run_id, history: True
+    # Auto-continue exec summary gate
+    flow.executive_summary_callback = lambda *a: True
+
+    # Mock agent creation to avoid credential requirements
+    mock_agent = MagicMock()
+    monkeypatch.setattr(
+        PRDFlow, "_get_available_agents",
+        staticmethod(lambda **kw: {"openai": mock_agent}),
+    )
 
     with pytest.raises(RequirementsFinalized):
         flow.generate_sections()
 
 
 def test_requirements_approval_callback_continue_proceeds(monkeypatch):
-    """When requirements_approval_callback returns False, PRD generation should proceed."""
+    """When requirements_approval_callback returns False, PRD generation should proceed.
+
+    Requirements breakdown now runs after exec summary, so we
+    pre-populate the exec summary to skip Phase 1 and mock agents.
+    """
+    from unittest.mock import MagicMock
+
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
 
@@ -1183,6 +1212,13 @@ def test_requirements_approval_callback_continue_proceeds(monkeypatch):
     flow.state.original_idea = "Raw idea"
     flow.state.requirements_broken_down = True
     flow.state.requirements_breakdown = "## Feature 1"
+    # Pre-populate exec summary so Phase 1 is skipped
+    from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
+    flow.state.executive_summary.iterations = [
+        ExecutiveSummaryIteration(iteration=i, content=f"Exec summary v{i}")
+        for i in range(1, 4)
+    ]
+    flow.state.executive_summary.is_approved = True
 
     callback_called = False
 
@@ -1193,9 +1229,18 @@ def test_requirements_approval_callback_continue_proceeds(monkeypatch):
 
     flow.idea_approval_callback = lambda refined, original, run_id, history: False
     flow.requirements_approval_callback = req_cb
+    flow.executive_summary_callback = lambda *a: True
 
+    # Mock agent creation, but let it reach the section loop
+    # where we raise to stop execution cleanly
+    mock_agent = MagicMock()
     monkeypatch.setattr(
         PRDFlow, "_get_available_agents",
+        staticmethod(lambda **kw: {"openai": mock_agent}),
+    )
+    # Use a side_effect on _run_agents_parallel to stop at section drafting
+    monkeypatch.setattr(
+        PRDFlow, "_run_agents_parallel",
         staticmethod(lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here"))),
     )
 
@@ -1206,13 +1251,27 @@ def test_requirements_approval_callback_continue_proceeds(monkeypatch):
 
 
 def test_requirements_callback_skipped_when_not_broken_down(monkeypatch):
-    """Callback should not be called if requirements were not broken down."""
+    """Callback should not be called if requirements were not broken down.
+
+    Requirements breakdown now runs after exec summary, so we
+    pre-populate the exec summary to skip Phase 1 and mock agents.
+    """
+    from unittest.mock import MagicMock
+
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
 
     flow = PRDFlow()
     flow.state.idea = "Raw idea"
     flow.state.requirements_broken_down = False
+    flow.state.idea_refined = True
+    # Pre-populate exec summary so Phase 1 is skipped
+    from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
+    flow.state.executive_summary.iterations = [
+        ExecutiveSummaryIteration(iteration=i, content=f"Exec summary v{i}")
+        for i in range(1, 4)
+    ]
+    flow.state.executive_summary.is_approved = True
 
     callback_called = False
 
@@ -1222,9 +1281,15 @@ def test_requirements_callback_skipped_when_not_broken_down(monkeypatch):
         return True
 
     flow.requirements_approval_callback = req_cb
+    flow.executive_summary_callback = lambda *a: True
 
+    mock_agent = MagicMock()
     monkeypatch.setattr(
         PRDFlow, "_get_available_agents",
+        staticmethod(lambda **kw: {"openai": mock_agent}),
+    )
+    monkeypatch.setattr(
+        PRDFlow, "_run_agents_parallel",
         staticmethod(lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here"))),
     )
 
@@ -2288,6 +2353,7 @@ def test_callback_true_continues_to_sections(
 
     flow = PRDFlow()
     flow.state.idea = "Test"
+    flow.state.requirements_broken_down = True  # skip requirements stage
     flow.executive_summary_callback = lambda content, idea, run_id, iters: True
 
     # Should not raise, should return finalized PRD
@@ -2376,6 +2442,8 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
 
     flow = PRDFlow()
     flow.state.idea = "Test idea"
+    # Requirements already done — skip the breakdown stage
+    flow.state.requirements_broken_down = True
 
     # Pre-populate executive summary with 3 iterations (simulating resume)
     from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
@@ -2479,6 +2547,8 @@ def test_phase1_runs_when_below_threshold(
     flow = PRDFlow()
     flow.state.idea = "Test idea"
     flow.executive_summary_callback = lambda content, idea, run_id, iters: True
+    # Requirements already done — skip the breakdown stage
+    flow.state.requirements_broken_down = True
 
     # Only 2 iterations — below threshold of 3
     from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
@@ -2563,6 +2633,8 @@ def test_resume_skips_draft_for_in_progress_section(
 
     flow = PRDFlow()
     flow.state.idea = "Test idea"
+    # Requirements already done — skip the breakdown stage
+    flow.state.requirements_broken_down = True
 
     # Pre-populate executive summary (3 iterations → skip Phase 1)
     for i in range(1, 4):
@@ -2675,6 +2747,8 @@ def test_resume_wipes_degenerate_restored_content(
 
     flow = PRDFlow()
     flow.state.idea = "Test idea"
+    # Requirements already done — skip the breakdown stage
+    flow.state.requirements_broken_down = True
 
     # Pre-populate executive summary (3 iterations → skip Phase 1)
     for i in range(1, 4):

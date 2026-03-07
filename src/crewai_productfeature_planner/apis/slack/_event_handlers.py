@@ -108,7 +108,10 @@ def _handle_thread_message(event: dict) -> None:
     bot_id = er.get_bot_user_id()
     if bot_id and user == bot_id:
         return
-    if event.get("subtype"):
+    # Allow thread_broadcast (reply posted to channel) through;
+    # ignore other subtypes like message_changed, bot_message, etc.
+    msg_subtype = event.get("subtype", "")
+    if msg_subtype and msg_subtype != "thread_broadcast":
         return
 
     # Ignore messages that are directed at another user (e.g.

@@ -214,6 +214,18 @@ def get_valid_token(team_id: str | None = None) -> Optional[str]:
         refresh_token = doc.get("refresh_token")
         expires_at = doc.get("expires_at", 0.0)
 
+        # Static (non-rotating) tokens never expire — cache with a
+        # long TTL and return immediately.  These tokens start with
+        # ``xoxb-`` and have no ``refresh_token``.
+        if access_token and not _is_rotating_token(access_token) and not refresh_token:
+            long_ttl = time.time() + 86400  # 24 h
+            _set_cache(team_id, access_token, None, long_ttl)
+            logger.info(
+                "[TokenManager] Loaded static token for team=%s from MongoDB",
+                team_id,
+            )
+            return access_token
+
         # If DB token is still valid, cache and return
         if access_token and time.time() < (expires_at - _REFRESH_BUFFER_SECONDS):
             _set_cache(team_id, access_token, refresh_token, expires_at)
@@ -274,7 +286,7 @@ def get_valid_token(team_id: str | None = None) -> Optional[str]:
                 team_id,
                 access_token,
                 refresh_token,
-                time.time() + 300,   # short TTL so we retry soon
+                time.time() + 300 + _REFRESH_BUFFER_SECONDS,  # short TTL
             )
             return access_token
 

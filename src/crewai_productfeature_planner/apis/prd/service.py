@@ -513,8 +513,11 @@ def resume_prd_flow(
     run.status = FlowStatus.RUNNING
     logger.info("[API] Resuming PRD flow (run_id=%s, auto_approve=%s)", run_id, auto_approve)
 
-    # Reactivate the existing job record (don't create a duplicate)
-    reactivate_job(run_id)
+    # Reactivate the existing job record.  If no record exists (e.g. the
+    # original job was never persisted or was cleaned up), create a fresh
+    # one so downstream status updates don't silently fail.
+    if not reactivate_job(run_id):
+        create_job(job_id=run_id, flow_name="prd", idea=run.original_idea)
     update_job_started(run_id)
 
     # Register callbacks in the module-level registry

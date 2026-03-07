@@ -30,6 +30,9 @@ from crewai_productfeature_planner.tools.jira_tool import (
     search_jira_issues,
     set_jira_project_key,
 )
+from crewai_productfeature_planner.tools.jira._tool import (
+    _resolve_confluence_url,
+)
 
 
 def _adf_to_text(adf: dict) -> str:
@@ -1572,3 +1575,74 @@ class TestJiraContextVarOverrides:
         with jira_project_context(project_key=""):
             env = _get_jira_env()
             assert env["project_key"] == "KEEP"
+
+
+# ── _resolve_confluence_url ──────────────────────────────────────────
+
+
+class TestResolveConfluenceUrl:
+    """Verify that the Confluence URL resolver prefers MongoDB over LLM."""
+
+    REAL_URL = "https://pascalstudio.atlassian.net/wiki/spaces/CrewAITS/pages/12345/PRD+My+Feature"
+    FAKE_URL = "https://confluence.internal/pages/PRD-my-feature"
+    RUN_ID = "abc123def456"
+
+    @patch(
+        "crewai_productfeature_planner.tools.jira._tool.find_run_any_status",
+        return_value={"confluence_url": "https://pascalstudio.atlassian.net/wiki/spaces/CrewAITS/pages/12345/PRD+My+Feature"},
+    )
+    def test_overrides_llm_url_with_mongodb(self, mock_find):
+        """When MongoDB has a confluence_url, it wins over the LLM value."""
+        result = _resolve_confluence_url(self.RUN_ID, self.FAKE_URL)
+        assert result == self.REAL_URL
+        mock_find.assert_called_once_with(self.RUN_ID)
+
+    @patch(
+        "crewai_productfeature_planner.tools.jira._tool.find_run_any_status",
+        return_value={"confluence_url": "https://pascalstudio.atlassian.net/wiki/spaces/CrewAITS/pages/12345/PRD+My+Feature"},
+    )
+    def test_returns_mongodb_even_when_llm_empty(self, mock_find):
+        """When LLM provides no URL but MongoDB has one, use MongoDB."""
+        result = _resolve_confluence_url(self.RUN_ID, "")
+        assert result == self.REAL_URL
+
+    @patch(
+        "crewai_productfeature_planner.tools.jira._tool.find_run_any_status",
+        return_value={"status": "completed"},
+    )
+    def test_falls_back_to_llm_when_mongodb_empty(self, mock_find):
+        """When MongoDB doc has no confluence_url, fall back to LLM value."""
+        result = _resolve_confluence_url(self.RUN_ID, self.FAKE_URL)
+        assert result == self.FAKE_URL
+
+    @patch(
+        "crewai_productfeature_planner.tools.jira._tool.find_run_any_status",
+        return_value=None,
+    )
+    def test_falls_back_to_llm_when_no_doc(self, mock_find):
+        """When MongoDB returns None, fall back to LLM value."""
+        result = _resolve_confluence_url(self.RUN_ID, self.FAKE_URL)
+        assert result == self.FAKE_URL
+
+    def test_returns_llm_when_no_run_id(self):
+        """When run_id is empty, skip MongoDB lookup entirely."""
+        result = _resolve_confluence_url("", self.FAKE_URL)
+        assert result == self.FAKE_URL
+
+    @patch(
+        "crewai_productfeature_planner.tools.jira._tool.find_run_any_status",
+        side_effect=Exception("DB connection failed"),
+    )
+    def test_falls_back_to_llm_on_exception(self, mock_find):
+        """When MongoDB lookup throws, fall back to LLM value gracefully."""
+        result = _resolve_confluence_url(self.RUN_ID, self.FAKE_URL)
+        assert result == self.FAKE_URL
+
+    @patch(
+        "crewai_productfeature_planner.tools.jira._tool.find_run_any_status",
+        return_value={"confluence_url": "https://pascalstudio.atlassian.net/wiki/spaces/CrewAITS/pages/12345/PRD+My+Feature"},
+    )
+    def test_same_url_no_override_log(self, mock_find):
+        """When LLM provides the correct URL, no override needed."""
+        result = _resolve_confluence_url(self.RUN_ID, self.REAL_URL)
+        assert result == self.REAL_URL

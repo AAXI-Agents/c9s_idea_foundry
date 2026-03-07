@@ -102,8 +102,13 @@ class TestRequirementsBreakdownStage:
         stage = build_requirements_breakdown_stage(flow)
         assert stage.requires_approval() is False
 
-    def test_requires_approval_false_exec_summary_iterations(self):
-        """Auto-skip approval when executive summary already has iterations (resume)."""
+    def test_requires_approval_true_with_exec_summary_iterations(self):
+        """Approval IS required even when exec summary has iterations.
+
+        Requirements now runs *after* the executive summary, so
+        iterations will always be present — they no longer indicate
+        a resumed run that already passed the requirements gate.
+        """
         from crewai_productfeature_planner.apis.prd.models import ExecutiveSummaryIteration
 
         flow = PRDFlow()
@@ -113,7 +118,7 @@ class TestRequirementsBreakdownStage:
             ExecutiveSummaryIteration(content="v1", iteration=1)
         )
         stage = build_requirements_breakdown_stage(flow)
-        assert stage.requires_approval() is False
+        assert stage.requires_approval() is True
 
     def test_requires_approval_false_sections_in_progress(self):
         """Auto-skip approval when sections already have content (resume)."""

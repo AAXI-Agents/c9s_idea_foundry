@@ -188,7 +188,8 @@ def run_post_completion(flow: PRDFlow) -> None:
     Failures are logged but do not fail the overall flow.
     """
     try:
-        if flow.jira_skeleton_approval_callback is not None:
+        jira_skel_cb = flow._resolve_callback("jira_skeleton_approval_callback")
+        if jira_skel_cb is not None:
             _run_phased_post_completion(flow)
         else:
             _run_auto_post_completion(flow)
@@ -272,9 +273,10 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
         })
 
         # Ask user for approval
-        assert flow.jira_skeleton_approval_callback is not None
+        jira_skel_cb = flow._resolve_callback("jira_skeleton_approval_callback")
+        assert jira_skel_cb is not None
         try:
-            action, edited = flow.jira_skeleton_approval_callback(
+            action, edited = jira_skel_cb(
                 flow.state.jira_skeleton, flow.state.run_id,
             )
         except Exception:
@@ -310,9 +312,10 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
         })
 
         # Ask user to review before sub-tasks
-        if flow.jira_review_callback is not None:
+        jira_rev_cb = flow._resolve_callback("jira_review_callback")
+        if jira_rev_cb is not None:
             try:
-                proceed = flow.jira_review_callback(
+                proceed = jira_rev_cb(
                     flow.state.jira_epics_stories_output,
                     flow.state.run_id,
                 )

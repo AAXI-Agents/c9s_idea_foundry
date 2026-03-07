@@ -12,6 +12,53 @@ from crewai_productfeature_planner.tools.jira import _operations as _ops_mod
 
 logger = get_logger(__name__)
 
+# Lazy import to avoid circular dependency at module load time.
+# Imported here so tests can patch it at
+# ``crewai_productfeature_planner.tools.jira._tool.find_run_any_status``.
+from crewai_productfeature_planner.mongodb.working_ideas._queries import (  # noqa: E402
+    find_run_any_status,
+)
+
+
+def _resolve_confluence_url(run_id: str, llm_provided_url: str) -> str:
+    """Return the authoritative Confluence URL for a run.
+
+    Resolution order:
+        1. MongoDB ``working_ideas`` document for *run_id* — this is the
+           URL recorded by the actual Confluence publish step and is
+           always correct.
+        2. The *llm_provided_url* — only used as fallback when MongoDB
+           lookup fails (e.g. no DB connection).
+
+    The LLM frequently hallucinates fake confluence URLs like
+    ``https://confluence.internal/pages/…`` or
+    ``https://confluence.example.com/display/…`` instead of using the
+    real URL provided in the task description.  By resolving from
+    MongoDB we guarantee the correct URL ends up in ticket descriptions.
+    """
+    if not run_id:
+        return llm_provided_url
+
+    try:
+        doc = find_run_any_status(run_id)
+        if doc:
+            db_url = doc.get("confluence_url", "")
+            if db_url:
+                if llm_provided_url and llm_provided_url != db_url:
+                    logger.info(
+                        "[Jira] Overriding LLM-provided confluence_url "
+                        "(%s) with authoritative MongoDB value (%s)",
+                        llm_provided_url, db_url,
+                    )
+                return db_url
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "[Jira] Could not resolve confluence_url from MongoDB "
+            "for run_id=%s — using LLM-provided value",
+            run_id, exc_info=True,
+        )
+    return llm_provided_url
+
 
 class JiraCreateIssueInput(BaseModel):
     """Input schema for JiraCreateIssueTool."""
@@ -108,6 +155,13 @@ class JiraCreateIssueTool(BaseTool):
         # parent_key takes precedence for sub-tasks; epic_key is the fallback
         effective_parent = parent_key or epic_key
 
+        # ── Resolve authoritative Confluence URL from MongoDB ─────
+        # The LLM often hallucinates fake URLs (e.g.
+        # "https://confluence.internal/pages/...") instead of using the
+        # real value.  Always prefer the URL stored in MongoDB, which
+        # was set by the actual Confluence publish step.
+        resolved_confluence_url = _resolve_confluence_url(run_id, confluence_url)
+
         try:
             result = _ops_mod.create_jira_issue(
                 summary=summary,
@@ -117,7 +171,7 @@ class JiraCreateIssueTool(BaseTool):
                 labels=label_list,
                 priority=priority,
                 run_id=run_id,
-                confluence_url=confluence_url,
+                confluence_url=resolved_confluence_url,
                 component=component,
             )
 

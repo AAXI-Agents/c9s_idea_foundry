@@ -280,7 +280,10 @@ async def slack_events(request: Request) -> JSONResponse:
             bot_id = get_bot_user_id()
             if bot_id and user == bot_id:
                 return JSONResponse({"ok": True})
-            if event.get("subtype"):
+            # Allow thread_broadcast (reply posted to channel) through;
+            # ignore other subtypes like message_changed, bot_message, etc.
+            msg_subtype = event.get("subtype", "")
+            if msg_subtype and msg_subtype != "thread_broadcast":
                 return JSONResponse({"ok": True})
 
             # -- DMs: always process --
