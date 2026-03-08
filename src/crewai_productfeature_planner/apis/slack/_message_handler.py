@@ -193,28 +193,18 @@ def _interpret_and_act_inner(
     has_restart_phrase = any(p in lower_text_bare for p in _RESTART_PRD_PHRASES)
     has_create_jira_phrase = any(p in lower_text_bare for p in _CREATE_JIRA_PHRASES)
 
-    # ── Restart-phrase override (highest priority — before resume) ──
+    # ── Phrase overrides ──
+    # These correct the LLM only for short, unambiguous command phrases
+    # that have no overlap with idea descriptions.  Memory/config phrases
+    # ("add memory", "update memory", "add knowledge", …) are NOT
+    # overridden here because they can appear as substrings in real idea
+    # text.  The LLM is the primary classifier for those intents.
     if has_restart_phrase:
         intent = "restart_prd"
-
-    # ── Resume-phrase override (high priority — before idea) ──
     elif has_resume_phrase:
         intent = "resume_prd"
-
-    # ── Create-jira phrase override (before idea, so "create jira" is not
-    #    mistaken for a new idea) ──
     elif has_create_jira_phrase:
         intent = "create_jira"
-
-    # ── Memory / config phrase overrides (before idea, so "configure
-    #    memory" is not misclassified as list_ideas or create_prd) ──
-    elif has_memory_phrase:
-        intent = "configure_memory"
-
-    elif has_config_phrase:
-        intent = "update_config"
-
-    # ── Idea-phrase override (high priority, but below resume) ──
     elif has_idea_phrase:
         intent = "create_prd"
 
@@ -232,7 +222,10 @@ def _interpret_and_act_inner(
         return
 
     # ── List ideas (must be checked BEFORE list_projects) ──
-    if intent == "list_ideas" or (not has_idea_phrase and has_list_ideas_phrase):
+    # Guard: if the text matches memory/config phrases, don't let a
+    # misclassified "list_ideas" LLM intent catch it — let it fall
+    # through to the configure_memory / update_config dispatch below.
+    if (intent == "list_ideas" and not has_memory_phrase and not has_config_phrase) or (not has_idea_phrase and has_list_ideas_phrase):
         _handle_list_ideas(channel, thread_ts, user, session)
         tracked_response = "(list ideas)"
         log_tracked_interaction(

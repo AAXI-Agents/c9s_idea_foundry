@@ -213,15 +213,31 @@ def _handle_thread_message_inner(
     # Check if user is typing memory entries for a category
     pending_mem = pop_pending_memory(user)
     if pending_mem:
-        er.handle_memory_reply(
-            user_id=user,
-            channel=channel,
-            thread_ts=thread_ts,
-            text=clean_text,
-            category=pending_mem["category"],
-            project_id=pending_mem["project_id"],
+        # Before consuming as memory, check if the user is giving a
+        # command (e.g. "create idea", "iterate an idea").  If a known
+        # command phrase is detected, cancel memory mode and fall
+        # through to the LLM-based intent classifier.
+        from crewai_productfeature_planner.apis.slack._intent_phrases import (
+            _phrase_fallback,
         )
-        return
+        fb = _phrase_fallback(clean_text)
+        if fb["intent"] not in ("unknown", "configure_memory"):
+            logger.info(
+                "Pending-memory cancelled — user command detected "
+                "(phrase_intent=%s text=%r)",
+                fb["intent"], clean_text[:80],
+            )
+            # Fall through to _interpret_and_act below
+        else:
+            er.handle_memory_reply(
+                user_id=user,
+                channel=channel,
+                thread_ts=thread_ts,
+                text=clean_text,
+                category=pending_mem["category"],
+                project_id=pending_mem["project_id"],
+            )
+            return
 
     # Check if this thread has an active manual-refinement or exec
     # summary feedback session — both accept thread replies as input.

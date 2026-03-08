@@ -4,8 +4,8 @@
 > (Copilot, Codex, Cursor, Claude Code, etc.) by documenting the modular
 > layout so agents can load only the files they need.
 >
-> **Last updated**: 2026-03-02 — session management rules, version-scoped
-> chat sessions, compact mode at 75% memory, kill-old-runs on restart.
+> **Last updated**: 2026-03-08 — Obsidian knowledge base integration,
+> session/iteration knowledge updates, vault structure.
 
 ---
 
@@ -345,6 +345,96 @@ No need to ask for permission before running terminal commands — the agent
 should proceed directly with builds, tests, installs, and any other
 commands needed to complete the task.
 
+### 5. Obsidian Knowledge Updates (Required)
+
+The Obsidian vault at `obsidian/` **must** be kept in sync with every
+code change. This is not a session-end task — update the relevant
+Obsidian pages **immediately after each user interaction** that changes
+code, adds features, fixes bugs, or modifies project structure.
+
+**On every session start:**
+1. Read `obsidian/Sessions/Session Log.md` to understand recent work.
+2. Use the `obsidian/Templates/Session Entry.md` format to plan the
+   session entry.
+
+**After every user interaction that changes code:**
+1. Identify which Obsidian pages are affected (see "When to Update
+   Which Page" table below).
+2. Update those pages immediately — do not defer to session end.
+3. If a version was bumped, update `obsidian/Changelog/Version History.md`.
+4. If new files/modules were added, update `obsidian/Architecture/Module Map.md`.
+
+**On every session end:**
+1. Append a session summary to `obsidian/Sessions/Session Log.md`.
+2. Verify all Obsidian pages affected during the session are up to date.
+3. Update `obsidian/Home.md` if vault structure changed (new folders/pages).
+
+---
+
+## Obsidian Knowledge Base
+
+Project knowledge is maintained in an Obsidian vault **inside the
+project repository** so it is version-controlled alongside the code.
+
+**Vault path:**
+```
+obsidian/
+```
+
+### Vault Structure
+
+```
+Home.md                          ← Navigation hub
+Architecture/
+  Project Overview.md            ← Tech stack, conventions, versioning
+  Module Map.md                  ← Source file purposes
+  Server Lifecycle.md            ← Startup/shutdown sequence
+  Environment Variables.md       ← Env var reference
+  Coding Standards.md            ← Development conventions
+Agents/
+  Agent Roles.md                 ← All agent configurations
+  LLM Model Tiers.md             ← Model selection guide
+APIs/
+  API Overview.md                ← Endpoint summary
+Changelog/
+  Version History.md             ← Full v0.1.0 → current changelog
+Database/
+  MongoDB Schema.md              ← Collections, indexes, document schemas
+Flows/
+  PRD Flow.md                    ← Generation pipeline phases
+Integrations/
+  Slack Integration.md           ← Module map, intents, action IDs
+  Confluence Integration.md      ← Publishing pipeline
+  Jira Integration.md            ← Phased ticketing workflow
+Knowledge/
+  PRD Guidelines.md              ← 10-section template & quality criteria
+  User Preferences.md            ← User profile & PRD preferences
+Orchestrator/
+  Orchestrator Overview.md       ← Pipeline stages & factories
+Sessions/
+  Session Log.md                 ← AI session tracking (append-only)
+Templates/
+  Session Entry.md               ← Template for session entries
+Testing/
+  Testing Guide.md               ← Test patterns & patch targets
+Tools/
+  Tools Overview.md              ← CrewAI tool wrappers
+```
+
+### When to Update Which Page
+
+| Change type | Pages to update |
+|------------|----------------|
+| New module / file added | `Architecture/Module Map.md` |
+| New API endpoint | `APIs/API Overview.md` |
+| New agent or model change | `Agents/Agent Roles.md`, `Agents/LLM Model Tiers.md` |
+| New Slack intent or action | `Integrations/Slack Integration.md` |
+| MongoDB schema change | `Database/MongoDB Schema.md` |
+| New env var | `Architecture/Environment Variables.md` |
+| Pipeline stage change | `Orchestrator/Orchestrator Overview.md` |
+| Version bump | `Changelog/Version History.md` |
+| Every session | `Sessions/Session Log.md` |
+
 ---
 
 ## Project Conventions
@@ -418,30 +508,26 @@ Deep-thinking models for complex, multi-iteration tasks:
 
 ---
 
-## Recent Changes (2026-03-07)
+## Recent Changes (2026-03-08)
 
-- **Removed unused web research tools** (v0.13.0): Removed SerperDevTool,
-  ScrapeWebsiteTool, and WebsiteSearchTool from the Product Manager agent —
-  never invoked during PRD flows. Deleted tool factory modules, SERPER_API_KEY
-  preflight check, and .env entry. Agent toolkit reduced from 5 to 2 tools.
-- **Fix hallucinated Confluence URLs in Jira tickets** (v0.13.1): The LLM
-  frequently invented fake Confluence URLs (e.g. `confluence.internal`,
-  `confluence.example.com`) instead of using the real URL. The Jira tool now
-  resolves the authoritative URL from MongoDB before creating tickets.
-- **Phased Jira ticketing**: Replaced single-step Jira creation with a
-  3-phase approach: (1) Skeleton outline for user approval, (2) Epics with
-  inter-Epic dependencies + Stories categorised as Data Persistence / Data
-  Layer / Data Presentation / App & Data Security, (3) Sub-tasks with 7
-  required sections (Reasoning, Instructions, Sample Data, Guard Rails,
-  Definition of Done, Test Cases for QE, Unit Test Cases) and dependency
-  chains. New PRDState fields: `jira_skeleton`, `jira_epics_stories_output`,
-  `jira_phase`. New Slack interactive callbacks for skeleton approval and
-  Epics/Stories review.
-- **Auto-resume on restart**: Server automatically resumes interrupted PRD flows
-  with 3-strategy Slack context recovery and background threads
-- **Heartbeat section tracking**: `section_start` events post to Slack and update
-  `crewJobs.current_section*` fields for live progress queryability
-- **crewJobs stores Slack context**: `create_job()` persists `slack_channel`/`slack_thread_ts`
-- **Slack manifest validation**: Rejects non-`xoxe.` tokens with actionable guidance
-- **google-genai migration**: Switched embedder from `google-generativeai` to `google-vertex`
-- **Conventional logging**: Removed decorative box-drawing log output
+- **Obsidian knowledge base** (v0.15.4): Created Obsidian vault at
+  `c9-prd-planner/C9 Product Ideas Planner` with 19 knowledge pages covering
+  architecture, agents, APIs, flows, integrations, database, testing, and tools.
+  Session/iteration tracking via `Sessions/Session Log.md`. CODEX.md updated with
+  vault structure and mandatory session update requirements.
+- **MongoDB collection bootstrap** (v0.15.0): `ensure_collections()` creates
+  all 8 collections and indexes on startup. `dev_setup.sh` for one-command
+  project bootstrap.
+- **Delivery action buttons** (v0.14.0): Block Kit buttons for publish/Jira
+  actions. Dedicated `create_jira` intent separate from `publish`.
+- **Persistent Jira skeleton** (v0.14.5): Skeleton saved to MongoDB;
+  resume shows existing skeleton instead of regenerating.
+- **Phased Jira ticketing**: 3-phase approach (Skeleton → Epics/Stories →
+  Sub-tasks) with user approval at each phase.
+- **Fix hallucinated Confluence URLs** (v0.13.1): Jira tool resolves
+  authoritative URL from MongoDB.
+- **Removed unused web research tools** (v0.13.0): Agent toolkit reduced
+  from 5 to 2 tools (FileRead + DirectoryRead).
+- **Conventional logging**: Single-line structured messages (no box-drawing).
+- **google-genai migration**: Switched embedder from `google-generativeai`
+  to `google-vertex`.

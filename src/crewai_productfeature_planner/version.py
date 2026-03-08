@@ -1237,6 +1237,22 @@ _CODEX: list[CodexEntry] = [
             "2 new tests."
         ),
     ),
+    CodexEntry(
+        "0.15.4",
+        date(2026, 3, 8),
+        (
+            "Fix thread-reply intent regression — pending_memory state "
+            "consumed user commands (e.g. 'create idea') as memory entries "
+            "instead of routing to intent classification. Three fixes: "
+            "(1) removed configure_memory/update_config from top-level "
+            "phrase overrides — LLM is the primary classifier for those "
+            "ambiguous intents; (2) added guard on list_ideas dispatch so "
+            "LLM misclassification doesn't catch memory-phrase text; "
+            "(3) added phrase-based command detection in pending_memory "
+            "handler — cancels memory mode when user types a recognised "
+            "command. 6 new regression tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
