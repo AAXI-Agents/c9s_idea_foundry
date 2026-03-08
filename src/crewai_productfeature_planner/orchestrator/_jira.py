@@ -189,6 +189,18 @@ def build_jira_skeleton_stage(
         flow.state.jira_skeleton = result.output
         flow.state.jira_phase = "skeleton_pending"
         _persist_jira_phase(flow.state.run_id, "skeleton_pending")
+        # Persist skeleton to MongoDB so it survives process restarts
+        # and can be shown again when the user resumes approval.
+        try:
+            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                save_jira_skeleton,
+            )
+            save_jira_skeleton(flow.state.run_id, result.output)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "Failed to persist jira_skeleton for run_id=%s",
+                flow.state.run_id, exc_info=True,
+            )
         logger.info(
             "[JiraSkeleton] Skeleton generated (%d chars) — awaiting approval",
             len(result.output),

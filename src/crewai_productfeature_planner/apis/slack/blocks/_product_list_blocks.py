@@ -137,15 +137,28 @@ def product_list_blocks(
             )
 
         if not jira_completed:
-            jira_action_label = "Resume" if jira_phase else "Start"
-            if jira_phase in ("", "skeleton_pending"):
-                # Skeleton not yet created or pending approval
+            if jira_phase == "skeleton_pending":
+                # Skeleton generated — show review/approve button
                 elements.append(
                     {
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": f":clipboard: {jira_action_label} Jira Skeleton",
+                            "text": ":clipboard: Review Jira Skeleton",
+                        },
+                        "action_id": f"product_jira_skeleton_{idx}",
+                        "value": btn_value,
+                        "style": "primary",
+                    },
+                )
+            elif not jira_phase:
+                # Skeleton not yet created
+                elements.append(
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": ":clipboard: Start Jira Skeleton",
                         },
                         "action_id": f"product_jira_skeleton_{idx}",
                         "value": btn_value,

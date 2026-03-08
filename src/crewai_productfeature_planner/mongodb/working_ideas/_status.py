@@ -395,3 +395,55 @@ def save_jira_phase(run_id: str, phase: str) -> int:
             run_id, exc,
         )
         return 0
+
+
+def save_jira_skeleton(run_id: str, skeleton: str) -> int:
+    """Persist the Jira skeleton text on a working-idea document.
+
+    The skeleton is stored at ``workingIdeas.jira_skeleton`` so it
+    can be shown to the user when they resume the approval flow.
+
+    Returns:
+        Number of documents modified (0 or 1).
+    """
+    try:
+        result = _common.get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "jira_skeleton": skeleton,
+                "update_date": _now_iso(),
+            }},
+        )
+        logger.info(
+            "[MongoDB] Saved jira_skeleton for run_id=%s (%d chars, matched=%d)",
+            run_id, len(skeleton), result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save jira_skeleton for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def get_jira_skeleton(run_id: str) -> str:
+    """Retrieve the persisted Jira skeleton for *run_id*.
+
+    Returns:
+        The skeleton text, or an empty string if not found.
+    """
+    try:
+        doc = _common.get_db()[WORKING_COLLECTION].find_one(
+            {"run_id": run_id},
+            {"jira_skeleton": 1},
+        )
+        if doc:
+            return doc.get("jira_skeleton") or ""
+        return ""
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to fetch jira_skeleton for run_id=%s: %s",
+            run_id, exc,
+        )
+        return ""

@@ -2123,6 +2123,113 @@ class TestSaveJiraPhase:
             assert result == 0
 
 
+# ── save_jira_skeleton / get_jira_skeleton ────────────────────
+
+
+class TestSaveJiraSkeleton:
+    """Tests for save_jira_skeleton and get_jira_skeleton."""
+
+    def test_saves_skeleton_text(self, wi_mocks):
+        """Should persist skeleton text on the working-idea document."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_jira_skeleton,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+        result = save_jira_skeleton("run-abc", "## Epic 1\n- Story A")
+
+        assert result == 1
+        call_args = mock_collection.update_one.call_args
+        assert call_args[0][0] == {"run_id": "run-abc"}
+        set_fields = call_args[0][1]["$set"]
+        assert set_fields["jira_skeleton"] == "## Epic 1\n- Story A"
+        assert "update_date" in set_fields
+
+    def test_returns_zero_on_no_match(self, wi_mocks):
+        """Should return 0 when no document matches."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_jira_skeleton,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(modified_count=0)
+
+        result = save_jira_skeleton("nonexistent", "skeleton")
+        assert result == 0
+
+    def test_returns_zero_on_db_error(self, wi_mocks):
+        """Should catch PyMongoError and return 0."""
+        from pymongo.errors import PyMongoError
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_jira_skeleton,
+        )
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = save_jira_skeleton("run-abc", "skeleton")
+            assert result == 0
+
+    def test_get_skeleton_returns_text(self, wi_mocks):
+        """Should return the stored skeleton text."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_skeleton,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = {
+            "jira_skeleton": "## Epic 1\n- Story A",
+        }
+
+        result = get_jira_skeleton("run-abc")
+        assert result == "## Epic 1\n- Story A"
+        mock_collection.find_one.assert_called_once_with(
+            {"run_id": "run-abc"},
+            {"jira_skeleton": 1},
+        )
+
+    def test_get_skeleton_returns_empty_when_missing(self, wi_mocks):
+        """Should return empty string when field is absent."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_skeleton,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = {}
+
+        result = get_jira_skeleton("run-abc")
+        assert result == ""
+
+    def test_get_skeleton_returns_empty_on_no_doc(self, wi_mocks):
+        """Should return empty string when document doesn't exist."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_skeleton,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+
+        result = get_jira_skeleton("run-abc")
+        assert result == ""
+
+    def test_get_skeleton_returns_empty_on_db_error(self, wi_mocks):
+        """Should catch PyMongoError and return empty string."""
+        from pymongo.errors import PyMongoError
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_skeleton,
+        )
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = get_jira_skeleton("run-abc")
+            assert result == ""
+
+
 # ── find_completed_ideas_by_project ───────────────────────────
 
 

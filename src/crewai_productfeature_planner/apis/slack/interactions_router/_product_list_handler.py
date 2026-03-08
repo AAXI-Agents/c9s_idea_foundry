@@ -191,9 +191,67 @@ def _handle_jira_skeleton(
     send_tool,
     client,
 ) -> None:
-    """Generate and present Jira skeleton for review."""
-    _ack(client, channel, thread_ts, user_id,
-         f":clipboard: Generating Jira skeleton for product #{idea_number}…")
+    """Generate and present Jira skeleton for review.
+
+    If the skeleton has already been generated and is awaiting approval
+    (``jira_phase == "skeleton_pending"``), show the existing skeleton
+    with approval + regenerate buttons instead of re-running the LLM.
+    """
+    # Check if a skeleton already exists and is pending approval.
+    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+        find_run_any_status,
+        get_jira_skeleton,
+    )
+
+    doc = find_run_any_status(run_id)
+    jira_phase = (doc.get("jira_phase") or "") if doc else ""
+
+    if jira_phase == "skeleton_pending":
+        existing_skeleton = get_jira_skeleton(run_id)
+        if existing_skeleton:
+            logger.info(
+                "[JiraSkeleton] Showing existing skeleton for run_id=%s (%d chars)",
+                run_id, len(existing_skeleton),
+            )
+            _ack(client, channel, thread_ts, user_id,
+                 f":clipboard: Here's the Jira skeleton for product #{idea_number} — review and approve or regenerate.")
+
+            from crewai_productfeature_planner.apis.slack.blocks import (
+                jira_skeleton_approval_blocks,
+            )
+            blocks = jira_skeleton_approval_blocks(run_id, existing_skeleton)
+            if client:
+                try:
+                    client.chat_postMessage(
+                        channel=channel,
+                        thread_ts=thread_ts,
+                        blocks=blocks,
+                        text="Jira skeleton ready for review",
+                    )
+                except Exception as exc:
+                    logger.error("Failed to post skeleton blocks: %s", exc)
+                    send_tool.run(
+                        channel=channel, thread_ts=thread_ts,
+                        text=(
+                            f"<@{user_id}> :clipboard: *Jira Skeleton:*\n"
+                            f"{existing_skeleton[:2800]}\n\n"
+                            "Approve or regenerate via the buttons above."
+                        ),
+                    )
+            return
+
+    # No existing skeleton — generate a new one.
+    if jira_phase == "skeleton_pending":
+        logger.warning(
+            "[JiraSkeleton] jira_phase=skeleton_pending but no skeleton in MongoDB "
+            "for run_id=%s — regenerating",
+            run_id,
+        )
+        _ack(client, channel, thread_ts, user_id,
+             f":clipboard: Jira skeleton for product #{idea_number} needs to be regenerated — starting now…")
+    else:
+        _ack(client, channel, thread_ts, user_id,
+             f":clipboard: Generating Jira skeleton for product #{idea_number}…")
 
     def _do_skeleton():
         try:

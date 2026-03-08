@@ -581,7 +581,7 @@ class TestDeliveryStatusDisplay:
         assert "Start" in jira_btn["text"]["text"]
 
     def test_resume_jira_skeleton_button_label(self):
-        """In-progress Jira (skeleton_pending) should have 'Resume' button."""
+        """In-progress Jira (skeleton_pending) should have 'Review' button."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
@@ -591,7 +591,8 @@ class TestDeliveryStatusDisplay:
         action_blocks = [b for b in blocks if b["type"] == "actions"]
         elements = action_blocks[0]["elements"]
         jira_btn = next(e for e in elements if "jira_skeleton" in e["action_id"])
-        assert "Resume" in jira_btn["text"]["text"]
+        assert "Review" in jira_btn["text"]["text"]
+        assert jira_btn.get("style") == "primary"
 
 
 # ---------------------------------------------------------------------------
@@ -973,6 +974,101 @@ class TestSubtasksPendingPhaseLabel:
         )
         assert "subtasks_pending" in _JIRA_PHASE_LABELS
         assert _JIRA_PHASE_LABELS["subtasks_pending"] == "Sub-tasks awaiting approval"
+
+
+# ---------------------------------------------------------------------------
+# _handle_jira_skeleton — resume existing skeleton vs regenerate
+# ---------------------------------------------------------------------------
+
+_PLH_MOD = (
+    "crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler"
+)
+
+
+class TestHandleJiraSkeletonResume:
+    """Verify _handle_jira_skeleton shows existing skeleton when
+    jira_phase is 'skeleton_pending' instead of regenerating."""
+
+    def test_skeleton_pending_shows_existing_skeleton(self):
+        """When jira_phase=='skeleton_pending' and skeleton exists in
+        MongoDB, should show approval blocks without spawning thread."""
+        doc = {"run_id": "run-x", "jira_phase": "skeleton_pending"}
+        mock_client = MagicMock()
+        mock_send = MagicMock()
+
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=doc),
+            patch(f"{_WI_REPO}.get_jira_skeleton", return_value="## Epic 1: Auth\n- Story: Login"),
+            patch("crewai_productfeature_planner.apis.slack.blocks.jira_skeleton_approval_blocks", return_value=[{"type": "section"}]) as mock_blocks,
+            patch(f"{_PLH_MOD}.threading") as mock_threading,
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_jira_skeleton,
+            )
+            _handle_jira_skeleton("run-x", 1, "U1", "C1", "T1", mock_send, mock_client)
+
+        # Should show the existing skeleton
+        mock_blocks.assert_called_once_with("run-x", "## Epic 1: Auth\n- Story: Login")
+        mock_client.chat_postMessage.assert_called()
+        # Should NOT spawn a background thread
+        mock_threading.Thread.assert_not_called()
+
+    def test_skeleton_pending_but_empty_skeleton_regenerates(self):
+        """When jira_phase=='skeleton_pending' but skeleton is empty in
+        MongoDB, should regenerate by spawning a background thread."""
+        doc = {"run_id": "run-x", "jira_phase": "skeleton_pending"}
+        mock_client = MagicMock()
+        mock_send = MagicMock()
+
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=doc),
+            patch(f"{_WI_REPO}.get_jira_skeleton", return_value=""),
+            patch(f"{_PLH_MOD}.threading") as mock_threading,
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_jira_skeleton,
+            )
+            _handle_jira_skeleton("run-x", 1, "U1", "C1", "T1", mock_send, mock_client)
+
+        # Should spawn a background thread to regenerate
+        mock_threading.Thread.assert_called_once()
+        mock_threading.Thread.return_value.start.assert_called_once()
+
+    def test_no_jira_phase_generates_new_skeleton(self):
+        """When jira_phase is empty, should generate a new skeleton."""
+        doc = {"run_id": "run-x", "jira_phase": ""}
+        mock_client = MagicMock()
+        mock_send = MagicMock()
+
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=doc),
+            patch(f"{_PLH_MOD}.threading") as mock_threading,
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_jira_skeleton,
+            )
+            _handle_jira_skeleton("run-x", 1, "U1", "C1", "T1", mock_send, mock_client)
+
+        # Should spawn a background thread to generate
+        mock_threading.Thread.assert_called_once()
+        mock_threading.Thread.return_value.start.assert_called_once()
+
+    def test_no_doc_found_generates_new_skeleton(self):
+        """When document is not found at all, should try to generate."""
+        mock_client = MagicMock()
+        mock_send = MagicMock()
+
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=None),
+            patch(f"{_PLH_MOD}.threading") as mock_threading,
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_jira_skeleton,
+            )
+            _handle_jira_skeleton("run-x", 1, "U1", "C1", "T1", mock_send, mock_client)
+
+        mock_threading.Thread.assert_called_once()
+        mock_threading.Thread.return_value.start.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

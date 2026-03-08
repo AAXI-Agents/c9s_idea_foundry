@@ -1145,6 +1145,42 @@ _CODEX: list[CodexEntry] = [
             "awaiting approval') so users see exactly where to resume."
         ),
     ),
+    CodexEntry(
+        version="0.14.5",
+        date=date(2026, 3, 8),
+        summary=(
+            "Persist Jira skeleton to MongoDB and show existing skeleton "
+            "when user resumes. Root cause: the skeleton was only stored "
+            "in-memory on flow.state.jira_skeleton and lost after the "
+            "background thread ended. When the user clicked 'Resume Jira "
+            "Skeleton' on a skeleton_pending product, the system "
+            "regenerated from scratch instead of showing the existing one. "
+            "Fix: (1) New save_jira_skeleton()/get_jira_skeleton() in "
+            "MongoDB _status.py persist the skeleton text alongside "
+            "jira_phase. (2) build_jira_skeleton_stage._apply() now "
+            "calls save_jira_skeleton() on generation. (3) "
+            "_handle_jira_skeleton() checks jira_phase first — when "
+            "'skeleton_pending', loads and shows the existing skeleton "
+            "with Approve/Regenerate buttons without re-running the LLM."
+        ),
+    ),
+    CodexEntry(
+        version="0.14.6",
+        date=date(2026, 3, 8),
+        summary=(
+            "Fix product list UX for skeleton_pending phase. "
+            "(1) Button label changed from 'Resume Jira Skeleton' to "
+            "'Review Jira Skeleton' with primary style when jira_phase "
+            "is skeleton_pending — clearly indicates skeleton exists and "
+            "needs approval rather than regeneration. "
+            "(2) Split the jira_phase '' and 'skeleton_pending' branches "
+            "in _product_list_blocks.py — '' shows 'Start Jira Skeleton' "
+            "while 'skeleton_pending' shows 'Review Jira Skeleton'. "
+            "(3) Added warning log when skeleton_pending but no skeleton "
+            "in MongoDB — explains why regeneration occurred for data "
+            "created before v0.14.5 persistence was added."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

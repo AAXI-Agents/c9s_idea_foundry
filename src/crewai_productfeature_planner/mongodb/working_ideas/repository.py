@@ -17,11 +17,13 @@ from crewai_productfeature_planner.mongodb.working_ideas._common import (  # noq
 # -- Status transitions & field operations ----------------------------------
 from crewai_productfeature_planner.mongodb.working_ideas._status import (  # noqa: F401
     ensure_section_field,
+    get_jira_skeleton,
     get_output_file,
     mark_archived,
     mark_completed,
     mark_paused,
     save_jira_phase,
+    save_jira_skeleton,
     save_output_file,
     save_project_ref,
     save_slack_context,
@@ -54,11 +56,13 @@ __all__ = [
     "WORKING_COLLECTION",
     # _status
     "ensure_section_field",
+    "get_jira_skeleton",
     "get_output_file",
     "mark_archived",
     "mark_completed",
     "mark_paused",
     "save_jira_phase",
+    "save_jira_skeleton",
     "save_output_file",
     "save_project_ref",
     "save_slack_context",
