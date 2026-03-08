@@ -491,18 +491,65 @@ def _run_jira_phase(
         )
         return
 
-    # Reconstruct flow state
+    # Reconstruct flow state from MongoDB.
+    # ``restore_prd_state`` returns a 6-tuple; we unpack it and apply
+    # each field individually because ``Flow.state`` is a read-only
+    # property (no setter).
     flow = PRDFlow()
     flow.state.run_id = run_id
     flow.state.idea = doc.get("idea", "")
-    state = restore_prd_state(run_id)
-    if state:
-        flow.state = state
 
-    # Restore jira_phase from MongoDB doc
+    restored = restore_prd_state(run_id)
+    if restored:
+        idea, draft, exec_summary, requirements_breakdown, breakdown_history, refinement_history = restored
+        flow.state.idea = idea
+        flow.state.draft = draft
+        flow.state.iteration = max(
+            (s.iteration for s in draft.sections), default=0,
+        )
+        flow.state.executive_summary = exec_summary
+        flow.state.requirements_breakdown = requirements_breakdown
+        flow.state.breakdown_history = breakdown_history
+        if requirements_breakdown:
+            flow.state.requirements_broken_down = True
+        if exec_summary.latest_content:
+            flow.state.finalized_idea = exec_summary.latest_content
+        if refinement_history:
+            flow.state.idea_refined = True
+            flow.state.refinement_history = refinement_history
+            latest = refinement_history[-1]
+            if latest.get("idea"):
+                flow.state.idea = latest["idea"]
+        elif exec_summary.iterations:
+            flow.state.idea_refined = True
+        # Assemble the final PRD from the restored draft so that
+        # ``_check_jira_prerequisites`` sees a non-empty ``final_prd``.
+        flow.state.final_prd = draft.assemble()
+
+    # Fallback: if MongoDB sections were empty (older completed runs
+    # stored content only on disk), try the on-disk output file.
+    if len(flow.state.final_prd) < 100:
+        import os
+        output_file = doc.get("output_file", "")
+        if output_file and os.path.isfile(output_file):
+            try:
+                prd_text = open(output_file, encoding="utf-8").read()   # noqa: SIM115
+                if prd_text:
+                    flow.state.final_prd = prd_text
+                    logger.info(
+                        "[JiraPhase] Loaded PRD from disk: %s (%d chars)",
+                        output_file, len(prd_text),
+                    )
+            except OSError as exc:
+                logger.warning("[JiraPhase] Failed to read output file: %s", exc)
+
+    # Restore delivery-related fields from the MongoDB document.
+    flow.state.confluence_url = doc.get("confluence_url") or ""
     flow.state.jira_phase = doc.get("jira_phase") or ""
 
-    skip_reason = _check_jira_prerequisites(flow)
+    # The interactive Jira flow should not require Confluence — a user
+    # can create Jira tickets for a PRD that was never published.
+    skip_reason = _check_jira_prerequisites(flow, require_confluence=False)
     if skip_reason:
         send_tool.run(
             channel=channel, thread_ts=thread_ts,
@@ -512,7 +559,7 @@ def _run_jira_phase(
 
     if phase == "skeleton":
         flow.state.jira_phase = ""  # Reset to allow skeleton generation
-        stage = build_jira_skeleton_stage(flow)
+        stage = build_jira_skeleton_stage(flow, require_confluence=False)
         if not stage.should_skip():
             result = stage.run()
             stage.apply(result)
@@ -567,7 +614,7 @@ def _run_jira_phase(
             )
             return
 
-        stage = build_jira_epics_stories_stage(flow)
+        stage = build_jira_epics_stories_stage(flow, require_confluence=False)
         if not stage.should_skip():
             result = stage.run()
             stage.apply(result)
@@ -624,7 +671,7 @@ def _run_jira_phase(
         flow.state.jira_phase = "subtasks_ready"
         _persist_jira_phase(run_id, "subtasks_ready")
 
-        stage = build_jira_subtasks_stage(flow)
+        stage = build_jira_subtasks_stage(flow, require_confluence=False)
         if not stage.should_skip():
             result = stage.run()
             # Capture raw subtask output before apply merges it

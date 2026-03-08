@@ -266,6 +266,7 @@ def _run_slack_prd_flow(
                     confluence_url=run.confluence_url,
                     jira_output=run.jira_output,
                     thread_ts=thread_ts or "",
+                    run_id=run_id,
                 )
 
                 # Proactively suggest next step after PRD completion

@@ -737,15 +737,33 @@ def handle_publish_intent(channel: str, thread_ts: str, user: str, send_tool) ->
             msg = jira.get("message", "No pending Jira deliveries")
             lines.append(f"*Jira:* {msg}")
 
-        # Next-step hint: suggest phased Jira skeleton flow when
-        # Confluence was published but no Jira tickets were created.
+        # Next-step: offer Jira button when Confluence was published
+        # but no Jira tickets were created.
         if pub_count and not jira_count:
-            lines.append("")
-            lines.append(
-                ":bulb: *Next step:* Say *create jira tickets* to "
-                "generate a skeleton of Epics & User Stories for your "
-                "review and approval before creating tickets."
-            )
+            # Find a run_id from the just-published results
+            published_results = conf.get("results", [])
+            button_run_id = ""
+            if published_results:
+                button_run_id = published_results[0].get("run_id", "")
+
+            if button_run_id:
+                from crewai_productfeature_planner.apis.slack.blocks import (
+                    jira_only_blocks,
+                )
+                from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+                jira_blocks = jira_only_blocks(button_run_id)
+                client = _get_slack_client()
+                if client and jira_blocks:
+                    try:
+                        client.chat_postMessage(
+                            channel=channel,
+                            thread_ts=thread_ts,
+                            blocks=jira_blocks,
+                            text="Create Jira Tickets",
+                        )
+                    except Exception as exc:
+                        logger.debug("Jira next-step button post failed: %s", exc)
 
         summary = "\n".join(lines)
         send_tool.run(channel=channel, text=summary, thread_ts=thread_ts)
@@ -784,19 +802,118 @@ def handle_check_publish_intent(channel: str, thread_ts: str, user: str, send_to
             jira = ":white_check_mark:" if item.get("jira_completed") else ":x:"
             lines.append(f"  • `{rid}…` _{title}_ — Confluence {conf}  Jira {jira}")
 
-        lines.append(
-            "\n_Say *publish* to publish all pending PRDs and create Jira tickets._"
-        )
-
         msg = "\n".join(lines)
         send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
         append_to_thread(channel, thread_ts, "assistant", msg)
+
+        # Post an interactive Publish button below the status list
+        first_run_id = ""
+        for item in items:
+            r = item.get("run_id", "")
+            if r:
+                first_run_id = r
+                break
+        if first_run_id:
+            from crewai_productfeature_planner.apis.slack.blocks import (
+                publish_only_blocks,
+            )
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+            pub_blocks = publish_only_blocks(first_run_id)
+            client = _get_slack_client()
+            if client and pub_blocks:
+                try:
+                    client.chat_postMessage(
+                        channel=channel,
+                        thread_ts=thread_ts,
+                        blocks=pub_blocks,
+                        text="Publish to Confluence",
+                    )
+                except Exception as exc:
+                    logger.debug("Publish button post failed: %s", exc)
 
     except Exception as exc:
         err_msg = f"<@{user}> :x: Failed to check publishing status: {exc}"
         send_tool.run(channel=channel, text=err_msg, thread_ts=thread_ts)
         append_to_thread(channel, thread_ts, "assistant", err_msg)
         logger.error("Check publish intent failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Create Jira tickets (text intent – no run_id yet)
+# ---------------------------------------------------------------------------
+
+
+def handle_create_jira_intent(
+    channel: str, thread_ts: str, user: str, send_tool
+) -> None:
+    """Find the latest completed PRD and kick off the Jira skeleton phase.
+
+    When the user types "create jira" in Slack (text intent), there is
+    no ``run_id`` attached.  We resolve it by looking for the most recent
+    completed product in the active project, or — if no project session
+    is active — the most recent completed product in the channel.
+    """
+    try:
+        # Attempt to resolve the project from the session
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_context_session,
+        )
+        from crewai_productfeature_planner.mongodb.working_ideas import (
+            find_completed_ideas_by_project,
+            find_unfinalized,
+        )
+
+        session = get_context_session(user, channel)
+        project_id = session.get("project_id") if session else None
+
+        run_id: str | None = None
+
+        # 1. Look in completed products for the project
+        if project_id:
+            products = find_completed_ideas_by_project(
+                project_id, channel=channel,
+            )
+            if products:
+                run_id = products[0].get("run_id")
+
+        # 2. Fallback: look for the most recent unfinalized run
+        if not run_id:
+            unfinalized = find_unfinalized()
+            if project_id:
+                unfinalized = [
+                    r for r in unfinalized
+                    if r.get("project_id") == project_id
+                ] or unfinalized
+            if unfinalized:
+                run_id = unfinalized[0].get("run_id")
+
+        if not run_id:
+            send_tool.run(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=(
+                    f"<@{user}> :no_entry_sign: No completed PRD found to "
+                    "create Jira tickets for. Run a PRD flow first!"
+                ),
+            )
+            append_to_thread(
+                channel, thread_ts, "assistant", "(no completed PRD for Jira)"
+            )
+            return
+
+        # Delegate to the delivery action handler
+        from crewai_productfeature_planner.apis.slack.interactions_router._delivery_action_handler import (
+            _do_create_jira,
+        )
+
+        _do_create_jira(run_id, user, channel, thread_ts)
+
+    except Exception as exc:
+        err_msg = f"<@{user}> :x: Failed to create Jira tickets: {exc}"
+        send_tool.run(channel=channel, text=err_msg, thread_ts=thread_ts)
+        append_to_thread(channel, thread_ts, "assistant", err_msg)
+        logger.error("Create Jira intent failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -969,6 +1086,7 @@ def handle_resume_prd(
                         confluence_url=run.confluence_url,
                         jira_output=run.jira_output,
                         thread_ts=thread_ts,
+                        run_id=run_id,
                     )
                 elif run and run.status == FlowStatus.PAUSED:
                     from crewai_productfeature_planner.apis.slack.blocks import flow_paused_blocks

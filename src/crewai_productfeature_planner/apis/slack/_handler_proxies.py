@@ -54,6 +54,10 @@ def _handle_publish_intent(channel, thread_ts, user, send_tool):
     return _er()._handle_publish_intent(channel, thread_ts, user, send_tool)
 
 
+def _handle_create_jira_intent(channel, thread_ts, user, send_tool):
+    return _er()._handle_create_jira_intent(channel, thread_ts, user, send_tool)
+
+
 def _handle_list_ideas(channel, thread_ts, user, session):
     return _er()._handle_list_ideas(channel, thread_ts, user, session)
 

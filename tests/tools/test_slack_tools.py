@@ -184,12 +184,30 @@ class TestSlackPostPRDResultTool:
             confluence_url=None,
             jira_output=None,
         )
-        # Header + idea + success + divider + next-steps = 5
-        assert len(blocks) == 5
-        next_steps_text = blocks[-1]["text"]["text"]
-        assert "publish" in next_steps_text
-        assert "jira tickets" in next_steps_text
-        assert "skeleton" in next_steps_text.lower()
+        # Header + idea + success = 3 (no buttons without run_id)
+        assert len(blocks) == 3
+        assert blocks[0]["type"] == "header"
+        assert blocks[-1]["text"]["text"] == ":white_check_mark: PRD has been generated successfully!"
+
+    def test_builds_blocks_with_run_id_shows_buttons(self):
+        """When run_id is provided and delivery not done, buttons are included."""
+        from crewai_productfeature_planner.tools.slack_tools import SlackPostPRDResultTool
+
+        tool = SlackPostPRDResultTool()
+        blocks = tool._build_blocks(
+            idea="with buttons",
+            output_file=None,
+            confluence_url=None,
+            jira_output=None,
+            run_id="run-test-123",
+        )
+        # Header + idea + success + divider + next-steps section + actions = 6
+        assert len(blocks) == 6
+        # Last block should be an actions block with buttons
+        assert blocks[-1]["type"] == "actions"
+        action_ids = [el["action_id"] for el in blocks[-1]["elements"]]
+        assert "delivery_publish" in action_ids
+        assert "delivery_create_jira" in action_ids
 
     def test_sends_blocks_to_slack(self):
         mock_client = MagicMock()

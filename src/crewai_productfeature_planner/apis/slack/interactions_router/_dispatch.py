@@ -92,6 +92,12 @@ _JIRA_APPROVAL_ACTIONS = frozenset({
     "jira_subtask_reject",
 })
 
+# Post-completion delivery actions (Publish / Create Jira buttons)
+_DELIVERY_ACTIONS = frozenset({
+    "delivery_publish",
+    "delivery_create_jira",
+})
+
 
 def _extract_payload(body: bytes) -> dict | None:
     """Parse the ``payload`` field from a Slack interaction POST.
@@ -146,6 +152,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "jira_review_skip": ":fast_forward: Sub-tasks skipped",
         "jira_subtask_approve": ":white_check_mark: Sub-tasks approved — Jira ticketing complete",
         "jira_subtask_reject": ":arrows_counterclockwise: Regenerating Jira sub-tasks",
+        "delivery_publish": ":outbox_tray: Publishing to Confluence",
+        "delivery_create_jira": ":jira: Creating Jira tickets",
     }
     label = labels.get(action_id, action_id)
     # Dynamic action IDs for idea list buttons
@@ -566,6 +574,43 @@ async def slack_interactions(request: Request) -> JSONResponse:
                     _with_team, _team_id,
                     _handle_flow_retry,
                     run_id, user_id, channel_id, thread_ts,
+                ),
+            )
+
+            if channel_id:
+                ack_text = _ack_action(action_id, user_name)
+                loop.run_in_executor(
+                    None,
+                    partial(_with_team, _team_id, _post_ack, channel_id, thread_ts, ack_text),
+                )
+
+            return JSONResponse({"ok": True})
+
+        # ── Delivery actions (Publish / Create Jira buttons) ──
+        if action_id in _DELIVERY_ACTIONS:
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack delivery action: action=%s user=%s run_id=%s",
+                action_id, user_name, run_id,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack.interactions_router._delivery_action_handler import (
+                _handle_delivery_action,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_delivery_action,
+                    action_id, run_id, user_id, channel_id, thread_ts,
                 ),
             )
 

@@ -215,11 +215,15 @@ class TestHandleListIdeas:
     """Verify handle_list_ideas posts Block Kit instead of plain text."""
 
     @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.find_completed_ideas_by_project",
+        return_value=[],
+    )
+    @patch(
         "crewai_productfeature_planner.mongodb.working_ideas.repository.find_ideas_by_project",
         return_value=_IDEAS,
     )
     @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")
-    def test_posts_blocks_to_slack(self, mock_client, mock_find):
+    def test_posts_blocks_to_slack(self, mock_client, mock_find, mock_products):
         from crewai_productfeature_planner.apis.slack._session_handlers import (
             handle_list_ideas,
         )
@@ -240,11 +244,17 @@ class TestHandleListIdeas:
         assert blocks[0]["type"] == "header"
 
     @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.find_completed_ideas_by_project",
+        return_value=[],
+    )
+    @patch(
         "crewai_productfeature_planner.mongodb.working_ideas.repository.find_ideas_by_project",
         return_value=[],
     )
     @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")
-    def test_empty_ideas_posts_plain_text(self, mock_client, mock_find):
+    def test_empty_ideas_and_products_posts_plain_text(
+        self, mock_client, mock_find, mock_products,
+    ):
         from crewai_productfeature_planner.apis.slack._session_handlers import (
             handle_list_ideas,
         )
@@ -255,10 +265,103 @@ class TestHandleListIdeas:
 
         handle_list_ideas("C1", "T1", _USER, session)
 
-        # Empty ideas should use plain text reply, not blocks
+        # Empty ideas AND products should use plain text reply
         mock_slack.chat_postMessage.assert_called_once()
         call_kw = mock_slack.chat_postMessage.call_args[1]
         assert "No ideas found" in call_kw["text"]
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.find_completed_ideas_by_project",
+        return_value=[
+            {
+                "run_id": "run-prod1",
+                "idea": "Completed PRD needing Jira",
+                "status": "completed",
+                "iteration": 5,
+                "sections_done": 10,
+                "total_sections": 10,
+                "confluence_published": True,
+                "confluence_url": "https://example.atlassian.net/wiki/123",
+                "jira_completed": False,
+                "jira_phase": "",
+                "jira_tickets": [],
+            },
+        ],
+    )
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.find_ideas_by_project",
+        return_value=[],
+    )
+    @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")
+    def test_no_ideas_but_products_shows_products(
+        self, mock_client, mock_find, mock_products,
+    ):
+        """When no in-progress ideas exist but completed products do,
+        the handler should show the products block instead of 'No ideas'."""
+        from crewai_productfeature_planner.apis.slack._session_handlers import (
+            handle_list_ideas,
+        )
+
+        mock_slack = MagicMock()
+        mock_client.return_value = mock_slack
+        session = {"project_id": _PROJECT_ID, "project_name": _PROJECT_NAME}
+
+        handle_list_ideas("C1", "T1", _USER, session)
+
+        # Should post product blocks, not "No ideas found"
+        mock_slack.chat_postMessage.assert_called_once()
+        call_kw = mock_slack.chat_postMessage.call_args[1]
+        assert "blocks" in call_kw
+        blocks = call_kw["blocks"]
+        header_text = blocks[0]["text"]["text"]
+        assert "Products" in header_text
+
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.find_completed_ideas_by_project",
+        return_value=[
+            {
+                "run_id": "run-prod1",
+                "idea": "Completed PRD",
+                "status": "completed",
+                "iteration": 5,
+                "sections_done": 10,
+                "total_sections": 10,
+                "confluence_published": False,
+                "confluence_url": "",
+                "jira_completed": False,
+                "jira_phase": "",
+                "jira_tickets": [],
+            },
+        ],
+    )
+    @patch(
+        "crewai_productfeature_planner.mongodb.working_ideas.repository.find_ideas_by_project",
+        return_value=_IDEAS[:2],  # paused + inprogress
+    )
+    @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")
+    def test_both_ideas_and_products_shows_both(
+        self, mock_client, mock_find, mock_products,
+    ):
+        """When both in-progress ideas and completed products exist,
+        both block sets should be posted."""
+        from crewai_productfeature_planner.apis.slack._session_handlers import (
+            handle_list_ideas,
+        )
+
+        mock_slack = MagicMock()
+        mock_client.return_value = mock_slack
+        session = {"project_id": _PROJECT_ID, "project_name": _PROJECT_NAME}
+
+        handle_list_ideas("C1", "T1", _USER, session)
+
+        # Should post two messages — ideas and products
+        assert mock_slack.chat_postMessage.call_count == 2
+        first_call = mock_slack.chat_postMessage.call_args_list[0][1]
+        second_call = mock_slack.chat_postMessage.call_args_list[1][1]
+        # First message: idea blocks (header "Ideas for …")
+        assert "Ideas" in first_call["blocks"][0]["text"]["text"]
+        # Second message: product blocks (header "Products for …")
+        assert "Products" in second_call["blocks"][0]["text"]["text"]
 
 
 # ---------------------------------------------------------------------------

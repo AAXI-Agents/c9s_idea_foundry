@@ -107,6 +107,11 @@ from crewai_productfeature_planner.apis.slack.blocks._product_list_blocks import
 from crewai_productfeature_planner.apis.slack.blocks._retry_blocks import (
     flow_paused_blocks,
 )
+from crewai_productfeature_planner.apis.slack.blocks._delivery_action_blocks import (
+    delivery_next_step_blocks,
+    jira_only_blocks,
+    publish_only_blocks,
+)
 
 __all__ = [
     # Flow
@@ -146,4 +151,8 @@ __all__ = [
     "product_list_blocks",
     # Retry / resume
     "flow_paused_blocks",
+    # Delivery actions (post-completion)
+    "delivery_next_step_blocks",
+    "jira_only_blocks",
+    "publish_only_blocks",
 ]

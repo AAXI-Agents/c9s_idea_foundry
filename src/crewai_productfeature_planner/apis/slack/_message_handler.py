@@ -25,6 +25,7 @@ from typing import Any  # noqa: F401 — kept for downstream compatibility
 from crewai_productfeature_planner.apis.slack._handler_proxies import (
     _handle_check_publish_intent,
     _handle_configure_memory,
+    _handle_create_jira_intent,
     _handle_create_project_intent,
     _handle_current_project,
     _handle_end_session,
@@ -41,6 +42,7 @@ from crewai_productfeature_planner.apis.slack._handler_proxies import (
 )
 from crewai_productfeature_planner.apis.slack._intent_phrases import (
     _CONFIGURE_MEMORY_PHRASES,
+    _CREATE_JIRA_PHRASES,
     _CREATE_PROJECT_PHRASES,
     _CURRENT_PROJECT_PHRASES,
     _END_SESSION_PHRASES,
@@ -189,6 +191,7 @@ def _interpret_and_act_inner(
     has_list_products_phrase = any(p in lower_text_bare for p in _LIST_PRODUCTS_PHRASES)
     has_resume_phrase = any(p in lower_text_bare for p in _RESUME_PRD_PHRASES)
     has_restart_phrase = any(p in lower_text_bare for p in _RESTART_PRD_PHRASES)
+    has_create_jira_phrase = any(p in lower_text_bare for p in _CREATE_JIRA_PHRASES)
 
     # ── Restart-phrase override (highest priority — before resume) ──
     if has_restart_phrase:
@@ -197,6 +200,11 @@ def _interpret_and_act_inner(
     # ── Resume-phrase override (high priority — before idea) ──
     elif has_resume_phrase:
         intent = "resume_prd"
+
+    # ── Create-jira phrase override (before idea, so "create jira" is not
+    #    mistaken for a new idea) ──
+    elif has_create_jira_phrase:
+        intent = "create_jira"
 
     # ── Idea-phrase override (high priority, but below resume) ──
     elif has_idea_phrase:
@@ -486,6 +494,10 @@ def _interpret_and_act_inner(
         _handle_publish_intent(channel, thread_ts, user, send_tool)
         tracked_response = "(publish pipeline triggered)"
 
+    elif intent == "create_jira":
+        _handle_create_jira_intent(channel, thread_ts, user, send_tool)
+        tracked_response = "(create_jira pipeline triggered)"
+
     elif intent == "check_publish":
         _handle_check_publish_intent(channel, thread_ts, user, send_tool)
         tracked_response = "(check_publish status reported)"
@@ -494,7 +506,7 @@ def _interpret_and_act_inner(
         fallback = reply_text or (
             f"<@{user}> I'm not sure what you'd like me to do. "
             ":thinking_face:\n\n"
-            "Try mentioning me with a product idea, like:\n"
+            "Try mentioning me with a product idea to create a PRD, like:\n"
             ">  `@crewai-prd-bot iterate an idea for a mobile app`\n\n"
             "Or type `help` for more options."
         )
@@ -516,7 +528,7 @@ def _interpret_and_act_inner(
     # Note: create_prd is intentionally excluded — the flow runs in a
     # background thread and hasn't completed any steps yet; a prediction
     # is posted after the flow finishes (see router._run_slack_prd_flow).
-    _SUGGEST_AFTER_INTENTS = {"publish", "check_publish"}
+    _SUGGEST_AFTER_INTENTS = {"publish", "create_jira", "check_publish"}
     if intent in _SUGGEST_AFTER_INTENTS and session_project_id:
         predict_and_post_next_step(
             channel=channel,

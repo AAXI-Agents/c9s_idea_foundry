@@ -151,6 +151,7 @@ class SlackPostPRDResultInput(BaseModel):
     confluence_url: Optional[str] = Field(None, description="Confluence page URL.")
     jira_output: Optional[str] = Field(None, description="Jira tickets summary.")
     thread_ts: Optional[str] = Field(None, description="Thread timestamp.")
+    run_id: Optional[str] = Field(None, description="PRD run identifier for action buttons.")
 
 
 class SlackInterpretMessageInput(BaseModel):
@@ -277,6 +278,7 @@ class SlackPostPRDResultTool(BaseTool):
         output_file: Optional[str],
         confluence_url: Optional[str],
         jira_output: Optional[str],
+        run_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         blocks: List[Dict[str, Any]] = [
             {
@@ -309,28 +311,18 @@ class SlackPostPRDResultTool(BaseTool):
             },
         })
 
-        # Deterministic next-step hints when delivery wasn't completed
-        next_steps: list[str] = []
-        if not confluence_url:
-            next_steps.append(
-                "\u2022 Say *publish* to push the PRD to Confluence"
+        # Interactive next-step buttons when delivery wasn't completed
+        if run_id and (not confluence_url or not jira_output):
+            from crewai_productfeature_planner.apis.slack.blocks import (
+                delivery_next_step_blocks,
             )
-        if not jira_output:
-            next_steps.append(
-                "\u2022 Say *create jira tickets* to view a skeleton of "
-                "Epics & User Stories for your approval before creating tickets"
+            blocks.extend(
+                delivery_next_step_blocks(
+                    run_id,
+                    show_publish=not confluence_url,
+                    show_jira=not jira_output,
+                )
             )
-        if next_steps:
-            blocks.append({"type": "divider"})
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": (
-                        ":bulb: *Next steps:*\n" + "\n".join(next_steps)
-                    ),
-                },
-            })
 
         return blocks
 
@@ -342,8 +334,9 @@ class SlackPostPRDResultTool(BaseTool):
         confluence_url: Optional[str] = None,
         jira_output: Optional[str] = None,
         thread_ts: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> str:
-        blocks = self._build_blocks(idea, output_file, confluence_url, jira_output)
+        blocks = self._build_blocks(idea, output_file, confluence_url, jira_output, run_id=run_id)
         fallback_text = f"PRD generation complete for: {idea}"
 
         if _is_bypass():

@@ -498,14 +498,23 @@ def _doc_to_product_dict(doc: dict[str, Any], delivery: dict[str, Any] | None) -
         (delivery and delivery.get("confluence_published"))
         or base["confluence_url"]
     )
-    # Trust jira_completed only when there is corroborating evidence:
-    # either the interactive flow finished (jira_phase == "subtasks_done")
-    # or actual ticket records exist.  The scheduler may mark
-    # jira_completed=True before any tickets are persisted — treat
-    # that as incomplete so the interactive flow buttons appear.
+    # The ``jira_phase`` field on the working-idea document is the
+    # authoritative source of truth for the interactive Jira flow.
+    # When the interactive flow is active (jira_phase is set and not
+    # "subtasks_done"), override the delivery record — the user has
+    # explicitly started or restarted phased Jira ticketing and the
+    # delivery record may hold stale data from a prior auto-delivery.
     raw_jira_done = bool(delivery and delivery.get("jira_completed"))
     jira_tickets = (delivery.get("jira_tickets") or []) if delivery else []
-    if raw_jira_done and not jira_tickets and base["jira_phase"] != "subtasks_done":
+    jira_phase = base["jira_phase"]
+    if jira_phase and jira_phase != "subtasks_done":
+        # Interactive flow is in progress — not done yet.
+        base["jira_completed"] = False
+    elif jira_phase == "subtasks_done":
+        # Interactive flow completed — trust the phase marker.
+        base["jira_completed"] = True
+    elif raw_jira_done and not jira_tickets:
+        # No interactive flow, delivery says done but zero tickets — bogus.
         base["jira_completed"] = False
     else:
         base["jira_completed"] = raw_jira_done

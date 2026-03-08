@@ -61,6 +61,7 @@ from crewai_productfeature_planner.apis.slack._session_handlers import (
 )
 from crewai_productfeature_planner.apis.slack._flow_handlers import (
     handle_check_publish_intent,
+    handle_create_jira_intent,
     handle_publish_intent,
     handle_restart_prd,
     handle_resume_prd,
@@ -103,6 +104,7 @@ _handle_update_config = handle_update_config
 _handle_list_ideas = handle_list_ideas
 _handle_list_products = handle_list_products
 _handle_publish_intent = handle_publish_intent
+_handle_create_jira_intent = handle_create_jira_intent
 _handle_check_publish_intent = handle_check_publish_intent
 _handle_resume_prd = handle_resume_prd
 _handle_restart_prd = handle_restart_prd

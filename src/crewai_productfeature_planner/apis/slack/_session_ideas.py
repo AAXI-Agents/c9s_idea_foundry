@@ -51,7 +51,10 @@ def handle_list_ideas(
     """List working ideas associated with the user's active project.
 
     If no project session is active, prompts for project selection.
-    Shows ideas in any status (in-progress, paused, completed).
+    Shows ideas in any status — in-progress, paused, failed **and**
+    completed ideas that still have pending delivery work (Confluence
+    publish, Jira ticketing).  This gives users a single command to
+    see everything and resume where they left off.
     """
     project_id = session.get("project_id") if session else None
     project_name = session.get("project_name", "your project") if session else None
@@ -61,12 +64,14 @@ def handle_list_ideas(
         return
 
     from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+        find_completed_ideas_by_project,
         find_ideas_by_project,
     )
 
     ideas = find_ideas_by_project(project_id, channel=channel)
+    products = find_completed_ideas_by_project(project_id, channel=channel)
 
-    if not ideas:
+    if not ideas and not products:
         reply(
             channel, thread_ts,
             f"<@{user}> :page_facing_up: No ideas found for *{project_name}*.\n\n"
@@ -75,19 +80,25 @@ def handle_list_ideas(
         )
         return
 
-    # Enrich ideas that are missing an idea title from the crew-jobs
-    # collection (best-effort fallback for legacy documents).
-    _backfill_missing_idea_titles(ideas)
-
-    from crewai_productfeature_planner.apis.slack.blocks import idea_list_blocks
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
-    blocks = idea_list_blocks(
-        ideas, user, project_name or "your project", project_id or "",
-    )
-
     client = _get_slack_client()
-    if client:
+    if not client:
+        reply(
+            channel, thread_ts,
+            f"<@{user}> No Slack client available to post idea list.",
+        )
+        return
+
+    # ── In-progress / paused / failed ideas ──
+    if ideas:
+        _backfill_missing_idea_titles(ideas)
+
+        from crewai_productfeature_planner.apis.slack.blocks import idea_list_blocks
+
+        blocks = idea_list_blocks(
+            ideas, user, project_name or "your project", project_id or "",
+        )
         try:
             client.chat_postMessage(
                 channel=channel,
@@ -97,10 +108,26 @@ def handle_list_ideas(
             )
         except Exception as exc:
             logger.error("Failed to post idea list blocks: %s", exc)
-            # Fallback to plain text
             reply(channel, thread_ts, f"<@{user}> Failed to list ideas.")
-    else:
-        reply(
-            channel, thread_ts,
-            f"<@{user}> No Slack client available to post idea list.",
+
+    # ── Completed products with delivery status ──
+    if products:
+        _backfill_missing_idea_titles(products)
+
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            product_list_blocks,
         )
+
+        blocks = product_list_blocks(
+            products, user, project_name or "your project", project_id or "",
+        )
+        try:
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                blocks=blocks,
+                text=f"Products for {project_name}",
+            )
+        except Exception as exc:
+            logger.error("Failed to post product list blocks: %s", exc)
+            reply(channel, thread_ts, f"<@{user}> Failed to list products.")

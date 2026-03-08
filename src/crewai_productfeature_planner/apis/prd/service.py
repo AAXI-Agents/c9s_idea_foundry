@@ -339,12 +339,23 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDr
         find_unfinalized,
         get_run_documents,
     )
+    from crewai_productfeature_planner.mongodb.working_ideas import (
+        find_run_any_status,
+    )
 
-    # Look up the idea text from unfinalized runs
+    # Look up the idea text — try unfinalized first, then any status
+    # (completed runs are valid targets for Jira ticket creation).
     unfinalized = find_unfinalized()
     run_info = next((r for r in unfinalized if r["run_id"] == run_id), None)
     if run_info is None:
-        raise ValueError(f"Run {run_id} not found in unfinalized working ideas")
+        # Fall back to completed / any-status lookup
+        doc = find_run_any_status(run_id)
+        if doc is None:
+            raise ValueError(f"Run {run_id} not found in working ideas")
+        run_info = {
+            "run_id": doc.get("run_id", run_id),
+            "idea": doc.get("idea") or doc.get("finalized_idea") or "",
+        }
 
     idea = run_info["idea"]
     docs = get_run_documents(run_id)

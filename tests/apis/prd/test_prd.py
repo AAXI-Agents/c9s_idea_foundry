@@ -1516,14 +1516,48 @@ def test_restore_prd_state_reinitialises_missing_section():
 
 
 def test_restore_prd_state_not_found():
-    """restore_prd_state should raise ValueError when run_id is not in unfinalized."""
+    """restore_prd_state should raise ValueError when run_id is not in any working ideas."""
     from crewai_productfeature_planner.apis.prd.service import restore_prd_state
 
-    with patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf:
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch(
+            "crewai_productfeature_planner.mongodb.working_ideas.find_run_any_status"
+        ) as mock_any,
+    ):
         mock_unf.return_value = []
+        mock_any.return_value = None
 
         with pytest.raises(ValueError, match="not found"):
             restore_prd_state("nonexistent")
+
+
+def test_restore_prd_state_completed_run():
+    """restore_prd_state should succeed for completed runs via find_run_any_status fallback."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+
+    completed_doc = {
+        "run_id": "completed-run",
+        "idea": "A completed idea",
+        "status": "completed",
+        "section": {},
+    }
+
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch(
+            "crewai_productfeature_planner.mongodb.working_ideas.find_run_any_status"
+        ) as mock_any,
+        patch("crewai_productfeature_planner.mongodb.get_run_documents") as mock_docs,
+    ):
+        mock_unf.return_value = []  # Not in unfinalized
+        mock_any.return_value = completed_doc  # But found via any-status
+        mock_docs.return_value = [completed_doc]
+
+        idea, draft, exec_summary, requirements, breakdown_history, refinement_history = (
+            restore_prd_state("completed-run")
+        )
+        assert idea == "A completed idea"
 
 
 # ── Job detail with new fields ───────────────────────────────

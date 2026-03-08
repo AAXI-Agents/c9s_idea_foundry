@@ -117,7 +117,9 @@ def _reset_jira_context(jira_token: object) -> None:
 # =====================================================================
 
 
-def build_jira_skeleton_stage(flow: "PRDFlow") -> AgentStage:
+def build_jira_skeleton_stage(
+    flow: "PRDFlow", *, require_confluence: bool = True,
+) -> AgentStage:
     """Create an :class:`AgentStage` that generates a skeleton outline
     of Epics and User Stories (titles only) without creating any Jira
     tickets.  The skeleton is stored in ``flow.state.jira_skeleton``
@@ -125,7 +127,9 @@ def build_jira_skeleton_stage(flow: "PRDFlow") -> AgentStage:
     """
 
     def _should_skip() -> bool:
-        reason = _check_jira_prerequisites(flow)
+        reason = _check_jira_prerequisites(
+            flow, require_confluence=require_confluence,
+        )
         if reason:
             logger.info("[JiraSkeleton] Skipping — %s", reason)
             return True
@@ -204,14 +208,18 @@ def build_jira_skeleton_stage(flow: "PRDFlow") -> AgentStage:
 # =====================================================================
 
 
-def build_jira_epics_stories_stage(flow: "PRDFlow") -> AgentStage:
+def build_jira_epics_stories_stage(
+    flow: "PRDFlow", *, require_confluence: bool = True,
+) -> AgentStage:
     """Create an :class:`AgentStage` that creates Jira Epics with
     inter-Epic dependencies, and User Stories categorised into Data
     Persistence, Data Layer, Data Presentation, and App & Data Security.
     """
 
     def _should_skip() -> bool:
-        reason = _check_jira_prerequisites(flow)
+        reason = _check_jira_prerequisites(
+            flow, require_confluence=require_confluence,
+        )
         if reason:
             logger.info("[JiraEpicsStories] Skipping — %s", reason)
             return True
@@ -373,14 +381,18 @@ def build_jira_epics_stories_stage(flow: "PRDFlow") -> AgentStage:
 # =====================================================================
 
 
-def build_jira_subtasks_stage(flow: "PRDFlow") -> AgentStage:
+def build_jira_subtasks_stage(
+    flow: "PRDFlow", *, require_confluence: bool = True,
+) -> AgentStage:
     """Create an :class:`AgentStage` that creates detailed sub-tasks
     under each Story with documentation, test cases, unit tests, and
     dependency links.
     """
 
     def _should_skip() -> bool:
-        reason = _check_jira_prerequisites(flow)
+        reason = _check_jira_prerequisites(
+            flow, require_confluence=require_confluence,
+        )
         if reason:
             logger.info("[JiraSubtasks] Skipping — %s", reason)
             return True

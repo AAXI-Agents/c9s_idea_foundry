@@ -1941,6 +1941,37 @@ class TestDocToProductDict:
         assert result["jira_completed"] is False
         assert result["jira_tickets"] == []
 
+    def test_active_jira_phase_overrides_delivery_with_tickets(self):
+        """When jira_phase is an active phase (not subtasks_done), the
+        delivery record is overridden even if it has tickets."""
+        doc = {**self._BASE_DOC, "jira_phase": "skeleton_pending"}
+        delivery = {
+            "jira_completed": True,
+            "jira_tickets": [{"key": f"PROJ-{i}"} for i in range(45)],
+        }
+        result = self._call(doc, delivery)
+        assert result["jira_completed"] is False
+
+    def test_epics_stories_done_phase_not_completed(self):
+        """jira_phase='epics_stories_done' means work remains."""
+        doc = {**self._BASE_DOC, "jira_phase": "epics_stories_done"}
+        delivery = {"jira_completed": True, "jira_tickets": [{"key": "P-1"}]}
+        result = self._call(doc, delivery)
+        assert result["jira_completed"] is False
+
+    def test_skeleton_approved_phase_not_completed(self):
+        """jira_phase='skeleton_approved' means work remains."""
+        doc = {**self._BASE_DOC, "jira_phase": "skeleton_approved"}
+        delivery = {"jira_completed": True, "jira_tickets": []}
+        result = self._call(doc, delivery)
+        assert result["jira_completed"] is False
+
+    def test_subtasks_done_always_completed(self):
+        """jira_phase='subtasks_done' means done, even without delivery."""
+        doc = {**self._BASE_DOC, "jira_phase": "subtasks_done"}
+        result = self._call(doc, None)
+        assert result["jira_completed"] is True
+
 
 # ── fail_unfinalized_on_startup ───────────────────────────────
 

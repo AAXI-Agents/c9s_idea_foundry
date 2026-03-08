@@ -116,6 +116,12 @@ def _handle_next_step_feedback(
             ":mag: You have completed PRDs ready for review! Say "
             "*check publish* to see what's pending."
         )
+    elif next_step in ("create_jira_skeleton", "create_jira"):
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            handle_create_jira_intent,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        handle_create_jira_intent(channel, thread_ts, user_id, SlackSendMessageTool())
     else:
         _post(
             f":bulb: To proceed with _{next_step}_, just tell me "

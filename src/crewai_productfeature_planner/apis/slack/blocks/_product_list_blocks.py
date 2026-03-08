@@ -76,8 +76,8 @@ def product_list_blocks(
         jira_phase = product.get("jira_phase") or ""
         confluence_url = product.get("confluence_url") or ""
 
-        # Only completed steps appear as static status text;
-        # incomplete steps are shown solely as interactive buttons.
+        # Build status lines — completed steps get a checkmark,
+        # in-progress steps show their current phase.
         completed_parts: list[str] = []
         if conf_published:
             if confluence_url:
@@ -88,6 +88,13 @@ def product_list_blocks(
                 completed_parts.append(":white_check_mark: Confluence PRD Page")
         if jira_completed:
             completed_parts.append(":white_check_mark: Jira Ticketing")
+        elif jira_phase:
+            phase_label = _JIRA_PHASE_LABELS.get(
+                jira_phase, f"Phase: {jira_phase}",
+            )
+            completed_parts.append(
+                f":hourglass_flowing_sand: Jira: {phase_label}"
+            )
 
         section_text = f"*{idx}.* _{idea_text}_"
         if completed_parts:

@@ -49,7 +49,7 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
               "list_products_intent", "switch_project", \
               "current_project", "end_session", "configure_memory", \
               "update_config", "create_prd", "resume_prd", "restart_prd", \
-              "publish", "check_publish", "general_question", \
+              "publish", "create_jira", "check_publish", "general_question", \
               "help", "greeting", "unknown"
   "idea"    – the product or feature idea extracted from the message, or null
   "confluence_space_key" – extracted Confluence space key, or null
@@ -68,7 +68,8 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
        • "create_prd" without idea → ask the user for the idea they want to iterate on
        • "resume_prd" → confirm you will resume the paused/unfinished PRD flow
        • "restart_prd" → confirm you will archive the current run and start a fresh PRD flow with the same idea
-       • "publish" → confirm you will publish pending PRDs to Confluence and create Jira tickets
+       • "publish" → confirm you will publish pending PRDs to Confluence
+       • "create_jira" → confirm you will create Jira tickets for the completed PRD
        • "check_publish" → confirm you will check the publishing status of pending PRDs
        • "general_question" → answer the question conversationally; if it \
          relates to PRDs or product planning, explain that this bot generates \
@@ -189,6 +190,13 @@ the word "project" does not appear.
   "start over"                            → restart_prd
   "redo the prd"                          → restart_prd
   "start the prd over"                    → restart_prd
+  "create jira"                            → create_jira
+  "create jira tickets"                    → create_jira
+  "jira tickets"                           → create_jira
+  "make jira tickets"                      → create_jira
+  "generate jira"                          → create_jira
+  "jira skeleton"                          → create_jira
+  "set up jira"                            → create_jira
 
 === CRITICAL RULE — "resume" vs "restart" vs "create" PRD ===
 When the user says "resume", "continue", "unpause", or \
@@ -262,10 +270,17 @@ flow with the same idea.
   "restart flow", "restart scan", "start over", "redo the prd", \
   "from scratch", "from beginning".  \
   Do NOT confuse with "resume_prd" (which continues from where it paused).
-- Intent "publish" means the user wants to publish PRDs to Confluence, \
-  create Jira tickets, or trigger the delivery pipeline. Keywords: \
-  "publish", "deploy", "push to confluence", "create tickets", "deliver", \
+- Intent "publish" means the user wants to publish PRDs to Confluence \
+  or trigger the Confluence delivery pipeline.  This is ONLY about \
+  Confluence publishing — NOT about Jira ticket creation.  Keywords: \
+  "publish", "deploy", "push to confluence", "deliver", \
   "push all", "publish all".
+- Intent "create_jira" means the user wants to create Jira tickets, \
+  generate a Jira skeleton, or start the Jira ticketing process for a \
+  completed PRD.  Keywords: "create jira", "jira tickets", "make jira", \
+  "generate jira", "jira skeleton", "set up jira".  \
+  Do NOT confuse with "publish" (which is Confluence only) or \
+  "update_config" (which sets Jira key values).
 - Intent "check_publish" means the user wants to see the publishing status, \
   check which PRDs are pending, or view delivery progress. Keywords: \
   "check publish", "publishing status", "what's pending", "delivery status", \

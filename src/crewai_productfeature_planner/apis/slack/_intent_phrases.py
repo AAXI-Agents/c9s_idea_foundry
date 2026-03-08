@@ -105,6 +105,12 @@ _RESTART_PRD_PHRASES = (
     "reiterate from start", "reiterate idea", "reiterate from beginning",
     "rescan", "rescan idea",
 )
+_CREATE_JIRA_PHRASES = (
+    "create jira", "create jira tickets", "jira tickets",
+    "make jira tickets", "make jira", "generate jira",
+    "jira skeleton", "set up jira", "setup jira",
+    "jira epics", "generate jira tickets",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +120,7 @@ _RESTART_PRD_PHRASES = (
 _PHRASE_INTENT_MAP: list[tuple[tuple[str, ...], str]] = [
     (_RESTART_PRD_PHRASES, "restart_prd"),
     (_RESUME_PRD_PHRASES, "resume_prd"),
+    (_CREATE_JIRA_PHRASES, "create_jira"),
     (_IDEA_PHRASES, "create_prd"),
     (_CONFIGURE_MEMORY_PHRASES, "configure_memory"),
     (_UPDATE_CONFIG_PHRASES, "update_config"),

@@ -25,7 +25,7 @@ class TestGetVersion:
         assert all(p.isdigit() for p in parts)
 
     def test_current_version(self):
-        assert get_version() == "0.13.2"
+        assert get_version() == "0.14.4"
 
 
 class TestCodex:

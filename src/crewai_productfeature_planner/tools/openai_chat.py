@@ -34,7 +34,7 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
               "switch_project", \
               "current_project", "end_session", "configure_memory", \
               "update_config", "create_prd", "resume_prd", "publish", \
-              "check_publish", "general_question", \
+              "create_jira", "check_publish", "general_question", \
               "help", "greeting", "unknown"
   "idea"    – the product or feature idea extracted from the message, or null
   "confluence_space_key" – extracted Confluence space key, or null
@@ -51,7 +51,8 @@ an ongoing thread conversation), return a JSON object with EXACTLY these keys:
        • "create_prd" with idea → confirm you will start planning
        • "create_prd" without idea → ask the user for the idea
        • "resume_prd" → confirm you will resume the paused/unfinished PRD flow
-       • "publish" → confirm you will publish pending PRDs to Confluence and create Jira tickets
+       • "publish" → confirm you will publish pending PRDs to Confluence
+       • "create_jira" → confirm you will create Jira tickets for the completed PRD
        • "check_publish" → confirm you will check the publishing status of pending PRDs
        • "general_question" → answer the question conversationally; if it \
          relates to PRDs or product planning, explain that this bot generates \
@@ -214,10 +215,17 @@ paused or unfinished PRD generation run.
   "unpause", "restart prd", "pick up where", "resume run".  \
   Do NOT confuse with "create_prd" — resume is about continuing an \
   existing run, not starting a new one.
-- Intent "publish" means the user wants to publish PRDs to Confluence, \
-  create Jira tickets, or trigger the delivery pipeline. Keywords: \
-  "publish", "deploy", "push to confluence", "create tickets", "deliver", \
+- Intent "publish" means the user wants to publish PRDs to Confluence \
+  or trigger the Confluence delivery pipeline.  This is ONLY about \
+  Confluence publishing — NOT about Jira ticket creation.  Keywords: \
+  "publish", "deploy", "push to confluence", "deliver", \
   "push all", "publish all".
+- Intent "create_jira" means the user wants to create Jira tickets, \
+  generate a Jira skeleton, or start the Jira ticketing process for a \
+  completed PRD.  Keywords: "create jira", "jira tickets", "make jira", \
+  "generate jira", "jira skeleton", "set up jira".  \
+  Do NOT confuse with "publish" (which is Confluence only) or \
+  "update_config" (which sets Jira key values).
 - Intent "check_publish" means the user wants to see the publishing status, \
   check which PRDs are pending, or view delivery progress. Keywords: \
   "check publish", "publishing status", "what's pending", "delivery status", \

@@ -532,20 +532,34 @@ class TestDeliveryStatusDisplay:
         text = section_blocks[0]["text"]["text"]
         assert "Jira" not in text
 
-    def test_jira_in_progress_not_in_status_text(self):
-        """Jira in-progress should NOT appear in section status text."""
+    def test_jira_in_progress_shows_phase_status(self):
+        """Jira in-progress should show the current phase as status text."""
         product = {
             **_PRODUCTS[0],
-            "jira_phase": "skeleton_approved",
+            "jira_phase": "skeleton_pending",
+            "jira_completed": False,
             "confluence_published": True,
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         section_blocks = [b for b in blocks if b["type"] == "section"]
         text = section_blocks[0]["text"]["text"]
-        assert "Jira Ticketing" not in text
-        # But Confluence should be there (it's completed)
+        assert ":hourglass_flowing_sand:" in text
+        assert "Skeleton awaiting approval" in text
+        # Confluence should also be there (it's completed)
         assert ":white_check_mark:" in text
         assert "Confluence PRD" in text
+
+    def test_jira_epics_stories_done_shows_phase(self):
+        """jira_phase='epics_stories_done' should show its label."""
+        product = {
+            **_PRODUCTS[0],
+            "jira_phase": "epics_stories_done",
+            "jira_completed": False,
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        section_blocks = [b for b in blocks if b["type"] == "section"]
+        text = section_blocks[0]["text"]["text"]
+        assert "Epics & Stories created" in text
 
     def test_both_completed_shows_both_checkmarks(self):
         """When both Confluence and Jira completed, both show checkmarks."""
@@ -959,3 +973,281 @@ class TestSubtasksPendingPhaseLabel:
         )
         assert "subtasks_pending" in _JIRA_PHASE_LABELS
         assert _JIRA_PHASE_LABELS["subtasks_pending"] == "Sub-tasks awaiting approval"
+
+
+# ---------------------------------------------------------------------------
+# _run_jira_phase — state reconstruction
+# ---------------------------------------------------------------------------
+
+_PLH = (
+    "crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler"
+)
+_SVC = "crewai_productfeature_planner.apis.prd.service"
+_WI = "crewai_productfeature_planner.mongodb.working_ideas.repository"
+_JIRA = "crewai_productfeature_planner.orchestrator._jira"
+
+
+class TestRunJiraPhaseStateReconstruction:
+    """Verify _run_jira_phase unpacks restore_prd_state correctly."""
+
+    def _make_draft(self):
+        """Create a minimal PRDDraft with one approved section."""
+        from crewai_productfeature_planner.apis.prd._domain import (
+            PRDDraft, PRDSection,
+        )
+        return PRDDraft(sections=[
+            PRDSection(
+                key="functional_requirements",
+                title="Functional Requirements",
+                step=1,
+                content="Do the thing",
+                iteration=3,
+                is_approved=True,
+            ),
+        ])
+
+    def _make_exec_summary(self, *, with_iterations: bool = True):
+        from crewai_productfeature_planner.apis.prd._domain import (
+            ExecutiveSummaryDraft, ExecutiveSummaryIteration,
+        )
+        if with_iterations:
+            return ExecutiveSummaryDraft(
+                iterations=[
+                    ExecutiveSummaryIteration(
+                        iteration=1, content="Exec summary v1",
+                    ),
+                ],
+                is_approved=True,
+            )
+        return ExecutiveSummaryDraft()
+
+    def _mongo_doc(self, **overrides):
+        base = {
+            "run_id": "run-jira-test",
+            "idea": "Test idea",
+            "jira_phase": "",
+            "confluence_url": "https://wiki.example.com/page/42",
+        }
+        base.update(overrides)
+        return base
+
+    def _import_run_jira_phase(self):
+        from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+            _run_jira_phase,
+        )
+        return _run_jira_phase
+
+    def test_state_fields_populated_from_restore(self):
+        """All state fields should be set via attribute access, not assignment."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = (
+            "Refined idea text",
+            draft,
+            exec_summary,
+            "Requirements text",
+            [{"iteration": 1, "requirements": "r1", "evaluation": "ok"}],
+            [{"iteration": 1, "idea": "Better idea", "evaluation": "good"}],
+        )
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", return_value="test skip"),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        # Prerequisites check posted a warning — meaning we got past
+        # state reconstruction without crashing.
+        send.run.assert_called_once()
+        assert "test skip" in send.run.call_args.kwargs.get("text", "")
+
+    def test_state_has_correct_draft(self):
+        """The draft should be applied so final_prd is assembled from it."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        original_check = None
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"  # skip reason to stop early
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        state = captured_flow["state"]
+        assert state.draft is draft
+        assert state.final_prd != ""
+        assert "Functional Requirements" in state.final_prd
+        assert state.iteration == 3
+
+    def test_confluence_url_from_doc(self):
+        """confluence_url must come from the MongoDB document."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc(
+                confluence_url="https://wiki.real.com/page/99",
+            )),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        assert captured_flow["state"].confluence_url == "https://wiki.real.com/page/99"
+
+    def test_jira_phase_from_doc(self):
+        """jira_phase must come from the MongoDB document."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc(
+                jira_phase="skeleton_approved",
+            )),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        assert captured_flow["state"].jira_phase == "skeleton_approved"
+
+    def test_refinement_history_sets_idea_refined(self):
+        """When refinement history exists, idea_refined must be True and
+        the latest refined idea replaces the idea field."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary(with_iterations=False)
+        restore_result = (
+            "Original idea",
+            draft,
+            exec_summary,
+            "",
+            [],
+            [{"iteration": 1, "idea": "Refined idea v1", "evaluation": "ok"}],
+        )
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        state = captured_flow["state"]
+        assert state.idea_refined is True
+        assert state.idea == "Refined idea v1"
+
+    def test_exec_summary_sets_finalized_idea(self):
+        """When exec summary has latest_content, finalized_idea must be set."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        assert captured_flow["state"].finalized_idea == "Exec summary v1"
+
+    def test_restore_returns_none_falls_back_to_doc(self):
+        """When restore_prd_state returns None, idea from doc is used."""
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=None),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        state = captured_flow["state"]
+        assert state.idea == "Test idea"
+        assert state.run_id == "run-jira-test"
+
+    def test_no_doc_found_sends_error(self):
+        """When the MongoDB doc is not found, an error is posted."""
+        with patch(f"{_WI}.find_run_any_status", return_value=None):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-missing", "skeleton", "U1", "C1", "T1", send)
+
+        send.run.assert_called_once()
+        assert "Could not find" in send.run.call_args.kwargs.get("text", "")
+
+    def test_requirements_breakdown_populated(self):
+        """requirements_breakdown and requirements_broken_down must be set."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = (
+            "idea", draft, exec_summary,
+            "Detailed requirements here", [], [],
+        )
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        state = captured_flow["state"]
+        assert state.requirements_breakdown == "Detailed requirements here"
+        assert state.requirements_broken_down is True

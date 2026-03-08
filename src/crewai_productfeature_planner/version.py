@@ -1055,6 +1055,96 @@ _CODEX: list[CodexEntry] = [
             "create_job when reactivate_job returns False."
         ),
     ),
+    CodexEntry(
+        version="0.14.0",
+        date=date(2026, 3, 8),
+        summary=(
+            "Delivery action buttons & create_jira intent. "
+            "(1) Replaced text-based 'Say *publish*' / 'Say *create jira "
+            "tickets*' prompts with interactive Slack Block Kit buttons "
+            "(delivery_publish, delivery_create_jira) at PRD completion, "
+            "resume completion, post-publish, and check-publish status. "
+            "New module: blocks/_delivery_action_blocks.py with "
+            "delivery_next_step_blocks(), jira_only_blocks(), "
+            "publish_only_blocks(). New handler: interactions_router/"
+            "_delivery_action_handler.py for button click dispatch. "
+            "(2) Added dedicated 'create_jira' intent to both Gemini "
+            "and OpenAI LLM classifiers so 'create jira' is no longer "
+            "misclassified as 'publish'. Narrowed publish intent to "
+            "Confluence-only. Added _CREATE_JIRA_PHRASES phrase fallback, "
+            "handle_create_jira_intent() handler, handler proxy, "
+            "events_router alias, message handler dispatch, and "
+            "_next_step_handler support for create_jira_skeleton. "
+            "20 new tests (1996 total)."
+        ),
+    ),
+    CodexEntry(
+        version="0.14.1",
+        date=date(2026, 3, 7),
+        summary=(
+            "Fix Jira skeleton generation failing for completed PRDs. "
+            "restore_prd_state() only searched find_unfinalized() which "
+            "excludes status='completed' documents. When a user clicked "
+            "'Create Jira Tickets' on a completed PRD the function raised "
+            "ValueError('Run … not found in unfinalized working ideas'). "
+            "Fix: fall back to find_run_any_status() so completed runs "
+            "are also loadable. Added test_restore_prd_state_completed_run "
+            "(1997 tests total)."
+        ),
+    ),
+    CodexEntry(
+        version="0.14.2",
+        date=date(2026, 3, 8),
+        summary=(
+            "Fix Flow.state read-only property crash in _run_jira_phase(). "
+            "The v0.14.1 fix unblocked restore_prd_state() for completed runs "
+            "but exposed a second bug: 'flow.state = state' fails because "
+            "CrewAI Flow.state is a read-only property (no setter) and "
+            "restore_prd_state() returns a 6-tuple, not a PRDState. "
+            "Fix: unpack the tuple and apply fields individually via attribute "
+            "access (matching resume_prd_flow pattern). Also populate "
+            "final_prd via draft.assemble() and confluence_url from the "
+            "MongoDB document so _check_jira_prerequisites() passes. "
+            "Added disk-file fallback: when MongoDB sections are empty "
+            "(older completed runs), read PRD from the on-disk output file. "
+            "Made Confluence URL optional for interactive Jira flows — "
+            "added require_confluence parameter to all Jira stage builders. "
+            "Added 9 tests in TestRunJiraPhaseStateReconstruction. "
+            "One-time retry script: scripts/retry_jira_skeleton.py."
+        ),
+    ),
+    CodexEntry(
+        version="0.14.3",
+        date=date(2026, 3, 8),
+        summary=(
+            "Fix 'list ideas' showing 'No ideas found' when completed "
+            "products exist. Root cause: handle_list_ideas() only called "
+            "find_ideas_by_project() which excludes status=completed. "
+            "Users with completed PRDs needing Jira delivery saw nothing. "
+            "Fix: handle_list_ideas() now also calls "
+            "find_completed_ideas_by_project() and renders product blocks "
+            "with delivery action buttons (Confluence/Jira) alongside "
+            "in-progress idea blocks. Shows a unified view so users can "
+            "resume where they left off from a single 'list ideas' command."
+        ),
+    ),
+    CodexEntry(
+        version="0.14.4",
+        date=date(2026, 3, 8),
+        summary=(
+            "Fix product list showing 'Jira Ticketing complete' when the "
+            "interactive Jira flow is still in progress. Root cause: "
+            "_doc_to_product_dict() only checked for empty jira_tickets "
+            "but the delivery record had 45 stale tickets from a prior "
+            "auto-delivery run while jira_phase was 'skeleton_pending'. "
+            "Fix: jira_phase on the working-idea document is now the "
+            "authoritative source — any active phase (not 'subtasks_done') "
+            "overrides the delivery record's jira_completed flag. "
+            "Product list blocks now display the current Jira phase as "
+            "a status indicator (e.g. ':hourglass: Jira: Skeleton "
+            "awaiting approval') so users see exactly where to resume."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
