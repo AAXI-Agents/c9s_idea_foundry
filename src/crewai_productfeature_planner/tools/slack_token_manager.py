@@ -184,9 +184,22 @@ def get_valid_token(team_id: str | None = None) -> Optional[str]:
         if len(teams) == 1:
             team_id = teams[0]["team_id"]
         elif len(teams) == 0:
+            # Fallback: check SLACK_BOT_TOKEN / SLACK_ACCESS_TOKEN env vars
+            # for dev environments that haven't completed the OAuth flow.
+            env_token = (
+                os.environ.get("SLACK_BOT_TOKEN", "").strip()
+                or os.environ.get("SLACK_ACCESS_TOKEN", "").strip()
+            )
+            if env_token:
+                logger.info(
+                    "[TokenManager] No teams in slackOAuth — using "
+                    "SLACK_BOT_TOKEN / SLACK_ACCESS_TOKEN env var"
+                )
+                return env_token
             logger.warning(
-                "[TokenManager] No teams in slackOAuth -- "
-                "install the app via OAuth first"
+                "[TokenManager] No teams in slackOAuth and no "
+                "SLACK_BOT_TOKEN / SLACK_ACCESS_TOKEN env var set — "
+                "install the app via OAuth or set the env var"
             )
             return None
         else:
@@ -205,6 +218,18 @@ def get_valid_token(team_id: str | None = None) -> Optional[str]:
         # 2. Load from MongoDB
         doc = get_team(team_id)
         if not doc:
+            # Fallback to env var when OAuth record is missing
+            env_token = (
+                os.environ.get("SLACK_BOT_TOKEN", "").strip()
+                or os.environ.get("SLACK_ACCESS_TOKEN", "").strip()
+            )
+            if env_token:
+                logger.info(
+                    "[TokenManager] No OAuth record for team=%s — "
+                    "using SLACK_BOT_TOKEN / SLACK_ACCESS_TOKEN env var",
+                    team_id,
+                )
+                return env_token
             logger.warning(
                 "[TokenManager] No OAuth record for team=%s", team_id,
             )

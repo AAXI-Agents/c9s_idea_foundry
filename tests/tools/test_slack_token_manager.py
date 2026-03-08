@@ -19,6 +19,8 @@ def _reset_token_state(monkeypatch):
     """Clear the per-team in-memory cache and client-credential env vars."""
     monkeypatch.delenv("SLACK_CLIENT_ID", raising=False)
     monkeypatch.delenv("SLACK_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("SLACK_ACCESS_TOKEN", raising=False)
     tm._cache.clear()
 
 
@@ -130,6 +132,43 @@ class TestGetValidToken:
         assert token == "xoxb-fallback"
 
     def test_returns_none_for_unknown_team(self):
+        with patch(f"{_REPO}.get_team", return_value=None), \
+             patch(f"{_REPO}.get_all_teams"):
+            token = tm.get_valid_token("T_UNKNOWN")
+        assert token is None
+
+    def test_env_fallback_slack_bot_token_no_teams(self, monkeypatch):
+        """SLACK_BOT_TOKEN env var used when slackOAuth is empty."""
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-env-token")
+        with patch(f"{_REPO}.get_all_teams", return_value=[]):
+            token = tm.get_valid_token()
+        assert token == "xoxb-env-token"
+
+    def test_env_fallback_slack_access_token_no_teams(self, monkeypatch):
+        """SLACK_ACCESS_TOKEN env var used when slackOAuth is empty."""
+        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-access-env")
+        with patch(f"{_REPO}.get_all_teams", return_value=[]):
+            token = tm.get_valid_token()
+        assert token == "xoxb-access-env"
+
+    def test_env_fallback_bot_token_takes_priority(self, monkeypatch):
+        """SLACK_BOT_TOKEN takes priority over SLACK_ACCESS_TOKEN."""
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-bot")
+        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-access")
+        with patch(f"{_REPO}.get_all_teams", return_value=[]):
+            token = tm.get_valid_token()
+        assert token == "xoxb-bot"
+
+    def test_env_fallback_for_unknown_team(self, monkeypatch):
+        """SLACK_BOT_TOKEN env var used when team_id not found in MongoDB."""
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-env-fallback")
+        with patch(f"{_REPO}.get_team", return_value=None), \
+             patch(f"{_REPO}.get_all_teams"):
+            token = tm.get_valid_token("T_UNKNOWN")
+        assert token == "xoxb-env-fallback"
+
+    def test_no_env_fallback_returns_none_for_unknown_team(self):
+        """Without env var, unknown team returns None."""
         with patch(f"{_REPO}.get_team", return_value=None), \
              patch(f"{_REPO}.get_all_teams"):
             token = tm.get_valid_token("T_UNKNOWN")

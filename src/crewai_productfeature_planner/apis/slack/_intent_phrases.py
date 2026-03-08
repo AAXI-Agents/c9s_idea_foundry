@@ -21,6 +21,8 @@ _IDEA_PHRASES = (
     "work on an idea", "create a prd", "create prd",
     "plan a feature", "build a prd", "help me iterate",
     "let's iterate", "let's brainstorm",
+    "create idea", "create an idea", "create new idea",
+    "create a new idea",
 )
 _CREATE_PROJECT_PHRASES = (
     "create a project", "create project", "new project",

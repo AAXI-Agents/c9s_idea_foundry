@@ -1181,6 +1181,62 @@ _CODEX: list[CodexEntry] = [
             "created before v0.14.5 persistence was added."
         ),
     ),
+    CodexEntry(
+        "0.15.0",
+        date(2026, 3, 8),
+        (
+            "MongoDB collection & index bootstrap on startup. "
+            "New ensure_collections() in scripts/setup_mongodb.py creates "
+            "all 8 collections (agentInteraction, crewJobs, workingIdeas, "
+            "productRequirements, projectConfig, projectMemory, userSession, "
+            "slackOAuth) and their indexes on server startup (step 0 in "
+            "_lifespan). Indexes cover primary keys (unique), common query "
+            "patterns, and sort fields. Fix pre-existing NameError on "
+            "shutdown — threading.excepthook safety net now installed and "
+            "restored correctly. Developer setup script (scripts/dev_setup.sh) "
+            "for one-command project bootstrap. 9 new tests."
+        ),
+    ),
+    CodexEntry(
+        "0.15.1",
+        date(2026, 3, 8),
+        (
+            "Fix Slack bot not responding — env var token fallback. "
+            "get_valid_token() now falls back to SLACK_BOT_TOKEN / "
+            "SLACK_ACCESS_TOKEN env vars when no OAuth records exist in "
+            "the slackOAuth MongoDB collection. This enables dev setups "
+            "without completing the full OAuth install flow. Added startup "
+            "Slack token validation check (step 0b in _lifespan) that logs "
+            "a clear warning when no token is available. Updated .env.example "
+            "with SLACK_BOT_TOKEN documentation. 6 new tests."
+        ),
+    ),
+    CodexEntry(
+        "0.15.2",
+        date(2026, 3, 8),
+        (
+            "Fix 'configure memory' intent not recognised — phrase override. "
+            "When the user typed 'configure memory' in Slack, the LLM "
+            "misclassified it as list_ideas. The list_ideas dispatch handler "
+            "matched first, bypassing the configure_memory handler. Added "
+            "configure_memory and update_config to the phrase-override "
+            "section in _message_handler.py so keyword detection corrects "
+            "LLM misclassification before any dispatch check runs. "
+            "6 new tests."
+        ),
+    ),
+    CodexEntry(
+        "0.15.3",
+        date(2026, 3, 8),
+        (
+            "Fix 'create idea' not recognised as idea iteration intent. "
+            "The user typed 'create idea' in Slack but the LLM misclassified "
+            "it as configure_memory, because 'create idea' was missing from "
+            "_IDEA_PHRASES. Added 'create idea', 'create an idea', "
+            "'create new idea', and 'create a new idea' to the phrase list. "
+            "2 new tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

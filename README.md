@@ -28,8 +28,11 @@ crewai install
 
 To kickstart your crew of AI agents and begin task execution, run this from the root folder of your project:
 
+Connect to Slack with your local database: https://slack.com/oauth/v2/authorize?client_id=10493074738868.10599906530789&scope=chat:write,chat:write.public,channels:history,channels:read,channels:join,groups:history,groups:read,im:history,im:read,mpim:history,mpim:read,app_mentions:read,reactions:write,reactions:read,users:read&user_scope=
+
+Start Server
 ```bash
-$ crewai run
+$ ./start-server.sh
 ```
 
 This command runs the PRD flow interactively. You will be prompted to provide a feature idea and approve each iteration until you finalize.

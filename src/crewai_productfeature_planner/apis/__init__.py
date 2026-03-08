@@ -33,6 +33,7 @@ from crewai_productfeature_planner.apis.slack.oauth_router import router as slac
 from crewai_productfeature_planner.apis.slack.router import router as slack_router
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
 from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.scripts.setup_mongodb import ensure_collections
 from crewai_productfeature_planner.version import get_version
 
 _logger = get_logger(__name__)
@@ -94,29 +95,36 @@ async def _lifespan(application: FastAPI):
     """Startup / shutdown lifecycle hook.
 
     Runs the same recovery tasks as the CLI on startup:
+    0. Create MongoDB collections if they don't exist.
     1. Kill stale crew processes from a previous server crash.
     2. Mark incomplete crew-jobs as failed.
     2b. Mark unfinalized working ideas as failed (no auto-resume).
     3. Generate missing markdown outputs for completed ideas.
     4. Publish unpublished PRDs to Confluence (when credentials are set).
     """
-    # 0. Global thread exception hook — prevent any unhandled exception
-    #    in a daemon thread from silently crashing the server.
-    import threading
+    # 0. Ensure MongoDB collections and indexes exist
+    try:
+        ensure_collections()
+    except Exception as exc:
+        _logger.warning("Startup: MongoDB collection setup failed: %s", exc)
 
-    _original_excepthook = threading.excepthook
-
-    def _thread_excepthook(args):  # type: ignore[no-untyped-def]
-        _logger.critical(
-            "Unhandled %s in thread %s: %s — suppressed to protect server",
-            args.exc_type.__name__ if args.exc_type else "unknown",
-            args.thread.name if args.thread else "<unnamed>",
-            args.exc_value,
-        )
-
-    threading.excepthook = _thread_excepthook
+    # 0b. Validate Slack token availability
+    try:
+        from crewai_productfeature_planner.tools.slack_token_manager import get_valid_token
+        token = get_valid_token()
+        if token:
+            _logger.info("Startup: Slack token available — bot will respond to events")
+        else:
+            _logger.warning(
+                "Startup: No Slack token available — set SLACK_BOT_TOKEN in "
+                ".env or complete the OAuth install flow. The bot will receive "
+                "events but cannot respond."
+            )
+    except Exception as exc:
+        _logger.warning("Startup: Slack token check failed: %s", exc)
 
     # 1. Kill stale processes
+    _logger.info("Startup: killing stale crew processes...")
     try:
         from crewai_productfeature_planner.components.startup import _kill_stale_crew_processes
         killed = _kill_stale_crew_processes()
@@ -214,6 +222,23 @@ async def _lifespan(application: FastAPI):
         _notify_terminated_flows(terminated_ideas)
     except Exception as exc:
         _logger.warning("Startup Slack termination notices failed: %s", exc)
+
+    # 9. Install a safety-net threading.excepthook so uncaught exceptions
+    #    in background threads (e.g. CrewAI subprocess crashes) are logged
+    #    instead of silently killing the thread.
+    import threading
+
+    _original_excepthook = threading.excepthook
+
+    def _thread_excepthook(args: threading.ExceptHookArgs) -> None:
+        _logger.error(
+            "Uncaught exception in thread %s: %s",
+            args.thread.name if args.thread else "<unknown>",
+            args.exc_value,
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        )
+
+    threading.excepthook = _thread_excepthook
 
     yield
 

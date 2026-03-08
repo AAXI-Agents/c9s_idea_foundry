@@ -21,15 +21,16 @@
 | **Slack** | `src/.../apis/slack/` | Slack router, interactive handlers, flow handlers, event routing |
 | **MongoDB** | `src/.../mongodb/` | DB client, repositories (working_ideas, crew_jobs, agent_interactions, etc.) |
 | **Tools** | `src/.../tools/` | CrewAI tools (confluence, jira, file I/O, search, slack) |
-| **Scripts** | `src/.../scripts/` | Logging, preflight checks, retry, ngrok tunnel, slack config |
-| **Tests** | `tests/` | Mirror of `src/` layout; pytest (1558+ tests) |
+| **Scripts** | `src/.../scripts/` | Logging, preflight checks, retry, ngrok tunnel, slack config, MongoDB setup |
+| **Tests** | `tests/` | Mirror of `src/` layout; pytest (2033+ tests) |
 
 ---
 
 ## Server Lifecycle (`apis/__init__.py`)
 
-The FastAPI app runs 8 startup steps in `_lifespan()`:
+The FastAPI app runs 10 startup steps in `_lifespan()`:
 
+0. `ensure_collections()` → creates missing MongoDB collections and indexes
 1. Kill stale crew processes
 2. `fail_incomplete_jobs_on_startup()` → marks orphaned crewJobs as `failed`
 2b. `fail_unfinalized_on_startup()` → marks unfinalized working ideas as `failed`
@@ -40,8 +41,9 @@ The FastAPI app runs 8 startup steps in `_lifespan()`:
 7. Start cron scheduler for periodic delivery scans
 8. `_notify_terminated_flows()` → posts Slack notices to threads whose flows
    were terminated on restart; users are told to say "create prd" to start fresh
+9. Install `threading.excepthook` safety net for uncaught thread exceptions
 
-Shutdown: stops file watcher and scheduler.
+Shutdown: restores original `threading.excepthook`, stops file watcher and scheduler.
 
 ---
 
@@ -223,6 +225,24 @@ imported**, not where it is defined:
 
 ---
 
+## Quick Start (New Developer)
+
+```bash
+# One-command project setup (creates venv, installs deps, copies .env)
+./scripts/dev_setup.sh
+
+# Start the server
+./start_server.sh
+
+# Run all tests
+.venv/bin/python -m pytest -x -q
+
+# Open in VS Code with all project settings
+code .
+```
+
+---
+
 ## Common Commands
 
 ```bash
@@ -237,6 +257,9 @@ imported**, not where it is defined:
 
 # Start the server
 ./start_server.sh
+
+# Bootstrap MongoDB collections and indexes (also runs on server start)
+.venv/bin/python -m crewai_productfeature_planner.scripts.setup_mongodb
 ```
 
 ---

@@ -32,6 +32,7 @@ import crewai_productfeature_planner.mongodb.project_config.repository as _pc_re
 import crewai_productfeature_planner.mongodb.user_session as _us_repo
 import crewai_productfeature_planner.main as _main_mod
 import crewai_productfeature_planner.scripts.logging_config as _lc_mod
+import crewai_productfeature_planner.scripts.setup_mongodb as _setup_mongo
 
 
 def _make_mock_db() -> MagicMock:
@@ -68,6 +69,7 @@ _PATCH_TARGETS: list[object] = [
     _pc_repo,
     _us_repo,
     _main_mod,
+    _setup_mongo,
 ]
 
 

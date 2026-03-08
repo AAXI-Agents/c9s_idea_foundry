@@ -3,6 +3,10 @@
         { "file": "CODEX.md" }
     ],
     "chat.instructionFiles.enabled": true,
+    "chat.promptFiles": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["tests"],
     "chat.tools.terminal.autoApprove": {
     
         "/^uv run python -c \"from crewai\\.flow\\.flow import Flow, listen, start, router; print\\('Flow imports OK'\\)\" 2>&1 \\| tail -5$/": {

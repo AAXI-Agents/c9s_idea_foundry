@@ -206,6 +206,14 @@ def _interpret_and_act_inner(
     elif has_create_jira_phrase:
         intent = "create_jira"
 
+    # ── Memory / config phrase overrides (before idea, so "configure
+    #    memory" is not misclassified as list_ideas or create_prd) ──
+    elif has_memory_phrase:
+        intent = "configure_memory"
+
+    elif has_config_phrase:
+        intent = "update_config"
+
     # ── Idea-phrase override (high priority, but below resume) ──
     elif has_idea_phrase:
         intent = "create_prd"
