@@ -368,6 +368,17 @@ code, adds features, fixes bugs, or modifies project structure.
 1. Append a session summary to `obsidian/Sessions/Session Log.md`.
 2. Verify all Obsidian pages affected during the session are up to date.
 3. Update `obsidian/Home.md` if vault structure changed (new folders/pages).
+4. Update CrewAI knowledge sources in `knowledge/` if any session work
+   changed user preferences, project architecture, or PRD guidelines:
+   - `knowledge/user_preference.txt` — user workflow preferences,
+     tooling choices, and PRD style expectations.
+   - `knowledge/project_architecture.txt` — tech stack, conventions,
+     system design patterns.
+   - `knowledge/prd_guidelines.txt` — PRD template rules and quality
+     criteria.
+   These files feed directly into the CrewAI agents (Idea Refiner,
+   Product Manager, Requirements Breakdown) — stale knowledge degrades
+   agent output quality.
 
 ---
 

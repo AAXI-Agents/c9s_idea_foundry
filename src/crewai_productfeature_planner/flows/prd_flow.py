@@ -466,15 +466,25 @@ class PRDFlow(Flow[PRDState]):
             str(DEFAULT_EXEC_RESUME_THRESHOLD),
         ))
         existing_iters = len(self.state.executive_summary.iterations)
-        skip_phase1 = existing_iters >= exec_resume_threshold
+        # If any section beyond executive_summary already has content,
+        # the flow previously completed Phase 1 and entered Phase 2.
+        has_section_content = any(
+            s.content for s in self.state.draft.sections
+            if s.key != "executive_summary"
+        )
+        skip_phase1 = (
+            existing_iters >= exec_resume_threshold
+            or has_section_content
+        )
 
         if skip_phase1:
             logger.info(
                 "[Phase 1] Skipping iteration — executive summary already has "
-                "%d iteration(s) (threshold=%d). Using last iteration "
-                "as context for section drafting.",
+                "%d iteration(s) (threshold=%d, sections_with_content=%s). "
+                "Using last iteration as context for section drafting.",
                 existing_iters,
                 exec_resume_threshold,
+                has_section_content,
             )
             # Ensure the executive summary is marked approved
             self.state.executive_summary.is_approved = True

@@ -110,7 +110,6 @@ def _handle_confluence_publish(
                 return
 
             from crewai_productfeature_planner.apis.prd.service import (
-                run_prd_flow,
                 restore_prd_state,
             )
             from crewai_productfeature_planner.flows.prd_flow import PRDFlow
@@ -118,9 +117,44 @@ def _handle_confluence_publish(
             flow = PRDFlow()
             flow.state.run_id = run_id
             flow.state.idea = doc.get("idea", "")
-            state = restore_prd_state(run_id)
-            if state:
-                flow.state = state
+
+            restored = restore_prd_state(run_id)
+            if restored:
+                idea, draft, exec_summary, requirements_breakdown, breakdown_history, refinement_history = restored
+                flow.state.idea = idea
+                flow.state.draft = draft
+                flow.state.iteration = max(
+                    (s.iteration for s in draft.sections), default=0,
+                )
+                flow.state.executive_summary = exec_summary
+                flow.state.requirements_breakdown = requirements_breakdown
+                flow.state.breakdown_history = breakdown_history
+                if requirements_breakdown:
+                    flow.state.requirements_broken_down = True
+                if exec_summary.latest_content:
+                    flow.state.finalized_idea = exec_summary.latest_content
+                if refinement_history:
+                    flow.state.idea_refined = True
+                    flow.state.refinement_history = refinement_history
+                    latest = refinement_history[-1]
+                    if latest.get("idea"):
+                        flow.state.idea = latest["idea"]
+                elif exec_summary.iterations:
+                    flow.state.idea_refined = True
+                flow.state.final_prd = draft.assemble()
+
+            # Fallback: if MongoDB sections were empty (older runs
+            # stored content only on disk), try the on-disk output file.
+            if len(flow.state.final_prd) < 100:
+                import os
+                output_file = doc.get("output_file", "")
+                if output_file and os.path.isfile(output_file):
+                    try:
+                        prd_text = open(output_file, encoding="utf-8").read()  # noqa: SIM115
+                        if prd_text:
+                            flow.state.final_prd = prd_text
+                    except OSError:
+                        pass
 
             from crewai_productfeature_planner.orchestrator import (
                 build_post_completion_crew,

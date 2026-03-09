@@ -51,6 +51,27 @@ _MODEL_BUSY_PATTERNS: list[str] = [
     "service unavailable",
 ]
 
+# Patterns that indicate server/process shutdown — not retryable.
+# The executor has been shut down (e.g. server restart, Ctrl+C).
+_SHUTDOWN_PATTERNS: list[str] = [
+    "cannot schedule new futures after shutdown",
+    "cannot schedule new futures after interpreter shutdown",
+    "interpreter shutdown",
+]
+
+# Patterns that indicate a transient server error (500 / 502 / 504).
+# These are retried with normal backoff before giving up.
+_SERVER_ERROR_PATTERNS: list[str] = [
+    "500 internal server error",
+    "internal server error",
+    "502 bad gateway",
+    "bad gateway",
+    "504 gateway timeout",
+    "gateway timeout",
+    "an internal error has occurred",
+    "server error",
+]
+
 # Patterns that indicate a rate-limit / resource exhaustion (429).
 # These are transient — retry with extended backoff before pausing.
 _RATE_LIMIT_PATTERNS: list[str] = [
@@ -89,6 +110,14 @@ class ModelBusyError(LLMError):
     Not retried — the flow is paused immediately so the periodic
     resume (every ~5 minutes) can pick it up when load subsides,
     avoiding wasted retry waits.
+    """
+
+
+class ShutdownError(LLMError):
+    """Raised when the executor has been shut down (server restart).
+
+    Not retried — the flow is paused immediately so it can be resumed
+    when the server starts back up.
     """
 
 
@@ -152,6 +181,15 @@ def crew_kickoff_with_retry(
                 )
                 raise BillingError(str(exc)) from exc
 
+            # ── Non-retryable: executor/server shutdown ──
+            if any(pat in exc_str for pat in _SHUTDOWN_PATTERNS):
+                logger.warning(
+                    "[Retry] %s hit shutdown error — stopping "
+                    "immediately (no retry): %s",
+                    step_label, exc,
+                )
+                raise ShutdownError(str(exc)) from exc
+
             # ── Non-retryable: 503 model-busy errors ──
             if any(pat in exc_str for pat in _MODEL_BUSY_PATTERNS):
                 logger.warning(
@@ -187,6 +225,31 @@ def crew_kickoff_with_retry(
                     exc,
                 )
                 raise ModelBusyError(str(exc)) from exc
+
+            # ── Server error (500/502/504) — normal retry budget ──
+            if any(pat in exc_str for pat in _SERVER_ERROR_PATTERNS):
+                attempt += 1
+                if attempt <= retries:
+                    wait = delay * (2 ** (attempt - 1))
+                    logger.warning(
+                        "[Retry] %s hit server error (attempt %d/%d): "
+                        "%s — retrying in %.1fs",
+                        step_label,
+                        attempt,
+                        retries + 1,
+                        exc,
+                        wait,
+                    )
+                    time.sleep(wait)
+                    continue
+                logger.error(
+                    "[Retry] %s server error persisted after %d "
+                    "attempts: %s",
+                    step_label,
+                    retries + 1,
+                    exc,
+                )
+                raise LLMError(str(last_exc)) from last_exc
 
             # ── Generic transient error — normal retry budget ──
             attempt += 1

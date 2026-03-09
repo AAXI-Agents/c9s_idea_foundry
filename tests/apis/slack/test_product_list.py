@@ -101,14 +101,14 @@ class TestProductListBlocks:
         action_ids = [e["action_id"] for e in elements]
         assert "product_confluence_1" in action_ids
 
-    def test_unpublished_product_has_jira_skeleton_button(self):
-        """Product with no Jira phase should have Review Jira Skeleton button."""
-        products = [_PRODUCTS[0]]  # jira_phase=""
+    def test_unpublished_product_has_no_jira_button(self):
+        """Product without Confluence should NOT show Jira buttons."""
+        products = [_PRODUCTS[0]]  # confluence_published=False
         blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
-        assert "product_jira_skeleton_1" in action_ids
+        assert "product_jira_skeleton_1" not in action_ids
 
     def test_skeleton_approved_has_epics_button(self):
         """Product with skeleton_approved should have Publish Epics & Stories button."""
@@ -227,9 +227,10 @@ class TestProductListBlocks:
         blocks = product_list_blocks(_PRODUCTS, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
         assert len(action_blocks) == 3
-        # First product (idx=1) — has confluence + jira skeleton
+        # First product (idx=1) — has confluence button only (no jira before publish)
         ids_1 = {e["action_id"] for e in action_blocks[0]["elements"]}
         assert any("_1" in aid for aid in ids_1)
+        assert "product_confluence_1" in ids_1
         # Second product (idx=2) — has jira epics
         ids_2 = {e["action_id"] for e in action_blocks[1]["elements"]}
         assert any("_2" in aid for aid in ids_2)
@@ -237,10 +238,11 @@ class TestProductListBlocks:
         ids_3 = {e["action_id"] for e in action_blocks[2]["elements"]}
         assert any("_3" in aid for aid in ids_3)
 
-    def test_none_jira_phase_shows_skeleton_button(self):
-        """Product with jira_phase=None should show Start Jira Skeleton button."""
+    def test_none_jira_phase_shows_skeleton_button_when_published(self):
+        """Product with jira_phase=None should show Start Jira Skeleton only after Confluence."""
         product = {
             **_PRODUCTS[0],
+            "confluence_published": True,
             "jira_phase": None,  # from MongoDB when field is None
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
@@ -248,6 +250,19 @@ class TestProductListBlocks:
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "product_jira_skeleton_1" in action_ids
+
+    def test_none_jira_phase_hides_skeleton_button_when_unpublished(self):
+        """Product with jira_phase=None should NOT show Jira buttons before Confluence."""
+        product = {
+            **_PRODUCTS[0],
+            "confluence_published": False,
+            "jira_phase": None,
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        elements = action_blocks[0]["elements"]
+        action_ids = [e["action_id"] for e in elements]
+        assert "product_jira_skeleton_1" not in action_ids
 
     def test_none_confluence_url_treated_as_empty(self):
         """Product with confluence_url=None should not show View Confluence button."""
@@ -267,6 +282,7 @@ class TestProductListBlocks:
         """Product with an unrecognised jira_phase should show Restart Jira Skeleton."""
         product = {
             **_PRODUCTS[0],
+            "confluence_published": True,
             "jira_completed": False,
             "jira_phase": "approved_skeleton",  # legacy / unknown phase
         }
@@ -283,6 +299,7 @@ class TestProductListBlocks:
         """Product with a known jira_phase should NOT show Restart Jira Skeleton."""
         product = {
             **_PRODUCTS[0],
+            "confluence_published": True,
             "jira_completed": False,
             "jira_phase": "skeleton_approved",  # known phase
         }
@@ -553,6 +570,7 @@ class TestDeliveryStatusDisplay:
         """jira_phase='epics_stories_done' should show its label."""
         product = {
             **_PRODUCTS[0],
+            "confluence_published": True,
             "jira_phase": "epics_stories_done",
             "jira_completed": False,
         }
@@ -572,9 +590,13 @@ class TestDeliveryStatusDisplay:
         assert "Jira Ticketing" in text
 
     def test_start_jira_skeleton_button_label(self):
-        """Not-started Jira should have 'Start Jira Skeleton' button."""
-        products = [_PRODUCTS[0]]  # jira_phase=""
-        blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
+        """Not-started Jira should have 'Start Jira Skeleton' button after Confluence."""
+        product = {
+            **_PRODUCTS[0],
+            "confluence_published": True,
+            "jira_phase": "",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
         elements = action_blocks[0]["elements"]
         jira_btn = next(e for e in elements if "jira_skeleton" in e["action_id"])
@@ -1347,3 +1369,92 @@ class TestRunJiraPhaseStateReconstruction:
         state = captured_flow["state"]
         assert state.requirements_breakdown == "Detailed requirements here"
         assert state.requirements_broken_down is True
+
+
+# ---------------------------------------------------------------------------
+# _handle_confluence_publish — state restoration (no setter crash)
+# ---------------------------------------------------------------------------
+
+_CONF_PLH = (
+    "crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler"
+)
+_CONF_SVC = "crewai_productfeature_planner.apis.prd.service"
+_CONF_WI = "crewai_productfeature_planner.mongodb.working_ideas.repository"
+
+
+class TestHandleConfluencePublishStateRestore:
+    """Verify _handle_confluence_publish unpacks restore_prd_state correctly
+    instead of assigning to the read-only Flow.state property."""
+
+    @staticmethod
+    def _make_restore_result():
+        from crewai_productfeature_planner.apis.prd._domain import (
+            ExecutiveSummaryDraft, ExecutiveSummaryIteration,
+            PRDDraft, PRDSection,
+        )
+
+        draft = PRDDraft(sections=[
+            PRDSection(
+                key="executive_summary",
+                title="Executive Summary",
+                content="# Executive Summary\nTest content for the PRD",
+                iteration=3,
+                approved=True,
+            ),
+        ])
+        exec_summary = ExecutiveSummaryDraft(
+            iterations=[ExecutiveSummaryIteration(content="Refined idea text", iteration=1)],
+        )
+        return ("Test idea", draft, exec_summary, "Requirements text", [], [])
+
+    def test_state_restored_without_setter_crash(self):
+        """Confluence publish should unpack the 6-tuple and set fields
+        individually, not assign to flow.state directly."""
+        doc = {"run_id": "run-conf-1", "idea": "Test idea"}
+        restore_result = self._make_restore_result()
+
+        captured = {}
+
+        def capture_crew(flow, **_kw):
+            captured["idea"] = flow.state.idea
+            captured["run_id"] = flow.state.run_id
+            captured["final_prd"] = flow.state.final_prd
+            return None  # crew=None → early return
+
+        with (
+            patch(
+                "crewai_productfeature_planner.mongodb.working_ideas.repository.find_run_any_status",
+                return_value=doc,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.prd.service.restore_prd_state",
+                return_value=restore_result,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator.build_post_completion_crew",
+                side_effect=capture_crew,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_confluence_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_gemini_credentials",
+                return_value=True,
+            ),
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_confluence_publish,
+            )
+
+            send = MagicMock()
+            client = MagicMock()
+            _handle_confluence_publish(
+                "run-conf-1", 1, "U1", "C1", "T1", send, client,
+            )
+            import time
+            time.sleep(0.5)  # allow background thread to finish
+
+        assert captured["idea"] == "Test idea"
+        assert captured["run_id"] == "run-conf-1"
+        assert len(captured["final_prd"]) > 10  # assembled from draft

@@ -1253,6 +1253,41 @@ _CODEX: list[CodexEntry] = [
             "command. 6 new regression tests."
         ),
     ),
+    CodexEntry(
+        "0.15.5",
+        date(2026, 3, 8),
+        (
+            "Improve LLM error handling for HTTP 500 and transient errors. "
+            "(1) retry.py: added _SERVER_ERROR_PATTERNS for explicit 500/"
+            "502/504 classification — these now get clear log messages and "
+            "proper retry with exponential backoff instead of falling "
+            "through to the generic catch-all. "
+            "(2) gemini_chat.py: increased retries from 2 to 3, added "
+            "exponential backoff delay (1s, 2s, 4s) between attempts, "
+            "non-retryable HTTP status codes (4xx except 429) now fail "
+            "immediately instead of wasting a retry. "
+            "(3) openai_chat.py: added retry logic (was zero retries), "
+            "3 attempts with backoff, retryable status codes (429, 500, "
+            "502, 503, 504), error response body now logged for "
+            "diagnostics. 11 new tests."
+        ),
+    ),
+    CodexEntry(
+        "0.15.6",
+        date(2026, 3, 9),
+        (
+            "Fix shutdown error handling — 'cannot schedule new futures "
+            "after shutdown' no longer wastes 60+ seconds on futile "
+            "retries. (1) retry.py: added ShutdownError class and "
+            "_SHUTDOWN_PATTERNS — detected immediately with zero retries. "
+            "(2) _section_loop.py: ShutdownError re-raises instead of "
+            "force-approving sections with incomplete content. "
+            "(3) service.py: ShutdownError caught in both run_prd_flow "
+            "and resume_prd_flow — pauses flow for auto-resume on next "
+            "server start. (4) apis/__init__.py: global handler returns "
+            "HTTP 503 for ShutdownError. 5 new tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

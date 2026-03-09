@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import TYPE_CHECKING, Union
 
@@ -10,6 +11,9 @@ from crewai_productfeature_planner.apis.prd.models import (
     ExecutiveSummaryIteration,
     PRDDraft,
     SECTION_ORDER,
+)
+from crewai_productfeature_planner.flows._constants import (
+    DEFAULT_MIN_SECTION_ITERATIONS,
 )
 from crewai_productfeature_planner.apis.shared import (
     FlowStatus,
@@ -197,7 +201,7 @@ def run_prd_flow(
         PauseRequested, PRDFlow, register_callbacks, cleanup_callbacks,
     )
     from crewai_productfeature_planner.scripts.retry import (
-        BillingError, LLMError, ModelBusyError,
+        BillingError, LLMError, ModelBusyError, ShutdownError,
     )
 
     run = runs[run_id]
@@ -278,6 +282,15 @@ def run_prd_flow(
         logger.warning(
             "[API] PRD flow paused — model busy (run_id=%s): %s. "
             "Will auto-resume on next periodic scan.",
+            run_id, exc,
+        )
+    except ShutdownError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"SHUTDOWN: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.warning(
+            "[API] PRD flow paused — server shutting down (run_id=%s): %s. "
+            "Will auto-resume on next server start.",
             run_id, exc,
         )
     except LLMError as exc:
@@ -400,7 +413,10 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDr
                         if section.iteration > total_iterations:
                             total_iterations = section.iteration
 
-    # Infer approval: sections before the last one with content were approved
+    # Infer approval: sections before the last one with content were approved.
+    # The last section with content is also marked approved when its
+    # critique contains SECTION_READY or its iteration count meets the
+    # minimum threshold — indicating the flow had moved past it.
     last_with_content = -1
     for i, section in enumerate(draft.sections):
         if section.content:
@@ -408,6 +424,23 @@ def restore_prd_state(run_id: str) -> tuple[str, "PRDDraft", "ExecutiveSummaryDr
     for i, section in enumerate(draft.sections):
         if section.content and i < last_with_content:
             section.is_approved = True
+    if last_with_content >= 0:
+        last_sec = draft.sections[last_with_content]
+        if last_sec.content and not last_sec.is_approved:
+            min_iter = int(os.environ.get(
+                "PRD_SECTION_MIN_ITERATIONS",
+                str(DEFAULT_MIN_SECTION_ITERATIONS),
+            ))
+            critique_upper = (last_sec.critique or "").upper()
+            if "SECTION_READY" in critique_upper or last_sec.iteration >= min_iter:
+                last_sec.is_approved = True
+                logger.info(
+                    "Last section '%s' (index %d) inferred as approved "
+                    "(iteration=%d, min=%d, SECTION_READY=%s)",
+                    last_sec.title, last_with_content,
+                    last_sec.iteration, min_iter,
+                    "SECTION_READY" in critique_upper,
+                )
 
     # ── Restore executive_summary iterations ──────────────────
     exec_summary_draft = ExecutiveSummaryDraft()
@@ -517,7 +550,7 @@ def resume_prd_flow(
         PauseRequested, PRDFlow, register_callbacks, cleanup_callbacks,
     )
     from crewai_productfeature_planner.scripts.retry import (
-        BillingError, LLMError, ModelBusyError,
+        BillingError, LLMError, ModelBusyError, ShutdownError,
     )
 
     run = runs[run_id]
@@ -627,6 +660,15 @@ def resume_prd_flow(
         logger.warning(
             "[API] Resumed PRD flow paused — model busy (run_id=%s): %s. "
             "Will auto-resume on next periodic scan.",
+            run_id, exc,
+        )
+    except ShutdownError as exc:
+        run.status = FlowStatus.PAUSED
+        run.error = f"SHUTDOWN: {exc}"
+        update_job_completed(run_id, status="paused")
+        logger.warning(
+            "[API] Resumed PRD flow paused — server shutting down "
+            "(run_id=%s): %s. Will auto-resume on next server start.",
             run_id, exc,
         )
     except LLMError as exc:

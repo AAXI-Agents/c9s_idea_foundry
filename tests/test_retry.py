@@ -13,6 +13,7 @@ from crewai_productfeature_planner.scripts.retry import (
     BillingError,
     LLMError,
     ModelBusyError,
+    ShutdownError,
     crew_kickoff_with_retry,
 )
 
@@ -382,3 +383,141 @@ def test_rate_limit_defaults():
     """Rate-limit defaults should be sensible."""
     assert DEFAULT_RATE_LIMIT_RETRIES == 5
     assert DEFAULT_RATE_LIMIT_BASE_DELAY == 30
+
+
+# ── Server error (500) retries ────────────────────────────────
+
+
+def test_server_error_500_retried():
+    """500 Internal Server Error should be retried with normal backoff."""
+    ok = MagicMock(raw="done")
+    crew = _make_crew(
+        side_effect=[
+            RuntimeError("500 Internal Server Error"),
+            ok,
+        ],
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=5.0,
+        )
+    assert result.raw == "done"
+    assert crew.kickoff.call_count == 2
+    mock_sleep.assert_called_once_with(5.0)
+
+
+def test_server_error_bad_gateway_retried():
+    """502 Bad Gateway should be retried."""
+    ok = MagicMock(raw="ok")
+    crew = _make_crew(
+        side_effect=[RuntimeError("502 bad gateway"), ok],
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=1.0,
+        )
+    assert result.raw == "ok"
+    assert crew.kickoff.call_count == 2
+
+
+def test_server_error_gateway_timeout_retried():
+    """504 Gateway Timeout should be retried."""
+    ok = MagicMock(raw="ok")
+    crew = _make_crew(
+        side_effect=[RuntimeError("504 gateway timeout"), ok],
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=1.0,
+        )
+    assert result.raw == "ok"
+    assert crew.kickoff.call_count == 2
+
+
+def test_server_error_exhausted_raises_llm_error():
+    """After exhausting retries on server errors, should raise LLMError."""
+    errors = [
+        RuntimeError("an internal error has occurred")
+        for _ in range(4)  # 1 initial + 3 retries
+    ]
+    crew = _make_crew(side_effect=errors)
+
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
+        with pytest.raises(LLMError, match="an internal error has occurred"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=1.0,
+            )
+    assert crew.kickoff.call_count == 4
+
+
+def test_server_error_uses_normal_retry_budget():
+    """Server error retries should share the normal retry budget."""
+    ok = MagicMock(raw="ok")
+    crew = _make_crew(
+        side_effect=[
+            RuntimeError("internal server error"),  # normal retry 1
+            RuntimeError("generic network error"),   # normal retry 2
+            ok,                                       # success
+        ],
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
+        result = crew_kickoff_with_retry(
+            crew, step_label="test", max_retries=3, base_delay=1.0,
+        )
+    assert result.raw == "ok"
+    assert crew.kickoff.call_count == 3
+
+
+# ── Shutdown errors ───────────────────────────────────────────
+
+
+def test_shutdown_futures_not_retried():
+    """'cannot schedule new futures after shutdown' should raise ShutdownError
+    immediately without retrying."""
+    crew = _make_crew(
+        side_effect=RuntimeError(
+            "cannot schedule new futures after shutdown"
+        ),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(ShutdownError, match="cannot schedule new futures"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_shutdown_interpreter_not_retried():
+    """'interpreter shutdown' should raise ShutdownError immediately."""
+    crew = _make_crew(
+        side_effect=RuntimeError(
+            "cannot schedule new futures after interpreter shutdown"
+        ),
+    )
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+        with pytest.raises(ShutdownError, match="interpreter shutdown"):
+            crew_kickoff_with_retry(
+                crew, step_label="test", max_retries=3, base_delay=5.0,
+            )
+    assert crew.kickoff.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_shutdown_error_is_llm_error():
+    """ShutdownError should be a subclass of LLMError."""
+    assert issubclass(ShutdownError, LLMError)
+
+
+def test_shutdown_error_is_runtime_error():
+    """ShutdownError should be a subclass of RuntimeError."""
+    assert issubclass(ShutdownError, RuntimeError)
+
+
+def test_shutdown_error_chains_original():
+    """ShutdownError should chain the original exception."""
+    original = RuntimeError("cannot schedule new futures after shutdown")
+    crew = _make_crew(side_effect=original)
+    with pytest.raises(ShutdownError) as exc_info:
+        crew_kickoff_with_retry(crew, step_label="test", max_retries=3)
+    assert exc_info.value.__cause__ is original

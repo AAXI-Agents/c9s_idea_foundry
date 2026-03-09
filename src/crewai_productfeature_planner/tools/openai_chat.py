@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import ssl
+import time
 import urllib.error
 import urllib.request
 
@@ -293,17 +294,37 @@ def interpret_message(
     except ImportError:
         pass
 
-    try:
-        with urllib.request.urlopen(req, timeout=30, context=ssl_context) as resp:
-            resp_payload = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except urllib.error.HTTPError as exc:
-        logger.error("OpenAI API HTTP error %s", exc.code)
-        return _fallback()
-    except urllib.error.URLError as exc:
-        logger.error("OpenAI API connection error: %s", exc.reason)
-        return _fallback()
-    except Exception as exc:
-        logger.error("OpenAI API unexpected error: %s", exc)
+    # Retry on transient errors (429, 500, 502, 503, 504) with backoff
+    resp_payload = None
+    _MAX_RETRIES = 3
+    _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+    for _attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as resp:
+                resp_payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+            break  # success
+        except urllib.error.HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="replace")[:500]
+            except Exception:
+                pass
+            logger.error("OpenAI API HTTP error %s (attempt %d/%d): %s", exc.code, _attempt, _MAX_RETRIES, body)
+            if exc.code not in _RETRYABLE_STATUS_CODES or _attempt == _MAX_RETRIES:
+                return _fallback()
+            time.sleep(2 ** (_attempt - 1))
+        except urllib.error.URLError as exc:
+            logger.error("OpenAI API connection error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc.reason)
+            if _attempt == _MAX_RETRIES:
+                return _fallback()
+            time.sleep(2 ** (_attempt - 1))
+        except Exception as exc:
+            logger.error("OpenAI API unexpected error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc)
+            if _attempt == _MAX_RETRIES:
+                return _fallback()
+            time.sleep(2 ** (_attempt - 1))
+
+    if resp_payload is None:
         return _fallback()
 
     content = (

@@ -354,11 +354,16 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
     (``ErrorResponse``) instead of a bare 500 HTML page, making errors
     machine-readable for MCP clients and dashboards.
     """
-    from crewai_productfeature_planner.scripts.retry import BillingError, LLMError
+    from crewai_productfeature_planner.scripts.retry import (
+        BillingError, LLMError, ShutdownError,
+    )
 
     if isinstance(exc, BillingError):
         status_code = 503
         error_code = "BILLING_ERROR"
+    elif isinstance(exc, ShutdownError):
+        status_code = 503
+        error_code = "SHUTDOWN"
     elif isinstance(exc, LLMError):
         status_code = 503
         error_code = "LLM_ERROR"

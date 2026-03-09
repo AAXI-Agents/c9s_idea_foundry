@@ -3396,3 +3396,108 @@ def test_exec_summary_503_propagates(
 
     # Should NOT be force-approved — flow pauses for later resume
     assert flow.state.executive_summary.is_approved is False
+
+
+# ══════════════════════════════════════════════════════════════
+# generate_sections — Phase 1 skip when sections already have content
+# ══════════════════════════════════════════════════════════════
+
+
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._section_loop.update_section_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.save_iteration")
+@patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
+@patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
+@patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
+@patch("crewai_productfeature_planner.flows._section_loop.crew_kickoff_with_retry")
+@patch("crewai_productfeature_planner.flows._section_loop.Crew")
+@patch("crewai_productfeature_planner.flows._section_loop.Task")
+@patch.object(PRDFlow, "_get_available_agents")
+@patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
+@patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
+def test_skip_phase1_when_sections_have_content(
+    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
+    mock_save_iter, mock_update_sec_crit,
+    mock_mark_completed, mock_writer_cls, monkeypatch,
+):
+    """Phase 1 should be skipped when sections beyond executive_summary
+    already have content, even if exec summary has fewer iterations than
+    the threshold.  This is the core resume-at-section-9 scenario."""
+    monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "1")
+    monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "1")
+    monkeypatch.setenv("PRD_EXEC_RESUME_THRESHOLD", "3")
+
+    mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved"
+    mock_writer_cls.return_value = mock_writer
+    mock_task_configs.return_value = {
+        "draft_prd_task": {
+            "description": "Draft: {idea} {executive_summary}",
+            "expected_output": "Summary",
+        },
+        "critique_prd_task": {
+            "description": "Critique: {critique} {executive_summary}",
+            "expected_output": "Critique",
+        },
+        "draft_section_task": {
+            "description": "Section: {section_title} {idea} content: {section_content} exec: {executive_summary}",
+            "expected_output": "Draft {section_title}",
+        },
+        "critique_section_task": {
+            "description": "Critique: {section_title} {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Section critique",
+        },
+        "refine_section_task": {
+            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "expected_output": "Refined {section_title} based on {critique_section_content}",
+        },
+    }
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.requirements_broken_down = True
+
+    # Only 1 exec summary iteration — below threshold of 3
+    flow.state.executive_summary.iterations.append(
+        ExecutiveSummaryIteration(
+            content="Exec summary v1", iteration=1,
+            critique="READY_FOR_DEV", updated_date="2026-01-01",
+        )
+    )
+
+    # Simulate resume: 8/10 sections completed (exec summary + 7 sections)
+    for i in range(8):
+        flow.state.draft.sections[i].content = f"Approved section {i} content"
+        flow.state.draft.sections[i].is_approved = True
+        flow.state.draft.sections[i].iteration = 2
+
+    # Remaining 2 sections need drafting (draft + critique each)
+    section_calls = []
+    for _ in range(2):
+        section_calls.append(MagicMock(raw="Section content"))
+        section_calls.append(MagicMock(raw="SECTION_READY: ok"))
+    mock_kickoff.side_effect = section_calls
+
+    _ES = "crewai_productfeature_planner.flows._executive_summary"
+    _AG = "crewai_productfeature_planner.flows._agents"
+    with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
+         patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+        result = flow.generate_sections()
+
+    assert result is not None
+    # Phase 1 was skipped — save_executive_summary should NOT have been called
+    mock_save_exec.assert_not_called()
+    # Executive summary should use the last iteration content
+    assert flow.state.finalized_idea == "Exec summary v1"
+    assert flow.state.executive_summary.is_approved is True
+    # All sections should be approved
+    for section in flow.state.draft.sections:
+        assert section.is_approved is True, (
+            f"Section '{section.key}' was not approved"
+        )

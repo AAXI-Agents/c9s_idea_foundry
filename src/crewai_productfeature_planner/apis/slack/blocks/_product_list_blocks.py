@@ -86,15 +86,16 @@ def product_list_blocks(
                 )
             else:
                 completed_parts.append(":white_check_mark: Confluence PRD Page")
-        if jira_completed:
-            completed_parts.append(":white_check_mark: Jira Ticketing")
-        elif jira_phase:
-            phase_label = _JIRA_PHASE_LABELS.get(
-                jira_phase, f"Phase: {jira_phase}",
-            )
-            completed_parts.append(
-                f":hourglass_flowing_sand: Jira: {phase_label}"
-            )
+        if conf_published:
+            if jira_completed:
+                completed_parts.append(":white_check_mark: Jira Ticketing")
+            elif jira_phase:
+                phase_label = _JIRA_PHASE_LABELS.get(
+                    jira_phase, f"Phase: {jira_phase}",
+                )
+                completed_parts.append(
+                    f":hourglass_flowing_sand: Jira: {phase_label}"
+                )
 
         section_text = f"*{idx}.* _{idea_text}_"
         if completed_parts:
@@ -136,7 +137,7 @@ def product_list_blocks(
                 },
             )
 
-        if not jira_completed:
+        if conf_published and not jira_completed:
             if jira_phase == "skeleton_pending":
                 # Skeleton generated — show review/approve button
                 elements.append(

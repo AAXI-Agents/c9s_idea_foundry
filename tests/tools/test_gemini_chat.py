@@ -328,3 +328,85 @@ def test_system_prompt_sent_as_system_instruction(monkeypatch):
     assert "systemInstruction" in captured["body"]
     assert "responseMimeType" in captured["body"]["generationConfig"]
     assert captured["body"]["generationConfig"]["responseMimeType"] == "application/json"
+
+
+# ---------------------------------------------------------------------------
+# Retry with backoff
+# ---------------------------------------------------------------------------
+
+
+def test_retry_on_500_with_backoff(monkeypatch):
+    """500 Server Error should be retried with backoff delay."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    import io
+    import urllib.error
+
+    gemini_result = {"intent": "greeting", "idea": None, "reply": "hi"}
+
+    body_500 = io.BytesIO(b"internal server error")
+    call_count = {"n": 0}
+
+    def _side_effect(req, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise urllib.error.HTTPError(
+                "https://generativelanguage.googleapis.com", 500,
+                "Internal Server Error", {}, body_500,
+            )
+        return _mock_urlopen_factory(gemini_result)
+
+    with patch("urllib.request.urlopen", side_effect=_side_effect):
+        with patch("crewai_productfeature_planner.tools.gemini_chat.time.sleep") as mock_sleep:
+            result = interpret_message("hello")
+
+    assert result["intent"] == "greeting"
+    assert call_count["n"] == 2
+    mock_sleep.assert_called_once_with(1)  # 2^0 = 1s
+
+
+def test_no_retry_on_400_client_error(monkeypatch):
+    """400 Client Error should NOT be retried."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    import io
+    import urllib.error
+
+    body_400 = io.BytesIO(b"bad request")
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.HTTPError(
+            "https://generativelanguage.googleapis.com", 400,
+            "Bad Request", {}, body_400,
+        ),
+    ):
+        with patch("crewai_productfeature_planner.tools.gemini_chat.time.sleep") as mock_sleep:
+            result = interpret_message("test")
+
+    assert result["intent"] == "unknown"
+    mock_sleep.assert_not_called()
+
+
+def test_retry_on_429_with_backoff(monkeypatch):
+    """429 Rate Limit should be retried with backoff."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    import io
+    import urllib.error
+
+    gemini_result = {"intent": "help", "idea": None, "reply": "help message"}
+    call_count = {"n": 0}
+
+    def _side_effect(req, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] <= 2:
+            raise urllib.error.HTTPError(
+                "https://generativelanguage.googleapis.com", 429,
+                "Too Many Requests", {}, io.BytesIO(b"rate limited"),
+            )
+        return _mock_urlopen_factory(gemini_result)
+
+    with patch("urllib.request.urlopen", side_effect=_side_effect):
+        with patch("crewai_productfeature_planner.tools.gemini_chat.time.sleep") as mock_sleep:
+            result = interpret_message("help")
+
+    assert result["intent"] == "help"
+    assert call_count["n"] == 3
+    assert mock_sleep.call_count == 2

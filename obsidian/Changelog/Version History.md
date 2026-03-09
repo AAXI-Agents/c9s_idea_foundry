@@ -2,10 +2,12 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
-## v0.15.x (2026-03-08)
+## v0.15.x (2026-03-08 – 2026-03-09)
 
 | Version | Summary |
 |---------|---------|
+| 0.15.6 | Fix shutdown error handling — ShutdownError stops retries immediately, pauses flow for auto-resume |
+| 0.15.5 | Improve LLM error handling for HTTP 500 and transient errors |
 | 0.15.4 | Fix thread-reply intent regression — pending_memory state consumed commands; phrase-based command detection in pending_memory handler |
 | 0.15.3 | Fix 'create idea' not recognised — added to phrase list |
 | 0.15.2 | Fix 'configure memory' intent — phrase override before LLM dispatch |

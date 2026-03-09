@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import ssl
+import time
 import urllib.error
 import urllib.request
 
@@ -375,9 +376,10 @@ def interpret_message(
     except ImportError:
         pass
 
-    # Retry once on timeout / transient errors
+    # Retry on transient errors (429, 500, 502, 503, 504) with backoff
     resp_payload = None
-    _MAX_RETRIES = 2
+    _MAX_RETRIES = 3
+    _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
     for _attempt in range(1, _MAX_RETRIES + 1):
         try:
             with urllib.request.urlopen(req, timeout=60, context=ssl_context) as resp:
@@ -390,16 +392,20 @@ def interpret_message(
             except Exception:
                 pass
             logger.error("Gemini API HTTP error %s (attempt %d/%d): %s", exc.code, _attempt, _MAX_RETRIES, body)
-            if _attempt == _MAX_RETRIES:
+            if exc.code not in _RETRYABLE_STATUS_CODES or _attempt == _MAX_RETRIES:
                 return _fallback()
+            _delay = 2 ** (_attempt - 1)  # 1s, 2s, 4s
+            time.sleep(_delay)
         except urllib.error.URLError as exc:
             logger.error("Gemini API connection error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc.reason)
             if _attempt == _MAX_RETRIES:
                 return _fallback()
+            time.sleep(2 ** (_attempt - 1))
         except Exception as exc:
             logger.error("Gemini API unexpected error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc)
             if _attempt == _MAX_RETRIES:
                 return _fallback()
+            time.sleep(2 ** (_attempt - 1))
 
     if resp_payload is None:
         return _fallback()

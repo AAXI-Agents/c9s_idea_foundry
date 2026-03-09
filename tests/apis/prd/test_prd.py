@@ -1560,6 +1560,133 @@ def test_restore_prd_state_completed_run():
         assert idea == "A completed idea"
 
 
+# ── restore_prd_state last-section approval inference ────────
+
+
+def test_restore_prd_state_last_section_approved_by_section_ready():
+    """Last section with content should be marked approved when critique
+    contains SECTION_READY, so the flow resumes at the NEXT section."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch("crewai_productfeature_planner.mongodb.get_run_documents") as mock_docs,
+    ):
+        mock_unf.return_value = [{"run_id": "r-resume", "idea": "Test idea"}]
+        # 8 sections completed (exec_summary + 7 sections)
+        section_data = {}
+        keys = [
+            "executive_summary", "problem_statement", "user_personas",
+            "functional_requirements", "no_functional_requirements",
+            "edge_cases", "error_handling", "success_metrics",
+        ]
+        for i, key in enumerate(keys):
+            section_data[key] = [{
+                "content": f"Content for {key}",
+                "iteration": 2,
+                "critique": "SECTION_READY: looks good",
+                "updated_date": "2026-01-01",
+            }]
+
+        mock_docs.return_value = [{
+            "section": section_data,
+            "executive_summary": [
+                {"content": "Exec v1", "iteration": 1, "critique": "ok"},
+            ],
+        }]
+
+        idea, draft, exec_summary, requirements, breakdown_history, refinement_history = (
+            restore_prd_state("r-resume")
+        )
+
+    # All 8 sections with content should be approved (including the last one)
+    for key in keys:
+        sec = draft.get_section(key)
+        assert sec is not None
+        assert sec.is_approved is True, (
+            f"Section '{key}' should be approved but is_approved={sec.is_approved}"
+        )
+
+    # Sections 9 and 10 should NOT be approved (no content)
+    remaining = draft.get_section("dependencies")
+    assert remaining is not None
+    assert remaining.is_approved is False
+
+    # next_section should be section 9 (dependencies)
+    next_sec = draft.next_section()
+    assert next_sec is not None
+    assert next_sec.key == "dependencies"
+
+
+def test_restore_prd_state_last_section_approved_by_min_iterations():
+    """Last section should be marked approved when its iteration count
+    meets the minimum threshold, even without SECTION_READY in critique."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+    import os
+
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch("crewai_productfeature_planner.mongodb.get_run_documents") as mock_docs,
+        patch.dict(os.environ, {"PRD_SECTION_MIN_ITERATIONS": "2"}),
+    ):
+        mock_unf.return_value = [{"run_id": "r-min", "idea": "Test"}]
+        mock_docs.return_value = [{
+            "section": {
+                "executive_summary": [{"content": "ES", "iteration": 1, "critique": "ok"}],
+                "problem_statement": [{
+                    "content": "PS content",
+                    "iteration": 3,
+                    "critique": "Needs more detail on edge cases",
+                }],
+            },
+            "executive_summary": [{"content": "ES", "iteration": 1}],
+        }]
+
+        idea, draft, *_ = restore_prd_state("r-min")
+
+    # problem_statement has iteration=3 >= min_iterations=2 → approved
+    ps = draft.get_section("problem_statement")
+    assert ps is not None
+    assert ps.is_approved is True
+
+    # next_section should skip past problem_statement
+    next_sec = draft.next_section()
+    assert next_sec is not None
+    assert next_sec.key != "problem_statement"
+
+
+def test_restore_prd_state_last_section_not_approved_when_below_threshold():
+    """Last section should NOT be marked approved when iteration < min
+    and critique does not contain SECTION_READY (mid-iteration pause)."""
+    from crewai_productfeature_planner.apis.prd.service import restore_prd_state
+    import os
+
+    with (
+        patch("crewai_productfeature_planner.mongodb.find_unfinalized") as mock_unf,
+        patch("crewai_productfeature_planner.mongodb.get_run_documents") as mock_docs,
+        patch.dict(os.environ, {"PRD_SECTION_MIN_ITERATIONS": "3"}),
+    ):
+        mock_unf.return_value = [{"run_id": "r-mid", "idea": "Test"}]
+        mock_docs.return_value = [{
+            "section": {
+                "executive_summary": [{"content": "ES", "iteration": 1, "critique": "ok"}],
+                "problem_statement": [{
+                    "content": "PS in progress",
+                    "iteration": 1,
+                    "critique": "Needs more work",
+                }],
+            },
+            "executive_summary": [{"content": "ES", "iteration": 1}],
+        }]
+
+        idea, draft, *_ = restore_prd_state("r-mid")
+
+    # problem_statement has iteration=1 < min=3 and no SECTION_READY
+    ps = draft.get_section("problem_statement")
+    assert ps is not None
+    assert ps.is_approved is False
+
+
 # ── Job detail with new fields ───────────────────────────────
 
 
