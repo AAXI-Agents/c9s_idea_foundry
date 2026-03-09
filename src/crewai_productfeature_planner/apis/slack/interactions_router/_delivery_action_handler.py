@@ -2,7 +2,7 @@
 
 Handles the ``delivery_publish`` and ``delivery_create_jira`` action IDs
 that replace the old text-based prompts ("Say *publish*" / "Say *create
-jira tickets*").
+jira skeleton*").
 """
 
 from __future__ import annotations

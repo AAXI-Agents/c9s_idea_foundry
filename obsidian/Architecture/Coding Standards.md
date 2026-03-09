@@ -50,6 +50,57 @@ Every new session or iteration must update the Obsidian vault:
 
 All command-line operations are allowed by default — no permission needed.
 
+## 6. Jira Approval Gate Invariant
+
+Jira tickets must **never** be created without explicit user approval.
+This rule applies to ALL code paths that can trigger Jira creation:
+
+- **Auto-approve paths** (`_run_auto_post_completion`, startup crews):
+  Must use `confluence_only=True` to gate out all Jira tasks.
+- **Interactive paths** (`_run_phased_post_completion`): Must use the
+  3-phase approval flow (skeleton → Epics/Stories → Sub-tasks) with
+  user interaction at each gate.
+- **Restart paths** (`execute_restart_prd`): Must use `interactive=True`
+  to ensure phased Jira approval.
+
+**Regression tests**: `tests/flows/test_jira_approval_gate.py` contains
+23 tests covering every delivery path. Any new delivery path must add
+a test to this file.
+
+**Lesson learned** (v0.15.8): A `confluence_only` parameter was added
+to `build_post_completion_crew` but was not propagated to all callers
+(`_run_auto_post_completion`, `build_startup_delivery_crew`), causing
+Jira tickets to be created without user approval. Always verify that
+parameter changes are applied to ALL callers, not just the immediate
+context.
+
+**Lesson learned** (v0.15.11): Don't just guard against Jira *creation*
+— also guard against Jira *state persistence*. `persist_post_completion()`
+was autonomously detecting Jira keywords in crew output and setting
+`jira_phase=subtasks_done` + `jira_completed=True`, causing the product
+list to show Jira as complete when the user never approved it. All
+autonomous Jira detection/persistence was removed from
+`persist_post_completion()`, `_cli_startup.py`, and `components/startup.py`.
+Only the interactive phased flow (`orchestrator/_jira.py`) may set these
+fields.
+
+## 7. One-Time Data Fix Scripts
+
+When a bug contaminates MongoDB data (e.g. stale flags, orphaned
+records), fix it with a **one-time script** in `scripts/`:
+
+1. **Create** the script (e.g. `scripts/fix_stale_jira_phase.py`)
+2. **Query first**: find affected documents and print them before changes
+3. **Fix**: apply targeted `update_one` / `update_many` with explicit filters
+4. **Verify**: re-query the same documents and print the corrected state
+5. **Run** the script
+6. **Confirm** output shows expected before/after state
+7. **Delete** the script — single-use, don't commit it
+
+> **Rule**: Always delete the script after use. It documents the fix in
+> git history if committed before deletion, but must not remain in the
+> tree as a runnable artifact.
+
 ---
 
 See also: [[Testing Guide]], [[Project Overview]]

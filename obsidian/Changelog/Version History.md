@@ -6,6 +6,10 @@
 
 | Version | Summary |
 |---------|---------|
+| 0.15.11 | Remove autonomous Jira detection — `persist_post_completion()`, `_cli_startup.py`, `components/startup.py` no longer set `jira_phase` / `jira_completed`; fixed stale data via one-time script; added data fix pattern to Coding Standards |
+| 0.15.10 | Fix delivery state reset — scheduler scan was overwriting `confluence_published` with False on every sweep |
+| 0.15.9 | Fix Confluence publish notification — heartbeat progress, Jira skeleton next-step button, button label corrected to "Create Jira Skeleton" |
+| 0.15.8 | Critical fix: Jira approval gate — 5 autonomous Jira paths blocked, 23 regression tests, `confluence_only` propagated to all callers |
 | 0.15.6 | Fix shutdown error handling — ShutdownError stops retries immediately, pauses flow for auto-resume |
 | 0.15.5 | Improve LLM error handling for HTTP 500 and transient errors |
 | 0.15.4 | Fix thread-reply intent regression — pending_memory state consumed commands; phrase-based command detection in pending_memory handler |

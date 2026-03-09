@@ -68,14 +68,16 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
         if jira_phase:
             if jira_phase == "subtasks_done":
                 # Interactive flow completed Jira — mark done.
+                # Only set jira_completed; preserve whatever confluence
+                # state the delivery record already has.  Reading
+                # confluence_url from the workingIdeas doc is wrong
+                # because that field was migrated to productRequirements.
                 from crewai_productfeature_planner.mongodb.product_requirements import (
                     upsert_delivery_record,
                 )
                 upsert_delivery_record(
                     run_id,
                     jira_completed=True,
-                    confluence_published=bool(doc.get("confluence_url")),
-                    confluence_url=doc.get("confluence_url", ""),
                 )
                 logger.info(
                     "[StartupDelivery] run_id=%s — jira_phase is "
@@ -122,10 +124,14 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
             from crewai_productfeature_planner.mongodb.product_requirements import (
                 upsert_delivery_record,
             )
+            existing_conf_url = (
+                (record.get("confluence_url") if record else "")
+                or doc.get("confluence_url", "")
+            )
             upsert_delivery_record(
                 run_id,
                 confluence_published=True,
-                confluence_url=doc.get("confluence_url", ""),
+                confluence_url=existing_conf_url,
                 jira_completed=jira_done,
             )
             continue
@@ -154,12 +160,16 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
         # Existing Jira tickets from a previous partial run.
         jira_tickets = (record.get("jira_tickets") or []) if record else []
 
+        existing_conf_url = (
+            (record.get("confluence_url") if record else "")
+            or doc.get("confluence_url", "")
+        )
         items.append({
             "run_id": run_id,
             "idea": doc.get("idea", "PRD"),
             "content": content,
             "confluence_done": confluence_done,
-            "confluence_url": doc.get("confluence_url", ""),
+            "confluence_url": existing_conf_url,
             "jira_done": jira_done,
             "jira_tickets": jira_tickets,
             "finalized_idea": finalized_idea,
@@ -177,6 +187,7 @@ def build_startup_delivery_crew(
     item: DeliveryItem,
     *,
     progress_callback: "Callable[[str], None] | None" = None,
+    confluence_only: bool = False,
 ) -> "Crew":
     """Build a CrewAI Crew for delivering a single pending PRD.
 
@@ -259,7 +270,8 @@ def build_startup_delivery_crew(
     # to be configured — the PRD content / idea title can substitute
     # for a missing executive summary.
     jira_needed = (
-        not item["jira_done"]
+        not confluence_only
+        and not item["jira_done"]
         and item["confluence_done"]
         and _has_jira_credentials()
     )

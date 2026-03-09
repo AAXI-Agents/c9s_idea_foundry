@@ -82,7 +82,7 @@ apis/slack/
 | `flow_cancel` | Cancel at any point |
 | `jira_skeleton_approve` / `jira_skeleton_reject` | Skeleton approval |
 | `jira_subtask_approve` / `jira_subtask_reject` | Sub-task review |
-| `delivery_publish` / `delivery_create_jira` | Delivery action buttons |
+| `delivery_publish` / `delivery_create_jira` | Delivery action buttons (Publish to Confluence / Create Jira Skeleton) |
 
 ## Intents
 

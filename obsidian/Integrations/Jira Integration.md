@@ -71,6 +71,14 @@ Jira ticketing uses a 3-phase user-approval workflow:
 
 The startup delivery scheduler checks `jira_phase` and skips items managed by the interactive flow, preventing duplicate ticket creation.
 
+## Post-Confluence Next Step (v0.15.9)
+
+After Confluence publish completes (via product list button or publish intent), the system offers a "Create Jira Skeleton" button as the next step. This button:
+- Uses action_id `delivery_create_jira` but routes to skeleton generation (Phase 1)
+- Only appears when Jira credentials are configured
+- Includes heartbeat progress messages during the Confluence crew execution
+- The button label explicitly says "Create Jira Skeleton" (not "Create Jira Tickets") to match the phased workflow
+
 ---
 
 See also: [[Confluence Integration]], [[Slack Integration]], [[Orchestrator Overview]]

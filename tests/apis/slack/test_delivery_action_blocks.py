@@ -48,6 +48,15 @@ class TestJiraOnlyBlocks:
         blocks = jira_only_blocks("run-abc")
         assert blocks[-1]["elements"][0]["value"] == "run-abc"
 
+    def test_button_label_says_skeleton(self):
+        """The Jira button must say 'Create Jira Skeleton' — not 'Create
+        Jira Tickets' — because the action always starts with skeleton
+        generation (the first phase of the phased Jira workflow)."""
+        blocks = jira_only_blocks("r-label")
+        btn = blocks[-1]["elements"][0]
+        assert "Skeleton" in btn["text"]["text"]
+        assert "Tickets" not in btn["text"]["text"]
+
 
 class TestPublishOnlyBlocks:
     def test_returns_actions_block(self):

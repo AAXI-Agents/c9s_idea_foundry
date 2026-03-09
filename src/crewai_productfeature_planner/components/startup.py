@@ -193,7 +193,9 @@ def _run_startup_delivery() -> int:
         try:
             # Build the CrewAI crew with sequential process & collaboration
             crew = build_startup_delivery_crew(
-                item, progress_callback=_print_delivery_status,
+                item,
+                progress_callback=_print_delivery_status,
+                confluence_only=True,
             )
 
             _print_delivery_status(
@@ -212,81 +214,32 @@ def _run_startup_delivery() -> int:
             # Update delivery record from crew output
             new_conf_done = item["confluence_done"] or _confluence_completed_in_output(raw_output)
 
-            # Jira must wait for Confluence to be verified first.
-            # Only check Jira completion when Confluence is confirmed.
-            if new_conf_done:
-                new_jira_done = item["jira_done"] or _jira_completed_in_output(raw_output)
-            else:
-                new_jira_done = item["jira_done"]
-
-            # Extract ticket keys from output and persist incrementally
-            if new_jira_done or _jira_completed_in_output(raw_output):
-                try:
-                    import re as _re
-                    from crewai_productfeature_planner.mongodb.product_requirements import (
-                        append_jira_ticket,
-                    )
-                    from crewai_productfeature_planner.tools.jira_tool import (
-                        search_jira_issues,
-                    )
-                    # Build key→type map from Jira so tickets are
-                    # stored with the correct issue type (Epic/Story/Task).
-                    _type_map: dict[str, str] = {}
-                    try:
-                        for _iss in search_jira_issues(run_id):
-                            _type_map[_iss["issue_key"]] = _iss["issue_type"]
-                    except Exception:  # noqa: BLE001
-                        pass  # lookup is best-effort
-                    for key in _re.findall(r"[A-Z]{2,10}-\d+", raw_output):
-                        append_jira_ticket(run_id, {
-                            "key": key,
-                            "type": _type_map.get(key, "unknown"),
-                        })
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort
+            # Update delivery record — only Confluence status,
+            # never Jira (approval gate).
+            new_conf_done = item["confluence_done"] or _confluence_completed_in_output(raw_output)
 
             upsert_delivery_record(
                 run_id,
                 confluence_published=new_conf_done,
                 confluence_url=_extract_confluence_url(raw_output) or item.get("confluence_url", ""),
-                jira_completed=new_jira_done,
-                jira_output=raw_output if new_jira_done else None,
                 error=None,
             )
 
-            # Mark jira_phase on workingIdeas so the startup
-            # scheduler won't re-create tickets on next restart.
-            if new_jira_done:
-                try:
-                    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
-                        save_jira_phase,
-                    )
-                    save_jira_phase(run_id, "subtasks_done")
-                except Exception:  # noqa: BLE001
-                    pass
-
-            if new_conf_done and new_jira_done:
+            if new_conf_done:
                 delivered += 1
                 _print_delivery_status(
-                    f"✓ Fully delivered \"{idea_preview}\""
+                    f"✓ Published \"{idea_preview}\" to Confluence"
                 )
             else:
-                status_parts = []
-                if new_conf_done:
-                    status_parts.append("Confluence ✓")
-                if new_jira_done:
-                    status_parts.append("Jira ✓")
                 _print_delivery_status(
-                    f"Partial delivery for \"{idea_preview}\" — "
-                    + ", ".join(status_parts or ["awaiting next restart"])
+                    f"Delivery for \"{idea_preview}\" — awaiting next restart"
                 )
 
             logger.info(
                 "[StartupDelivery] Delivery crew completed for "
-                "run_id=%s (confluence=%s, jira=%s)",
+                "run_id=%s (confluence=%s)",
                 run_id,
                 "done" if new_conf_done else "pending",
-                "done" if new_jira_done else "pending",
             )
         except Exception as exc:
             logger.warning(

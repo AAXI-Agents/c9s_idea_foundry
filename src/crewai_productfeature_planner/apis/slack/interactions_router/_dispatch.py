@@ -153,7 +153,7 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "jira_subtask_approve": ":white_check_mark: Sub-tasks approved — Jira ticketing complete",
         "jira_subtask_reject": ":arrows_counterclockwise: Regenerating Jira sub-tasks",
         "delivery_publish": ":outbox_tray: Publishing to Confluence",
-        "delivery_create_jira": ":jira: Creating Jira tickets",
+        "delivery_create_jira": ":jira: Creating Jira skeleton",
     }
     label = labels.get(action_id, action_id)
     # Dynamic action IDs for idea list buttons

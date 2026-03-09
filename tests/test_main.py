@@ -1499,7 +1499,7 @@ class TestRunStartupDelivery:
         # Should have upserted delivery record
         assert _ups.call_count >= 1
 
-    # ── ticket type resolution ────────────────────────────────
+    # ── autonomous path must NOT persist Jira tickets ──────────
 
     _SEARCH = "crewai_productfeature_planner.tools.jira_tool.search_jira_issues"
 
@@ -1511,11 +1511,14 @@ class TestRunStartupDelivery:
     @patch(_DISCOVER)
     @patch(_CONF, return_value=True)
     @patch(_JIRA, return_value=True)
-    def test_persists_ticket_type_from_jira_lookup(
+    def test_does_not_search_or_persist_jira_tickets(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
         _rec, _ups, _status,
     ):
-        """Ticket type should come from search_jira_issues, not 'unknown'."""
+        """Autonomous delivery must not call search_jira_issues or
+        append_jira_ticket — Jira persistence is exclusive to the
+        interactive phased flow (approval gate invariant, v0.15.8).
+        """
         mock_disc.return_value = [
             {
                 "run_id": "r1",
@@ -1536,70 +1539,12 @@ class TestRunStartupDelivery:
         mock_result.raw = "Created Epic PROJ-1. Story PROJ-2. Task PROJ-3."
         mock_kickoff.return_value = mock_result
 
-        search_return = [
-            {"issue_key": "PROJ-1", "summary": "Epic", "issue_type": "Epic"},
-            {"issue_key": "PROJ-2", "summary": "Story", "issue_type": "Story"},
-            {"issue_key": "PROJ-3", "summary": "Task", "issue_type": "Task"},
-        ]
-
-        with patch(self._SEARCH, return_value=search_return) as mock_search, \
+        with patch(self._SEARCH) as mock_search, \
              patch("crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket") as mock_append:
             _run_startup_delivery()
 
-            mock_search.assert_called_once_with("r1")
-
-            # Collect appended types
-            appended = {
-                c[0][1]["key"]: c[0][1]["type"]
-                for c in mock_append.call_args_list
-            }
-            assert appended.get("PROJ-1") == "Epic"
-            assert appended.get("PROJ-2") == "Story"
-            assert appended.get("PROJ-3") == "Task"
-
-    @patch(_STATUS)
-    @patch(_UPSERT, return_value=True)
-    @patch(_GET_REC, return_value=None)
-    @patch(_KICKOFF)
-    @patch(_BUILD_CREW)
-    @patch(_DISCOVER)
-    @patch(_CONF, return_value=True)
-    @patch(_JIRA, return_value=True)
-    def test_falls_back_to_unknown_when_search_fails(
-        self, _j, _c, mock_disc, mock_build, mock_kickoff,
-        _rec, _ups, _status,
-    ):
-        """When search_jira_issues raises, type should fall back to 'unknown'."""
-        mock_disc.return_value = [
-            {
-                "run_id": "r1",
-                "idea": "Fallback test",
-                "content": "# PRD",
-                "confluence_done": True,
-                "confluence_url": "https://co.atlassian.net/wiki/pages/1",
-                "jira_done": False,
-                "finalized_idea": "ES",
-                "func_reqs": "FR1",
-                "doc": {"run_id": "r1"},
-            },
-        ]
-
-        mock_crew = MagicMock()
-        mock_build.return_value = mock_crew
-        mock_result = MagicMock()
-        mock_result.raw = "Created Epic PROJ-1."
-        mock_kickoff.return_value = mock_result
-
-        with patch(self._SEARCH, side_effect=Exception("timeout")) as _ms, \
-             patch("crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket") as mock_append:
-            _run_startup_delivery()
-
-            # Should still persist, with unknown type
-            appended = {
-                c[0][1]["key"]: c[0][1]["type"]
-                for c in mock_append.call_args_list
-            }
-            assert appended.get("PROJ-1") == "unknown"
+            mock_search.assert_not_called()
+            mock_append.assert_not_called()
 
     # ── crew error handling ───────────────────────────────────
 
@@ -1697,7 +1642,7 @@ class TestRunStartupDelivery:
         """Should return 0 when discovery fails."""
         assert _run_startup_delivery() == 0
 
-    # ── sets jira_phase on workingIdeas after Jira completion ──
+    # ── autonomous path must NOT set jira_phase ────────────────
 
     @patch(_STATUS)
     @patch(_UPSERT, return_value=True)
@@ -1707,11 +1652,16 @@ class TestRunStartupDelivery:
     @patch(_DISCOVER)
     @patch(_CONF, return_value=True)
     @patch(_JIRA, return_value=True)
-    def test_sets_jira_phase_subtasks_done_after_jira_completion(
+    def test_does_not_set_jira_phase_on_autonomous_path(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
         _rec, _ups, _status,
     ):
-        """Should call save_jira_phase('subtasks_done') when Jira completion is detected."""
+        """Autonomous startup delivery must never call save_jira_phase.
+
+        Jira phase is managed exclusively by the interactive phased flow.
+        Setting jira_phase from autonomous output caused stale
+        'subtasks_done' markers that bypassed the approval gate (v0.15.8).
+        """
         mock_disc.return_value = [
             {
                 "run_id": "r1",
@@ -1736,7 +1686,7 @@ class TestRunStartupDelivery:
         with patch(_SAVE_PHASE) as mock_save_phase:
             _run_startup_delivery()
 
-            mock_save_phase.assert_called_once_with("r1", "subtasks_done")
+            mock_save_phase.assert_not_called()
 
     # ── jira_output must NOT leak into workingIdeas ─────────────
 
@@ -1748,11 +1698,16 @@ class TestRunStartupDelivery:
     @patch(_DISCOVER)
     @patch(_CONF, return_value=True)
     @patch(_JIRA, return_value=True)
-    def test_jira_output_not_written_to_working_ideas(
+    def test_no_jira_data_in_delivery_record_on_autonomous_path(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
         _rec, mock_upsert, _status, fresh_mock_db,
     ):
-        """jira_output belongs in productRequirements only, not workingIdeas."""
+        """Autonomous delivery must not persist jira_output or jira_completed.
+
+        Jira data should only be set by the interactive phased flow.
+        The autonomous path passes confluence_only=True and must not
+        touch any Jira fields in the delivery record (v0.15.11).
+        """
         mock_disc.return_value = [
             {
                 "run_id": "r1",
@@ -1775,29 +1730,16 @@ class TestRunStartupDelivery:
 
         _run_startup_delivery()
 
-        # jira_output should be persisted via upsert_delivery_record
-        # (productRequirements), NOT via db["workingIdeas"].update_one
+        # Verify upsert was called but without any Jira fields
         mock_upsert.assert_called()
-        upsert_kwargs = mock_upsert.call_args
-        assert upsert_kwargs[1].get("jira_output") is not None or (
-            len(upsert_kwargs[0]) > 0
-        )
-
-        # Ensure no raw write to workingIdeas for jira_output
-        mock_db = fresh_mock_db
-        # Snapshot call list to avoid infinite loop — iterating
-        # call_args_list while calling mock_db[col_name] would
-        # mutate the list during iteration.
-        getitem_calls = list(mock_db.__getitem__.call_args_list)
-        for call in getitem_calls:
-            col_name = call[0][0] if call[0] else ""
-            if col_name == "workingIdeas":
-                wi_col = mock_db[col_name]
-                for uc in wi_col.update_one.call_args_list:
-                    set_doc = uc[0][1].get("$set", {}) if len(uc[0]) > 1 else {}
-                    assert "jira_output" not in set_doc, (
-                        "jira_output must not be written to workingIdeas"
-                    )
+        for call in mock_upsert.call_args_list:
+            kwargs = call[1] if call[1] else {}
+            assert "jira_output" not in kwargs, (
+                "jira_output must not be set on autonomous delivery path"
+            )
+            assert "jira_completed" not in kwargs or kwargs["jira_completed"] is False, (
+                "jira_completed must not be set to True on autonomous path"
+            )
 
     # ── background wrapper ────────────────────────────────────
 

@@ -177,7 +177,19 @@ def _handle_confluence_publish(
                 )
                 return
 
-            crew = build_post_completion_crew(flow)
+            # Heartbeat: post crew step progress to Slack thread.
+            def _progress(step_msg: str) -> None:
+                try:
+                    send_tool.run(
+                        channel=channel, thread_ts=thread_ts,
+                        text=f":gear: {step_msg}",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
+            crew = build_post_completion_crew(
+                flow, progress_callback=_progress, confluence_only=True,
+            )
             if crew is None:
                 send_tool.run(
                     channel=channel, thread_ts=thread_ts,
@@ -206,6 +218,28 @@ def _handle_confluence_publish(
                     channel=channel, thread_ts=thread_ts,
                     text=f"<@{user_id}> :white_check_mark: Confluence publish completed for product #{idea_number}.",
                 )
+
+            # Offer Jira skeleton creation as the next step.
+            from crewai_productfeature_planner.orchestrator._helpers import (
+                _has_jira_credentials,
+            )
+            if _has_jira_credentials():
+                from crewai_productfeature_planner.apis.slack.blocks import (
+                    jira_only_blocks,
+                )
+                jira_blocks = jira_only_blocks(run_id)
+                if client and jira_blocks:
+                    try:
+                        client.chat_postMessage(
+                            channel=channel,
+                            thread_ts=thread_ts,
+                            blocks=jira_blocks,
+                            text="Create Jira Skeleton",
+                        )
+                    except Exception as exc:
+                        logger.debug(
+                            "Jira next-step button post failed: %s", exc,
+                        )
         except Exception as exc:
             logger.error("Confluence publish failed for run_id=%s: %s", run_id, exc)
             send_tool.run(

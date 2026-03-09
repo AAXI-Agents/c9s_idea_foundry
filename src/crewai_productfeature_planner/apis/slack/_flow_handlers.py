@@ -760,7 +760,7 @@ def handle_publish_intent(channel: str, thread_ts: str, user: str, send_tool) ->
                             channel=channel,
                             thread_ts=thread_ts,
                             blocks=jira_blocks,
-                            text="Create Jira Tickets",
+                            text="Create Jira Skeleton",
                         )
                     except Exception as exc:
                         logger.debug("Jira next-step button post failed: %s", exc)
@@ -1384,6 +1384,7 @@ def execute_restart_prd(
             idea=idea,
             event_ts=event_ts,
             project_id=project_id,
+            interactive=True,
         )
 
     except Exception as exc:

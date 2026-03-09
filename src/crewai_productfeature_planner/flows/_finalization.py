@@ -202,7 +202,12 @@ def run_post_completion(flow: PRDFlow) -> None:
 
 
 def _run_auto_post_completion(flow: PRDFlow) -> None:
-    """Run the single post-completion crew (auto-approve mode)."""
+    """Run Confluence-only post-completion crew (auto-approve mode).
+
+    Jira ticketing is **never** included in auto-approve mode because
+    it must go through the phased approval flow (skeleton → Epics &
+    Stories → Sub-tasks) with user interaction at each gate.
+    """
     from crewai_productfeature_planner.orchestrator import (
         build_post_completion_crew,
     )
@@ -210,7 +215,7 @@ def _run_auto_post_completion(flow: PRDFlow) -> None:
         crew_kickoff_with_retry,
     )
 
-    crew = build_post_completion_crew(flow)
+    crew = build_post_completion_crew(flow, confluence_only=True)
     if crew is None:
         logger.info(
             "[PostCompletion] No delivery steps needed — skipping."
@@ -248,7 +253,7 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
     confluence_done = bool(getattr(flow.state, "confluence_url", ""))
     has_confluence = _has_confluence_credentials() and _has_gemini_credentials()
     if has_confluence and not confluence_done and flow.state.final_prd:
-        crew = build_post_completion_crew(flow)
+        crew = build_post_completion_crew(flow, confluence_only=True)
         if crew is not None:
             result = crew_kickoff_with_retry(
                 crew, step_label="post_completion_confluence",
@@ -396,7 +401,6 @@ def persist_post_completion(flow: PRDFlow, result: object) -> None:
 
     try:
         from crewai_productfeature_planner.mongodb.product_requirements import (
-            append_jira_ticket,
             upsert_delivery_record,
         )
 
@@ -406,64 +410,31 @@ def persist_post_completion(flow: PRDFlow, result: object) -> None:
         )
         conf_done = bool(conf_url)
 
-        # Detect Jira completion (keyword + issue key pattern)
-        jira_done = jira_detected_in_output(raw_output)
+        # NOTE: Jira completion is NOT detected here.  The jira_phase
+        # field and jira_completed flag are managed exclusively by the
+        # interactive phased Jira flow (orchestrator/_jira.py).
+        # Detecting Jira keywords in crew output caused false positives
+        # (e.g. Jira issue keys mentioned in PRD content) and set
+        # jira_phase='subtasks_done' without user approval — violating
+        # the Jira approval gate invariant (v0.15.8).
 
         upsert_delivery_record(
             flow.state.run_id,
             confluence_published=conf_done,
             confluence_url=conf_url,
-            jira_completed=jira_done,
-            jira_output=raw_output if jira_done else None,
         )
         logger.info(
             "[PostCompletion] Delivery record updated for "
-            "run_id=%s (confluence=%s, jira=%s)",
+            "run_id=%s (confluence=%s)",
             flow.state.run_id,
             "done" if conf_done else "pending",
-            "done" if jira_done else "pending",
         )
 
-        # ── Progress heartbeats for Confluence / Jira ─────
+        # ── Progress heartbeat for Confluence ─────────────
         if conf_done:
             flow._notify_progress("confluence_published", {
                 "url": conf_url,
             })
-        if jira_done:
-            ticket_keys = _re.findall(r"[A-Z]{2,10}-\d+", raw_output)
-            flow._notify_progress("jira_published", {
-                "ticket_count": len(set(ticket_keys)),
-            })
-
-        # Persist individual ticket keys
-        if jira_done:
-            _type_map: dict[str, str] = {}
-            try:
-                from crewai_productfeature_planner.tools.jira_tool import (
-                    search_jira_issues,
-                )
-                for _iss in search_jira_issues(flow.state.run_id):
-                    _type_map[_iss["issue_key"]] = _iss["issue_type"]
-            except Exception:  # noqa: BLE001
-                pass
-            for key in _re.findall(r"[A-Z]{2,10}-\d+", raw_output):
-                try:
-                    append_jira_ticket(flow.state.run_id, {
-                        "key": key,
-                        "type": _type_map.get(key, "unknown"),
-                    })
-                except Exception:  # noqa: BLE001
-                    pass
-
-            # Mark jira_phase on workingIdeas so the startup
-            # scheduler won't re-create tickets on next restart.
-            try:
-                from crewai_productfeature_planner.mongodb.working_ideas.repository import (
-                    save_jira_phase,
-                )
-                save_jira_phase(flow.state.run_id, "subtasks_done")
-            except Exception:  # noqa: BLE001
-                pass
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[PostCompletion] Failed to persist delivery record: %s",

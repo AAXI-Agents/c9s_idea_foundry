@@ -2825,7 +2825,8 @@ class TestRunPostCompletion:
         flow.state.run_id = "test-run"
         flow._run_post_completion()
 
-        mock_build.assert_called_once_with(flow)
+        # Auto-approve path always uses confluence_only=True
+        mock_build.assert_called_once_with(flow, confluence_only=True)
         mock_kickoff.assert_called_once_with(mock_crew, step_label="post_completion")
 
     @patch(
@@ -2839,7 +2840,7 @@ class TestRunPostCompletion:
         flow.state.final_prd = "# PRD Content"
         flow._run_post_completion()
 
-        mock_build.assert_called_once_with(flow)
+        mock_build.assert_called_once_with(flow, confluence_only=True)
 
     @patch(
         "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
@@ -2860,8 +2861,15 @@ class TestPersistPostCompletion:
     @patch(
         "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
     )
-    def test_updates_delivery_record_on_jira_success(self, mock_upsert):
-        """Should set jira_completed=True when output has keywords + key."""
+    def test_jira_keywords_in_output_are_ignored(self, mock_upsert):
+        """persist_post_completion must NOT set jira_completed even when
+        Jira keywords and issue keys appear in crew output.
+
+        Jira state is exclusively managed by the interactive phased flow
+        (orchestrator/_jira.py).  Detecting Jira from raw output caused
+        false positive jira_phase='subtasks_done' — violating the
+        approval gate invariant (v0.15.8).
+        """
         flow = PRDFlow()
         flow.state.run_id = "r1"
         flow.state.confluence_url = "https://co.atlassian.net/wiki/pages/1"
@@ -2869,21 +2877,20 @@ class TestPersistPostCompletion:
         result = MagicMock()
         result.raw = "Created Epic PROJ-1. Story PROJ-2."
 
-        with patch(
-            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket"
-        ):
-            flow._persist_post_completion(result)
+        flow._persist_post_completion(result)
 
         mock_upsert.assert_called_once()
-        call_kwargs = mock_upsert.call_args
-        assert call_kwargs[1]["jira_completed"] is True
-        assert call_kwargs[1]["confluence_published"] is True
+        call_kwargs = mock_upsert.call_args[1]
+        # Jira fields must NOT be passed — only Confluence fields.
+        assert "jira_completed" not in call_kwargs
+        assert "jira_output" not in call_kwargs
+        assert call_kwargs["confluence_published"] is True
 
     @patch(
         "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
     )
     def test_confluence_only_no_jira(self, mock_upsert):
-        """Should mark jira_completed=False when no Jira keys in output."""
+        """Should detect Confluence URL and not touch Jira state."""
         flow = PRDFlow()
         flow.state.run_id = "r2"
         flow.state.confluence_url = ""
@@ -2896,39 +2903,33 @@ class TestPersistPostCompletion:
         flow._persist_post_completion(result)
 
         mock_upsert.assert_called_once()
-        call_kwargs = mock_upsert.call_args
-        assert call_kwargs[1]["jira_completed"] is False
-        assert call_kwargs[1]["confluence_published"] is True
+        call_kwargs = mock_upsert.call_args[1]
+        assert "jira_completed" not in call_kwargs
+        assert call_kwargs["confluence_published"] is True
 
     @patch(
         "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record"
     )
-    def test_persists_jira_ticket_keys(self, mock_upsert):
-        """Should call append_jira_ticket for each key in output."""
+    def test_no_jira_phase_set_even_with_jira_keys(self, mock_upsert):
+        """persist_post_completion must never call save_jira_phase.
+
+        Regression: Before v0.15.11, this function set
+        jira_phase='subtasks_done' when it detected Jira keywords in
+        crew output — bypassing user approval.
+        """
         flow = PRDFlow()
-        flow.state.run_id = "r3"
-        flow.state.confluence_url = "https://co.atlassian.net/wiki/pages/1"
+        flow.state.run_id = "r5"
+        flow.state.confluence_url = ""
 
         result = MagicMock()
-        result.raw = "Created Epic PROJ-10. Story PROJ-11."
+        result.raw = "Created Epic ABC-1. Story ABC-2."
 
         with patch(
-            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket"
-        ) as mock_append, patch(
-            "crewai_productfeature_planner.tools.jira_tool.search_jira_issues",
-            return_value=[
-                {"issue_key": "PROJ-10", "summary": "E", "issue_type": "Epic"},
-                {"issue_key": "PROJ-11", "summary": "S", "issue_type": "Story"},
-            ],
-        ):
+            "crewai_productfeature_planner.mongodb.working_ideas.repository.save_jira_phase"
+        ) as mock_save:
             flow._persist_post_completion(result)
 
-        appended = {
-            c[0][1]["key"]: c[0][1]["type"]
-            for c in mock_append.call_args_list
-        }
-        assert appended.get("PROJ-10") == "Epic"
-        assert appended.get("PROJ-11") == "Story"
+        mock_save.assert_not_called()
 
     def test_does_not_raise_on_bad_result(self):
         """Should silently handle results without .raw."""

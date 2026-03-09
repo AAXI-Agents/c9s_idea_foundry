@@ -1,7 +1,7 @@
 """Post-completion delivery action Block Kit builders.
 
 Provides action buttons for "Publish to Confluence" and
-"Create Jira Tickets" that replace the old text-based prompts
+"Create Jira Skeleton" that replace the old text-based prompts
 ("Say *publish*" / "Say *create jira tickets*").
 """
 
@@ -19,7 +19,7 @@ def delivery_next_step_blocks(
     Args:
         run_id: The PRD run identifier (encoded in button values).
         show_publish: Include the "Publish to Confluence" button.
-        show_jira: Include the "Create Jira Tickets" button.
+        show_jira: Include the "Create Jira Skeleton" button.
 
     Returns:
         A list of Block Kit block dicts.  Empty when neither action
@@ -42,7 +42,7 @@ def delivery_next_step_blocks(
     if show_jira:
         elements.append({
             "type": "button",
-            "text": {"type": "plain_text", "text": ":jira:  Create Jira Tickets"},
+            "text": {"type": "plain_text", "text": ":jira:  Create Jira Skeleton"},
             "action_id": "delivery_create_jira",
             "value": run_id,
         })

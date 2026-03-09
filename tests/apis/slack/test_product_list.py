@@ -1458,3 +1458,207 @@ class TestHandleConfluencePublishStateRestore:
         assert captured["idea"] == "Test idea"
         assert captured["run_id"] == "run-conf-1"
         assert len(captured["final_prd"]) > 10  # assembled from draft
+
+
+class TestHandleConfluencePublishHeartbeatAndNextStep:
+    """Verify _handle_confluence_publish sends heartbeat progress and
+    offers Jira next-step button after Confluence completes."""
+
+    def test_progress_callback_posted_to_slack(self):
+        """Crew step progress messages should be posted to the thread."""
+        doc = {"run_id": "run-hb-1", "idea": "Heartbeat idea"}
+        crew_mock = MagicMock()
+        result_mock = MagicMock()
+        result_mock.raw = "Published to Confluence https://x.atlassian.net/wiki/spaces/X/pages/1"
+        crew_mock.kickoff.return_value = result_mock
+
+        captured_cb = {}
+
+        def capture_crew(flow, *, progress_callback=None, confluence_only=False):
+            captured_cb["cb"] = progress_callback
+            return crew_mock
+
+        with (
+            patch(
+                "crewai_productfeature_planner.mongodb.working_ideas.repository.find_run_any_status",
+                return_value=doc,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.prd.service.restore_prd_state",
+                return_value=None,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator.build_post_completion_crew",
+                side_effect=capture_crew,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_confluence_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_gemini_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_jira_credentials",
+                return_value=False,
+            ),
+            patch(
+                "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+                return_value=result_mock,
+            ),
+            patch(
+                "crewai_productfeature_planner.flows._finalization.persist_post_completion",
+            ),
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_confluence_publish,
+            )
+
+            send = MagicMock()
+            client = MagicMock()
+            _handle_confluence_publish(
+                "run-hb-1", 1, "U1", "C1", "T1", send, client,
+            )
+            import time
+            time.sleep(0.5)
+
+        # progress_callback was passed to build_post_completion_crew
+        assert captured_cb.get("cb") is not None
+
+        # Calling the callback should post to Slack
+        captured_cb["cb"]("[1/2] Assessing delivery status")
+        send.run.assert_any_call(
+            channel="C1", thread_ts="T1",
+            text=":gear: [1/2] Assessing delivery status",
+        )
+
+    def test_jira_next_step_button_offered(self):
+        """After Confluence publish, a Jira next-step button should be posted
+        when Jira credentials are available."""
+        doc = {"run_id": "run-js-1", "idea": "Jira next step idea"}
+        crew_mock = MagicMock()
+        result_mock = MagicMock()
+        result_mock.raw = "Published: https://x.atlassian.net/wiki/spaces/X/pages/1"
+        crew_mock.kickoff.return_value = result_mock
+
+        with (
+            patch(
+                "crewai_productfeature_planner.mongodb.working_ideas.repository.find_run_any_status",
+                return_value=doc,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.prd.service.restore_prd_state",
+                return_value=None,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator.build_post_completion_crew",
+                return_value=crew_mock,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_confluence_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_gemini_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_jira_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+                return_value=result_mock,
+            ),
+            patch(
+                "crewai_productfeature_planner.flows._finalization.persist_post_completion",
+            ),
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_confluence_publish,
+            )
+
+            send = MagicMock()
+            client = MagicMock()
+            _handle_confluence_publish(
+                "run-js-1", 1, "U1", "C1", "T1", send, client,
+            )
+            import time
+            time.sleep(0.5)
+
+        # Jira next-step button should be posted via client.chat_postMessage
+        client.chat_postMessage.assert_called()
+        jira_call = [
+            c for c in client.chat_postMessage.call_args_list
+            if c.kwargs.get("text") == "Create Jira Skeleton"
+        ]
+        assert len(jira_call) == 1
+        blocks = jira_call[0].kwargs["blocks"]
+        action_ids = [
+            e["action_id"]
+            for b in blocks if b.get("type") == "actions"
+            for e in b.get("elements", [])
+        ]
+        assert "delivery_create_jira" in action_ids
+
+    def test_no_jira_button_without_credentials(self):
+        """No Jira button should be offered when Jira credentials are
+        missing."""
+        doc = {"run_id": "run-nj-1", "idea": "No jira idea"}
+        crew_mock = MagicMock()
+        result_mock = MagicMock()
+        result_mock.raw = "Published: https://x.atlassian.net/wiki/spaces/X/pages/1"
+        crew_mock.kickoff.return_value = result_mock
+
+        with (
+            patch(
+                "crewai_productfeature_planner.mongodb.working_ideas.repository.find_run_any_status",
+                return_value=doc,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.prd.service.restore_prd_state",
+                return_value=None,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator.build_post_completion_crew",
+                return_value=crew_mock,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_confluence_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_gemini_credentials",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.orchestrator._helpers._has_jira_credentials",
+                return_value=False,
+            ),
+            patch(
+                "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+                return_value=result_mock,
+            ),
+            patch(
+                "crewai_productfeature_planner.flows._finalization.persist_post_completion",
+            ),
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_confluence_publish,
+            )
+
+            send = MagicMock()
+            client = MagicMock()
+            _handle_confluence_publish(
+                "run-nj-1", 1, "U1", "C1", "T1", send, client,
+            )
+            import time
+            time.sleep(0.5)
+
+        # Only the ack call, no Jira blocks call
+        jira_calls = [
+            c for c in client.chat_postMessage.call_args_list
+            if c.kwargs.get("text") == "Create Jira Skeleton"
+        ]
+        assert len(jira_calls) == 0

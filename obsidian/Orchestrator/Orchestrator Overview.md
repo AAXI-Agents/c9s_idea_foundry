@@ -35,6 +35,20 @@ The orchestrator fires events during pipeline execution:
 - `pipeline_stage_complete` — stage finished with iteration count
 - `pipeline_stage_skipped` — stage skipped (e.g., missing credentials)
 
+## Crew Factories
+
+| Factory | File | Key params |
+|---------|------|------------|
+| `build_post_completion_crew(flow, *, confluence_only=False)` | `_post_completion.py` | `confluence_only=True` gates out all Jira tasks |
+| `build_startup_delivery_crew(item, *, confluence_only=False)` | `_startup_delivery.py` | `confluence_only=True` gates out all Jira tasks |
+
+### `confluence_only` Invariant
+
+The `confluence_only` parameter **must** be `True` in all autonomous
+paths (no user interaction). Jira ticket creation requires the phased
+approval flow. See [[Coding Standards]] §6 and
+`tests/flows/test_jira_approval_gate.py`.
+
 ## When to Load Which File
 
 | Task | File(s) |

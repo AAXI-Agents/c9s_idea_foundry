@@ -245,3 +245,33 @@ class TestBuildPostCompletionCrew:
         assert epic_kw["agent"] is pm_agent
         assert stories_kw["agent"] is pm_agent
         assert tasks_kw["agent"] is atl_agent
+
+    @patch(_VERBOSE, return_value=False)
+    @patch(_TC, return_value=_TASK_CONFIGS)
+    @patch(_OA)
+    @patch(_DM)
+    @patch(_CREW_CLS)
+    @patch(_TASK_CLS)
+    @patch(_HAS_JIRA, return_value=True)
+    @patch(_HAS_CONF, return_value=True)
+    @patch(_HAS_GEMINI, return_value=True)
+    def test_confluence_only_skips_jira_tasks(
+        self, _mg, _mc, _mj, mock_task, mock_crew,
+        mock_dm, mock_oa, _tc, _v,
+    ):
+        """confluence_only=True should produce only assess + confluence tasks,
+        even when Jira credentials are present."""
+        mock_dm.return_value = MagicMock(name="delivery_manager")
+        mock_oa.return_value = MagicMock(name="orchestrator")
+        mock_task.side_effect = lambda **kw: MagicMock(**kw)
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# Some PRD"
+        flow.state.idea = "A cool feature"
+        build_post_completion_crew(flow, confluence_only=True)
+
+        crew_kwargs = mock_crew.call_args[1]
+        # Only DM + Orchestrator (no PM / Architect)
+        assert len(crew_kwargs["agents"]) == 2
+        # Only assess + confluence = 2 tasks
+        assert len(crew_kwargs["tasks"]) == 2

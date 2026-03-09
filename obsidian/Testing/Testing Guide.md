@@ -82,6 +82,34 @@ When writing `@patch(...)` in tests, patch the name **where it is imported**, no
 - Tests use `unittest.mock.patch` + `monkeypatch` for env vars
 - Always verify all tests pass before committing
 
+## Critical Invariants (Regression Test Safety Nets)
+
+### Jira Approval Gate
+
+Jira tickets must **never** be created without user approval. This
+invariant is enforced by the regression test suite in
+`tests/flows/test_jira_approval_gate.py` (23 tests).
+
+**The invariant**: Every code path that builds a delivery crew must
+either:
+1. Pass `confluence_only=True` (blocking all Jira tasks), OR
+2. Go through the phased approval flow with user interaction at
+   each gate (skeleton → Epics/Stories → Sub-tasks).
+
+**Paths covered by regression tests**:
+| Path | Expected behavior |
+|------|-------------------|
+| `_run_auto_post_completion` | `confluence_only=True` always |
+| `_run_phased_post_completion` Confluence step | `confluence_only=True` |
+| `build_startup_delivery_crew` (CLI/server startup) | `confluence_only=True` from callers |
+| `build_post_completion_crew(confluence_only=True)` | 0 Jira agents/tasks |
+| `execute_restart_prd` | `interactive=True` → phased path |
+| API `run_prd_flow` path | No Jira callbacks → auto → `confluence_only=True` |
+
+**When adding new delivery paths**: Always add a regression test to
+`test_jira_approval_gate.py` to verify the new path respects the
+approval gate.
+
 ---
 
 See also: [[Coding Standards]], [[Module Map]]

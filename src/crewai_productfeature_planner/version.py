@@ -1288,6 +1288,77 @@ _CODEX: list[CodexEntry] = [
             "HTTP 503 for ShutdownError. 5 new tests."
         ),
     ),
+    CodexEntry(
+        "0.15.8",
+        date(2026, 3, 9),
+        (
+            "Critical Jira approval gate fix — 5 autonomous code paths "
+            "could create Jira tickets without user approval. "
+            "(1) _finalization.py: _run_auto_post_completion now uses "
+            "confluence_only=True. (2) _startup_delivery.py: added "
+            "confluence_only parameter, gating jira_needed. "
+            "(3) _cli_startup.py & components/startup.py: callers pass "
+            "confluence_only=True. (4) _flow_handlers.py: "
+            "execute_restart_prd passes interactive=True to "
+            "kick_off_prd_flow. (5) 23 regression tests in "
+            "tests/flows/test_jira_approval_gate.py covering every "
+            "delivery path. CODEX.md and Obsidian updated with "
+            "Jira approval gate invariant documentation."
+        ),
+    ),
+    CodexEntry(
+        "0.15.9",
+        date(2026, 3, 9),
+        (
+            "Fix Confluence publish notification and Jira next-step flow. "
+            "(1) _product_list_handler._handle_confluence_publish now "
+            "passes a progress_callback to build_post_completion_crew so "
+            "users see heartbeat updates during the 2-4 min crew run. "
+            "(2) After Confluence publish completes, the handler now "
+            "offers a 'Create Jira Skeleton' button when Jira "
+            "credentials are configured. "
+            "(3) Button label corrected from 'Create Jira Tickets' to "
+            "'Create Jira Skeleton' across _delivery_action_blocks.py, "
+            "_dispatch.py, _flow_handlers.py, and "
+            "_product_list_handler.py — the action always triggers "
+            "skeleton generation (Phase 1 of phased Jira workflow). "
+            "4 regression tests added."
+        ),
+    ),
+    CodexEntry(
+        "0.15.10",
+        date(2026, 3, 9),
+        (
+            "Fix delivery state reset: PublishScheduler scan was "
+            "overwriting confluence_published with False on every sweep. "
+            "Root cause: _discover_pending_deliveries() read "
+            "confluence_url from the workingIdeas doc (empty after "
+            "save_confluence_url migration) and used it to set "
+            "confluence_published — resetting the delivery record. "
+            "(1) subtasks_done branch now only sets jira_completed, "
+            "preserving existing confluence state. "
+            "(2) 'fully done' branch reads confluence_url from the "
+            "delivery record first, falling back to workingIdeas. "
+            "(3) Item dict confluence_url sourced from delivery record. "
+            "3 regression tests added (2105 total)."
+        ),
+    ),
+    CodexEntry(
+        "0.15.11",
+        date(2026, 3, 9),
+        (
+            "Remove autonomous Jira detection from all delivery paths. "
+            "persist_post_completion(), _cli_startup, and components/startup "
+            "no longer detect Jira keywords or set jira_phase / "
+            "jira_completed — these fields are now exclusively managed by "
+            "the interactive phased flow (orchestrator/_jira.py), enforcing "
+            "the approval gate invariant (v0.15.8). "
+            "Fixed stale jira_phase='subtasks_done' data from pre-approval "
+            "autonomous runs via one-time fix script. "
+            "8 tests rewritten to assert Jira state is never set on "
+            "autonomous paths."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

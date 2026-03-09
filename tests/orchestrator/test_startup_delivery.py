@@ -136,6 +136,34 @@ class TestDiscoverPendingDeliveries:
         assert len(items) == 1
         assert items[0]["jira_tickets"] == [{"key": "PRD-42", "type": "Epic"}]
 
+    @patch(f"{_MOD}._has_jira_credentials", return_value=True)
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC)
+    @patch(_GET_DB)
+    def test_item_confluence_url_from_delivery_record(
+        self, mock_db, mock_rec, _asm, _jira,
+    ):
+        """When workingIdeas has no confluence_url but the delivery record
+        does, the item dict must inherit the URL from the record."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "URL in record only",
+                "executive_summary": [{"content": "Summary", "iteration": 1}],
+            },
+        ])
+        mock_rec.return_value = {
+            "status": "inprogress",
+            "confluence_published": False,
+            "confluence_url": "https://wiki.test.com/p/99",
+            "jira_completed": False,
+        }
+
+        items = _discover_pending_deliveries()
+        assert len(items) == 1
+        assert items[0]["confluence_url"] == "https://wiki.test.com/p/99"
+
     @patch(_UPSERT_REC, return_value=True)
     @patch(_ASSEMBLE, return_value="# PRD")
     @patch(_GET_REC)
@@ -183,6 +211,44 @@ class TestDiscoverPendingDeliveries:
             },
         ])
         # _has_jira_credentials() returns False (no env vars in tests)
+        items = _discover_pending_deliveries()
+        assert items == []
+        mock_upsert.assert_called_once_with(
+            "r1",
+            confluence_published=True,
+            confluence_url="https://wiki.test.com/p/1",
+            jira_completed=False,
+        )
+
+    @patch(f"{_MOD}._has_jira_credentials", return_value=False)
+    @patch(_UPSERT_REC, return_value=True)
+    @patch(_ASSEMBLE, return_value="# PRD")
+    @patch(_GET_REC)
+    @patch(_GET_DB)
+    def test_fully_done_reads_confluence_url_from_delivery_record(
+        self, mock_db, mock_rec, _asm, mock_upsert, _jira,
+    ):
+        """Regression: When workingIdeas has no confluence_url but the
+        delivery record does, the URL must be sourced from the record.
+
+        After save_confluence_url was removed, the workingIdeas doc no
+        longer stores the URL — only the productRequirements record.
+        """
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "URL only in delivery record",
+                # Note: NO confluence_url on workingIdeas doc
+            },
+        ])
+        mock_rec.return_value = {
+            "status": "inprogress",
+            "confluence_published": True,
+            "confluence_url": "https://wiki.test.com/p/1",
+            "jira_completed": False,
+        }
+
         items = _discover_pending_deliveries()
         assert items == []
         mock_upsert.assert_called_once_with(
@@ -277,14 +343,19 @@ class TestDiscoverPendingDeliveries:
         self, mock_db, _rec, _asm, mock_upsert,
     ):
         """Items with jira_phase='subtasks_done' should be marked
-        jira_completed and skipped from autonomous delivery."""
+        jira_completed and skipped from autonomous delivery.
+
+        Only ``jira_completed`` is set — confluence fields are NOT
+        passed so the delivery record's existing confluence state is
+        preserved (the workingIdeas doc may not have confluence_url
+        since it migrated to productRequirements).
+        """
         mock_db.return_value = _mock_db_with_docs([
             {
                 "run_id": "r1",
                 "status": "completed",
                 "idea": "Jira done",
                 "jira_phase": "subtasks_done",
-                "confluence_url": "https://wiki.test.com/p/1",
             },
         ])
         items = _discover_pending_deliveries()
@@ -292,8 +363,42 @@ class TestDiscoverPendingDeliveries:
         mock_upsert.assert_called_once_with(
             "r1",
             jira_completed=True,
-            confluence_published=True,
-            confluence_url="https://wiki.test.com/p/1",
+        )
+
+    @patch(_UPSERT_REC)
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value={
+        "run_id": "r1",
+        "confluence_published": True,
+        "confluence_url": "https://wiki.test.com/p/1",
+        "jira_completed": False,
+    })
+    @patch(_GET_DB)
+    def test_subtasks_done_preserves_confluence_state(
+        self, mock_db, _rec, _asm, mock_upsert,
+    ):
+        """Regression: When jira_phase='subtasks_done' and the delivery
+        record has confluence_published=True, the scan must NOT reset it.
+
+        Previously the scan read confluence_url from the workingIdeas
+        doc (which is empty after the save_confluence_url migration),
+        overwriting the delivery record with confluence_published=False.
+        """
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Published then Jira done",
+                "jira_phase": "subtasks_done",
+                # Note: NO confluence_url on workingIdeas doc
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert items == []
+        # Only jira_completed should be set — no confluence fields.
+        mock_upsert.assert_called_once_with(
+            "r1",
+            jira_completed=True,
         )
 
     @patch(f"{_MOD}._has_jira_credentials", return_value=True)

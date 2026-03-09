@@ -27,6 +27,7 @@ def build_post_completion_crew(
     flow: "PRDFlow",
     *,
     progress_callback: "Callable[[str], None] | None" = None,
+    confluence_only: bool = False,
 ) -> "Crew | None":
     """Build a multi-agent CrewAI Crew for post-PRD Atlassian delivery.
 
@@ -107,7 +108,8 @@ def build_post_completion_crew(
     # _run_post_completion / _run_startup_delivery ensures they only
     # execute after a verified publish.
     jira_needed = (
-        has_jira
+        not confluence_only
+        and has_jira
         and not jira_done
         and flow.state.final_prd
         and (confluence_done or confluence_needed)

@@ -156,7 +156,8 @@ src/crewai_productfeature_planner/orchestrator/
                            build_startup_markdown_review_stage,
                            build_startup_pipeline
   _startup_delivery.py     DeliveryItem, _discover_pending_deliveries,
-                           build_startup_delivery_crew(item, progress_callback)
+                           build_startup_delivery_crew(item, progress_callback,
+                                                       confluence_only)
 ```
 
 ### When to load which file
@@ -304,6 +305,86 @@ fixes a bug → `0.3.1` → user cuts release → `1.0.0`.
 
 The canonical version lives in `version.py` `_CODEX` list — append a
 new `CodexEntry` for each bump.
+
+### 5. Jira Approval Gate Invariant
+
+Jira tickets must **never** be created without explicit user approval.
+This critical invariant is enforced by 23 regression tests in
+`tests/flows/test_jira_approval_gate.py`.
+
+**Rules for all delivery code paths:**
+- **Autonomous paths** (`_run_auto_post_completion`, startup delivery
+  crews, CLI startup): Must pass `confluence_only=True` to crew builders.
+- **Interactive paths** (`_run_phased_post_completion`): Must use 3-phase
+  approval flow (skeleton → Epics/Stories → Sub-tasks) with user
+  interaction at each gate.
+- **Restart paths** (`execute_restart_prd`): Must pass `interactive=True`
+  to `kick_off_prd_flow`.
+
+**When adding new delivery paths**: Add a regression test to
+`test_jira_approval_gate.py` to verify the new path respects the gate.
+
+**Lesson learned** (v0.15.8): Adding a parameter like `confluence_only`
+is not enough — it must be propagated to ALL callers. Five distinct code
+paths were identified that could bypass the Jira approval gate. Always
+trace every caller chain end-to-end when adding safety gates.
+
+**Lesson learned** (v0.15.11): Don't just guard against Jira *creation*
+— also guard against Jira *state persistence*. `persist_post_completion()`
+was autonomously detecting Jira keywords in crew output and setting
+`jira_phase=subtasks_done` + `jira_completed=True`, causing the product
+list to show Jira as complete when the user never approved it. All
+autonomous Jira detection/persistence was removed from
+`persist_post_completion()`, `_cli_startup.py`, and `components/startup.py`.
+Only the interactive phased flow (`orchestrator/_jira.py`) may set these
+fields.
+
+### 6. One-Time Data Fix Scripts
+
+When a bug contaminates MongoDB data (e.g. stale flags, orphaned
+records), fix it with a **one-time script** in `scripts/`:
+
+1. **Create** the script (e.g. `scripts/fix_stale_jira_phase.py`).
+2. **Query first**: find affected documents and print them before making
+   changes. Use `find()` with a filter, never blanket updates.
+3. **Fix**: apply targeted `update_one` / `update_many` with explicit
+   filters (e.g. `{"jira_phase": "subtasks_done", "jira_skeleton": {"$exists": False}}`).
+4. **Verify**: re-query the same documents and print the corrected state.
+5. **Run** the script: `.venv/bin/python -m crewai_productfeature_planner.scripts.fix_stale_jira_phase`
+6. **Confirm** output shows the expected before/after state.
+7. **Delete** the script — it is single-use. Don't commit it.
+
+**Template** (adapt field names and filters):
+```python
+"""One-time fix: reset stale <field> on <collection>."""
+from crewai_productfeature_planner.mongodb.client import get_db
+
+def main():
+    db = get_db()
+    col = db["<collection>"]
+
+    # 1. Find affected docs
+    query = {"<field>": "<bad_value>", "<guard>": {"$exists": False}}
+    docs = list(col.find(query, {"_id": 0, "run_id": 1, "<field>": 1}))
+    print(f"Found {len(docs)} affected doc(s):", docs)
+
+    # 2. Fix
+    if docs:
+        result = col.update_many(query, {"$set": {"<field>": "<good_value>"}})
+        print(f"Updated {result.modified_count} doc(s)")
+
+    # 3. Verify
+    after = list(col.find({"run_id": {"$in": [d["run_id"] for d in docs]}},
+                          {"_id": 0, "run_id": 1, "<field>": 1}))
+    print("After fix:", after)
+
+if __name__ == "__main__":
+    main()
+```
+
+> **Rule**: Always delete the script after use. It documents the fix in
+> the git history if committed before deletion, but must not remain in
+> the tree as a runnable artifact.
 
 ---
 
@@ -519,8 +600,17 @@ Deep-thinking models for complex, multi-iteration tasks:
 
 ---
 
-## Recent Changes (2026-03-08)
+## Recent Changes (2026-03-09)
 
+- **Remove autonomous Jira detection** (v0.15.11): `persist_post_completion()`,
+  `_cli_startup.py`, and `components/startup.py` no longer detect Jira keywords
+  or set `jira_phase` / `jira_completed`. These fields are now exclusively
+  managed by the interactive phased flow (`orchestrator/_jira.py`). Fixed stale
+  `jira_phase='subtasks_done'` data via one-time fix script. Added one-time
+  data fix script pattern to Coding Standards.
+- **Fix delivery state reset** (v0.15.10): `_discover_pending_deliveries()`
+  was overwriting `confluence_published=False` on every scheduler sweep.
+  Fixed 3 locations to read from delivery record first.
 - **Obsidian knowledge base** (v0.15.4): Created Obsidian vault at
   `c9-prd-planner/C9 Product Ideas Planner` with 19 knowledge pages covering
   architecture, agents, APIs, flows, integrations, database, testing, and tools.
