@@ -186,6 +186,15 @@ def run_interactive_slack_flow(
         )
         flow.jira_review_callback = make_slack_jira_review_callback(run_id)
 
+        # Progress heartbeat — posts section-by-section updates to Slack
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            make_progress_poster,
+        )
+        progress_cb = make_progress_poster(
+            channel, thread_ts, user, send_tool, run_id=run_id,
+        )
+        flow.progress_callback = progress_cb
+
         # Register callbacks in the module-level registry so they
         # survive CrewAI's asyncio.to_thread (which can lose instance
         # attributes set after __init__).
@@ -199,6 +208,7 @@ def run_interactive_slack_flow(
             "executive_summary_callback": flow.executive_summary_callback,
             "jira_skeleton_approval_callback": flow.jira_skeleton_approval_callback,
             "jira_review_callback": flow.jira_review_callback,
+            "progress_callback": progress_cb,
         }
         if flow.idea_approval_callback is not None:
             _cb_kwargs["idea_approval_callback"] = flow.idea_approval_callback

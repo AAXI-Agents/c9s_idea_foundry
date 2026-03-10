@@ -402,6 +402,13 @@ class TestCreateProductManagerCritic:
             agent = create_product_manager_critic(project_id="test-project")
         assert agent.backstory == "enriched backstory"
 
+    def test_critic_no_knowledge_sources(self, monkeypatch):
+        """Critic must not use knowledge_sources — pure evaluation."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+        with _mock_build_critic_llm():
+            agent = create_product_manager_critic()
+        assert not getattr(agent, "knowledge_sources", None)
+
 
 class TestBuildCriticLlm:
     """Tests for _build_critic_llm."""

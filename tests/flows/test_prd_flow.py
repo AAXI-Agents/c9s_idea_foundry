@@ -89,6 +89,64 @@ def test_prd_draft_approved_context():
     assert "Brief summary" not in ctx_excluding
 
 
+def test_prd_draft_approved_context_exclude_keys():
+    """approved_context with exclude_keys should skip multiple sections."""
+    draft = PRDDraft.create_empty()
+    es = draft.get_section("executive_summary")
+    es.content = "Brief summary"
+    es.is_approved = True
+    ps = draft.get_section("problem_statement")
+    ps.content = "The problem is..."
+    ps.is_approved = True
+    up = draft.get_section("user_personas")
+    up.content = "Persona A"
+    up.is_approved = True
+
+    # Exclude both executive_summary and the current section
+    ctx = draft.approved_context(
+        exclude_keys={"executive_summary", "user_personas"},
+    )
+    assert "Brief summary" not in ctx
+    assert "The problem is..." in ctx
+    assert "Persona A" not in ctx
+
+
+def test_prd_draft_approved_context_condensed():
+    """approved_context_condensed should truncate section bodies."""
+    draft = PRDDraft.create_empty()
+    es = draft.get_section("executive_summary")
+    es.content = "A" * 1000
+    es.is_approved = True
+    ps = draft.get_section("problem_statement")
+    ps.content = "Short content"
+    ps.is_approved = True
+
+    ctx = draft.approved_context_condensed(char_limit=100)
+    # Executive summary should be truncated
+    assert "[...truncated]" in ctx
+    assert "A" * 100 in ctx
+    assert "A" * 101 not in ctx.split("[...truncated]")[0]
+    # Short content below limit should not be truncated
+    assert "Short content" in ctx
+
+
+def test_prd_draft_approved_context_condensed_exclude_keys():
+    """approved_context_condensed should respect exclude_keys."""
+    draft = PRDDraft.create_empty()
+    es = draft.get_section("executive_summary")
+    es.content = "Summary text"
+    es.is_approved = True
+    ps = draft.get_section("problem_statement")
+    ps.content = "Problem text"
+    ps.is_approved = True
+
+    ctx = draft.approved_context_condensed(
+        exclude_keys={"executive_summary"},
+    )
+    assert "Summary text" not in ctx
+    assert "Problem text" in ctx
+
+
 def test_prd_draft_all_sections_context():
     """all_sections_context should return all sections with content and their status."""
     draft = PRDDraft.create_empty()

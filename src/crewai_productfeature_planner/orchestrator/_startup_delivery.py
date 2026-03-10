@@ -67,23 +67,40 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
         jira_phase = doc.get("jira_phase", "")
         if jira_phase:
             if jira_phase == "subtasks_done":
-                # Interactive flow completed Jira — mark done.
-                # Only set jira_completed; preserve whatever confluence
-                # state the delivery record already has.  Reading
-                # confluence_url from the workingIdeas doc is wrong
-                # because that field was migrated to productRequirements.
+                # Interactive flow completed Jira — cross-validate
+                # against the delivery record before marking done.
+                # If the delivery record already has jira_completed
+                # or actual tickets, trust the phase.  Otherwise
+                # the phase marker is stale (leftover from pre-
+                # approval-gate code or incomplete data fix).
                 from crewai_productfeature_planner.mongodb.product_requirements import (
+                    get_delivery_record,
                     upsert_delivery_record,
                 )
-                upsert_delivery_record(
-                    run_id,
-                    jira_completed=True,
+                record = get_delivery_record(run_id)
+                has_tickets = bool(
+                    record and record.get("jira_tickets")
                 )
-                logger.info(
-                    "[StartupDelivery] run_id=%s — jira_phase is "
-                    "'subtasks_done'; marked jira_completed",
-                    run_id,
+                already_done = bool(
+                    record and record.get("jira_completed")
                 )
+                if has_tickets or already_done:
+                    upsert_delivery_record(
+                        run_id,
+                        jira_completed=True,
+                    )
+                    logger.info(
+                        "[StartupDelivery] run_id=%s — jira_phase is "
+                        "'subtasks_done'; marked jira_completed",
+                        run_id,
+                    )
+                else:
+                    logger.warning(
+                        "[StartupDelivery] run_id=%s — jira_phase is "
+                        "'subtasks_done' but no tickets exist and "
+                        "jira_completed is False; treating as stale",
+                        run_id,
+                    )
             else:
                 logger.info(
                     "[StartupDelivery] Skipping run_id=%s — interactive "

@@ -339,16 +339,45 @@ class TestDiscoverPendingDeliveries:
     @patch(_ASSEMBLE, return_value="# PRD content")
     @patch(_GET_REC, return_value=None)
     @patch(_GET_DB)
-    def test_marks_jira_completed_when_subtasks_done(
+    def test_stale_subtasks_done_not_marked_completed(
         self, mock_db, _rec, _asm, mock_upsert,
     ):
-        """Items with jira_phase='subtasks_done' should be marked
-        jira_completed and skipped from autonomous delivery.
+        """Regression: jira_phase='subtasks_done' with no delivery record
+        is stale — must NOT blindly set jira_completed=True.
+
+        This prevents :white_check_mark: Jira Ticketing from resurfacing
+        when one-time data fixes clean the delivery record but miss the
+        workingIdeas jira_phase field.
+        """
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Stale Jira phase",
+                "jira_phase": "subtasks_done",
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert items == []
+        mock_upsert.assert_not_called()
+
+    @patch(_UPSERT_REC)
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value={
+        "run_id": "r1",
+        "jira_completed": True,
+        "jira_tickets": [{"key": "PROJ-1"}],
+    })
+    @patch(_GET_DB)
+    def test_marks_jira_completed_when_subtasks_done_with_evidence(
+        self, mock_db, _rec, _asm, mock_upsert,
+    ):
+        """Items with jira_phase='subtasks_done' AND delivery record
+        confirming jira_completed should be marked done.
 
         Only ``jira_completed`` is set — confluence fields are NOT
         passed so the delivery record's existing confluence state is
-        preserved (the workingIdeas doc may not have confluence_url
-        since it migrated to productRequirements).
+        preserved.
         """
         mock_db.return_value = _mock_db_with_docs([
             {
@@ -371,7 +400,8 @@ class TestDiscoverPendingDeliveries:
         "run_id": "r1",
         "confluence_published": True,
         "confluence_url": "https://wiki.test.com/p/1",
-        "jira_completed": False,
+        "jira_completed": True,
+        "jira_tickets": [{"key": "PROJ-1"}],
     })
     @patch(_GET_DB)
     def test_subtasks_done_preserves_confluence_state(

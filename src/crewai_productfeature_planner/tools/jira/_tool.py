@@ -12,6 +12,38 @@ from crewai_productfeature_planner.tools.jira import _operations as _ops_mod
 
 logger = get_logger(__name__)
 
+# Canonical Jira issue type names.  The LLM often uses variant
+# spellings ("task", "Sub-Task", "subtask") — normalise them so
+# MongoDB always stores the correct display name.
+_ISSUE_TYPE_CANONICAL: dict[str, str] = {
+    "epic": "Epic",
+    "story": "Story",
+    "bug": "Bug",
+    "task": "Sub-task",
+    "sub-task": "Sub-task",
+    "subtask": "Sub-task",
+}
+
+
+def _normalise_issue_type(raw: str, *, has_parent: bool = False) -> str:
+    """Return the canonical Jira issue type for *raw*.
+
+    Falls back to ``"Story"`` when the input is empty or unrecognised,
+    except when *has_parent* is ``True`` (the issue has a ``parent_key``
+    or ``epic_key``), in which case the fallback is ``"Sub-task"``.
+    """
+    key = raw.strip().lower()
+    canonical = _ISSUE_TYPE_CANONICAL.get(key)
+    if canonical:
+        return canonical
+    # Exact-case match (e.g. "Story" as-is)
+    if raw.strip() in ("Epic", "Story", "Sub-task", "Bug"):
+        return raw.strip()
+    # Context-based inference
+    if has_parent:
+        return "Sub-task"
+    return "Story"
+
 # Lazy import to avoid circular dependency at module load time.
 # Imported here so tests can patch it at
 # ``crewai_productfeature_planner.tools.jira._tool.find_run_any_status``.
@@ -154,6 +186,12 @@ class JiraCreateIssueTool(BaseTool):
 
         # parent_key takes precedence for sub-tasks; epic_key is the fallback
         effective_parent = parent_key or epic_key
+
+        # Normalise the LLM-provided issue_type to a canonical value
+        # so MongoDB never stores "unknown", "task", "Sub-Task", etc.
+        issue_type = _normalise_issue_type(
+            issue_type, has_parent=bool(effective_parent and issue_type != "Epic"),
+        )
 
         # ── Resolve authoritative Confluence URL from MongoDB ─────
         # The LLM often hallucinates fake URLs (e.g.

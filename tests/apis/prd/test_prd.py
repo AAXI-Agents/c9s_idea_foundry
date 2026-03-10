@@ -1019,6 +1019,169 @@ def test_resume_auto_approve_skips_callback():
     assert mock_instance.approval_callback is None
 
 
+def test_resume_jira_callbacks_wired_to_flow():
+    """resume_prd_flow must set jira_skeleton_approval_callback and
+    jira_review_callback on the flow when provided."""
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+
+    runs.clear()
+    run = FlowRun(run_id="resume-jira-cb", flow_name="prd")
+    runs["resume-jira-cb"] = run
+
+    jira_skel_cb = MagicMock(name="jira_skeleton_cb")
+    jira_review_cb = MagicMock(name="jira_review_cb")
+
+    with (
+        patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.restore_prd_state"
+        ) as mock_restore,
+    ):
+        from crewai_productfeature_planner.apis.prd.models import (
+            ExecutiveSummaryDraft,
+            PRDDraft,
+        )
+        mock_restore.return_value = (
+            "idea",
+            PRDDraft.create_empty(),
+            ExecutiveSummaryDraft(),
+            "",
+            [],
+            [],
+        )
+        mock_instance = MagicMock()
+        mock_instance.kickoff.return_value = "# PRD"
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        resume_prd_flow(
+            "resume-jira-cb",
+            auto_approve=True,
+            jira_skeleton_approval_callback=jira_skel_cb,
+            jira_review_callback=jira_review_cb,
+        )
+
+    # Callbacks must be set on the flow instance
+    assert mock_instance.jira_skeleton_approval_callback == jira_skel_cb
+    assert mock_instance.jira_review_callback == jira_review_cb
+
+
+def test_resume_jira_callbacks_registered_in_registry():
+    """resume_prd_flow must register jira callbacks in the callback registry."""
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+    from crewai_productfeature_planner.flows.prd_flow import (
+        _get_registered_callback,
+        cleanup_callbacks,
+    )
+
+    runs.clear()
+    run = FlowRun(run_id="resume-reg-cb", flow_name="prd")
+    runs["resume-reg-cb"] = run
+
+    jira_skel_cb = MagicMock(name="jira_skeleton_cb")
+    jira_review_cb = MagicMock(name="jira_review_cb")
+
+    # Track which callbacks were registered before cleanup
+    registered = {}
+
+    original_cleanup = cleanup_callbacks.__wrapped__ if hasattr(cleanup_callbacks, "__wrapped__") else None
+
+    def spy_cleanup(rid):
+        # Capture what was registered before cleanup wipes it
+        registered["skel"] = _get_registered_callback(rid, "jira_skeleton_approval_callback")
+        registered["review"] = _get_registered_callback(rid, "jira_review_callback")
+
+    with (
+        patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.restore_prd_state"
+        ) as mock_restore,
+        patch(
+                "crewai_productfeature_planner.flows.prd_flow.cleanup_callbacks",
+                side_effect=spy_cleanup,
+        ),
+    ):
+        from crewai_productfeature_planner.apis.prd.models import (
+            ExecutiveSummaryDraft,
+            PRDDraft,
+        )
+        mock_restore.return_value = (
+            "idea",
+            PRDDraft.create_empty(),
+            ExecutiveSummaryDraft(),
+            "",
+            [],
+            [],
+        )
+        mock_instance = MagicMock()
+        mock_instance.kickoff.return_value = "# PRD"
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        resume_prd_flow(
+            "resume-reg-cb",
+            auto_approve=True,
+            jira_skeleton_approval_callback=jira_skel_cb,
+            jira_review_callback=jira_review_cb,
+        )
+
+    # Callbacks were in the registry (captured by spy before cleanup)
+    assert registered["skel"] is jira_skel_cb
+    assert registered["review"] is jira_review_cb
+
+
+def test_resume_without_jira_callbacks_omits_from_registry():
+    """resume_prd_flow without jira callbacks must not register them."""
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+    from crewai_productfeature_planner.flows.prd_flow import (
+        _get_registered_callback,
+    )
+
+    runs.clear()
+    run = FlowRun(run_id="resume-no-jira", flow_name="prd")
+    runs["resume-no-jira"] = run
+
+    # Track what was in the registry before cleanup wipes it
+    registered = {}
+
+    def spy_cleanup(rid):
+        registered["skel"] = _get_registered_callback(rid, "jira_skeleton_approval_callback")
+        registered["review"] = _get_registered_callback(rid, "jira_review_callback")
+
+    with (
+        patch("crewai_productfeature_planner.flows.prd_flow.PRDFlow") as MockFlow,
+        patch(
+            "crewai_productfeature_planner.apis.prd.service.restore_prd_state"
+        ) as mock_restore,
+        patch(
+                "crewai_productfeature_planner.flows.prd_flow.cleanup_callbacks",
+                side_effect=spy_cleanup,
+        ),
+    ):
+        from crewai_productfeature_planner.apis.prd.models import (
+            ExecutiveSummaryDraft,
+            PRDDraft,
+        )
+        mock_restore.return_value = (
+            "idea",
+            PRDDraft.create_empty(),
+            ExecutiveSummaryDraft(),
+            "",
+            [],
+            [],
+        )
+        mock_instance = MagicMock()
+        mock_instance.kickoff.return_value = "# PRD"
+        mock_instance.state = MagicMock()
+        MockFlow.return_value = mock_instance
+
+        resume_prd_flow("resume-no-jira", auto_approve=True)
+
+    # Jira callbacks were never registered (captured before cleanup)
+    assert registered["skel"] is None
+    assert registered["review"] is None
+
+
 # ── New fields: FlowRun / status-response ────────────────────
 
 

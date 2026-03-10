@@ -1,12 +1,15 @@
 """Tests for orchestrator._jira — Jira ticketing stage."""
 
 import pytest
+from unittest.mock import patch, MagicMock
 
 from crewai_productfeature_planner.flows.prd_flow import PRDFlow
 from crewai_productfeature_planner.orchestrator.orchestrator import StageResult
 from crewai_productfeature_planner.orchestrator._jira import (
     _extract_issue_keys,
     build_jira_ticketing_stage,
+    build_jira_epics_stories_stage,
+    build_jira_subtasks_stage,
 )
 
 
@@ -98,3 +101,96 @@ class TestJiraTicketingStage:
         stage.apply(result)
 
         assert flow.state.jira_output == "Epic: key=PRD-100\nStories: PRD-101, PRD-102"
+
+
+class TestEpicsStoriesStageApplyPersistence:
+    """Verify build_jira_epics_stories_stage._apply persists output to MongoDB."""
+
+    @pytest.fixture()
+    def _jira_env(self, monkeypatch):
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "PRD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+
+    def test_apply_persists_epics_stories_output(self, _jira_env):
+        """_apply must call save_jira_epics_stories_output with the crew output."""
+        flow = PRDFlow()
+        flow.state.run_id = "run-persist-test"
+        flow.state.final_prd = "# PRD"
+        flow.state.confluence_url = "https://wiki.example.com/p/1"
+        flow.state.jira_phase = "skeleton_approved"
+        flow.state.jira_skeleton = "## Epic 1"
+
+        stage = build_jira_epics_stories_stage(flow, require_confluence=False)
+        result = StageResult(output="Epic: PRD-100\nStories: PRD-101, PRD-102")
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas.repository.save_jira_epics_stories_output"
+        ) as mock_save, patch(
+            "crewai_productfeature_planner.orchestrator._jira._persist_jira_phase"
+        ):
+            stage.apply(result)
+
+        mock_save.assert_called_once_with(
+            "run-persist-test", "Epic: PRD-100\nStories: PRD-101, PRD-102",
+        )
+        assert flow.state.jira_epics_stories_output == "Epic: PRD-100\nStories: PRD-101, PRD-102"
+        assert flow.state.jira_phase == "epics_stories_done"
+
+    def test_apply_survives_save_failure(self, _jira_env):
+        """_apply must not crash when save_jira_epics_stories_output raises."""
+        flow = PRDFlow()
+        flow.state.run_id = "run-fail-test"
+        flow.state.final_prd = "# PRD"
+        flow.state.confluence_url = "https://wiki.example.com/p/1"
+        flow.state.jira_phase = "skeleton_approved"
+        flow.state.jira_skeleton = "## Epic 1"
+
+        stage = build_jira_epics_stories_stage(flow, require_confluence=False)
+        result = StageResult(output="Epic: PRD-200")
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas.repository.save_jira_epics_stories_output",
+            side_effect=RuntimeError("DB down"),
+        ), patch(
+            "crewai_productfeature_planner.orchestrator._jira._persist_jira_phase"
+        ):
+            stage.apply(result)  # must not raise
+
+        assert flow.state.jira_epics_stories_output == "Epic: PRD-200"
+
+
+class TestSubtasksStageResume:
+    """Verify the subtasks stage can resume using persisted epics_stories_output."""
+
+    @pytest.fixture()
+    def _jira_env(self, monkeypatch):
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net")
+        monkeypatch.setenv("JIRA_PROJECT_KEY", "PRD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+        monkeypatch.setenv("GOOGLE_API_KEY", "key")
+
+    def test_subtasks_skips_without_epics_output(self, _jira_env):
+        """Should skip when jira_epics_stories_output is empty."""
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD"
+        flow.state.confluence_url = "https://wiki.example.com/p/1"
+        flow.state.jira_phase = "subtasks_ready"
+        flow.state.jira_epics_stories_output = ""
+
+        stage = build_jira_subtasks_stage(flow, require_confluence=False)
+        assert stage.should_skip() is True
+
+    def test_subtasks_does_not_skip_with_restored_output(self, _jira_env):
+        """Should NOT skip when jira_epics_stories_output has been restored."""
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD"
+        flow.state.confluence_url = "https://wiki.example.com/p/1"
+        flow.state.jira_phase = "subtasks_ready"
+        flow.state.jira_epics_stories_output = "Epic: PRD-100\nStories: PRD-101"
+
+        stage = build_jira_subtasks_stage(flow, require_confluence=False)
+        assert stage.should_skip() is False

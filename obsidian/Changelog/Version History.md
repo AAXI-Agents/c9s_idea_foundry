@@ -2,10 +2,21 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
-## v0.15.x (2026-03-08 – 2026-03-09)
+## v0.16.x (2026-03-10)
 
 | Version | Summary |
 |---------|---------|
+| 0.16.1 | Fix post-completion flow not prompting user after resume — `handle_resume_prd()` was missing Jira callbacks, causing auto-publish instead of interactive phased flow; added `jira_skeleton_approval_callback` and `jira_review_callback` to `resume_prd_flow()`; 5 new tests (2150 total) |
+| 0.16.0 | Optimise PRD section generation performance — condensed prior-section context for refine tasks (titles+500 chars vs full text), exclude exec summary from approved_sections (dedup), remove knowledge_sources from critic agent; 4 new tests (2158 total) |
+
+## v0.15.x (2026-03-08 – 2026-03-10)
+
+| Version | Summary |
+|---------|---------|
+| 0.15.15 | Fix progress heartbeat not firing during interactive PRD flows — `run_interactive_slack_flow()` was missing `make_progress_poster()` callback; wired progress_cb to flow and callback registry; 3 new tests (2154 total) |
+| 0.15.14 | Add archive button to product list — completed ideas show `:file_folder: Archive` button; confirmation prompt reuses existing archive flow; wired in dispatch, handler, and Block Kit builder; 11 new tests (2151 total) |
+| 0.15.13 | Eliminate 'unknown' Jira ticket types — `_normalise_issue_type()` in `_tool.py` maps LLM variants ('task', 'Sub-Task', 'unknown') to canonical types; context-aware default (parent_key → Sub-task); 18 new tests (2140 total) |
+| 0.15.12 | Persist Jira Epics & Stories output to MongoDB for crash resilience — Sub-tasks stage can now resume after server restart; restores jira_skeleton and jira_epics_stories_output in _run_jira_phase(); 14 new tests (2122 total) |
 | 0.15.11 | Remove autonomous Jira detection — `persist_post_completion()`, `_cli_startup.py`, `components/startup.py` no longer set `jira_phase` / `jira_completed`; fixed stale data via one-time script; added data fix pattern to Coding Standards |
 | 0.15.10 | Fix delivery state reset — scheduler scan was overwriting `confluence_published` with False on every sweep |
 | 0.15.9 | Fix Confluence publish notification — heartbeat progress, Jira skeleton next-step button, button label corrected to "Create Jira Skeleton" |

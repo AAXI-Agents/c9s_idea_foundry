@@ -600,8 +600,47 @@ Deep-thinking models for complex, multi-iteration tasks:
 
 ---
 
-## Recent Changes (2026-03-09)
+## Recent Changes (2026-03-10)
 
+- **Fix post-completion flow not prompting user after resume** (v0.16.1):
+  `handle_resume_prd()` called `resume_prd_flow(auto_approve=True)` without
+  Jira callbacks, so `_finalization.py` fell to `_run_auto_post_completion()`
+  instead of the interactive phased flow. Added `jira_skeleton_approval_callback`
+  and `jira_review_callback` params to `resume_prd_flow()`, wired to flow
+  instance and callback registry. `handle_resume_prd()` now registers the
+  interactive run and builds Jira callbacks. 5 new tests (2150 total).
+- **Optimise PRD section generation performance** (v0.16.0): Three changes
+  reduce wall-clock runtime for later sections: (1) New
+  `approved_context_condensed()` sends titles + first 500 chars of prior
+  sections to refine tasks instead of full text — cuts research-model prompt
+  from ~30K to ~5K by section 9. (2) Exclude executive_summary from
+  `{approved_sections}` in critique/refine since it's already a separate
+  template param. (3) Remove knowledge_sources/embedder from critic agent —
+  pure evaluation doesn't need RAG. 4 new tests (2158 total).
+- **Fix progress heartbeat for interactive flows** (v0.15.15):
+  `run_interactive_slack_flow()` in `_flow_runner.py` was missing
+  `make_progress_poster()` callback — section-by-section Slack updates never
+  fired. Added progress_cb creation and wired into flow + callback registry.
+  3 new tests (2154 total).
+- **Add archive button to product list** (v0.15.14): Completed ideas now show
+  a `:file_folder: Archive` button in the product list. Clicking it posts a
+  confirmation prompt; on confirm the product is marked `status='archived'` and
+  excluded from future listings. Wired `product_archive_` prefix in dispatch
+  router, added `_handle_product_archive()` in the handler, and reuses the
+  existing `archive_idea_confirm`/`archive_idea_cancel` confirmation flow.
+  11 new tests (2151 total).
+- **Eliminate 'unknown' Jira ticket types** (v0.15.13): The JiraCreateIssueTool
+  now normalises LLM-provided `issue_type` values before persisting to MongoDB.
+  Root cause: the tool persisted the raw LLM type before the orchestrator could
+  write the correct hardcoded type — and `append_jira_ticket()` dedup meant the
+  first (wrong) write won. New `_normalise_issue_type()` maps variants like
+  'task', 'Sub-Task', 'subtask', 'unknown' to canonical Jira types. Context-
+  aware: `parent_key` set → default is 'Sub-task'. 18 new tests (2140 total).
+- **Persist Jira Epics & Stories output** (v0.15.12): `jira_epics_stories_output`
+  now persisted to MongoDB via `save_jira_epics_stories_output()` so the
+  Sub-tasks stage can resume after a server crash. `_run_jira_phase()` restores
+  `jira_skeleton` and `jira_epics_stories_output` from the MongoDB document
+  during state reconstruction. 14 new tests (2122 total).
 - **Remove autonomous Jira detection** (v0.15.11): `persist_post_completion()`,
   `_cli_startup.py`, and `components/startup.py` no longer detect Jira keywords
   or set `jira_phase` / `jira_completed`. These fields are now exclusively

@@ -529,11 +529,13 @@ def resume_prd_flow(
     exec_summary_user_feedback_callback: "Callable | None" = None,
     executive_summary_callback: "Callable | None" = None,
     requirements_approval_callback: "Callable | None" = None,
+    jira_skeleton_approval_callback: "Callable | None" = None,
+    jira_review_callback: "Callable | None" = None,
 ) -> None:
     """Resume a previously paused/unfinalized PRD flow from MongoDB state.
 
     When *auto_approve* is ``True`` the flow runs end-to-end without
-    pausing for manual approval.
+    pausing for manual approval of individual sections.
 
     When *requirements_approval_callback* is provided, the user is
     given a chance to approve or cancel after the requirements breakdown
@@ -545,6 +547,11 @@ def resume_prd_flow(
 
     When *executive_summary_callback* is provided, the user is given a
     final review gate between the executive summary and section drafting.
+
+    When *jira_skeleton_approval_callback* and *jira_review_callback*
+    are provided, the post-completion delivery uses the phased Jira
+    approach (skeleton approval → Epics & Stories → Sub-tasks) instead
+    of auto-publishing Confluence only.
     """
     from crewai_productfeature_planner.flows.prd_flow import (
         PauseRequested, PRDFlow, register_callbacks, cleanup_callbacks,
@@ -565,13 +572,17 @@ def resume_prd_flow(
     update_job_started(run_id)
 
     # Register callbacks in the module-level registry
-    register_callbacks(
-        run_id,
-        progress_callback=progress_callback,
-        exec_summary_user_feedback_callback=exec_summary_user_feedback_callback,
-        executive_summary_callback=executive_summary_callback,
-        requirements_approval_callback=requirements_approval_callback,
-    )
+    _cb_kwargs: dict = {
+        "progress_callback": progress_callback,
+        "exec_summary_user_feedback_callback": exec_summary_user_feedback_callback,
+        "executive_summary_callback": executive_summary_callback,
+        "requirements_approval_callback": requirements_approval_callback,
+    }
+    if jira_skeleton_approval_callback is not None:
+        _cb_kwargs["jira_skeleton_approval_callback"] = jira_skeleton_approval_callback
+    if jira_review_callback is not None:
+        _cb_kwargs["jira_review_callback"] = jira_review_callback
+    register_callbacks(run_id, **_cb_kwargs)
 
     flow: PRDFlow | None = None
     try:
@@ -597,6 +608,10 @@ def resume_prd_flow(
             flow.executive_summary_callback = executive_summary_callback
         if requirements_approval_callback is not None:
             flow.requirements_approval_callback = requirements_approval_callback
+        if jira_skeleton_approval_callback is not None:
+            flow.jira_skeleton_approval_callback = jira_skeleton_approval_callback
+        if jira_review_callback is not None:
+            flow.jira_review_callback = jira_review_callback
 
         # Set finalized_idea from the last executive summary iteration
         if exec_summary.latest_content:

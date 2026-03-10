@@ -1646,3 +1646,146 @@ class TestResolveConfluenceUrl:
         """When LLM provides the correct URL, no override needed."""
         result = _resolve_confluence_url(self.RUN_ID, self.REAL_URL)
         assert result == self.REAL_URL
+
+
+# ---------------------------------------------------------------------------
+# _normalise_issue_type — LLM input → canonical Jira type
+# ---------------------------------------------------------------------------
+
+
+class TestNormaliseIssueType:
+    """Verify LLM-provided issue_type values are mapped to canonical types."""
+
+    @staticmethod
+    def _normalise(raw: str, *, has_parent: bool = False) -> str:
+        from crewai_productfeature_planner.tools.jira._tool import (
+            _normalise_issue_type,
+        )
+        return _normalise_issue_type(raw, has_parent=has_parent)
+
+    # ── Canonical values pass through ─────────────────────────
+
+    def test_story_passthrough(self):
+        assert self._normalise("Story") == "Story"
+
+    def test_epic_passthrough(self):
+        assert self._normalise("Epic") == "Epic"
+
+    def test_subtask_passthrough(self):
+        assert self._normalise("Sub-task") == "Sub-task"
+
+    def test_bug_passthrough(self):
+        assert self._normalise("Bug") == "Bug"
+
+    # ── Common LLM variants ──────────────────────────────────
+
+    def test_task_becomes_subtask(self):
+        assert self._normalise("Task") == "Sub-task"
+
+    def test_lowercase_task(self):
+        assert self._normalise("task") == "Sub-task"
+
+    def test_subtask_no_hyphen(self):
+        assert self._normalise("subtask") == "Sub-task"
+
+    def test_sub_task_uppercase_T(self):
+        assert self._normalise("Sub-Task") == "Sub-task"
+
+    def test_lowercase_story(self):
+        assert self._normalise("story") == "Story"
+
+    def test_lowercase_epic(self):
+        assert self._normalise("epic") == "Epic"
+
+    # ── Unrecognised values ──────────────────────────────────
+
+    def test_empty_defaults_to_story(self):
+        assert self._normalise("") == "Story"
+
+    def test_unknown_defaults_to_story(self):
+        assert self._normalise("unknown") == "Story"
+
+    def test_garbage_defaults_to_story(self):
+        assert self._normalise("foobar") == "Story"
+
+    def test_empty_with_parent_defaults_to_subtask(self):
+        assert self._normalise("", has_parent=True) == "Sub-task"
+
+    def test_unknown_with_parent_defaults_to_subtask(self):
+        assert self._normalise("unknown", has_parent=True) == "Sub-task"
+
+
+class TestToolNormalisesTypeBeforePersist:
+    """Verify the tool normalises issue_type before storing in MongoDB."""
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_task_normalised_to_subtask_in_persistence(self, mock_create):
+        """LLM passing 'Task' must result in 'Sub-task' in MongoDB."""
+        mock_create.return_value = {
+            "issue_key": "PRD-300",
+            "issue_id": "30000",
+            "url": "https://example.atlassian.net/browse/PRD-300",
+            "reused": False,
+        }
+
+        tool = JiraCreateIssueTool()
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append:
+            tool._run(
+                summary="Some sub-task",
+                issue_type="Task",
+                parent_key="PRD-42",
+                run_id="test-run-norm",
+            )
+
+        mock_append.assert_called_once()
+        ticket = mock_append.call_args[0][1]
+        assert ticket["type"] == "Sub-task"
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_unknown_normalised_to_subtask_with_parent(self, mock_create):
+        """LLM passing 'unknown' with parent_key must result in 'Sub-task'."""
+        mock_create.return_value = {
+            "issue_key": "PRD-301",
+            "issue_id": "30100",
+            "url": "https://example.atlassian.net/browse/PRD-301",
+            "reused": False,
+        }
+
+        tool = JiraCreateIssueTool()
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append:
+            tool._run(
+                summary="Unknown type",
+                issue_type="unknown",
+                parent_key="PRD-42",
+                run_id="test-run-norm2",
+            )
+
+        ticket = mock_append.call_args[0][1]
+        assert ticket["type"] == "Sub-task"
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_unknown_without_parent_normalised_to_story(self, mock_create):
+        """LLM passing 'unknown' without parent must result in 'Story'."""
+        mock_create.return_value = {
+            "issue_key": "PRD-302",
+            "issue_id": "30200",
+            "url": "https://example.atlassian.net/browse/PRD-302",
+            "reused": False,
+        }
+
+        tool = JiraCreateIssueTool()
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append:
+            tool._run(
+                summary="Unknown standalone",
+                issue_type="unknown",
+                run_id="test-run-norm3",
+            )
+
+        ticket = mock_append.call_args[0][1]
+        assert ticket["type"] == "Story"

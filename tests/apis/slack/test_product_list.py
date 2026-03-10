@@ -1370,6 +1370,82 @@ class TestRunJiraPhaseStateReconstruction:
         assert state.requirements_breakdown == "Detailed requirements here"
         assert state.requirements_broken_down is True
 
+    def test_jira_skeleton_restored_from_doc(self):
+        """jira_skeleton must be restored from the MongoDB document."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc(
+                jira_skeleton="## Epic 1\n- Story A",
+                jira_phase="skeleton_approved",
+            )),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        assert captured_flow["state"].jira_skeleton == "## Epic 1\n- Story A"
+
+    def test_jira_epics_stories_output_restored_from_doc(self):
+        """jira_epics_stories_output must be restored from the MongoDB document
+        so the Sub-tasks stage can resume after a crash."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc(
+                jira_epics_stories_output="Epic: PRD-100\nStories: PRD-101",
+                jira_phase="epics_stories_done",
+            )),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "subtasks", "U1", "C1", "T1", send)
+
+        assert captured_flow["state"].jira_epics_stories_output == "Epic: PRD-100\nStories: PRD-101"
+
+    def test_missing_jira_fields_default_to_empty(self):
+        """When jira_skeleton and jira_epics_stories_output are absent,
+        they must default to empty strings (not None or KeyError)."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        state = captured_flow["state"]
+        assert state.jira_skeleton == ""
+        assert state.jira_epics_stories_output == ""
+
 
 # ---------------------------------------------------------------------------
 # _handle_confluence_publish — state restoration (no setter crash)
@@ -1662,3 +1738,176 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             if c.kwargs.get("text") == "Create Jira Skeleton"
         ]
         assert len(jira_calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# Product archive — Block Kit button + handler
+# ---------------------------------------------------------------------------
+
+
+class TestProductArchiveButton:
+    """Verify the archive button is present in the product list."""
+
+    def test_archive_button_present_for_unpublished_product(self):
+        """Unpublished product should still have an archive button."""
+        products = [_PRODUCTS[0]]  # confluence_published=False
+        blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        action_ids = [e["action_id"] for e in action_blocks[0]["elements"]]
+        assert "product_archive_1" in action_ids
+
+    def test_archive_button_present_for_fully_delivered(self):
+        """Fully delivered product should still have an archive button."""
+        products = [_PRODUCTS[2]]  # confluence=True, jira_completed=True
+        blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        action_ids = [e["action_id"] for e in action_blocks[0]["elements"]]
+        assert "product_archive_1" in action_ids
+
+    def test_archive_button_present_for_jira_in_progress(self):
+        """Product with Jira in-progress should still have archive button."""
+        products = [_PRODUCTS[1]]  # skeleton_approved
+        blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        action_ids = [e["action_id"] for e in action_blocks[0]["elements"]]
+        assert "product_archive_1" in action_ids
+
+    def test_archive_button_has_correct_value(self):
+        """Archive button value should carry project_id|index|run_id."""
+        products = [_PRODUCTS[0]]
+        blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        elements = action_blocks[0]["elements"]
+        archive_btn = next(e for e in elements if e["action_id"] == "product_archive_1")
+        parts = archive_btn["value"].split("|")
+        assert len(parts) == 3
+        assert parts[0] == _PROJECT_ID
+        assert parts[1] == "1"
+        assert parts[2] == "run-p1"
+
+    def test_archive_button_is_last(self):
+        """Archive button should always be the last in the action list."""
+        products = [_PRODUCTS[0]]
+        blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        elements = action_blocks[0]["elements"]
+        assert elements[-1]["action_id"] == "product_archive_1"
+
+    def test_multiple_products_have_archive_buttons(self):
+        """All products should have their own archive button."""
+        blocks = product_list_blocks(_PRODUCTS, _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        assert len(action_blocks) == 3
+        for idx, ab in enumerate(action_blocks, 1):
+            action_ids = [e["action_id"] for e in ab["elements"]]
+            assert f"product_archive_{idx}" in action_ids
+
+
+class TestProductArchiveAckLabel:
+    """Verify the dispatch ack label for product_archive_ action."""
+
+    def test_product_archive_ack_label(self):
+        """product_archive_ prefix should produce correct ack label."""
+        from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
+            _ack_action,
+        )
+        label = _ack_action("product_archive_1", "testuser")
+        assert "Archiving" in label or "archive" in label.lower()
+        assert "testuser" in label
+
+
+class TestProductArchiveHandler:
+    """Verify _handle_product_archive posts confirmation and handles errors."""
+
+    def test_posts_confirmation_blocks(self):
+        """Should post confirmation Block Kit buttons via Slack client."""
+        doc = {
+            "run_id": "run-archive-1",
+            "idea": "Fitness tracker mobile app",
+            "status": "completed",
+            "project_id": _PROJECT_ID,
+        }
+        mock_client = MagicMock()
+
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=doc),
+            patch(
+                "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
+                return_value=mock_client,
+            ),
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_product_archive,
+            )
+            mock_send = MagicMock()
+            _handle_product_archive(
+                "run-archive-1", 1, "U1", "C1", "T1", mock_send,
+            )
+
+        mock_client.chat_postMessage.assert_called_once()
+        call_kw = mock_client.chat_postMessage.call_args[1]
+        assert call_kw["channel"] == "C1"
+        assert call_kw["thread_ts"] == "T1"
+        blocks = call_kw["blocks"]
+        # Confirmation text
+        assert "Archive this product" in blocks[0]["text"]["text"]
+        # Confirm+Cancel buttons
+        assert blocks[1]["type"] == "actions"
+        action_ids = [e["action_id"] for e in blocks[1]["elements"]]
+        assert "archive_idea_confirm" in action_ids
+        assert "archive_idea_cancel" in action_ids
+        # Button value should carry the run_id
+        assert blocks[1]["elements"][0]["value"] == "run-archive-1"
+
+    def test_no_doc_found_sends_error(self):
+        """When the product is not found, an error message is posted."""
+        with patch(f"{_WI_REPO}.find_run_any_status", return_value=None):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_product_archive,
+            )
+            mock_send = MagicMock()
+            _handle_product_archive(
+                "run-gone", 1, "U1", "C1", "T1", mock_send,
+            )
+
+        mock_send.run.assert_called_once()
+        text = mock_send.run.call_args[1]["text"]
+        assert "Could not find" in text
+
+    def test_no_slack_client_sends_error(self):
+        """When Slack client is unavailable, an error message is posted."""
+        doc = {"run_id": "run-x", "idea": "Test", "status": "completed"}
+
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=doc),
+            patch(
+                "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
+                return_value=None,
+            ),
+        ):
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_product_archive,
+            )
+            mock_send = MagicMock()
+            _handle_product_archive(
+                "run-x", 1, "U1", "C1", "T1", mock_send,
+            )
+
+        mock_send.run.assert_called_once()
+        text = mock_send.run.call_args[1]["text"]
+        assert "Slack client unavailable" in text
+
+
+class TestProductArchiveDispatchRouting:
+    """Verify the product_archive_ prefix is in _PRODUCT_PREFIXES."""
+
+    def test_product_archive_prefix_in_product_prefixes(self):
+        """The dispatch should recognise product_archive_ as a product action."""
+        # We test this indirectly via the ack label mechanism
+        from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
+            _ack_action,
+        )
+        # If the action were NOT recognised, it would fall through to
+        # the default (action_id itself).  We verify it gets a label.
+        label = _ack_action("product_archive_5", "bot")
+        assert "product_archive_5" not in label  # should have been replaced

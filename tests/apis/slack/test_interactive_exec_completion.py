@@ -316,6 +316,214 @@ class TestInteractiveFlowRunnerExecSummaryCompleted:
 
 
 # ====================================================================
+# Interactive flow runner wires progress_callback (heartbeat)
+# ====================================================================
+
+_FLOW_HANDLERS = "crewai_productfeature_planner.apis.slack._flow_handlers"
+
+
+class TestInteractiveFlowRunnerProgressCallback:
+    """Verify run_interactive_slack_flow sets progress_callback on the flow."""
+
+    @patch(f"{_FLOW_HANDLERS}.make_progress_poster", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_jira_review_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_jira_skeleton_callback", return_value=MagicMock())
+    @patch(
+        f"{_FLOW_RUNNER}.make_slack_exec_summary_completion_callback",
+        return_value=MagicMock(),
+    )
+    @patch(
+        f"{_FLOW_RUNNER}.make_slack_exec_summary_feedback_callback",
+        return_value=MagicMock(),
+    )
+    @patch(f"{_FLOW_RUNNER}.make_slack_requirements_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_idea_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.wait_for_refinement_mode", return_value="agent")
+    @patch(f"{_FLOW_RUNNER}.register_interactive_run")
+    @patch(f"{_FLOW_RUNNER}.get_interactive_run", return_value={"cancelled": False})
+    @patch(f"{_FLOW_RUNNER}.cleanup_interactive_run")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.repository.create_job")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.update_job_started")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.update_job_completed")
+    @patch("crewai_productfeature_planner.tools.slack_tools.SlackSendMessageTool")
+    @patch("crewai_productfeature_planner.tools.slack_tools.SlackPostPRDResultTool")
+    def test_progress_callback_set_on_flow(
+        self,
+        _mock_post_tool,
+        _mock_send_tool,
+        _mock_completed,
+        _mock_started,
+        _mock_create_job,
+        _mock_cleanup,
+        _mock_get_run,
+        _mock_register,
+        _mock_wait_mode,
+        _mock_idea_cb,
+        _mock_req_cb,
+        _mock_feedback_cb,
+        _mock_completion_cb,
+        _mock_skeleton_cb,
+        _mock_jira_review_cb,
+        mock_progress_poster,
+    ):
+        """flow.progress_callback should be set via make_progress_poster."""
+        from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+
+        captured_flow = {}
+        original_init = PRDFlow.__init__
+
+        def patched_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            captured_flow["instance"] = self
+
+        with patch.object(PRDFlow, "__init__", patched_init):
+            with patch.object(PRDFlow, "kickoff", return_value="result"):
+                with patch(f"{_FLOW_RUNNER}._post_blocks"):
+                    from crewai_productfeature_planner.apis.slack.interactive_handlers._flow_runner import (
+                        run_interactive_slack_flow,
+                    )
+
+                    run_interactive_slack_flow(
+                        "test_progress_wire", "test idea", "C1", "T1", "U1",
+                        notify=False,
+                    )
+
+        flow = captured_flow.get("instance")
+        assert flow is not None
+        assert flow.progress_callback is mock_progress_poster.return_value
+
+    @patch(f"{_FLOW_HANDLERS}.make_progress_poster", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_jira_review_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_jira_skeleton_callback", return_value=MagicMock())
+    @patch(
+        f"{_FLOW_RUNNER}.make_slack_exec_summary_completion_callback",
+        return_value=MagicMock(),
+    )
+    @patch(
+        f"{_FLOW_RUNNER}.make_slack_exec_summary_feedback_callback",
+        return_value=MagicMock(),
+    )
+    @patch(f"{_FLOW_RUNNER}.make_slack_requirements_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_idea_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.wait_for_refinement_mode", return_value="agent")
+    @patch(f"{_FLOW_RUNNER}.register_interactive_run")
+    @patch(f"{_FLOW_RUNNER}.get_interactive_run", return_value={"cancelled": False})
+    @patch(f"{_FLOW_RUNNER}.cleanup_interactive_run")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.repository.create_job")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.update_job_started")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.update_job_completed")
+    @patch("crewai_productfeature_planner.tools.slack_tools.SlackSendMessageTool")
+    @patch("crewai_productfeature_planner.tools.slack_tools.SlackPostPRDResultTool")
+    def test_progress_callback_registered_in_registry(
+        self,
+        _mock_post_tool,
+        _mock_send_tool,
+        _mock_completed,
+        _mock_started,
+        _mock_create_job,
+        _mock_cleanup,
+        _mock_get_run,
+        _mock_register,
+        _mock_wait_mode,
+        _mock_idea_cb,
+        _mock_req_cb,
+        _mock_feedback_cb,
+        _mock_completion_cb,
+        _mock_skeleton_cb,
+        _mock_jira_review_cb,
+        mock_progress_poster,
+    ):
+        """progress_callback should be included in register_callbacks."""
+        from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+
+        with patch.object(PRDFlow, "kickoff", return_value="result"):
+            with patch(f"{_FLOW_RUNNER}._post_blocks"):
+                with patch(
+                    "crewai_productfeature_planner.flows.prd_flow.register_callbacks",
+                ) as mock_register_cb:
+                    with patch(
+                        "crewai_productfeature_planner.flows.prd_flow.cleanup_callbacks",
+                    ):
+                        from crewai_productfeature_planner.apis.slack.interactive_handlers._flow_runner import (
+                            run_interactive_slack_flow,
+                        )
+
+                        run_interactive_slack_flow(
+                            "test_progress_reg", "test idea", "C1", "T1", "U1",
+                            notify=False,
+                        )
+
+        mock_register_cb.assert_called_once()
+        call_kwargs = mock_register_cb.call_args
+        # register_callbacks(run_id, **_cb_kwargs)
+        assert call_kwargs[0][0] == "test_progress_reg"
+        assert "progress_callback" in call_kwargs[1]
+        assert call_kwargs[1]["progress_callback"] is mock_progress_poster.return_value
+
+    @patch(f"{_FLOW_HANDLERS}.make_progress_poster", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_jira_review_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_jira_skeleton_callback", return_value=MagicMock())
+    @patch(
+        f"{_FLOW_RUNNER}.make_slack_exec_summary_completion_callback",
+        return_value=MagicMock(),
+    )
+    @patch(
+        f"{_FLOW_RUNNER}.make_slack_exec_summary_feedback_callback",
+        return_value=MagicMock(),
+    )
+    @patch(f"{_FLOW_RUNNER}.make_slack_requirements_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.make_slack_idea_callback", return_value=MagicMock())
+    @patch(f"{_FLOW_RUNNER}.wait_for_refinement_mode", return_value="agent")
+    @patch(f"{_FLOW_RUNNER}.register_interactive_run")
+    @patch(f"{_FLOW_RUNNER}.get_interactive_run", return_value={"cancelled": False})
+    @patch(f"{_FLOW_RUNNER}.cleanup_interactive_run")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.repository.create_job")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.update_job_started")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.update_job_completed")
+    @patch("crewai_productfeature_planner.tools.slack_tools.SlackSendMessageTool")
+    @patch("crewai_productfeature_planner.tools.slack_tools.SlackPostPRDResultTool")
+    def test_make_progress_poster_called_with_correct_args(
+        self,
+        _mock_post_tool,
+        mock_send_tool,
+        _mock_completed,
+        _mock_started,
+        _mock_create_job,
+        _mock_cleanup,
+        _mock_get_run,
+        _mock_register,
+        _mock_wait_mode,
+        _mock_idea_cb,
+        _mock_req_cb,
+        _mock_feedback_cb,
+        _mock_completion_cb,
+        _mock_skeleton_cb,
+        _mock_jira_review_cb,
+        mock_progress_poster,
+    ):
+        """make_progress_poster should receive channel, thread_ts, user, send_tool, run_id."""
+        from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+
+        with patch.object(PRDFlow, "kickoff", return_value="result"):
+            with patch(f"{_FLOW_RUNNER}._post_blocks"):
+                from crewai_productfeature_planner.apis.slack.interactive_handlers._flow_runner import (
+                    run_interactive_slack_flow,
+                )
+
+                run_interactive_slack_flow(
+                    "test_progress_args", "test idea", "CH1", "TH1", "U1",
+                    notify=False,
+                )
+
+        mock_progress_poster.assert_called_once()
+        call_args = mock_progress_poster.call_args
+        assert call_args[0][0] == "CH1"         # channel
+        assert call_args[0][1] == "TH1"         # thread_ts
+        assert call_args[0][2] == "U1"          # user
+        assert call_args[1]["run_id"] == "test_progress_args"
+
+
+# ====================================================================
 # Export check
 # ====================================================================
 

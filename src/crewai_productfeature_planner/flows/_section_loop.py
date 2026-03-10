@@ -159,6 +159,9 @@ def section_approval_loop(
                 "critic" if critic_agent is not None
                 else next((n for n, a in agents.items() if a is critic), selected),
             )
+            # Exclude executive_summary from approved_sections — it is
+            # already injected as the separate {executive_summary} param.
+            _excl = {section.key, "executive_summary"}
             critique_task = Task(
                 description=task_configs["critique_section_task"][
                     "description"
@@ -166,7 +169,7 @@ def section_approval_loop(
                     section_title=section.title,
                     critique_section_content=section.content,
                     executive_summary=flow.state.executive_summary.latest_content or "(Not yet available)",
-                    approved_sections=flow.state.draft.approved_context(exclude_key=section.key) or "(None yet)",
+                    approved_sections=flow.state.draft.approved_context(exclude_keys=_excl) or "(None yet)",
                 ),
                 expected_output=task_configs["critique_section_task"][
                     "expected_output"
@@ -249,6 +252,11 @@ def section_approval_loop(
             section.step, total_steps, section.title,
             section.iteration,
         )
+        # Use *condensed* approved context for the refine task.
+        # The research model is the latency bottleneck; feeding it
+        # the full text of every prior section causes O(n) growth
+        # per LLM call.  The condensed version keeps section titles
+        # + first 500 chars, enough for consistency without bloat.
         refine_task = Task(
             description=task_configs["refine_section_task"][
                 "description"
@@ -257,7 +265,7 @@ def section_approval_loop(
                 section_content=section.content,
                 critique_section_content=flow.state.critique,
                 executive_summary=flow.state.executive_summary.latest_content or "(Not yet available)",
-                approved_sections=flow.state.draft.approved_context(exclude_key=section.key) or "(None yet)",
+                approved_sections=flow.state.draft.approved_context_condensed(exclude_keys=_excl) or "(None yet)",
             ),
             expected_output=task_configs["refine_section_task"][
                 "expected_output"

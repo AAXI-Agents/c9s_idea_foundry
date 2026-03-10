@@ -270,3 +270,199 @@ Removed all autonomous Jira detection/persistence from 3 files:
 - `obsidian/Sessions/Session Log.md` — This entry
 
 ---
+
+## Session 007 — 2026-03-10
+
+**Scope**: Jira Epics & Stories Output Persistence for Crash Resilience
+**Version**: v0.15.11 → v0.15.12
+
+### Problem
+`jira_epics_stories_output` was only stored in-memory on `flow.state` and never persisted to MongoDB. If the server crashed after Phase 2 (Epics & Stories) but before Phase 3 (Sub-tasks), the Sub-tasks stage would skip because `flow.state.jira_epics_stories_output` was empty after resume. Additionally, `_run_jira_phase()` did not restore `jira_skeleton` or `jira_epics_stories_output` from MongoDB when reconstructing flow state.
+
+### Fix
+1. **New MongoDB functions** — `save_jira_epics_stories_output()` / `get_jira_epics_stories_output()` in `_status.py`, matching the skeleton persistence pattern
+2. **Persist on creation** — `build_jira_epics_stories_stage._apply()` now calls `save_jira_epics_stories_output()` alongside `_persist_jira_phase()`
+3. **Restore on resume** — `_run_jira_phase()` now restores `jira_skeleton` and `jira_epics_stories_output` from the MongoDB document during state reconstruction
+
+### Tests Added (14 new, 2122 total)
+- `TestSaveJiraEpicsStoriesOutput` (8 tests) — MongoDB save/get, error handling
+- `TestEpicsStoriesStageApplyPersistence` (2 tests) — _apply persists output, survives save failure
+- `TestSubtasksStageResume` (2 tests) — subtasks skips without output, does not skip with restored output
+- `TestRunJiraPhaseStateReconstruction` (3 tests) — jira_skeleton restored, epics_stories_output restored, missing fields default to empty
+
+### Files Modified
+- `src/.../mongodb/working_ideas/_status.py` — Added save/get for jira_epics_stories_output
+- `src/.../mongodb/working_ideas/repository.py` — Re-exported new functions
+- `src/.../orchestrator/_jira.py` — Persist output in epics_stories _apply()
+- `src/.../apis/slack/interactions_router/_product_list_handler.py` — Restore jira_skeleton + jira_epics_stories_output
+- `tests/orchestrator/test_jira.py` — 4 new tests
+- `tests/mongodb/working_ideas/test_repository.py` — 8 new tests
+- `tests/apis/slack/test_product_list.py` — 3 new tests (state reconstruction)
+- `src/.../version.py` — v0.15.12
+
+---
+
+## Session 007b — 2026-03-10
+
+**Scope**: Eliminate 'unknown' Jira Ticket Types
+**Version**: v0.15.12 → v0.15.13
+
+### Problem
+`JiraCreateIssueTool` persisted the raw LLM-provided `issue_type` to MongoDB before the orchestrator could write the correct hardcoded type. Since `append_jira_ticket()` deduplicates by key, the first (wrong) write won — resulting in "unknown", "Task", "Sub-Task", etc. in the database.
+
+### Root Cause
+Two code paths write tickets to MongoDB:
+1. **JiraCreateIssueTool._run()** — writes during crew execution with whatever `issue_type` the LLM provides (first write wins)
+2. **Orchestrator _jira.py** — writes after crew completes with hardcoded correct types, but dedup silently skips since key already exists
+
+### Fix
+Added `_normalise_issue_type()` in `_tool.py` that maps all LLM variants to canonical types before persistence:
+- `"task"`, `"Task"` → `"Sub-task"`
+- `"subtask"`, `"Sub-Task"` → `"Sub-task"`
+- `"story"` → `"Story"`, `"epic"` → `"Epic"`
+- `""`, `"unknown"`, unrecognised → `"Story"` (or `"Sub-task"` when `parent_key` is set)
+
+### Tests Added (18 new, 2140 total)
+- `TestNormaliseIssueType` (14 tests) — all variants and edge cases
+- `TestToolNormalisesTypeBeforePersist` (4 tests) — end-to-end tool → MongoDB verification
+
+### Files Modified
+- `src/.../tools/jira/_tool.py` — Added `_normalise_issue_type()`, called in `_run()` before API call and persistence
+- `tests/tools/test_jira_tool.py` — 18 new tests
+- `src/.../version.py` — v0.15.13
+- `tests/test_version.py` — Updated version assertion
+
+---
+
+## Session 007c — 2026-03-10
+
+**Scope**: Add Archive Button to Product List
+**Version**: v0.15.13 → v0.15.14
+
+### Problem
+The product list (completed ideas) had no way for users to archive an idea. Archive was only available in the idea list (in-progress ideas). Users could not remove completed products from future "list products" lookups.
+
+### Fix
+Added a `:file_folder: Archive #N` button to every product in the product list Block Kit builder. The button triggers a confirmation prompt (reusing the existing `archive_idea_confirm` / `archive_idea_cancel` flow). On confirmation, the working idea is marked `status="archived"` and excluded from future queries (which filter on `status="completed"`).
+
+Changes:
+1. **Block Kit builder** — Added archive button as the last element in every product's action row
+2. **Dispatch router** — Added `product_archive_` to `_PRODUCT_PREFIXES` and ack label
+3. **Product list handler** — Added `_handle_product_archive()` that looks up the product, posts confirmation blocks with the run_id, and reuses the existing archive confirmation flow
+
+### Tests Added (11 new, 2151 total)
+- `TestProductArchiveButton` (6 tests) — button presence, value format, ordering
+- `TestProductArchiveAckLabel` (1 test) — dispatch ack label
+- `TestProductArchiveHandler` (3 tests) — confirmation posting, error cases
+- `TestProductArchiveDispatchRouting` (1 test) — prefix recognition
+
+### Files Modified
+- `src/.../apis/slack/blocks/_product_list_blocks.py` — Archive button added
+- `src/.../apis/slack/interactions_router/_dispatch.py` — product_archive_ prefix + ack label
+- `src/.../apis/slack/interactions_router/_product_list_handler.py` — _handle_product_archive()
+- `tests/apis/slack/test_product_list.py` — 11 new tests
+- `src/.../version.py` — v0.15.14
+- `tests/test_version.py` — Updated version assertion
+
+---
+
+## Session 008 — 2026-03-10
+
+**Scope**: Fix Progress Heartbeat Not Firing During Interactive PRD Flows
+**Version**: v0.15.14 → v0.15.15
+
+### Problem
+During long-running PRD generation flows initiated via the interactive Slack path, users received no section-by-section progress updates. The heartbeat system (which posts messages like ":writing_hand: Drafting section 3/10: User Personas") was originally implemented but had stopped working for the interactive flow path.
+
+### Root Cause
+`run_interactive_slack_flow()` in `_flow_runner.py` never called `make_progress_poster()` to create a progress callback, and never set `flow.progress_callback`. The non-interactive path (`router.py` line 169) and resume path (`_flow_handlers.py` line 1031) both correctly created and wired the progress callback — only the interactive path was broken. Log evidence: `[Callbacks] progress=False` for interactive runs.
+
+### Fix
+Added to `_flow_runner.py`:
+1. Import `make_progress_poster` from `_flow_handlers`
+2. Create `progress_cb = make_progress_poster(channel, thread_ts, user, send_tool, run_id=run_id)`
+3. Set `flow.progress_callback = progress_cb`
+4. Include `"progress_callback": progress_cb` in the `_cb_kwargs` registry dict
+
+### Tests Added (3 new, 2154 total)
+- `test_progress_callback_set_on_flow` — verifies flow.progress_callback is set
+- `test_progress_callback_registered_in_registry` — verifies register_callbacks includes progress_callback
+- `test_make_progress_poster_called_with_correct_args` — verifies correct channel/thread/user/run_id passed
+
+### Files Modified
+- `src/.../apis/slack/interactive_handlers/_flow_runner.py` — Added progress_cb creation + registry wiring
+- `tests/apis/slack/test_interactive_exec_completion.py` — 3 new tests
+- `src/.../version.py` — v0.15.15
+- `tests/test_version.py` — Updated version assertion
+
+---
+
+## Session 009 — 2026-03-10
+
+**Scope**: Optimise PRD Section Generation Performance
+**Version**: v0.15.15 → v0.16.0
+
+### Problem
+Log analysis of run 67aca7dc0697 showed section generation times growing dramatically:
+- Problem Statement: 5 min (3 iterations)
+- Non-Functional Requirements: 10 min (3 iterations)
+- Edge Cases: 15 min (5 iterations)
+- Error Handling: 21 min (3 iterations, draft alone 9 min)
+
+### Root Causes
+1. **Context bloat**: `approved_context()` sent full text of ALL prior approved sections to both critique and refine tasks. By section 7, prompts included ~30K+ chars of prior context.
+2. **Executive summary double-counted**: Included in both `{executive_summary}` param AND in `{approved_sections}` (since it's the first approved section).
+3. **Critic agent had knowledge_sources/embedder**: Unnecessary RAG overhead for a pure evaluation agent.
+
+### Optimizations
+1. **Condensed prior-section context for refine tasks** — New `approved_context_condensed()` method on PRDDraft sends only section titles + first 500 chars instead of full text. Applied only to refine tasks (research model = bottleneck). Critique tasks keep full context (flash model, needs duplication checking).
+2. **Exclude executive_summary from approved_sections** — Both critique and refine tasks now pass `exclude_keys={"executive_summary", section.key}` since exec summary is already a separate template parameter.
+3. **Remove knowledge_sources/embedder from critic** — Pure evaluation agent doesn't need RAG retrieval.
+
+### Tests Added (4 new, 2158 total)
+- `test_prd_draft_approved_context_exclude_keys` — multiple exclusion keys
+- `test_prd_draft_approved_context_condensed` — truncation behavior
+- `test_prd_draft_approved_context_condensed_exclude_keys` — condensed + exclusion
+- `test_critic_no_knowledge_sources` — critic agent purity
+
+### Files Modified
+- `src/.../apis/prd/_domain.py` — Added `approved_context_condensed()`, updated `approved_context()` with `exclude_keys` param
+- `src/.../flows/_section_loop.py` — Use condensed context for refine, exclude exec summary from both
+- `src/.../agents/product_manager/agent.py` — Removed knowledge_sources/embedder from critic
+- `tests/flows/test_prd_flow.py` — 3 new tests
+- `tests/agents/test_product_manager.py` — 1 new test
+- `src/.../version.py` — v0.16.0
+- `tests/test_version.py` — Updated version assertion
+
+---
+
+## Session 010 — 2026-03-10
+
+**Scope**: Fix Post-Completion Flow Not Prompting User After Resume
+**Version**: v0.16.0 → v0.16.1
+
+### Problem
+After PRD sections completed via resume, Confluence and Jira tickets were created automatically without prompting the user. The `auto_approve=True` flag (intended only for section auto-acceptance) was causing the entire post-completion delivery to bypass approval gates.
+
+### Root Cause
+`handle_resume_prd()` in `_flow_handlers.py` called `resume_prd_flow(auto_approve=True)` without Jira callbacks. `resume_prd_flow()` in `service.py` didn't even accept Jira callback parameters. When `_finalization.py`'s `run_post_completion()` found no `jira_skeleton_approval_callback`, it fell to `_run_auto_post_completion()` which auto-published Confluence without user interaction.
+
+### Fix
+1. **service.py**: Added `jira_skeleton_approval_callback` and `jira_review_callback` params to `resume_prd_flow()`, wired to flow instance and callback registry
+2. **_flow_handlers.py**: `handle_resume_prd()` now calls `register_interactive_run()`, builds Jira callbacks via factory functions, passes them to `resume_prd_flow()`, and cleans up via `cleanup_interactive_run()` in finally block
+
+### Tests Added (5 new, 2150 total)
+- `test_resume_builds_jira_callbacks` — handler builds factory callbacks with correct run_id
+- `test_resume_registers_interactive_run` — handler stores channel/thread_ts for Slack callbacks
+- `test_resume_jira_callbacks_wired_to_flow` — service wires callbacks to flow instance
+- `test_resume_jira_callbacks_registered_in_registry` — service registers callbacks (spy before cleanup)
+- `test_resume_without_jira_callbacks_omits_from_registry` — service omits absent callbacks
+
+### Files Modified
+- `src/.../apis/prd/service.py` — Added Jira callback params to `resume_prd_flow()`
+- `src/.../apis/slack/_flow_handlers.py` — Wired interactive run + Jira callbacks in `handle_resume_prd()`
+- `tests/flows/test_jira_approval_gate.py` — 2 new handler-level tests
+- `tests/apis/prd/test_prd.py` — 3 new service-level tests
+- `src/.../version.py` — v0.16.1
+
+---

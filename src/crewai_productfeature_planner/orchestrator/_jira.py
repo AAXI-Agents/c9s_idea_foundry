@@ -373,6 +373,17 @@ def build_jira_epics_stories_stage(
         flow.state.jira_epics_stories_output = result.output
         flow.state.jira_phase = "epics_stories_done"
         _persist_jira_phase(flow.state.run_id, "epics_stories_done")
+        try:
+            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                save_jira_epics_stories_output,
+            )
+            save_jira_epics_stories_output(flow.state.run_id, result.output)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "[JiraEpicsStories] Failed to persist epics_stories_output "
+                "for run_id=%s",
+                flow.state.run_id,
+            )
         logger.info(
             "[JiraEpicsStories] Epics and Stories created (%d chars) — "
             "paused for review before sub-task creation",

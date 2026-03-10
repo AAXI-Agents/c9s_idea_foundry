@@ -234,6 +234,17 @@ def product_list_blocks(
                 },
             )
 
+        # Archive button — always available so users can remove a
+        # product from the list without deleting it.
+        elements.append(
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": f":file_folder: Archive #{idx}"},
+                "action_id": f"product_archive_{idx}",
+                "value": btn_value,
+            },
+        )
+
         blocks.append(
             {
                 "type": "actions",

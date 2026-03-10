@@ -1967,9 +1967,39 @@ class TestDocToProductDict:
         assert result["jira_completed"] is False
 
     def test_subtasks_done_always_completed(self):
-        """jira_phase='subtasks_done' means done, even without delivery."""
+        """jira_phase='subtasks_done' with jira_completed=True in delivery
+        means done — even without ticket records (e.g. review skip)."""
+        doc = {**self._BASE_DOC, "jira_phase": "subtasks_done"}
+        delivery = {"jira_completed": True, "jira_tickets": []}
+        result = self._call(doc, delivery)
+        assert result["jira_completed"] is True
+
+    def test_subtasks_done_stale_without_evidence(self):
+        """Regression: jira_phase='subtasks_done' but delivery has no
+        tickets and jira_completed=False → stale data, should be False.
+
+        This prevents the :white_check_mark: Jira Ticketing resurfacing
+        when a one-time data fix cleaned the delivery record but missed
+        the workingIdeas jira_phase field.
+        """
+        doc = {**self._BASE_DOC, "jira_phase": "subtasks_done"}
+        delivery = {"jira_completed": False, "jira_tickets": []}
+        result = self._call(doc, delivery)
+        assert result["jira_completed"] is False
+
+    def test_subtasks_done_no_delivery_record(self):
+        """Regression: jira_phase='subtasks_done' with no delivery record
+        at all is stale — should be False."""
         doc = {**self._BASE_DOC, "jira_phase": "subtasks_done"}
         result = self._call(doc, None)
+        assert result["jira_completed"] is False
+
+    def test_subtasks_done_with_tickets_but_not_marked(self):
+        """jira_phase='subtasks_done' with tickets in delivery → True,
+        even if jira_completed not explicitly set."""
+        doc = {**self._BASE_DOC, "jira_phase": "subtasks_done"}
+        delivery = {"jira_completed": False, "jira_tickets": [{"key": "P-1"}]}
+        result = self._call(doc, delivery)
         assert result["jira_completed"] is True
 
 
@@ -2227,6 +2257,113 @@ class TestSaveJiraSkeleton:
             side_effect=PyMongoError("connection failed"),
         ):
             result = get_jira_skeleton("run-abc")
+            assert result == ""
+
+
+# ── save/get_jira_epics_stories_output ────────────────────────
+
+
+class TestSaveJiraEpicsStoriesOutput:
+    """Tests for save_jira_epics_stories_output and get_jira_epics_stories_output."""
+
+    def test_saves_output_text(self, wi_mocks):
+        """Should persist epics/stories output on the working-idea document."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_jira_epics_stories_output,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+
+        result = save_jira_epics_stories_output("run-abc", "Epic: PRD-1\nStories: PRD-2")
+
+        assert result == 1
+        call_args = mock_collection.update_one.call_args
+        assert call_args[0][0] == {"run_id": "run-abc"}
+        set_fields = call_args[0][1]["$set"]
+        assert set_fields["jira_epics_stories_output"] == "Epic: PRD-1\nStories: PRD-2"
+        assert "update_date" in set_fields
+
+    def test_returns_zero_on_no_match(self, wi_mocks):
+        """Should return 0 when no document matches."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_jira_epics_stories_output,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(modified_count=0)
+
+        result = save_jira_epics_stories_output("nonexistent", "output")
+        assert result == 0
+
+    def test_returns_zero_on_db_error(self, wi_mocks):
+        """Should catch PyMongoError and return 0."""
+        from pymongo.errors import PyMongoError
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            save_jira_epics_stories_output,
+        )
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = save_jira_epics_stories_output("run-abc", "output")
+            assert result == 0
+
+    def test_get_output_returns_text(self, wi_mocks):
+        """Should return the stored epics/stories output text."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_epics_stories_output,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = {
+            "jira_epics_stories_output": "Epic: PRD-1\nStories: PRD-2",
+        }
+
+        result = get_jira_epics_stories_output("run-abc")
+        assert result == "Epic: PRD-1\nStories: PRD-2"
+        mock_collection.find_one.assert_called_once_with(
+            {"run_id": "run-abc"},
+            {"jira_epics_stories_output": 1},
+        )
+
+    def test_get_output_returns_empty_when_missing(self, wi_mocks):
+        """Should return empty string when field is absent."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_epics_stories_output,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = {}
+
+        result = get_jira_epics_stories_output("run-abc")
+        assert result == ""
+
+    def test_get_output_returns_empty_on_no_doc(self, wi_mocks):
+        """Should return empty string when document doesn't exist."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_epics_stories_output,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+
+        result = get_jira_epics_stories_output("run-abc")
+        assert result == ""
+
+    def test_get_output_returns_empty_on_db_error(self, wi_mocks):
+        """Should catch PyMongoError and return empty string."""
+        from pymongo.errors import PyMongoError
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            get_jira_epics_stories_output,
+        )
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = get_jira_epics_stories_output("run-abc")
             assert result == ""
 
 

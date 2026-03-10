@@ -687,3 +687,109 @@ class TestApiPathNoJira:
         run_post_completion(flow)
 
         mock_build.assert_called_once_with(flow, confluence_only=True)
+
+
+# ====================================================================
+# 11. handle_resume_prd passes Jira callbacks to resume_prd_flow
+# ====================================================================
+
+_RESUME_SERVICE = "crewai_productfeature_planner.apis.prd.service.resume_prd_flow"
+_SAVE_CTX = (
+    "crewai_productfeature_planner.mongodb.working_ideas.repository"
+    ".save_slack_context"
+)
+
+
+class TestResumePathPassesJiraCallbacks:
+    """handle_resume_prd must register interactive state and pass Jira
+    callbacks to resume_prd_flow so post-completion uses phased delivery."""
+
+    @patch(f"{_HANDLERS}.threading")
+    @patch(
+        "crewai_productfeature_planner.apis.slack.interactive_handlers"
+        ".make_slack_jira_review_callback",
+        return_value=MagicMock(name="jira_review_cb"),
+    )
+    @patch(
+        "crewai_productfeature_planner.apis.slack.interactive_handlers"
+        ".make_slack_jira_skeleton_callback",
+        return_value=MagicMock(name="jira_skel_cb"),
+    )
+    @patch(_SAVE_CTX)
+    @patch(
+        "crewai_productfeature_planner.mongodb.find_unfinalized",
+        return_value=[{
+            "run_id": "resume-jira-test",
+            "idea": "Test idea",
+            "status": "paused",
+            "sections_done": 9,
+            "total_sections": 10,
+        }],
+    )
+    def test_resume_builds_jira_callbacks(
+        self, _find, _save, mock_skel_factory, mock_review_factory,
+        mock_threading,
+    ):
+        """handle_resume_prd must build Jira callback factories."""
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            handle_resume_prd,
+        )
+
+        send_tool = MagicMock()
+        mock_threading.Thread.return_value = MagicMock()
+
+        handle_resume_prd("C1", "T1", "U1", send_tool)
+
+        # Jira callback factories must have been called
+        mock_skel_factory.assert_called_once_with("resume-jira-test")
+        mock_review_factory.assert_called_once_with("resume-jira-test")
+
+        # Thread must have been created and started
+        assert mock_threading.Thread.called
+
+        # Cleanup
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            cleanup_interactive_run,
+        )
+        cleanup_interactive_run("resume-jira-test")
+
+    @patch(f"{_HANDLERS}.threading")
+    @patch(_SAVE_CTX)
+    @patch(
+        "crewai_productfeature_planner.mongodb.find_unfinalized",
+        return_value=[{
+            "run_id": "resume-interactive-test",
+            "idea": "Test idea 2",
+            "status": "paused",
+            "sections_done": 5,
+            "total_sections": 10,
+        }],
+    )
+    def test_resume_registers_interactive_run(
+        self, _find, _save, mock_threading,
+    ):
+        """handle_resume_prd must register an interactive run so Jira
+        callbacks can look up channel/thread_ts."""
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            handle_resume_prd,
+        )
+        from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state import (
+            get_interactive_run,
+        )
+
+        send_tool = MagicMock()
+        mock_threading.Thread.return_value = MagicMock()
+
+        handle_resume_prd("C-resume", "T-resume", "U1", send_tool)
+
+        # The run_id for the unfinalized idea
+        info = get_interactive_run("resume-interactive-test")
+        assert info is not None
+        assert info["channel"] == "C-resume"
+        assert info["thread_ts"] == "T-resume"
+
+        # Cleanup
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            cleanup_interactive_run,
+        )
+        cleanup_interactive_run("resume-interactive-test")

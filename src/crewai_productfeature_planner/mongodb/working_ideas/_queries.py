@@ -511,8 +511,12 @@ def _doc_to_product_dict(doc: dict[str, Any], delivery: dict[str, Any] | None) -
         # Interactive flow is in progress — not done yet.
         base["jira_completed"] = False
     elif jira_phase == "subtasks_done":
-        # Interactive flow completed — trust the phase marker.
-        base["jira_completed"] = True
+        # Interactive flow completed — but cross-validate against the
+        # delivery record.  If the delivery record has no tickets AND
+        # does not confirm jira_completed, the phase marker is stale
+        # (e.g. leftover from pre-approval-gate code or a data fix
+        # that only partially cleaned up).
+        base["jira_completed"] = bool(raw_jira_done or jira_tickets)
     elif raw_jira_done and not jira_tickets:
         # No interactive flow, delivery says done but zero tickets — bogus.
         base["jira_completed"] = False

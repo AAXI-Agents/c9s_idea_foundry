@@ -1065,6 +1065,18 @@ def handle_resume_prd(
             run_id=run_id,
         )
 
+        # Register interactive run state so Jira callbacks can look up
+        # channel/thread_ts via get_interactive_run(run_id).
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            make_slack_jira_review_callback,
+            make_slack_jira_skeleton_callback,
+            register_interactive_run,
+        )
+        register_interactive_run(run_id, channel, thread_ts, user, idea)
+
+        jira_skel_cb = make_slack_jira_skeleton_callback(run_id)
+        jira_review_cb = make_slack_jira_review_callback(run_id)
+
         def _resume_and_notify():
             try:
                 resume_prd_flow(
@@ -1074,6 +1086,8 @@ def handle_resume_prd(
                     exec_summary_user_feedback_callback=exec_summary_cb,
                     executive_summary_callback=exec_completion_cb,
                     requirements_approval_callback=requirements_cb,
+                    jira_skeleton_approval_callback=jira_skel_cb,
+                    jira_review_callback=jira_review_cb,
                 )
 
                 run = runs.get(run_id)
@@ -1145,6 +1159,11 @@ def handle_resume_prd(
                     "suppressed to protect server",
                     run_id, type(exc).__name__, exc,
                 )
+            finally:
+                from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+                    cleanup_interactive_run,
+                )
+                cleanup_interactive_run(run_id)
 
         t = threading.Thread(
             target=_resume_and_notify,

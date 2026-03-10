@@ -7,6 +7,7 @@ Handles buttons from the product list (``list products`` intent):
 * ``product_jira_epics_<N>``    — Create Jira Epics & Stories
 * ``product_jira_subtasks_<N>`` — Create Jira Sub-tasks
 * ``product_view_<N>``          — View delivery details
+* ``product_archive_<N>``       — Archive (hide from future listings)
 """
 
 from __future__ import annotations
@@ -73,6 +74,11 @@ def _handle_product_list_action(
         _handle_view_details(
             run_id, idea_number, user_id, channel, thread_ts,
             send_tool, client,
+        )
+    elif action_id.startswith("product_archive_"):
+        _handle_product_archive(
+            run_id, idea_number, user_id, channel, thread_ts,
+            send_tool,
         )
     else:
         logger.warning("Unknown product action_id: %s", action_id)
@@ -576,6 +582,107 @@ def _handle_view_details(
 
 
 # ---------------------------------------------------------------------------
+# Archive product
+# ---------------------------------------------------------------------------
+
+
+def _handle_product_archive(
+    run_id: str,
+    idea_number: int,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+) -> None:
+    """Post an archive confirmation prompt for a completed product.
+
+    Looks up the product by ``run_id`` and posts Block Kit confirm/cancel
+    buttons.  The existing ``_archive_handler`` handles the response.
+    """
+    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+        find_run_any_status,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    doc = find_run_any_status(run_id)
+    if not doc:
+        send_tool.run(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=(
+                f"<@{user_id}> :x: Could not find product (run "
+                f"`{run_id[:8]}\u2026`). It may have already been archived."
+            ),
+        )
+        return
+
+    client = _get_slack_client()
+    if not client:
+        send_tool.run(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=f"<@{user_id}> :x: Slack client unavailable.",
+        )
+        return
+
+    idea = doc.get("idea") or doc.get("finalized_idea") or "(unknown idea)"
+    idea_preview = idea[:500] + "\u2026" if len(idea) > 500 else idea
+
+    confirm_blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"<@{user_id}> :file_folder: *Archive this product?*\n\n"
+                    f"This will archive product #{idea_number} and "
+                    f"remove it from your product list:\n"
+                    f"> _{idea_preview}_\n\n"
+                    f"The product will be preserved for reference "
+                    f"but will no longer appear in listings."
+                ),
+            },
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Yes, archive"},
+                    "action_id": "archive_idea_confirm",
+                    "value": run_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Cancel"},
+                    "action_id": "archive_idea_cancel",
+                    "value": run_id,
+                },
+            ],
+        },
+    ]
+
+    try:
+        client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text="Archive this product?",
+            blocks=confirm_blocks,
+        )
+        logger.info(
+            "Posted product archive confirmation for run_id=%s idea=%r",
+            run_id, idea[:80],
+        )
+    except Exception as exc:
+        logger.error("Product archive confirmation failed: %s", exc)
+        send_tool.run(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=f"<@{user_id}> :x: Failed to post archive confirmation: {exc}",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Shared Jira phase runner
 # ---------------------------------------------------------------------------
 
@@ -672,6 +779,8 @@ def _run_jira_phase(
     # Restore delivery-related fields from the MongoDB document.
     flow.state.confluence_url = doc.get("confluence_url") or ""
     flow.state.jira_phase = doc.get("jira_phase") or ""
+    flow.state.jira_skeleton = doc.get("jira_skeleton") or ""
+    flow.state.jira_epics_stories_output = doc.get("jira_epics_stories_output") or ""
 
     # The interactive Jira flow should not require Confluence — a user
     # can create Jira tickets for a PRD that was never published.

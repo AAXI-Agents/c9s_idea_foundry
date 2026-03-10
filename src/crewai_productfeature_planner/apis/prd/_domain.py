@@ -106,12 +106,41 @@ class PRDDraft(BaseModel):
         """Look up a section by its key."""
         return next((s for s in self.sections if s.key == key), None)
 
-    def approved_context(self, exclude_key: str = "") -> str:
+    def approved_context(
+        self, exclude_key: str = "", *, exclude_keys: set[str] | None = None,
+    ) -> str:
         """Return markdown of all approved sections as context."""
+        skip = {exclude_key} if exclude_key else set()
+        if exclude_keys:
+            skip |= exclude_keys
         parts = []
         for s in self.sections:
-            if s.is_approved and s.key != exclude_key and s.content:
+            if s.is_approved and s.key not in skip and s.content:
                 parts.append(f"## {s.title}\n\n{s.content}")
+        return "\n\n---\n\n".join(parts) if parts else ""
+
+    def approved_context_condensed(
+        self,
+        exclude_key: str = "",
+        *,
+        exclude_keys: set[str] | None = None,
+        char_limit: int = 500,
+    ) -> str:
+        """Like *approved_context* but truncates each section body.
+
+        Used for the refine task (research model) to reduce prompt size
+        while still giving the model enough context for consistency.
+        """
+        skip = {exclude_key} if exclude_key else set()
+        if exclude_keys:
+            skip |= exclude_keys
+        parts = []
+        for s in self.sections:
+            if s.is_approved and s.key not in skip and s.content:
+                body = s.content[:char_limit]
+                if len(s.content) > char_limit:
+                    body += "\n[...truncated]"
+                parts.append(f"## {s.title}\n\n{body}")
         return "\n\n---\n\n".join(parts) if parts else ""
 
     def all_sections_context(self, exclude_key: str = "") -> str:

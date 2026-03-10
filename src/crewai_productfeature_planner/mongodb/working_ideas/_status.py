@@ -447,3 +447,57 @@ def get_jira_skeleton(run_id: str) -> str:
             run_id, exc,
         )
         return ""
+
+
+def save_jira_epics_stories_output(run_id: str, output: str) -> int:
+    """Persist the Epics & Stories crew output on a working-idea document.
+
+    Stored at ``workingIdeas.jira_epics_stories_output`` so that the
+    Sub-tasks stage can resume after a server restart without
+    re-running Phase 2.
+
+    Returns:
+        Number of documents modified (0 or 1).
+    """
+    try:
+        result = _common.get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$set": {
+                "jira_epics_stories_output": output,
+                "update_date": _now_iso(),
+            }},
+        )
+        logger.info(
+            "[MongoDB] Saved jira_epics_stories_output for run_id=%s "
+            "(%d chars, matched=%d)",
+            run_id, len(output), result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save jira_epics_stories_output for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def get_jira_epics_stories_output(run_id: str) -> str:
+    """Retrieve the persisted Epics & Stories output for *run_id*.
+
+    Returns:
+        The output text, or an empty string if not found.
+    """
+    try:
+        doc = _common.get_db()[WORKING_COLLECTION].find_one(
+            {"run_id": run_id},
+            {"jira_epics_stories_output": 1},
+        )
+        if doc:
+            return doc.get("jira_epics_stories_output") or ""
+        return ""
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to fetch jira_epics_stories_output for run_id=%s: %s",
+            run_id, exc,
+        )
+        return ""

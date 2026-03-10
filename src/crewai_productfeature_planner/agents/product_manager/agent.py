@@ -280,8 +280,9 @@ def create_product_manager_critic(
         allow_delegation=False,
         reasoning=True,
         max_reasoning_attempts=3,
-        knowledge_sources=build_prd_knowledge_sources(),
-        embedder=get_google_embedder_config(),
+        # No knowledge_sources / embedder — the critic is a pure
+        # evaluation agent.  RAG retrieval adds per-call overhead
+        # that is unnecessary for scoring an already-drafted section.
     )
 
 

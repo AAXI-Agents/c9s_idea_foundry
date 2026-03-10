@@ -173,6 +173,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         label = ":jira: Publishing Jira sub-tasks"
     elif action_id.startswith("product_view_"):
         label = ":mag: Viewing product details"
+    elif action_id.startswith("product_archive_"):
+        label = ":file_folder: Archiving product"
     return f"{label} by {user_name}"
 
 
@@ -407,7 +409,7 @@ async def slack_interactions(request: Request) -> JSONResponse:
         _PRODUCT_PREFIXES = (
             "product_confluence_", "product_jira_skeleton_",
             "product_jira_epics_", "product_jira_subtasks_",
-            "product_view_",
+            "product_view_", "product_archive_",
         )
         if any(action_id.startswith(p) for p in _PRODUCT_PREFIXES):
             channel_info = payload.get("channel", {})

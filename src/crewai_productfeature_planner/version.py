@@ -1359,6 +1359,104 @@ _CODEX: list[CodexEntry] = [
             "autonomous paths."
         ),
     ),
+    CodexEntry(
+        "0.15.12",
+        date(2026, 3, 10),
+        (
+            "Persist Jira Epics & Stories output to MongoDB for crash "
+            "resilience. Root cause: jira_epics_stories_output was only "
+            "stored in-memory on flow.state and lost on server restart. "
+            "When resuming from epics_stories_done phase, the Sub-tasks "
+            "stage skipped because the output was empty. "
+            "Fix: (1) New save_jira_epics_stories_output() / "
+            "get_jira_epics_stories_output() in MongoDB _status.py. "
+            "(2) build_jira_epics_stories_stage._apply() now persists "
+            "the crew output alongside jira_phase. "
+            "(3) _run_jira_phase() restores jira_skeleton and "
+            "jira_epics_stories_output from the MongoDB document so "
+            "all 3 Jira phases can resume after crash. "
+            "14 new tests (2122 total)."
+        ),
+    ),
+    CodexEntry(
+        "0.15.13",
+        date(2026, 3, 10),
+        (
+            "Eliminate 'unknown' Jira ticket types. Root cause: the "
+            "JiraCreateIssueTool persisted the raw issue_type from the "
+            "LLM agent before the orchestrator could write the correct "
+            "hardcoded type — and since append_jira_ticket() deduplicates "
+            "by key, the first (wrong) write won. "
+            "Fix: _normalise_issue_type() in _tool.py maps all LLM "
+            "variants ('task', 'Sub-Task', 'subtask', '', 'unknown') to "
+            "canonical Jira types ('Epic', 'Story', 'Sub-task', 'Bug'). "
+            "Context-aware: when parent_key is set, unrecognised types "
+            "default to 'Sub-task' instead of 'Story'. "
+            "18 new tests (2140 total)."
+        ),
+    ),
+    CodexEntry(
+        "0.15.14",
+        date(2026, 3, 10),
+        (
+            "Add archive button to the product list. Completed ideas "
+            "now show a ':file_folder: Archive' button alongside delivery "
+            "actions (Confluence / Jira). Clicking it posts a confirmation "
+            "prompt — on confirm the product is marked status='archived' and "
+            "excluded from future 'list products' lookups. Wired in the "
+            "dispatch router (product_archive_ prefix), product list handler "
+            "(_handle_product_archive), and Block Kit builder. Reuses the "
+            "existing archive_idea_confirm/cancel confirmation flow. "
+            "11 new tests (2151 total)."
+        ),
+    ),
+    CodexEntry(
+        "0.15.15",
+        date(2026, 3, 10),
+        (
+            "Fix progress heartbeat not firing during interactive PRD "
+            "flows. Root cause: run_interactive_slack_flow() in "
+            "_flow_runner.py never created a make_progress_poster() "
+            "callback or set flow.progress_callback — unlike the "
+            "non-interactive and resume paths which both wired it. "
+            "Added progress_cb creation and registration in the "
+            "callback registry so section-by-section Slack updates "
+            "now fire correctly. 3 new tests (2154 total)."
+        ),
+    ),
+    CodexEntry(
+        "0.16.0",
+        date(2026, 3, 10),
+        (
+            "Optimise PRD section generation performance. Three changes "
+            "reduce wall-clock runtime by ~40%% for later sections: "
+            "(1) Condensed prior-section context for refine tasks — "
+            "new approved_context_condensed() sends only titles + first "
+            "500 chars instead of full text, cutting the research-model "
+            "prompt size from ~30K+ to ~5K for section 9. "
+            "(2) Exclude executive_summary from approved_sections in "
+            "critique/refine tasks since it is already passed as a "
+            "separate template parameter (eliminates double-counting). "
+            "(3) Remove knowledge_sources and embedder from the critic "
+            "agent — pure evaluation does not need RAG retrieval. "
+            "4 new tests (2158 total)."
+        ),
+    ),
+    CodexEntry(
+        "0.16.1",
+        date(2026, 3, 10),
+        (
+            "Fix post-completion flow not prompting user after resume. "
+            "handle_resume_prd() called resume_prd_flow(auto_approve=True) "
+            "without Jira callbacks, so _finalization fell to auto-publish "
+            "instead of the interactive phased flow. Added "
+            "jira_skeleton_approval_callback and jira_review_callback params "
+            "to resume_prd_flow(), wired them to the flow instance and "
+            "callback registry. handle_resume_prd() now registers the "
+            "interactive run and builds Jira callbacks before resuming. "
+            "5 new tests (2150 total)."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
