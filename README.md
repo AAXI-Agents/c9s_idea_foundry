@@ -4,6 +4,11 @@
 
 Take a simple product idea and generate a detailed Product Requirements Document (PRD) with associated engineering tickets — powered by [crewAI](https://crewai.com), Gemini, and OpenAI.
 
+## Source Code
+
+This project is open source and available on GitHub: [https://github.com/AAXI-Agents/crewai_productfeature_planner](https://github.com/AAXI-Agents/crewai_productfeature_planner)
+
+
 ## Installation
 
 Ensure you have Python >=3.10 <3.14 installed on your system. This project uses [UV](https://docs.astral.sh/uv/) for dependency management and package handling, offering a seamless setup and execution experience.
