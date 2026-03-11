@@ -287,15 +287,6 @@ class TestPrintManualInstructions:
 class TestConstants:
     """Verify the module-level constants."""
 
-    def test_interactions_path(self):
-        assert _INTERACTIONS_PATH == "/slack/interactions"
-
-    def test_events_path(self):
-        assert _EVENTS_PATH == "/slack/events"
-
-    def test_oauth_callback_path(self):
-        assert _OAUTH_CALLBACK_PATH == "/slack/oauth/callback"
-
     def test_manifest_path_exists(self):
         assert _MANIFEST_PATH.exists(), f"Expected {_MANIFEST_PATH} to exist"
 

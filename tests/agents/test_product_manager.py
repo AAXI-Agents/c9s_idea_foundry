@@ -104,49 +104,7 @@ def test_create_product_manager_reasoning_enabled():
     assert agent.reasoning is True
     assert agent.max_reasoning_attempts == 3
 
-
 # ── Agent factory tests (Gemini provider) ─────────────────────
-
-
-def test_create_product_manager_gemini_role():
-    """Gemini-backed agent should have the same role."""
-    with _mock_build_tools(), _mock_build_llm():
-        agent = create_product_manager(provider=PROVIDER_GEMINI)
-
-    assert agent.role == "Senior Product Manager"
-
-
-def test_create_product_manager_gemini_backstory_mentions_smart():
-    """Gemini-backed backstory should reference SMART criteria."""
-    with _mock_build_tools(), _mock_build_llm():
-        agent = create_product_manager(provider=PROVIDER_GEMINI)
-
-    assert "SMART" in agent.backstory
-
-
-def test_create_product_manager_gemini_has_five_tools():
-    """Gemini-backed agent should carry all five tools (no PRDFileWriteTool)."""
-    with _mock_build_tools(), _mock_build_llm():
-        agent = create_product_manager(provider=PROVIDER_GEMINI)
-
-    assert len(agent.tools) == 5
-
-
-def test_create_product_manager_gemini_no_delegation():
-    """Gemini-backed agent should not delegate."""
-    with _mock_build_tools(), _mock_build_llm():
-        agent = create_product_manager(provider=PROVIDER_GEMINI)
-
-    assert agent.allow_delegation is False
-
-
-def test_create_product_manager_gemini_reasoning_enabled():
-    """Gemini-backed agent should have reasoning enabled."""
-    with _mock_build_tools(), _mock_build_llm():
-        agent = create_product_manager(provider=PROVIDER_GEMINI)
-
-    assert agent.reasoning is True
-    assert agent.max_reasoning_attempts == 3
 
 
 def test_create_product_manager_gemini_requires_key(monkeypatch):

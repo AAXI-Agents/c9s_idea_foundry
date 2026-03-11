@@ -782,26 +782,15 @@ class TestJiraCreateIssueTool:
 class TestStripEmails:
     """Tests for _strip_emails helper."""
 
-    def test_strips_single_email(self):
-        assert _strip_emails("Contact user@example.com for details") == \
-            "Contact [redacted] for details"
-
-    def test_strips_multiple_emails(self):
-        text = "From admin@corp.io to dev@corp.io"
-        result = _strip_emails(text)
-        assert "@" not in result
-        assert "[redacted]" in result
-
-    def test_preserves_text_without_emails(self):
-        text = "No emails here, just plain text."
-        assert _strip_emails(text) == text
-
-    def test_strips_email_with_dots(self):
-        result = _strip_emails("john.doe@my-company.co.uk sent this")
-        assert "@" not in result
-
-    def test_empty_string(self):
-        assert _strip_emails("") == ""
+    @pytest.mark.parametrize("text,check", [
+        ("Contact user@example.com for details", lambda r: r == "Contact [redacted] for details"),
+        ("From admin@corp.io to dev@corp.io", lambda r: "@" not in r and "[redacted]" in r),
+        ("No emails here, just plain text.", lambda r: r == "No emails here, just plain text."),
+        ("john.doe@my-company.co.uk sent this", lambda r: "@" not in r),
+        ("", lambda r: r == ""),
+    ])
+    def test_strip_emails(self, text, check):
+        assert check(_strip_emails(text))
 
 
 # ── _markdown_to_wiki ────────────────────────────────────────────────
@@ -810,30 +799,20 @@ class TestStripEmails:
 class TestMarkdownToWiki:
     """Tests for _markdown_to_wiki helper — Markdown→Jira wiki markup."""
 
-    def test_h1_heading(self):
-        assert _markdown_to_wiki("# Title") == "h1. Title"
-
-    def test_h2_heading(self):
-        assert _markdown_to_wiki("## Section") == "h2. Section"
-
-    def test_h3_heading(self):
-        assert _markdown_to_wiki("### Subsection") == "h3. Subsection"
-
-    def test_bold(self):
-        assert _markdown_to_wiki("This is **bold** text") == "This is *bold* text"
-
-    def test_inline_code(self):
-        assert _markdown_to_wiki("Use `my_func()`") == "Use {{my_func()}}"
-
-    def test_link(self):
-        assert _markdown_to_wiki("[Click here](https://example.com)") == \
-            "[Click here|https://example.com]"
-
-    def test_unordered_list(self):
-        assert _markdown_to_wiki("- Item one") == "* Item one"
-
-    def test_nested_list(self):
-        assert _markdown_to_wiki("  - Nested") == "** Nested"
+    @pytest.mark.parametrize("md,expected", [
+        ("# Title", "h1. Title"),
+        ("## Section", "h2. Section"),
+        ("### Subsection", "h3. Subsection"),
+        ("This is **bold** text", "This is *bold* text"),
+        ("Use `my_func()`", "Use {{my_func()}}"),
+        ("[Click here](https://example.com)", "[Click here|https://example.com]"),
+        ("- Item one", "* Item one"),
+        ("  - Nested", "** Nested"),
+        ("Just plain text.", "Just plain text."),
+        ("", ""),
+    ])
+    def test_basic_conversions(self, md, expected):
+        assert _markdown_to_wiki(md) == expected
 
     def test_fenced_code_block(self):
         md = "```python\nprint('hello')\n```"
@@ -1073,47 +1052,25 @@ class TestCreateJiraIssueEmailSanitisation:
 class TestNormalizePriority:
     """Tests for the priority normaliser that sanitises LLM output."""
 
-    def test_valid_name_passthrough(self):
-        assert _normalize_priority("High") == "High"
-
-    def test_case_insensitive(self):
-        assert _normalize_priority("high") == "High"
-        assert _normalize_priority("LOWEST") == "Lowest"
-
-    def test_dict_unwrap(self):
-        """LLM may pass {"name": "High"} — should unwrap."""
-        assert _normalize_priority({"name": "High"}) == "High"
-
-    def test_dict_with_id(self):
-        assert _normalize_priority({"id": "Medium"}) == "Medium"
-
-    def test_empty_returns_medium(self):
-        assert _normalize_priority("") == "Medium"
-
-    def test_none_returns_medium(self):
-        assert _normalize_priority(None) == "Medium"
-
-    def test_alias_critical(self):
-        assert _normalize_priority("critical") == "Highest"
-
-    def test_alias_blocker(self):
-        assert _normalize_priority("blocker") == "Highest"
-
-    def test_alias_normal(self):
-        assert _normalize_priority("normal") == "Medium"
-
-    def test_alias_minor(self):
-        assert _normalize_priority("minor") == "Low"
-
-    def test_alias_p2(self):
-        assert _normalize_priority("P2") == "High"
-
-    def test_unknown_defaults_to_medium(self):
-        assert _normalize_priority("super-urgent") == "Medium"
-
-    def test_strips_quotes(self):
-        assert _normalize_priority("'High'") == "High"
-        assert _normalize_priority('"Low"') == "Low"
+    @pytest.mark.parametrize("raw,expected", [
+        ("High", "High"),
+        ("high", "High"),
+        ("LOWEST", "Lowest"),
+        ({"name": "High"}, "High"),
+        ({"id": "Medium"}, "Medium"),
+        ("", "Medium"),
+        (None, "Medium"),
+        ("critical", "Highest"),
+        ("blocker", "Highest"),
+        ("normal", "Medium"),
+        ("minor", "Low"),
+        ("P2", "High"),
+        ("super-urgent", "Medium"),
+        ("'High'", "High"),
+        ('"Low"', "Low"),
+    ])
+    def test_normalize(self, raw, expected):
+        assert _normalize_priority(raw) == expected
 
 
 # ── _drop_rejected_fields ─────────────────────────────────────────────
@@ -1307,14 +1264,13 @@ class TestCreateJiraIssueRetry:
 
 class TestRunIdLabel:
 
-    def test_basic(self):
-        assert _run_id_label("abc123") == "prd-run-abc123"
-
-    def test_strips_whitespace(self):
-        assert _run_id_label("  abc ") == "prd-run-abc"
-
-    def test_replaces_spaces(self):
-        assert _run_id_label("my run id") == "prd-run-my-run-id"
+    @pytest.mark.parametrize("raw,expected", [
+        ("abc123", "prd-run-abc123"),
+        ("  abc ", "prd-run-abc"),
+        ("my run id", "prd-run-my-run-id"),
+    ])
+    def test_label(self, raw, expected):
+        assert _run_id_label(raw) == expected
 
 
 # ── search_jira_issues ──────────────────────────────────────────────
@@ -1663,56 +1619,30 @@ class TestNormaliseIssueType:
         )
         return _normalise_issue_type(raw, has_parent=has_parent)
 
-    # ── Canonical values pass through ─────────────────────────
+    @pytest.mark.parametrize("raw,expected", [
+        ("Story", "Story"),
+        ("Epic", "Epic"),
+        ("Sub-task", "Sub-task"),
+        ("Bug", "Bug"),
+        ("Task", "Sub-task"),
+        ("task", "Sub-task"),
+        ("subtask", "Sub-task"),
+        ("Sub-Task", "Sub-task"),
+        ("story", "Story"),
+        ("epic", "Epic"),
+        ("", "Story"),
+        ("unknown", "Story"),
+        ("foobar", "Story"),
+    ])
+    def test_normalise(self, raw, expected):
+        assert self._normalise(raw) == expected
 
-    def test_story_passthrough(self):
-        assert self._normalise("Story") == "Story"
-
-    def test_epic_passthrough(self):
-        assert self._normalise("Epic") == "Epic"
-
-    def test_subtask_passthrough(self):
-        assert self._normalise("Sub-task") == "Sub-task"
-
-    def test_bug_passthrough(self):
-        assert self._normalise("Bug") == "Bug"
-
-    # ── Common LLM variants ──────────────────────────────────
-
-    def test_task_becomes_subtask(self):
-        assert self._normalise("Task") == "Sub-task"
-
-    def test_lowercase_task(self):
-        assert self._normalise("task") == "Sub-task"
-
-    def test_subtask_no_hyphen(self):
-        assert self._normalise("subtask") == "Sub-task"
-
-    def test_sub_task_uppercase_T(self):
-        assert self._normalise("Sub-Task") == "Sub-task"
-
-    def test_lowercase_story(self):
-        assert self._normalise("story") == "Story"
-
-    def test_lowercase_epic(self):
-        assert self._normalise("epic") == "Epic"
-
-    # ── Unrecognised values ──────────────────────────────────
-
-    def test_empty_defaults_to_story(self):
-        assert self._normalise("") == "Story"
-
-    def test_unknown_defaults_to_story(self):
-        assert self._normalise("unknown") == "Story"
-
-    def test_garbage_defaults_to_story(self):
-        assert self._normalise("foobar") == "Story"
-
-    def test_empty_with_parent_defaults_to_subtask(self):
-        assert self._normalise("", has_parent=True) == "Sub-task"
-
-    def test_unknown_with_parent_defaults_to_subtask(self):
-        assert self._normalise("unknown", has_parent=True) == "Sub-task"
+    @pytest.mark.parametrize("raw,expected", [
+        ("", "Sub-task"),
+        ("unknown", "Sub-task"),
+    ])
+    def test_normalise_with_parent(self, raw, expected):
+        assert self._normalise(raw, has_parent=True) == expected
 
 
 class TestToolNormalisesTypeBeforePersist:

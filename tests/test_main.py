@@ -31,21 +31,13 @@ from crewai_productfeature_planner.main import (
 class TestChooseRefinementMode:
     """Tests for the refinement-mode prompt."""
 
-    def test_agent_shortcut(self):
-        with patch("builtins.input", return_value="a"):
-            assert _choose_refinement_mode() == "agent"
-
-    def test_agent_full_word(self):
-        with patch("builtins.input", return_value="agent"):
-            assert _choose_refinement_mode() == "agent"
-
-    def test_manual_shortcut(self):
-        with patch("builtins.input", return_value="m"):
-            assert _choose_refinement_mode() == "manual"
-
-    def test_manual_full_word(self):
-        with patch("builtins.input", return_value="manual"):
-            assert _choose_refinement_mode() == "manual"
+    @pytest.mark.parametrize("user_input,expected", [
+        ("a", "agent"), ("agent", "agent"),
+        ("m", "manual"), ("manual", "manual"),
+    ])
+    def test_valid_inputs(self, user_input, expected):
+        with patch("builtins.input", return_value=user_input):
+            assert _choose_refinement_mode() == expected
 
     def test_case_insensitive(self):
         with patch("builtins.input", return_value="A"):
@@ -65,17 +57,12 @@ class TestChooseRefinementMode:
 class TestManualIdeaRefinement:
     """Tests for the interactive manual refinement loop."""
 
-    def test_approve_immediately(self):
+    @pytest.mark.parametrize("user_input", ["y", "yes"])
+    def test_approve_immediately(self, user_input):
         """User approves the idea on the first prompt."""
-        with patch("builtins.input", return_value="y"):
+        with patch("builtins.input", return_value=user_input):
             result, history = _manual_idea_refinement("Original idea")
         assert result == "Original idea"
-        assert history == []
-
-    def test_approve_yes_word(self):
-        with patch("builtins.input", return_value="yes"):
-            result, history = _manual_idea_refinement("My idea")
-        assert result == "My idea"
         assert history == []
 
     def test_edit_then_approve(self):
@@ -193,33 +180,21 @@ class TestManualIdeaRefinement:
 class TestApproveRefinedIdea:
     """Tests for the idea approval prompt."""
 
+    @pytest.mark.parametrize("user_input", ["y", "yes"])
     @patch("crewai_productfeature_planner.main.mark_completed")
-    def test_approve_yes(self, mock_mark):
-        """[y] should return False (continue to sections)."""
-        history = [{"iteration": 1, "idea": "v1"}, {"iteration": 2, "idea": "Refined"}]
-        with patch("builtins.input", return_value="y"):
-            result = _approve_refined_idea("Refined", "Original", "run123", refinement_history=history)
+    def test_approve_continues(self, mock_mark, user_input):
+        """[y/yes] should return False (continue to sections)."""
+        with patch("builtins.input", return_value=user_input):
+            result = _approve_refined_idea("Refined", "Original", "run123", refinement_history=[])
         assert result is False
         mock_mark.assert_not_called()
 
-    @patch("crewai_productfeature_planner.main.mark_completed")
-    def test_approve_yes_full(self, mock_mark):
-        with patch("builtins.input", return_value="yes"):
-            result = _approve_refined_idea("Refined", "Orig", "r1", refinement_history=[])
-        assert result is False
-        mock_mark.assert_not_called()
-
-    def test_cancel_exits_program(self):
-        """[c] should exit the CLI program via sys.exit(0)."""
-        with patch("builtins.input", return_value="c"):
+    @pytest.mark.parametrize("user_input", ["c", "cancel"])
+    def test_cancel_exits_program(self, user_input):
+        """[c/cancel] should exit the CLI program via sys.exit(0)."""
+        with patch("builtins.input", return_value=user_input):
             with pytest.raises(SystemExit) as exc_info:
                 _approve_refined_idea("Refined", "Original", "run456")
-        assert exc_info.value.code == 0
-
-    def test_cancel_full_word_exits_program(self):
-        with patch("builtins.input", return_value="cancel"):
-            with pytest.raises(SystemExit) as exc_info:
-                _approve_refined_idea("Refined", "Orig", "r2")
         assert exc_info.value.code == 0
 
     @patch("crewai_productfeature_planner.main.mark_completed")
@@ -607,36 +582,21 @@ class TestResumeContinuationPrompt:
 class TestApproveRequirements:
     """Tests for the requirements approval prompt."""
 
+    @pytest.mark.parametrize("user_input", ["y", "yes"])
     @patch("crewai_productfeature_planner.main.mark_completed")
-    def test_approve_yes(self, mock_mark):
-        """[y] should approve requirements and return False (continue to sections)."""
-        history = [{"iteration": 1, "requirements": "v1"}]
-        with patch("builtins.input", return_value="y"):
-            result = _approve_requirements(
-                "## Feature 1\nReqs", "Test idea", "run789",
-                breakdown_history=history,
-            )
-        assert result is False
-        mock_mark.assert_not_called()
-
-    @patch("crewai_productfeature_planner.main.mark_completed")
-    def test_approve_yes_full(self, mock_mark):
-        with patch("builtins.input", return_value="yes"):
+    def test_approve_continues(self, mock_mark, user_input):
+        """[y/yes] should approve requirements and return False."""
+        with patch("builtins.input", return_value=user_input):
             result = _approve_requirements("Reqs", "Idea", "r1", breakdown_history=[])
         assert result is False
         mock_mark.assert_not_called()
 
-    def test_cancel_exits_program(self):
-        """[c] should exit the CLI program via sys.exit(0)."""
-        with patch("builtins.input", return_value="c"):
+    @pytest.mark.parametrize("user_input", ["c", "cancel"])
+    def test_cancel_exits_program(self, user_input):
+        """[c/cancel] should exit the CLI program via sys.exit(0)."""
+        with patch("builtins.input", return_value=user_input):
             with pytest.raises(SystemExit) as exc_info:
                 _approve_requirements("Reqs", "Idea", "r2")
-        assert exc_info.value.code == 0
-
-    def test_cancel_full_word_exits_program(self):
-        with patch("builtins.input", return_value="cancel"):
-            with pytest.raises(SystemExit) as exc_info:
-                _approve_requirements("Reqs", "Idea", "r3")
         assert exc_info.value.code == 0
 
     @patch("crewai_productfeature_planner.main.mark_completed")

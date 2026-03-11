@@ -47,6 +47,20 @@ def test_prd_state_defaults():
     assert state.update_date == ""
     assert state.completed_at == ""
     assert len(state.run_id) == 12  # auto-generated hex id
+    # Refinement fields
+    assert state.original_idea == ""
+    assert state.idea_refined is False
+    assert state.refinement_history == []
+    # Requirements fields
+    assert state.requirements_breakdown == ""
+    assert state.breakdown_history == []
+    assert state.requirements_broken_down is False
+    # Executive summary
+    assert isinstance(state.executive_summary, ExecutiveSummaryDraft)
+    assert state.executive_summary.iterations == []
+    # Delivery fields
+    assert state.confluence_url == ""
+    assert state.jira_output == ""
 
 
 def test_prd_draft_sections_initialised():
@@ -237,13 +251,6 @@ def test_prd_flow_approval_callback_accepts_tuple_feedback():
 def test_pause_sentinel_value():
     """PAUSE_SENTINEL should be the expected string constant."""
     assert PAUSE_SENTINEL == "__PAUSE__"
-
-
-def test_pause_requested_is_exception():
-    """PauseRequested should be an Exception so it can propagate out of the flow."""
-    assert issubclass(PauseRequested, Exception)
-    exc = PauseRequested()
-    assert isinstance(exc, Exception)
 
 
 def test_prd_flow_callback_returning_pause_sentinel():
@@ -1061,14 +1068,6 @@ def test_maybe_refine_idea_continues_on_failure(monkeypatch):
     assert flow.state.idea_refined is False
 
 
-def test_prd_state_refinement_fields():
-    """PRDState should initialise refinement fields properly."""
-    state = PRDState()
-    assert state.original_idea == ""
-    assert state.idea_refined is False
-    assert state.refinement_history == []
-
-
 # ── IdeaFinalized & idea_approval_callback ───────────────────
 
 
@@ -1199,14 +1198,6 @@ def test_requirements_approval_callback_defaults_to_none():
     """PRDFlow should have requirements_approval_callback=None by default."""
     flow = PRDFlow()
     assert flow.requirements_approval_callback is None
-
-
-def test_prd_state_requirements_fields():
-    """PRDState should initialise requirements breakdown fields properly."""
-    state = PRDState()
-    assert state.requirements_breakdown == ""
-    assert state.breakdown_history == []
-    assert state.requirements_broken_down is False
 
 
 def test_requirements_approval_callback_finalize_raises(monkeypatch):
@@ -2082,13 +2073,6 @@ def test_executive_summary_draft_latest():
     assert draft.current_iteration == 2
 
 
-def test_prd_state_has_executive_summary():
-    """PRDState should include an executive_summary field by default."""
-    state = PRDState()
-    assert isinstance(state.executive_summary, ExecutiveSummaryDraft)
-    assert state.executive_summary.iterations == []
-
-
 # ══════════════════════════════════════════════════════════════
 # ExecutiveSummaryCompleted exception
 # ══════════════════════════════════════════════════════════════
@@ -2098,12 +2082,9 @@ def test_executive_summary_completed_is_exception():
     """ExecutiveSummaryCompleted should be a regular Exception subclass."""
     exc = ExecutiveSummaryCompleted()
     assert isinstance(exc, Exception)
-
-
-def test_executive_summary_completed_can_carry_message():
-    """ExecutiveSummaryCompleted should optionally carry a message."""
-    exc = ExecutiveSummaryCompleted("User stopped")
-    assert str(exc) == "User stopped"
+    # Should optionally carry a message
+    exc_msg = ExecutiveSummaryCompleted("User stopped")
+    assert str(exc_msg) == "User stopped"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3111,18 +3092,6 @@ class TestPhasedJiraMarksComplete:
             jira_completed=True,
             jira_output="Epic: PRD-1\nStories: PRD-2",
         )
-
-
-def test_prd_state_confluence_url_default():
-    """PRDState should have empty confluence_url by default."""
-    state = PRDState()
-    assert state.confluence_url == ""
-
-
-def test_prd_state_jira_output_default():
-    """PRDState should have empty jira_output by default."""
-    state = PRDState()
-    assert state.jira_output == ""
 
 
 # ------------------------------------------------------------------

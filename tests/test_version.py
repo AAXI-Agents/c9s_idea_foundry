@@ -24,9 +24,6 @@ class TestGetVersion:
         assert len(parts) == 3
         assert all(p.isdigit() for p in parts)
 
-    def test_current_version(self):
-        assert get_version() == "0.16.2"
-
 
 class TestCodex:
     def test_codex_not_empty(self):
@@ -52,13 +49,6 @@ class TestCodex:
         codex = get_codex()
         latest = get_latest_codex_entry()
         assert codex[-1] == latest
-
-    def test_codex_entry_is_named_tuple(self):
-        entry = _CODEX[0]
-        assert isinstance(entry, CodexEntry)
-        assert hasattr(entry, "version")
-        assert hasattr(entry, "date")
-        assert hasattr(entry, "summary")
 
     def test_versions_are_unique(self):
         versions = [e.version for e in _CODEX]

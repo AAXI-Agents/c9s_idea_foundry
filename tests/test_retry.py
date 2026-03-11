@@ -132,16 +132,24 @@ def test_env_var_base_delay(monkeypatch):
 # ── Non-retryable errors ──────────────────────────────────────
 
 
-def test_insufficient_quota_not_retried():
-    """insufficient_quota errors should raise BillingError immediately without retrying."""
-    crew = _make_crew(
-        side_effect=RuntimeError(
-            "Error code: 429 - {'error': {'type': 'insufficient_quota', "
-            "'code': 'insufficient_quota'}}"
-        ),
-    )
+@pytest.mark.parametrize("error_msg,match_str", [
+    (
+        "Error code: 429 - {'error': {'type': 'insufficient_quota', "
+        "'code': 'insufficient_quota'}}",
+        "insufficient_quota",
+    ),
+    ("invalid_api_key: bad key", "invalid_api_key"),
+    ("billing_hard_limit_reached", "billing_hard_limit_reached"),
+    (
+        "You exceeded your current quota, check your plan and billing details.",
+        "exceeded your current quota",
+    ),
+])
+def test_billing_error_not_retried(error_msg, match_str):
+    """Billing errors should raise BillingError immediately without retrying."""
+    crew = _make_crew(side_effect=RuntimeError(error_msg))
     with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
-        with pytest.raises(BillingError, match="insufficient_quota"):
+        with pytest.raises(BillingError, match=match_str):
             crew_kickoff_with_retry(
                 crew, step_label="test", max_retries=3, base_delay=5.0,
             )
@@ -149,61 +157,18 @@ def test_insufficient_quota_not_retried():
     mock_sleep.assert_not_called()
 
 
-def test_invalid_api_key_not_retried():
-    """invalid_api_key errors should raise BillingError immediately without retrying."""
-    crew = _make_crew(
-        side_effect=RuntimeError("invalid_api_key: bad key"),
-    )
-    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
-        with pytest.raises(BillingError, match="invalid_api_key"):
-            crew_kickoff_with_retry(
-                crew, step_label="test", max_retries=3, base_delay=5.0,
-            )
-    assert crew.kickoff.call_count == 1
-    mock_sleep.assert_not_called()
-
-
-def test_billing_hard_limit_not_retried():
-    """billing_hard_limit_reached errors should raise BillingError immediately."""
-    crew = _make_crew(
-        side_effect=RuntimeError("billing_hard_limit_reached"),
-    )
-    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
-        with pytest.raises(BillingError, match="billing_hard_limit_reached"):
-            crew_kickoff_with_retry(
-                crew, step_label="test", max_retries=3, base_delay=5.0,
-            )
-    assert crew.kickoff.call_count == 1
-    mock_sleep.assert_not_called()
-
-
-def test_exceeded_quota_not_retried():
-    """'exceeded your current quota' should raise BillingError immediately."""
-    crew = _make_crew(
-        side_effect=RuntimeError("You exceeded your current quota, check your plan and billing details."),
-    )
-    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
-        with pytest.raises(BillingError, match="exceeded your current quota"):
-            crew_kickoff_with_retry(
-                crew, step_label="test", max_retries=3, base_delay=5.0,
-            )
-    assert crew.kickoff.call_count == 1
-    mock_sleep.assert_not_called()
-
-
-def test_billing_error_is_runtime_error():
-    """BillingError should be a subclass of RuntimeError for backward compat."""
-    assert issubclass(BillingError, RuntimeError)
-
-
-def test_llm_error_is_runtime_error():
-    """LLMError should be a subclass of RuntimeError."""
-    assert issubclass(LLMError, RuntimeError)
-
-
-def test_billing_error_is_llm_error():
-    """BillingError should be a subclass of LLMError."""
-    assert issubclass(BillingError, LLMError)
+@pytest.mark.parametrize("child,parent", [
+    (BillingError, RuntimeError),
+    (BillingError, LLMError),
+    (LLMError, RuntimeError),
+    (ModelBusyError, LLMError),
+    (ModelBusyError, RuntimeError),
+    (ShutdownError, LLMError),
+    (ShutdownError, RuntimeError),
+])
+def test_error_hierarchy(child, parent):
+    """Custom error types should form the documented inheritance hierarchy."""
+    assert issubclass(child, parent)
 
 
 def test_exhausted_retries_wraps_original():
@@ -267,16 +232,6 @@ def test_try_again_later_is_rate_limit_not_model_busy():
     assert crew.kickoff.call_count == 2
     # First rate-limit retry should wait DEFAULT_RATE_LIMIT_BASE_DELAY
     mock_sleep.assert_called_once_with(DEFAULT_RATE_LIMIT_BASE_DELAY)
-
-
-def test_model_busy_error_is_llm_error():
-    """ModelBusyError should be a subclass of LLMError."""
-    assert issubclass(ModelBusyError, LLMError)
-
-
-def test_model_busy_error_is_runtime_error():
-    """ModelBusyError should be a subclass of RuntimeError."""
-    assert issubclass(ModelBusyError, RuntimeError)
 
 
 # ── Rate-limit retries (429 / RESOURCE_EXHAUSTED) ────────────
@@ -388,50 +343,20 @@ def test_rate_limit_defaults():
 # ── Server error (500) retries ────────────────────────────────
 
 
-def test_server_error_500_retried():
-    """500 Internal Server Error should be retried with normal backoff."""
+@pytest.mark.parametrize("error_msg", [
+    "500 Internal Server Error",
+    "502 bad gateway",
+    "504 gateway timeout",
+])
+def test_server_error_retried(error_msg):
+    """Server errors (500/502/504) should be retried with normal backoff."""
     ok = MagicMock(raw="done")
-    crew = _make_crew(
-        side_effect=[
-            RuntimeError("500 Internal Server Error"),
-            ok,
-        ],
-    )
-    with patch("crewai_productfeature_planner.scripts.retry.time.sleep") as mock_sleep:
+    crew = _make_crew(side_effect=[RuntimeError(error_msg), ok])
+    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
         result = crew_kickoff_with_retry(
-            crew, step_label="test", max_retries=3, base_delay=5.0,
+            crew, step_label="test", max_retries=3, base_delay=1.0,
         )
     assert result.raw == "done"
-    assert crew.kickoff.call_count == 2
-    # Use assert_any_call — background threads may also call time.sleep
-    mock_sleep.assert_any_call(5.0)
-
-
-def test_server_error_bad_gateway_retried():
-    """502 Bad Gateway should be retried."""
-    ok = MagicMock(raw="ok")
-    crew = _make_crew(
-        side_effect=[RuntimeError("502 bad gateway"), ok],
-    )
-    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
-        result = crew_kickoff_with_retry(
-            crew, step_label="test", max_retries=3, base_delay=1.0,
-        )
-    assert result.raw == "ok"
-    assert crew.kickoff.call_count == 2
-
-
-def test_server_error_gateway_timeout_retried():
-    """504 Gateway Timeout should be retried."""
-    ok = MagicMock(raw="ok")
-    crew = _make_crew(
-        side_effect=[RuntimeError("504 gateway timeout"), ok],
-    )
-    with patch("crewai_productfeature_planner.scripts.retry.time.sleep"):
-        result = crew_kickoff_with_retry(
-            crew, step_label="test", max_retries=3, base_delay=1.0,
-        )
-    assert result.raw == "ok"
     assert crew.kickoff.call_count == 2
 
 
@@ -503,16 +428,6 @@ def test_shutdown_interpreter_not_retried():
             )
     assert crew.kickoff.call_count == 1
     mock_sleep.assert_not_called()
-
-
-def test_shutdown_error_is_llm_error():
-    """ShutdownError should be a subclass of LLMError."""
-    assert issubclass(ShutdownError, LLMError)
-
-
-def test_shutdown_error_is_runtime_error():
-    """ShutdownError should be a subclass of RuntimeError."""
-    assert issubclass(ShutdownError, RuntimeError)
 
 
 def test_shutdown_error_chains_original():

@@ -86,29 +86,16 @@ class TestInteractiveDefault:
         ack = send.run.call_args[1]["text"]
         assert "interactive" in ack.lower()
 
-    def test_auto_keyword_disables_interactive(self):
-        kickoff, send, _ = _run("auto create prd for build a dashboard")
+    @pytest.mark.parametrize("text", [
+        "auto create prd for build a dashboard",
+        "fast create prd for build a dashboard",
+        "quick create prd for build a dashboard",
+        "create prd auto-approve for build a dashboard",
+        "create prd with no approval for build a dashboard",
+    ])
+    def test_keyword_disables_interactive(self, text):
+        kickoff, _, _ = _run(text)
         kickoff.assert_called_once()
-        assert kickoff.call_args[1]["interactive"] is False
-
-    def test_fast_keyword_disables_interactive(self):
-        kickoff, _, _ = _run("fast create prd for build a dashboard")
-        assert kickoff.call_args[1]["interactive"] is False
-
-    def test_quick_keyword_disables_interactive(self):
-        kickoff, _, _ = _run("quick create prd for build a dashboard")
-        assert kickoff.call_args[1]["interactive"] is False
-
-    def test_auto_approve_keyword_disables_interactive(self):
-        kickoff, _, _ = _run(
-            "create prd auto-approve for build a dashboard"
-        )
-        assert kickoff.call_args[1]["interactive"] is False
-
-    def test_no_approval_keyword_disables_interactive(self):
-        kickoff, _, _ = _run(
-            "create prd with no approval for build a dashboard"
-        )
         assert kickoff.call_args[1]["interactive"] is False
 
     def test_ack_text_auto_mode(self):

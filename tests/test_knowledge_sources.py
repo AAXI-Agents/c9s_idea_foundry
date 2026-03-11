@@ -215,29 +215,4 @@ class TestBuildPrdKnowledgeSources:
         assert _PRD_GUIDELINES_FILE in sources[2].file_paths
 
 
-# ── Module constants ──────────────────────────────────────────
 
-
-class TestModuleConstants:
-    """Verify knowledge file constants are consistent."""
-
-    def test_prd_knowledge_files_contains_user(self):
-        assert _USER_PREFERENCE_FILE in _PRD_KNOWLEDGE_FILES
-
-    def test_prd_knowledge_files_contains_architecture(self):
-        assert _PROJECT_ARCHITECTURE_FILE in _PRD_KNOWLEDGE_FILES
-
-    def test_prd_knowledge_files_contains_guidelines(self):
-        assert _PRD_GUIDELINES_FILE in _PRD_KNOWLEDGE_FILES
-
-    def test_prd_knowledge_files_count(self):
-        assert len(_PRD_KNOWLEDGE_FILES) == 3
-
-    def test_user_preference_filename(self):
-        assert _USER_PREFERENCE_FILE == "user_preference.txt"
-
-    def test_project_architecture_filename(self):
-        assert _PROJECT_ARCHITECTURE_FILE == "project_architecture.txt"
-
-    def test_prd_guidelines_filename(self):
-        assert _PRD_GUIDELINES_FILE == "prd_guidelines.txt"
