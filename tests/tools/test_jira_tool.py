@@ -1789,3 +1789,89 @@ class TestToolNormalisesTypeBeforePersist:
 
         ticket = mock_append.call_args[0][1]
         assert ticket["type"] == "Story"
+
+
+# ── authoritative_run_id override ─────────────────────────────────────
+
+
+class TestAuthoritativeRunId:
+    """Tests for the authoritative_run_id field on JiraCreateIssueTool."""
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_overrides_llm_run_id(self, mock_create):
+        """authoritative_run_id must replace the LLM-provided run_id."""
+        mock_create.return_value = {
+            "issue_key": "PRD-400",
+            "issue_id": "40000",
+            "url": "https://example.atlassian.net/browse/PRD-400",
+            "reused": False,
+        }
+
+        tool = JiraCreateIssueTool(authoritative_run_id="real-run-42")
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append:
+            tool._run(
+                summary="Override Story",
+                run_id="RUN-12345",  # LLM hallucinated value
+            )
+
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["run_id"] == "real-run-42"
+        mock_append.assert_called_once()
+        assert mock_append.call_args[0][0] == "real-run-42"
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_uses_llm_run_id_when_authoritative_empty(self, mock_create):
+        """When authoritative_run_id is empty, LLM value is used."""
+        mock_create.return_value = {
+            "issue_key": "PRD-401",
+            "issue_id": "40100",
+            "url": "https://example.atlassian.net/browse/PRD-401",
+            "reused": False,
+        }
+
+        tool = JiraCreateIssueTool()
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append:
+            tool._run(
+                summary="Normal Story",
+                run_id="llm-provided-run",
+            )
+
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["run_id"] == "llm-provided-run"
+        mock_append.assert_called_once()
+        assert mock_append.call_args[0][0] == "llm-provided-run"
+
+    @patch("crewai_productfeature_planner.tools.jira._operations.create_jira_issue")
+    def test_authoritative_used_when_llm_empty(self, mock_create):
+        """When LLM provides no run_id, authoritative value is used."""
+        mock_create.return_value = {
+            "issue_key": "PRD-402",
+            "issue_id": "40200",
+            "url": "https://example.atlassian.net/browse/PRD-402",
+            "reused": False,
+        }
+
+        tool = JiraCreateIssueTool(authoritative_run_id="auth-run-9")
+        with patch(
+            "crewai_productfeature_planner.mongodb.product_requirements.append_jira_ticket",
+        ) as mock_append:
+            tool._run(summary="Auth Only Story")
+
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["run_id"] == "auth-run-9"
+        mock_append.assert_called_once()
+        assert mock_append.call_args[0][0] == "auth-run-9"
+
+    def test_default_authoritative_run_id_is_empty(self):
+        """Default construction should have empty authoritative_run_id."""
+        tool = JiraCreateIssueTool()
+        assert tool.authoritative_run_id == ""
+
+    def test_authoritative_run_id_set_at_construction(self):
+        """authoritative_run_id should be settable at construction."""
+        tool = JiraCreateIssueTool(authoritative_run_id="my-run")
+        assert tool.authoritative_run_id == "my-run"

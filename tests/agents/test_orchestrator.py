@@ -11,6 +11,8 @@ from crewai_productfeature_planner.agents.orchestrator.agent import (
     _build_llm,
     _build_tools,
     _load_yaml,
+    create_jira_architect_tech_lead_agent,
+    create_jira_product_manager_agent,
     create_orchestrator_agent,
     get_task_configs,
 )
@@ -332,3 +334,58 @@ class TestGetTaskConfigs:
         assert "definition of done" in desc
         assert "test cases for qe" in desc
         assert "unit test cases" in desc or "unit test" in desc
+
+
+# ── Jira agent factory — authoritative run_id ────────────────────────
+
+
+class TestJiraAgentRunId:
+    """Tests that Jira agent factories wire authoritative_run_id."""
+
+    def test_pm_agent_passes_run_id_to_tool(self):
+        """create_jira_product_manager_agent must set authoritative_run_id."""
+        with _mock_build_llm():
+            agent = create_jira_product_manager_agent(run_id="run-abc")
+
+        jira_tools = [
+            t for t in agent.tools
+            if getattr(t, "name", "") == "jira_create_issue"
+        ]
+        assert len(jira_tools) == 1
+        assert jira_tools[0].authoritative_run_id == "run-abc"
+
+    def test_pm_agent_default_run_id_empty(self):
+        """Default call without run_id should leave authoritative empty."""
+        with _mock_build_llm():
+            agent = create_jira_product_manager_agent()
+
+        jira_tools = [
+            t for t in agent.tools
+            if getattr(t, "name", "") == "jira_create_issue"
+        ]
+        assert len(jira_tools) == 1
+        assert jira_tools[0].authoritative_run_id == ""
+
+    def test_architect_agent_passes_run_id_to_tool(self):
+        """create_jira_architect_tech_lead_agent must set authoritative_run_id."""
+        with _mock_build_llm():
+            agent = create_jira_architect_tech_lead_agent(run_id="run-xyz")
+
+        jira_tools = [
+            t for t in agent.tools
+            if getattr(t, "name", "") == "jira_create_issue"
+        ]
+        assert len(jira_tools) == 1
+        assert jira_tools[0].authoritative_run_id == "run-xyz"
+
+    def test_architect_agent_default_run_id_empty(self):
+        """Default call without run_id should leave authoritative empty."""
+        with _mock_build_llm():
+            agent = create_jira_architect_tech_lead_agent()
+
+        jira_tools = [
+            t for t in agent.tools
+            if getattr(t, "name", "") == "jira_create_issue"
+        ]
+        assert len(jira_tools) == 1
+        assert jira_tools[0].authoritative_run_id == ""

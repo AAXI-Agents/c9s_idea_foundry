@@ -2,6 +2,14 @@
 
 > Source tree with file-level purpose annotations.
 
+## Root Shell Scripts
+
+| File | Purpose |
+|------|---------|
+| `start_server.sh` | Launch FastAPI server (optionally with ngrok) |
+| `start_server_watchdog.sh` | Auto-restart wrapper for start_server.sh with circuit breaker |
+| `scripts/dev_setup.sh` | One-command project bootstrap (venv, deps, .env) |
+
 ## Top-Level Source (`src/crewai_productfeature_planner/`)
 
 | File | Purpose |

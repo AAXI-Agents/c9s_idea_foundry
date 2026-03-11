@@ -183,6 +183,7 @@ def create_delivery_manager_agent(
 
 def create_jira_product_manager_agent(
     project_id: str | None = None,
+    run_id: str = "",
 ) -> Agent:
     """Create a Product Manager agent for Jira Epic & Story creation.
 
@@ -195,6 +196,7 @@ def create_jira_product_manager_agent(
 
     Args:
         project_id: Optional project identifier for memory enrichment.
+        run_id: Authoritative run_id to prevent LLM hallucination.
     """
     agent_config = _load_yaml("product_manager_jira.yaml")["product_manager_jira"]
     logger.info(
@@ -211,7 +213,7 @@ def create_jira_product_manager_agent(
         goal=agent_config["goal"].strip(),
         backstory=backstory,
         llm=_build_llm(),
-        tools=[JiraCreateIssueTool()],
+        tools=[JiraCreateIssueTool(authoritative_run_id=run_id)],
         verbose=is_verbose(),
         allow_delegation=False,
         knowledge_sources=[build_project_knowledge_source()],
@@ -221,6 +223,7 @@ def create_jira_product_manager_agent(
 
 def create_jira_architect_tech_lead_agent(
     project_id: str | None = None,
+    run_id: str = "",
 ) -> Agent:
     """Create an Architect & Tech Lead agent for Jira Task creation.
 
@@ -233,6 +236,7 @@ def create_jira_architect_tech_lead_agent(
 
     Args:
         project_id: Optional project identifier for memory enrichment.
+        run_id: Authoritative run_id to prevent LLM hallucination.
     """
     agent_config = _load_yaml("architect_tech_lead.yaml")["architect_tech_lead"]
     logger.info(
@@ -249,7 +253,7 @@ def create_jira_architect_tech_lead_agent(
         goal=agent_config["goal"].strip(),
         backstory=backstory,
         llm=_build_llm(),
-        tools=[JiraCreateIssueTool()],
+        tools=[JiraCreateIssueTool(authoritative_run_id=run_id)],
         verbose=is_verbose(),
         allow_delegation=False,
         knowledge_sources=[build_project_knowledge_source()],

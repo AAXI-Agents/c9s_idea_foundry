@@ -17,6 +17,11 @@ from crewai_productfeature_planner.mongodb import (
 )
 from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
 from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.scripts.retry import (
+    BillingError,
+    ModelBusyError,
+    ShutdownError,
+)
 from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 
 if TYPE_CHECKING:
@@ -193,6 +198,8 @@ def run_post_completion(flow: PRDFlow) -> None:
             _run_phased_post_completion(flow)
         else:
             _run_auto_post_completion(flow)
+    except (BillingError, ModelBusyError, ShutdownError):
+        raise  # Must propagate to service layer for proper pause handling
     except Exception as exc:
         logger.warning(
             "[PostCompletion] Atlassian delivery failed — "

@@ -1,11 +1,11 @@
 # CODEX — AI Agent Developer Guide
 
-> **Purpose**: Reduce token usage when working with AI coding agents
-> (Copilot, Codex, Cursor, Claude Code, etc.) by documenting the modular
-> layout so agents can load only the files they need.
+> **Purpose**: Lean lookup guide for AI coding agents. Load only what you
+> need — detailed documentation lives in `obsidian/`. This file provides
+> quick-reference tables and pointers; read the linked Obsidian pages for
+> full context.
 >
-> **Last updated**: 2026-03-08 — Obsidian knowledge base integration,
-> session/iteration knowledge updates, vault structure.
+> **Last updated**: 2026-03-10
 
 ---
 
@@ -15,152 +15,65 @@
 |------|------------|-----------|
 | **Server / CLI** | `src/.../main.py` | FastAPI app, CLI entrypoint |
 | **PRD Flow** | `src/.../flows/prd_flow.py` | CrewAI Flow orchestrating the full PRD lifecycle |
-| **Orchestrator** | `src/.../orchestrator/` | Pipeline runner + stage factories (see below) |
+| **Orchestrator** | `src/.../orchestrator/` | Pipeline runner + stage factories |
 | **Agents** | `src/.../agents/` | CrewAI agent configs (idea_refiner, requirements_breakdown, etc.) |
 | **APIs** | `src/.../apis/` | FastAPI routers (health, prd, slack, publishing) |
 | **Slack** | `src/.../apis/slack/` | Slack router, interactive handlers, flow handlers, event routing |
 | **MongoDB** | `src/.../mongodb/` | DB client, repositories (working_ideas, crew_jobs, agent_interactions, etc.) |
 | **Tools** | `src/.../tools/` | CrewAI tools (confluence, jira, file I/O, search, slack) |
 | **Scripts** | `src/.../scripts/` | Logging, preflight checks, retry, ngrok tunnel, slack config, MongoDB setup |
-| **Tests** | `tests/` | Mirror of `src/` layout; pytest (2033+ tests) |
+| **Tests** | `tests/` | Mirror of `src/` layout; pytest (2175+ tests) |
+
+→ Full module map: `obsidian/Architecture/Module Map.md`
 
 ---
 
-## Server Lifecycle (`apis/__init__.py`)
+## Obsidian Knowledge Base
 
-The FastAPI app runs 10 startup steps in `_lifespan()`:
+All detailed documentation lives in `obsidian/`. Read the relevant page
+when you need deep context on a topic.
 
-0. `ensure_collections()` → creates missing MongoDB collections and indexes
-1. Kill stale crew processes
-2. `fail_incomplete_jobs_on_startup()` → marks orphaned crewJobs as `failed`
-2b. `fail_unfinalized_on_startup()` → marks unfinalized working ideas as `failed`
-3. Generate missing markdown outputs for completed ideas
-4. Run startup pipeline (review + Confluence publish via orchestrator)
-5. Launch autonomous delivery crew (Confluence + Jira) in background thread
-6. Start file watcher for `output/prds/` auto-publish
-7. Start cron scheduler for periodic delivery scans
-8. `_notify_terminated_flows()` → posts Slack notices to threads whose flows
-   were terminated on restart; users are told to say "create prd" to start fresh
-9. Install `threading.excepthook` safety net for uncaught thread exceptions
+| Topic | Obsidian page |
+|-------|--------------|
+| **Architecture & conventions** | `Architecture/Project Overview.md` |
+| **CrewAI framework patterns** | `Architecture/CrewAI Framework.md` |
+| **Module file map** | `Architecture/Module Map.md` |
+| **Server startup/shutdown** | `Architecture/Server Lifecycle.md` |
+| **Environment variables** | `Architecture/Environment Variables.md` |
+| **Coding standards** | `Architecture/Coding Standards.md` |
+| **Agent configs & roles** | `Agents/Agent Roles.md` |
+| **LLM model tiers** | `Agents/LLM Model Tiers.md` |
+| **API endpoints** | `APIs/API Overview.md` |
+| **Version history / changelog** | `Changelog/Version History.md` |
+| **MongoDB schemas** | `Database/MongoDB Schema.md` |
+| **PRD generation flow** | `Flows/PRD Flow.md` |
+| **Slack integration** | `Integrations/Slack Integration.md` |
+| **Confluence publishing** | `Integrations/Confluence Integration.md` |
+| **Jira ticketing** | `Integrations/Jira Integration.md` |
+| **PRD guidelines** | `Knowledge/PRD Guidelines.md` |
+| **User preferences** | `Knowledge/User Preferences.md` |
+| **Orchestrator pipelines** | `Orchestrator/Orchestrator Overview.md` |
+| **Test patterns & patches** | `Testing/Testing Guide.md` |
+| **CrewAI tools** | `Tools/Tools Overview.md` |
+| **Session log** | `Sessions/Session Log.md` |
 
-Shutdown: restores original `threading.excepthook`, stops file watcher and scheduler.
+### When to Update Which Page
 
----
-
-## PRD Flow Progress Events (`flows/prd_flow.py`)
-
-The flow fires events via `_notify_progress(event_type, details)`:
-
-| Event | When | Key details fields |
-|-------|------|-------------------|
-| `section_start` | Section begins (draft or resume) | `section_title`, `section_key`, `section_step`, `total_sections` |
-| `exec_summary_iteration` | Each exec summary refinement pass | `iteration`, `max_iterations` |
-| `executive_summary_complete` | Exec summary finalized | `iterations` |
-| `section_iteration` | Each section refinement pass | `section_title`, `section_key`, `section_step`, `total_sections`, `iteration`, `max_iterations` |
-| `section_complete` | Section approved | `section_title`, `section_key`, `section_step`, `total_sections`, `iterations` |
-| `all_sections_complete` | All sections done | `total_iterations`, `total_sections` |
-| `prd_complete` | Final PRD assembled | _(empty)_ |
-| `confluence_published` | Published to Confluence | `url` |
-| `jira_published` | Jira tickets created | `ticket_count` |
-
-Consumed by `make_progress_poster()` in `_flow_handlers.py` which posts
-to Slack and updates `crewJobs.current_section*` fields.
-
----
-
-## Slack Module Map (`apis/slack/`)
-
-```
-apis/slack/
-  router.py               /slack/kickoff endpoints, _run_slack_prd_flow()
-  events_router.py         /slack/events webhook, message/app_mention routing
-  interactive_handlers.py  Interactive (approval buttons, manual refinement)
-  _flow_handlers.py        make_progress_poster(), handle_resume_prd(),
-                           handle_publish_intent(), kick_off_prd_flow()
-  _thread_state.py         Per-thread conversation state
-  _intent_classifier.py    Message intent classification
-```
-
-### Key functions
-
-| Function | File | Purpose |
-|----------|------|---------|
-| `make_progress_poster(channel, thread_ts, user, send_tool, *, run_id)` | `_flow_handlers.py` | Returns progress callback for Slack heartbeat + crewJobs tracking |
-| `handle_resume_prd(channel, thread_ts, user, send_tool, project_id)` | `_flow_handlers.py` | Finds latest unfinalized run, resumes in background thread |
-| `_run_slack_prd_flow(run_id, idea, channel, ...)` | `router.py` | Full flow executor with Slack notifications |
-| `run_interactive_slack_flow(run_id, idea, channel, ...)` | `interactive_handlers.py` | Interactive approval flow with buttons |
+| Change type | Pages to update |
+|------------|----------------|
+| New module / file added | `Architecture/Module Map.md` |
+| New API endpoint | `APIs/API Overview.md` |
+| New agent or model change | `Agents/Agent Roles.md`, `Agents/LLM Model Tiers.md` |
+| New Slack intent or action | `Integrations/Slack Integration.md` |
+| MongoDB schema change | `Database/MongoDB Schema.md` |
+| New env var | `Architecture/Environment Variables.md` |
+| Pipeline stage change | `Orchestrator/Orchestrator Overview.md` |
+| Version bump | `Changelog/Version History.md` |
+| Every session | `Sessions/Session Log.md` |
 
 ---
 
-## MongoDB Module Map
-
-```
-mongodb/
-  client.py                get_db(), connection management
-  crew_jobs/
-    repository.py          create_job(), update_job_status(), fail_incomplete_jobs_on_startup(),
-                           reactivate_job(), find_active_job(), find_job(), list_jobs()
-  working_ideas/
-    repository.py          save_iteration(), find_unfinalized(), save_slack_context(),
-                           save_confluence_url(), mark_completed(), mark_paused(),
-                           get_run_documents(), save_output_file(), save_project_ref()
-  agent_interactions/      Slack interaction logging (fine-tuning data)
-  project_config/          Per-project settings (jira_project_key, etc.)
-  project_memory/          Project-level memory store
-```
-
-### crewJobs document schema
-
-```
-{
-  job_id, flow_name, idea, status,
-  error,
-  slack_channel, slack_thread_ts,           # for auto-resume
-  current_section, current_section_key,     # live progress tracking
-  current_section_step, total_sections,
-  queued_at, started_at, completed_at,
-  queue_time_ms, queue_time_human,
-  running_time_ms, running_time_human,
-  updated_at
-}
-```
-
-Status values: `queued` → `running` → `completed` | `failed` | `awaiting_approval` | `paused`
-
----
-
-## Orchestrator Module Map
-
-```
-src/crewai_productfeature_planner/orchestrator/
-  orchestrator.py          AgentOrchestrator, AgentStage, StageResult
-  stages.py                Re-export facade (backward compat — all names)
-
-  _helpers.py              _has_gemini_credentials, _has_confluence_credentials,
-                           _has_jira_credentials, _print_delivery_status
-
-  _idea_refinement.py      build_idea_refinement_stage(flow)
-  _requirements.py         build_requirements_breakdown_stage(flow)
-  _confluence.py           build_confluence_publish_stage(flow)
-  _jira.py                 _extract_issue_keys,
-                           build_jira_skeleton_stage(flow),
-                           build_jira_epics_stories_stage(flow),
-                           build_jira_subtasks_stage(flow),
-                           build_jira_ticketing_stage(flow)  [legacy auto-approve]
-
-  _pipelines.py            build_default_pipeline(flow),
-                           build_post_completion_pipeline(flow)
-
-  _post_completion.py      build_post_completion_crew(flow, progress_callback)
-  _startup_review.py       _discover_publishable_prds,
-                           build_startup_markdown_review_stage,
-                           build_startup_pipeline
-  _startup_delivery.py     DeliveryItem, _discover_pending_deliveries,
-                           build_startup_delivery_crew(item, progress_callback,
-                                                       confluence_only)
-```
-
-### When to load which file
+## Orchestrator — When to Load Which File
 
 | Task | File(s) to read |
 |------|----------------|
@@ -175,6 +88,8 @@ src/crewai_productfeature_planner/orchestrator/
 | Fix startup PRD publishing | `_startup_review.py` |
 | Fix startup pending deliveries | `_startup_delivery.py` |
 
+→ Full orchestrator details: `obsidian/Orchestrator/Orchestrator Overview.md`
+
 ---
 
 ## PRD Service (`apis/prd/service.py`)
@@ -188,45 +103,7 @@ src/crewai_productfeature_planner/orchestrator/
 
 ---
 
-## Test Module Map
-
-Tests mirror the source modules:
-
-```
-tests/orchestrator/
-  test_stages.py              Smoke test (facade import check only)
-  test_helpers.py             Credential checks, _print_delivery_status
-  test_idea_refinement.py     TestIdeaRefinementStage
-  test_requirements.py        TestRequirementsBreakdownStage
-  test_confluence.py          TestConfluencePublishStage
-  test_jira.py                TestExtractIssueKeys, TestJiraTicketingStage
-  test_pipelines.py           TestBuildDefaultPipeline, TestBuildPostCompletionPipeline
-  test_post_completion.py     TestBuildPostCompletionCrew
-  test_startup_review.py      TestDiscoverPublishablePrds, TestStartupMarkdownReviewStage,
-                              TestStartupPipeline
-  test_startup_delivery.py    TestDiscoverPendingDeliveries, TestBuildStartupDeliveryCrew
-```
-
----
-
-## Patch Target Cheat Sheet
-
-When writing `@patch(...)` in tests, patch the name **where it is
-imported**, not where it is defined:
-
-| Function | Patch target |
-|----------|-------------|
-| `_has_gemini_credentials` in `_post_completion.py` | `...orchestrator._post_completion._has_gemini_credentials` |
-| `_has_jira_credentials` in `_startup_delivery.py` | `...orchestrator._startup_delivery._has_jira_credentials` |
-| `_has_confluence_credentials` in `_startup_review.py` | `...orchestrator._startup_review._has_confluence_credentials` |
-| `_discover_publishable_prds` in `_startup_review.py` | `...orchestrator._startup_review._discover_publishable_prds` |
-
-> **Rule of thumb**: Patch `<module_where_used>.<name>`, not
-> `<module_where_defined>.<name>`.
-
----
-
-## Quick Start (New Developer)
+## Quick Start
 
 ```bash
 # One-command project setup (creates venv, installs deps, copies .env)
@@ -265,34 +142,11 @@ code .
 
 ---
 
-## Coding Standards
+## Coding Standards (Summary)
 
-### 1. Modular & Component-Based Design
+> Full details: `obsidian/Architecture/Coding Standards.md`
 
-All new code must be modular and component-oriented:
-- Split large files into focused sub-modules (one concern per file)
-- Keep functions small and single-purpose
-- Use `__init__.py` re-exports so internal layout can change without breaking imports
-- Goal: smaller context windows for AI agents → less token usage
-
-### 2. Log Scanning After Changes
-
-After every code change — and during partial or full test runs — scan
-logs for warnings or errors that need fixing:
-- Check `logs/crewai.log` for new `WARNING` / `ERROR` entries
-- Fix any regressions before moving on to the next task
-- Run tests with `-x` (fail-fast) and inspect output for unexpected warnings
-
-### 3. API Documentation
-
-- Maintain OpenAPI/Swagger docs in `docs/openapi/openapi.json`
-- Every new or changed endpoint must update the OpenAPI spec
-- Update `README.md` when adding new APIs, features, or setup steps
-- FastAPI auto-generates Swagger UI at `/docs` — verify it reflects changes
-
-### 4. Version Control (`X.Y.Z`)
-
-Versioning follows `X.Y.Z` in `src/.../version.py`:
+### Version Control (`X.Y.Z`)
 
 | Segment | Bumped by | When |
 |---------|-----------|------|
@@ -300,374 +154,58 @@ Versioning follows `X.Y.Z` in `src/.../version.py`:
 | **Y** (Major) | Agent | Agent adds a new set of features or code |
 | **Z** (Minor) | Agent | Agent iterates on a fix or resolves a bug |
 
-Example: `0.2.0` → agent adds heartbeat feature → `0.3.0` → agent
-fixes a bug → `0.3.1` → user cuts release → `1.0.0`.
-
 The canonical version lives in `version.py` `_CODEX` list — append a
 new `CodexEntry` for each bump.
 
-### 5. Jira Approval Gate Invariant
+### Jira Approval Gate Invariant
 
 Jira tickets must **never** be created without explicit user approval.
-This critical invariant is enforced by 23 regression tests in
-`tests/flows/test_jira_approval_gate.py`.
+Enforced by 23 regression tests in `tests/flows/test_jira_approval_gate.py`.
 
-**Rules for all delivery code paths:**
-- **Autonomous paths** (`_run_auto_post_completion`, startup delivery
-  crews, CLI startup): Must pass `confluence_only=True` to crew builders.
-- **Interactive paths** (`_run_phased_post_completion`): Must use 3-phase
-  approval flow (skeleton → Epics/Stories → Sub-tasks) with user
-  interaction at each gate.
-- **Restart paths** (`execute_restart_prd`): Must pass `interactive=True`
-  to `kick_off_prd_flow`.
+- **Autonomous paths**: Must pass `confluence_only=True` to crew builders.
+- **Interactive paths**: Must use 3-phase approval flow (skeleton → Epics/Stories → Sub-tasks).
+- **Restart paths**: Must pass `interactive=True` to `kick_off_prd_flow`.
+- **New delivery paths**: Add a regression test to `test_jira_approval_gate.py`.
 
-**When adding new delivery paths**: Add a regression test to
-`test_jira_approval_gate.py` to verify the new path respects the gate.
+### Key Rules
 
-**Lesson learned** (v0.15.8): Adding a parameter like `confluence_only`
-is not enough — it must be propagated to ALL callers. Five distinct code
-paths were identified that could bypass the Jira approval gate. Always
-trace every caller chain end-to-end when adding safety gates.
-
-**Lesson learned** (v0.15.11): Don't just guard against Jira *creation*
-— also guard against Jira *state persistence*. `persist_post_completion()`
-was autonomously detecting Jira keywords in crew output and setting
-`jira_phase=subtasks_done` + `jira_completed=True`, causing the product
-list to show Jira as complete when the user never approved it. All
-autonomous Jira detection/persistence was removed from
-`persist_post_completion()`, `_cli_startup.py`, and `components/startup.py`.
-Only the interactive phased flow (`orchestrator/_jira.py`) may set these
-fields.
-
-### 6. One-Time Data Fix Scripts
-
-When a bug contaminates MongoDB data (e.g. stale flags, orphaned
-records), fix it with a **one-time script** in `scripts/`:
-
-1. **Create** the script (e.g. `scripts/fix_stale_jira_phase.py`).
-2. **Query first**: find affected documents and print them before making
-   changes. Use `find()` with a filter, never blanket updates.
-3. **Fix**: apply targeted `update_one` / `update_many` with explicit
-   filters (e.g. `{"jira_phase": "subtasks_done", "jira_skeleton": {"$exists": False}}`).
-4. **Verify**: re-query the same documents and print the corrected state.
-5. **Run** the script: `.venv/bin/python -m crewai_productfeature_planner.scripts.fix_stale_jira_phase`
-6. **Confirm** output shows the expected before/after state.
-7. **Delete** the script — it is single-use. Don't commit it.
-
-**Template** (adapt field names and filters):
-```python
-"""One-time fix: reset stale <field> on <collection>."""
-from crewai_productfeature_planner.mongodb.client import get_db
-
-def main():
-    db = get_db()
-    col = db["<collection>"]
-
-    # 1. Find affected docs
-    query = {"<field>": "<bad_value>", "<guard>": {"$exists": False}}
-    docs = list(col.find(query, {"_id": 0, "run_id": 1, "<field>": 1}))
-    print(f"Found {len(docs)} affected doc(s):", docs)
-
-    # 2. Fix
-    if docs:
-        result = col.update_many(query, {"$set": {"<field>": "<good_value>"}})
-        print(f"Updated {result.modified_count} doc(s)")
-
-    # 3. Verify
-    after = list(col.find({"run_id": {"$in": [d["run_id"] for d in docs]}},
-                          {"_id": 0, "run_id": 1, "<field>": 1}))
-    print("After fix:", after)
-
-if __name__ == "__main__":
-    main()
-```
-
-> **Rule**: Always delete the script after use. It documents the fix in
-> the git history if committed before deletion, but must not remain in
-> the tree as a runnable artifact.
+- Modular design: one concern per file, small functions, `__init__.py` re-exports
+- Log scanning: check `logs/crewai.log` after every change for `WARNING`/`ERROR`
+- API docs: update `docs/openapi/openapi.json` for every endpoint change
+- One-time fix scripts: create in `scripts/`, query→fix→verify→delete
 
 ---
 
-## Session Management
+## Session Management (Summary)
 
-### 1. Major vs Minor Changes — Chat Session Scope
+> Full details: `obsidian/Architecture/Coding Standards.md`
 
-- **Major changes** (new features, large refactors, new integrations):
-  Start a **new chat session** before working on the idea. Each major
-  change gets its own session to keep context clean and version bumps
-  isolated (`Y` bump).
-- **Minor changes** (bug fixes, small tweaks related to the current work):
-  Keep in the **current session**. These get a `Z` bump.
+- **Major changes** (new features, refactors) → new chat session (`Y` bump)
+- **Minor changes** (bug fixes, tweaks) → current session (`Z` bump)
+- **Compact mode** at 75% context capacity — summarise and continue
+- **All terminal commands allowed by default** — no need to ask permission
 
-> **Rule of thumb**: If it bumps `Y`, open a new session. If it bumps
-> `Z` and is related to the current session's work, stay.
+### Obsidian Knowledge Updates (Required)
 
-### 2. Bug Fixes in Current Session
+The vault **must** be updated immediately after each code change:
 
-If a bug is discovered during the current session **and** is related to
-the work being done, fix it in the same session. Do not defer to a new
-session — context is already loaded.
-
-### 3. Compact Mode at 75% Memory
-
-When the current memory/context capacity reaches **75%**, switch to
-**compact mode**:
-- Summarise completed work so far
-- Drop intermediate search/read results from context
-- Keep only: current task state, file paths, key decisions, and todo list
-- Continue working from the compacted state
-
-This prevents context overflow and keeps the agent productive.
-
-### 4. Command Prompt Permissions
-
-All command-line operations are **allowed by default** in any new session.
-No need to ask for permission before running terminal commands — the agent
-should proceed directly with builds, tests, installs, and any other
-commands needed to complete the task.
-
-### 5. Obsidian Knowledge Updates (Required)
-
-The Obsidian vault at `obsidian/` **must** be kept in sync with every
-code change. This is not a session-end task — update the relevant
-Obsidian pages **immediately after each user interaction** that changes
-code, adds features, fixes bugs, or modifies project structure.
-
-**On every session start:**
-1. Read `obsidian/Sessions/Session Log.md` to understand recent work.
-2. Use the `obsidian/Templates/Session Entry.md` format to plan the
-   session entry.
-
-**After every user interaction that changes code:**
-1. Identify which Obsidian pages are affected (see "When to Update
-   Which Page" table below).
-2. Update those pages immediately — do not defer to session end.
-3. If a version was bumped, update `obsidian/Changelog/Version History.md`.
-4. If new files/modules were added, update `obsidian/Architecture/Module Map.md`.
-
-**On every session end:**
-1. Append a session summary to `obsidian/Sessions/Session Log.md`.
-2. Verify all Obsidian pages affected during the session are up to date.
-3. Update `obsidian/Home.md` if vault structure changed (new folders/pages).
-4. Update CrewAI knowledge sources in `knowledge/` if any session work
-   changed user preferences, project architecture, or PRD guidelines:
-   - `knowledge/user_preference.txt` — user workflow preferences,
-     tooling choices, and PRD style expectations.
-   - `knowledge/project_architecture.txt` — tech stack, conventions,
-     system design patterns.
-   - `knowledge/prd_guidelines.txt` — PRD template rules and quality
-     criteria.
-   These files feed directly into the CrewAI agents (Idea Refiner,
-   Product Manager, Requirements Breakdown) — stale knowledge degrades
-   agent output quality.
+1. **Session start**: Read `Sessions/Session Log.md` for recent context
+2. **After each code change**: Update affected Obsidian pages (see table above)
+3. **Session end**: Append summary to `Sessions/Session Log.md`
+4. **Knowledge sources**: Update `knowledge/*.txt` files when preferences,
+   architecture, or PRD guidelines change — these feed CrewAI agents directly
 
 ---
 
-## Obsidian Knowledge Base
+## Patch Target Cheat Sheet
 
-Project knowledge is maintained in an Obsidian vault **inside the
-project repository** so it is version-controlled alongside the code.
+Patch the name **where it is imported**, not where it is defined:
 
-**Vault path:**
-```
-obsidian/
-```
+| Function | Patch target |
+|----------|-------------|
+| `_has_gemini_credentials` in `_post_completion.py` | `...orchestrator._post_completion._has_gemini_credentials` |
+| `_has_jira_credentials` in `_startup_delivery.py` | `...orchestrator._startup_delivery._has_jira_credentials` |
+| `_has_confluence_credentials` in `_startup_review.py` | `...orchestrator._startup_review._has_confluence_credentials` |
+| `_discover_publishable_prds` in `_startup_review.py` | `...orchestrator._startup_review._discover_publishable_prds` |
 
-### Vault Structure
-
-```
-Home.md                          ← Navigation hub
-Architecture/
-  Project Overview.md            ← Tech stack, conventions, versioning
-  Module Map.md                  ← Source file purposes
-  Server Lifecycle.md            ← Startup/shutdown sequence
-  Environment Variables.md       ← Env var reference
-  Coding Standards.md            ← Development conventions
-Agents/
-  Agent Roles.md                 ← All agent configurations
-  LLM Model Tiers.md             ← Model selection guide
-APIs/
-  API Overview.md                ← Endpoint summary
-Changelog/
-  Version History.md             ← Full v0.1.0 → current changelog
-Database/
-  MongoDB Schema.md              ← Collections, indexes, document schemas
-Flows/
-  PRD Flow.md                    ← Generation pipeline phases
-Integrations/
-  Slack Integration.md           ← Module map, intents, action IDs
-  Confluence Integration.md      ← Publishing pipeline
-  Jira Integration.md            ← Phased ticketing workflow
-Knowledge/
-  PRD Guidelines.md              ← 10-section template & quality criteria
-  User Preferences.md            ← User profile & PRD preferences
-Orchestrator/
-  Orchestrator Overview.md       ← Pipeline stages & factories
-Sessions/
-  Session Log.md                 ← AI session tracking (append-only)
-Templates/
-  Session Entry.md               ← Template for session entries
-Testing/
-  Testing Guide.md               ← Test patterns & patch targets
-Tools/
-  Tools Overview.md              ← CrewAI tool wrappers
-```
-
-### When to Update Which Page
-
-| Change type | Pages to update |
-|------------|----------------|
-| New module / file added | `Architecture/Module Map.md` |
-| New API endpoint | `APIs/API Overview.md` |
-| New agent or model change | `Agents/Agent Roles.md`, `Agents/LLM Model Tiers.md` |
-| New Slack intent or action | `Integrations/Slack Integration.md` |
-| MongoDB schema change | `Database/MongoDB Schema.md` |
-| New env var | `Architecture/Environment Variables.md` |
-| Pipeline stage change | `Orchestrator/Orchestrator Overview.md` |
-| Version bump | `Changelog/Version History.md` |
-| Every session | `Sessions/Session Log.md` |
-
----
-
-## Project Conventions
-
-- **Python 3.11** with type hints throughout
-- **CrewAI** framework for multi-agent orchestration
-- **Pydantic v2** models for API request/response and flow state
-- **MongoDB** for PRD persistence (working ideas, finalized ideas, delivery records)
-- **Embedder provider**: `google-vertex` (backed by `google-genai` SDK)
-- Tests use `unittest.mock.patch` + `monkeypatch` for env vars
-- All source packages have `__init__.py` with explicit `__all__`
-- Logging uses `[Tag]` prefix convention (e.g. `[SlackConfig]`, `[CrewJobs]`, `[Phase 2]`)
-- No decorative/box-drawing characters in log output — single-line structured messages only
-
----
-
-## LLM Model Tiers
-
-The application uses two model tiers for both Gemini and OpenAI providers.
-All model defaults live in `agents/gemini_utils.py`.
-
-### Basic Models (`GEMINI_MODEL` / `OPENAI_MODEL`)
-
-Fast, lightweight models for orchestration and user interactions:
-
-| Consumer | File | Purpose |
-|----------|------|--------|
-| Gemini intent classifier | `tools/gemini_chat.py` | Classify Slack message intent |
-| OpenAI intent classifier | `tools/openai_chat.py` | Classify Slack message intent (fallback) |
-| Next-step predictor | `apis/slack/_next_step.py` | Predict next user action |
-
-### Research Models (`GEMINI_RESEARCH_MODEL` / `OPENAI_RESEARCH_MODEL`)
-
-Deep-thinking models for complex, multi-iteration tasks:
-
-| Consumer | File | Purpose |
-|----------|------|--------|
-| Product Manager agent | `agents/product_manager/agent.py` | PRD section drafting, critique, refinement |
-| Idea Refiner agent | `agents/idea_refiner/agent.py` | Iterative idea enrichment (3-10 cycles) |
-| Requirements Breakdown agent | `agents/requirements_breakdown/agent.py` | Requirements decomposition (3-10 cycles) |
-| Orchestrator agent | `agents/orchestrator/agent.py` | Confluence publish, Jira ticket creation |
-| Delivery Manager agent | `agents/orchestrator/agent.py` | Startup delivery orchestration |
-| Jira PM / Architect agents | `agents/orchestrator/agent.py` | Jira Epic/Story/Task creation |
-
-### When writing new code
-
-- **User-facing, lightweight, or routing logic** → use `GEMINI_MODEL` / `OPENAI_MODEL`
-- **Content generation, iterative refinement, or deep reasoning** → use `GEMINI_RESEARCH_MODEL` / `OPENAI_RESEARCH_MODEL`
-- Import defaults from `agents/gemini_utils.py` (`DEFAULT_GEMINI_MODEL`, `DEFAULT_GEMINI_RESEARCH_MODEL`, etc.)
-
----
-
-## Environment Variables (key ones)
-
-| Variable | Purpose |
-|----------|---------|
-| `GEMINI_API_KEY` | Google Gemini LLM access || `GEMINI_MODEL` | **Basic** Gemini model — intent classification, next-step prediction, orchestration |
-| `GEMINI_RESEARCH_MODEL` | **Research** Gemini model — idea refinement, requirements, PRD drafting, Confluence, Jira |
-| `OPENAI_MODEL` | **Basic** OpenAI model — intent classification, lightweight interactions |
-| `OPENAI_RESEARCH_MODEL` | **Research** OpenAI model — PRD section drafting & critique || `SLACK_BOT_TOKEN` | Slack bot API token (`xoxb-`) |
-| `SLACK_SIGNING_SECRET` | Slack request verification |
-| `SLACK_APP_ID` | For manifest auto-update |
-| `SLACK_APP_CONFIGURATION_TOKEN` | Manifest API token (must be `xoxe.xoxp-` prefix) |
-| `NGROK_DOMAIN` | Stable ngrok domain (avoids manifest updates) |
-| `NGROK_AUTHTOKEN` | ngrok authentication |
-| `MONGODB_URI` | MongoDB connection string |
-| `CONFLUENCE_*` | Confluence publishing credentials |
-| `JIRA_*` | Jira ticketing credentials |
-| `PRD_SECTION_MIN_ITERATIONS` / `PRD_SECTION_MAX_ITERATIONS` | Section refinement bounds |
-| `DEFAULT_MULTI_AGENTS` | Number of parallel agents (default: 1) |
-
----
-
-## Recent Changes (2026-03-10)
-
-- **Fix post-completion flow not prompting user after resume** (v0.16.1):
-  `handle_resume_prd()` called `resume_prd_flow(auto_approve=True)` without
-  Jira callbacks, so `_finalization.py` fell to `_run_auto_post_completion()`
-  instead of the interactive phased flow. Added `jira_skeleton_approval_callback`
-  and `jira_review_callback` params to `resume_prd_flow()`, wired to flow
-  instance and callback registry. `handle_resume_prd()` now registers the
-  interactive run and builds Jira callbacks. 5 new tests (2150 total).
-- **Optimise PRD section generation performance** (v0.16.0): Three changes
-  reduce wall-clock runtime for later sections: (1) New
-  `approved_context_condensed()` sends titles + first 500 chars of prior
-  sections to refine tasks instead of full text — cuts research-model prompt
-  from ~30K to ~5K by section 9. (2) Exclude executive_summary from
-  `{approved_sections}` in critique/refine since it's already a separate
-  template param. (3) Remove knowledge_sources/embedder from critic agent —
-  pure evaluation doesn't need RAG. 4 new tests (2158 total).
-- **Fix progress heartbeat for interactive flows** (v0.15.15):
-  `run_interactive_slack_flow()` in `_flow_runner.py` was missing
-  `make_progress_poster()` callback — section-by-section Slack updates never
-  fired. Added progress_cb creation and wired into flow + callback registry.
-  3 new tests (2154 total).
-- **Add archive button to product list** (v0.15.14): Completed ideas now show
-  a `:file_folder: Archive` button in the product list. Clicking it posts a
-  confirmation prompt; on confirm the product is marked `status='archived'` and
-  excluded from future listings. Wired `product_archive_` prefix in dispatch
-  router, added `_handle_product_archive()` in the handler, and reuses the
-  existing `archive_idea_confirm`/`archive_idea_cancel` confirmation flow.
-  11 new tests (2151 total).
-- **Eliminate 'unknown' Jira ticket types** (v0.15.13): The JiraCreateIssueTool
-  now normalises LLM-provided `issue_type` values before persisting to MongoDB.
-  Root cause: the tool persisted the raw LLM type before the orchestrator could
-  write the correct hardcoded type — and `append_jira_ticket()` dedup meant the
-  first (wrong) write won. New `_normalise_issue_type()` maps variants like
-  'task', 'Sub-Task', 'subtask', 'unknown' to canonical Jira types. Context-
-  aware: `parent_key` set → default is 'Sub-task'. 18 new tests (2140 total).
-- **Persist Jira Epics & Stories output** (v0.15.12): `jira_epics_stories_output`
-  now persisted to MongoDB via `save_jira_epics_stories_output()` so the
-  Sub-tasks stage can resume after a server crash. `_run_jira_phase()` restores
-  `jira_skeleton` and `jira_epics_stories_output` from the MongoDB document
-  during state reconstruction. 14 new tests (2122 total).
-- **Remove autonomous Jira detection** (v0.15.11): `persist_post_completion()`,
-  `_cli_startup.py`, and `components/startup.py` no longer detect Jira keywords
-  or set `jira_phase` / `jira_completed`. These fields are now exclusively
-  managed by the interactive phased flow (`orchestrator/_jira.py`). Fixed stale
-  `jira_phase='subtasks_done'` data via one-time fix script. Added one-time
-  data fix script pattern to Coding Standards.
-- **Fix delivery state reset** (v0.15.10): `_discover_pending_deliveries()`
-  was overwriting `confluence_published=False` on every scheduler sweep.
-  Fixed 3 locations to read from delivery record first.
-- **Obsidian knowledge base** (v0.15.4): Created Obsidian vault at
-  `c9-prd-planner/C9 Product Ideas Planner` with 19 knowledge pages covering
-  architecture, agents, APIs, flows, integrations, database, testing, and tools.
-  Session/iteration tracking via `Sessions/Session Log.md`. CODEX.md updated with
-  vault structure and mandatory session update requirements.
-- **MongoDB collection bootstrap** (v0.15.0): `ensure_collections()` creates
-  all 8 collections and indexes on startup. `dev_setup.sh` for one-command
-  project bootstrap.
-- **Delivery action buttons** (v0.14.0): Block Kit buttons for publish/Jira
-  actions. Dedicated `create_jira` intent separate from `publish`.
-- **Persistent Jira skeleton** (v0.14.5): Skeleton saved to MongoDB;
-  resume shows existing skeleton instead of regenerating.
-- **Phased Jira ticketing**: 3-phase approach (Skeleton → Epics/Stories →
-  Sub-tasks) with user approval at each phase.
-- **Fix hallucinated Confluence URLs** (v0.13.1): Jira tool resolves
-  authoritative URL from MongoDB.
-- **Removed unused web research tools** (v0.13.0): Agent toolkit reduced
-  from 5 to 2 tools (FileRead + DirectoryRead).
-- **Conventional logging**: Single-line structured messages (no box-drawing).
-- **google-genai migration**: Switched embedder from `google-generativeai`
-  to `google-vertex`.
+→ Full test patterns: `obsidian/Testing/Testing Guide.md`

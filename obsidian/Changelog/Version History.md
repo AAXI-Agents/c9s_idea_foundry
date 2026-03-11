@@ -6,6 +6,7 @@
 
 | Version | Summary |
 |---------|---------|
+| 0.16.2 | Server crash resilience and log-driven bug fixes — (1) `start_server_watchdog.sh` auto-restart with circuit breaker; (2) fix LLM run_id hallucination via `authoritative_run_id` on JiraCreateIssueTool; (3) fix ShutdownError/BillingError/ModelBusyError swallowed in `run_post_completion()`; (4) fix 7 pre-existing flaky retry tests; 12 new tests (2175 total) |
 | 0.16.1 | Fix post-completion flow not prompting user after resume — `handle_resume_prd()` was missing Jira callbacks, causing auto-publish instead of interactive phased flow; added `jira_skeleton_approval_callback` and `jira_review_callback` to `resume_prd_flow()`; 5 new tests (2150 total) |
 | 0.16.0 | Optimise PRD section generation performance — condensed prior-section context for refine tasks (titles+500 chars vs full text), exclude exec summary from approved_sections (dedup), remove knowledge_sources from critic agent; 4 new tests (2158 total) |
 

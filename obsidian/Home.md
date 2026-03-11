@@ -2,7 +2,7 @@
 
 > AI-powered Product Requirements Document generation with CrewAI, Gemini, OpenAI, Slack, Confluence, and Jira.
 
-**Current Version**: `0.15.4` (2026-03-08)
+**Current Version**: `0.16.2` (2026-03-10)
 
 ---
 
@@ -13,6 +13,8 @@
 - [[Module Map]] — Source tree with file purposes
 - [[Server Lifecycle]] — FastAPI startup/shutdown sequence
 - [[Environment Variables]] — All env vars and their purposes
+- [[CrewAI Framework]] — How CrewAI concepts map to this project
+- [[Coding Standards]] — Modular design, logging, versioning, testing
 
 ### Agents & Flows
 - [[PRD Flow]] — End-to-end PRD generation pipeline
@@ -46,6 +48,8 @@ Architecture/
   Module Map.md            ← Source file purposes
   Server Lifecycle.md      ← Startup/shutdown hooks
   Environment Variables.md ← Env var reference
+  CrewAI Framework.md      ← CrewAI concepts & project mapping
+  Coding Standards.md      ← Development conventions
 Agents/
   Agent Roles.md           ← All agent configs
   LLM Model Tiers.md      ← Model selection guide

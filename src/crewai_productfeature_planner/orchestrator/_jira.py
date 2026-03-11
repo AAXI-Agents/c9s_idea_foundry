@@ -152,7 +152,7 @@ def build_jira_skeleton_stage(
         jira_token, project_id, task_configs = _setup_jira_context(flow)
 
         try:
-            pm_agent = create_jira_product_manager_agent(project_id=project_id)
+            pm_agent = create_jira_product_manager_agent(project_id=project_id, run_id=flow.state.run_id)
 
             idea_preview = (flow.state.idea or "PRD")[:80].strip()
             page_title = f"PRD — {idea_preview}"
@@ -260,7 +260,7 @@ def build_jira_epics_stories_stage(
         jira_token, project_id, task_configs = _setup_jira_context(flow)
 
         try:
-            pm_agent = create_jira_product_manager_agent(project_id=project_id)
+            pm_agent = create_jira_product_manager_agent(project_id=project_id, run_id=flow.state.run_id)
 
             idea_preview = (flow.state.idea or "PRD")[:80].strip()
             page_title = f"PRD — {idea_preview}"
@@ -444,7 +444,7 @@ def build_jira_subtasks_stage(
         jira_token, project_id, task_configs = _setup_jira_context(flow)
 
         try:
-            atl_agent = create_jira_architect_tech_lead_agent(project_id=project_id)
+            atl_agent = create_jira_architect_tech_lead_agent(project_id=project_id, run_id=flow.state.run_id)
             confluence_url = getattr(flow.state, "confluence_url", "")
 
             func_req_section = flow.state.draft.get_section("functional_requirements")

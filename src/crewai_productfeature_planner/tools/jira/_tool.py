@@ -166,6 +166,11 @@ class JiraCreateIssueTool(BaseTool):
         "and dependency linking (blocks / is blocked by)."
     )
     args_schema: Type[BaseModel] = JiraCreateIssueInput
+    authoritative_run_id: str = Field(
+        default="",
+        description="Authoritative run_id set at construction time. "
+        "Overrides whatever the LLM provides to prevent hallucination.",
+    )
 
     def _run(
         self,
@@ -182,6 +187,18 @@ class JiraCreateIssueTool(BaseTool):
         blocks_key: str = "",
         is_blocked_by_key: str = "",
     ) -> str:
+        # Override LLM-provided run_id with the authoritative value
+        # when set at construction time — prevents hallucinated IDs
+        # like "RUN-12345" from leaking into Jira labels and MongoDB.
+        if self.authoritative_run_id:
+            if run_id and run_id != self.authoritative_run_id:
+                logger.info(
+                    "[Jira] Overriding LLM-provided run_id (%s) with "
+                    "authoritative value (%s)",
+                    run_id, self.authoritative_run_id,
+                )
+            run_id = self.authoritative_run_id
+
         label_list = [l.strip() for l in labels.split(",") if l.strip()] if labels else []
 
         # parent_key takes precedence for sub-tasks; epic_key is the fallback

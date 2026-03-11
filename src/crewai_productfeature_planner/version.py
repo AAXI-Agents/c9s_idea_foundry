@@ -1457,6 +1457,32 @@ _CODEX: list[CodexEntry] = [
             "5 new tests (2150 total)."
         ),
     ),
+    CodexEntry(
+        "0.16.2",
+        date(2026, 3, 10),
+        (
+            "Server crash resilience and log-driven bug fixes. "
+            "(1) Created start_server_watchdog.sh — auto-restart wrapper "
+            "with signal handling (clean shutdown on SIGINT/SIGTERM, no "
+            "restart), circuit breaker (5 restarts in 120s → stop), and "
+            "logging to logs/watchdog.log. "
+            "(2) Fixed LLM run_id hallucination in Jira tickets — added "
+            "authoritative_run_id field to JiraCreateIssueTool that "
+            "overrides whatever the LLM provides (same pattern as "
+            "Confluence URL override). Wired through agent factories and "
+            "orchestrator stages with flow.state.run_id. "
+            "(3) Fixed ShutdownError swallowed in run_post_completion() — "
+            "the generic except Exception was catching ShutdownError, "
+            "BillingError, and ModelBusyError, preventing the service "
+            "layer from properly pausing the flow. Added explicit re-raise "
+            "before the generic catch. "
+            "(4) Fixed 7 pre-existing flaky retry tests caused by "
+            "background thread time.sleep() interception — changed strict "
+            "assert_called_once_with/assert_not_called to resilient "
+            "assert_any_call and filtered call list checks. "
+            "12 new tests (2175 total)."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

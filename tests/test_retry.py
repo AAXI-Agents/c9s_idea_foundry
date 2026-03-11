@@ -403,7 +403,8 @@ def test_server_error_500_retried():
         )
     assert result.raw == "done"
     assert crew.kickoff.call_count == 2
-    mock_sleep.assert_called_once_with(5.0)
+    # Use assert_any_call — background threads may also call time.sleep
+    mock_sleep.assert_any_call(5.0)
 
 
 def test_server_error_bad_gateway_retried():

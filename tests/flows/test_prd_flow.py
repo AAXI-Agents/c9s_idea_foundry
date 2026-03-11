@@ -2912,6 +2912,50 @@ class TestRunPostCompletion:
         # Should not raise
         flow._run_post_completion()
 
+    @patch(
+        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
+    )
+    def test_shutdown_error_propagates(self, mock_build):
+        """ShutdownError must propagate — not be swallowed."""
+        from crewai_productfeature_planner.scripts.retry import ShutdownError
+
+        mock_build.side_effect = ShutdownError(
+            "cannot schedule new futures after shutdown"
+        )
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        with pytest.raises(ShutdownError):
+            flow._run_post_completion()
+
+    @patch(
+        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
+    )
+    def test_billing_error_propagates(self, mock_build):
+        """BillingError must propagate — not be swallowed."""
+        from crewai_productfeature_planner.scripts.retry import BillingError
+
+        mock_build.side_effect = BillingError("insufficient_quota")
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        with pytest.raises(BillingError):
+            flow._run_post_completion()
+
+    @patch(
+        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
+    )
+    def test_model_busy_error_propagates(self, mock_build):
+        """ModelBusyError must propagate — not be swallowed."""
+        from crewai_productfeature_planner.scripts.retry import ModelBusyError
+
+        mock_build.side_effect = ModelBusyError("model is overloaded")
+
+        flow = PRDFlow()
+        flow.state.final_prd = "# PRD Content"
+        with pytest.raises(ModelBusyError):
+            flow._run_post_completion()
+
 
 class TestPersistPostCompletion:
     """Tests for PRDFlow._persist_post_completion."""
