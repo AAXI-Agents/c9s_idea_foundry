@@ -536,3 +536,36 @@ Server crashed during Jira ticket creation ("cannot schedule new futures after s
 - `obsidian/Sessions/Session Log.md` — This entry
 
 ---
+
+## Session 005 — 2026-03-13
+
+**Scope**: MongoDB Atlas Migration
+**Version**: v0.16.2 → v0.17.0
+
+### Work Done
+1. **Refactored `mongodb/client.py`** — Replaced localhost-based URI building (`MONGODB_URI`, `MONGODB_PORT`, `MONGODB_USERNAME`, `MONGODB_PASSWORD`) with single `MONGODB_ATLAS_URI` env var. `_build_uri()` now returns the Atlas connection string directly; raises `RuntimeError` if not set.
+2. **Updated `mongodb/__init__.py`** — Removed `DEFAULT_HOST` and `DEFAULT_PORT` exports (no longer exist).
+3. **Updated `scripts/preflight.py`** — `check_mongodb()` now validates `MONGODB_ATLAS_URI` instead of `MONGODB_URI`.
+4. **Updated `.env`** — Removed old `MONGODB_URI`, `MONGODB_PORT`, `MONGODB_USERNAME`, `MONGODB_PASSWORD` vars. `MONGODB_ATLAS_URI` is the sole connection config.
+5. **Created `scripts/migrate_to_atlas.py`** — One-time migration script that exports all collections (with indexes) from localhost MongoDB to Atlas. Supports `--dry-run`, `--source` customization, batch insert with duplicate-key resilience.
+6. **Rewrote `tests/mongodb/test_client.py`** — 9 new tests covering Atlas URI validation, whitespace stripping, missing/empty URI errors, and `_get_db_name` behaviour.
+7. **Updated Obsidian docs** — Environment Variables (Atlas URI), MongoDB Schema (Atlas hosted note).
+
+### Key Decisions
+- `MONGODB_ATLAS_URI` is required — no fallback to localhost. This ensures the application cannot accidentally connect to a local database in production.
+- Migration script preserves `_id` values for data consistency across environments.
+- `MONGODB_DB` still defaults to `ideas` for database name flexibility.
+
+### Files Modified
+- `src/crewai_productfeature_planner/mongodb/client.py`
+- `src/crewai_productfeature_planner/mongodb/__init__.py`
+- `src/crewai_productfeature_planner/scripts/preflight.py`
+- `src/crewai_productfeature_planner/version.py`
+- `.env`
+- `scripts/migrate_to_atlas.py` — NEW
+- `tests/mongodb/test_client.py`
+- `obsidian/Architecture/Environment Variables.md`
+- `obsidian/Database/MongoDB Schema.md`
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---

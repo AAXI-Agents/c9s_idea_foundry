@@ -1,6 +1,7 @@
 # MongoDB Schema
 
 > Collections, indexes, and document schemas.
+> Hosted on **MongoDB Atlas** — connection via `MONGODB_ATLAS_URI` env var.
 
 ## Collections (8 total)
 

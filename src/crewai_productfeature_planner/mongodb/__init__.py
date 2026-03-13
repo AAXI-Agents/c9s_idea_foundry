@@ -26,8 +26,6 @@ from crewai_productfeature_planner.mongodb.agent_interactions.repository import 
 )
 from crewai_productfeature_planner.mongodb.client import (
     DEFAULT_DB_NAME,
-    DEFAULT_HOST,
-    DEFAULT_PORT,
     _build_uri,
     _get_db_name,
     get_client,
@@ -114,8 +112,6 @@ __all__ = [
     "PROJECT_CONFIG_COLLECTION",
     "PROJECT_MEMORY_COLLECTION",
     "DEFAULT_DB_NAME",
-    "DEFAULT_HOST",
-    "DEFAULT_PORT",
     "PRODUCT_REQUIREMENTS_COLLECTION",
     "WORKING_COLLECTION",
     "USER_SESSION_COLLECTION",

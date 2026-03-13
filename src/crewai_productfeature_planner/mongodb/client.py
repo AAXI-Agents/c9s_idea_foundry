@@ -1,19 +1,16 @@
 """MongoDB client configuration and connection management.
 
 Connection is configured via environment variables:
-    - ``MONGODB_URI``      — host (default ``localhost``)
-    - ``MONGODB_PORT``     — port (default ``27017``)
-    - ``MONGODB_DB``       — database name (default ``ideas``)
-    - ``MONGODB_USERNAME`` — (optional)
-    - ``MONGODB_PASSWORD`` — (optional)
+    - ``MONGODB_ATLAS_URI`` — full ``mongodb+srv://`` connection string (required)
+    - ``MONGODB_DB``        — database name (default ``ideas``)
 
-The full ``mongodb://`` connection string is constructed automatically.
-When both username and password are provided the URI becomes
-``mongodb://user:pass@host:port``.
+The Atlas URI is used directly as the connection string.  It must be a
+valid ``mongodb+srv://`` or ``mongodb://`` URI including credentials.
 """
 
 import os
 
+import certifi
 from pymongo import MongoClient
 
 from crewai_productfeature_planner.scripts.logging_config import get_logger
@@ -21,8 +18,6 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 logger = get_logger(__name__)
 
 DEFAULT_DB_NAME = "ideas"
-DEFAULT_HOST = "localhost"
-DEFAULT_PORT = "27017"
 
 # Connection timeout — fail fast instead of hanging for 30 s.
 _SERVER_SELECTION_TIMEOUT_MS = 5_000
@@ -36,38 +31,17 @@ def _get_db_name() -> str:
 
 
 def _build_uri() -> str:
-    """Build the full ``mongodb://`` connection string.
+    """Return the ``MONGODB_ATLAS_URI`` connection string.
 
-    ``MONGODB_URI`` is the host (e.g. ``localhost``) and ``MONGODB_PORT``
-    is the port (e.g. ``27017``).  If the host already contains a scheme
-    or port it is normalised so the result is always consistent.
-
-    When both ``MONGODB_USERNAME`` and ``MONGODB_PASSWORD`` are set the
-    credentials are embedded: ``mongodb://user:pass@host:port``.
+    Raises ``RuntimeError`` if the variable is not set or empty.
     """
-    host = os.environ.get("MONGODB_URI", DEFAULT_HOST).strip()
-    port = os.environ.get("MONGODB_PORT", DEFAULT_PORT).strip() or DEFAULT_PORT
-
-    # Strip scheme if the user accidentally included it
-    if host.startswith("mongodb+srv://"):
-        host = host[len("mongodb+srv://"):]
-    elif host.startswith("mongodb://"):
-        host = host[len("mongodb://"):]
-
-    # Strip any embedded credentials
-    if "@" in host:
-        host = host.split("@", 1)[1]
-
-    # Strip port from host if it was included there
-    if ":" in host:
-        host, port = host.rsplit(":", 1)
-
-    username = os.environ.get("MONGODB_USERNAME", "").strip()
-    password = os.environ.get("MONGODB_PASSWORD", "").strip()
-
-    if username and password:
-        return f"mongodb://{username}:{password}@{host}:{port}"
-    return f"mongodb://{host}:{port}"
+    uri = os.environ.get("MONGODB_ATLAS_URI", "").strip()
+    if not uri:
+        raise RuntimeError(
+            "MONGODB_ATLAS_URI environment variable is required but not set. "
+            "Provide a valid mongodb+srv:// connection string."
+        )
+    return uri
 
 
 def get_client() -> MongoClient:
@@ -75,10 +49,14 @@ def get_client() -> MongoClient:
     global _client
     if _client is None:
         uri = _build_uri()
-        logger.info("Connecting to MongoDB at %s", uri.split("@")[-1])
+        # Log the host portion only (after @) to avoid leaking credentials.
+        safe_host = uri.split("@")[-1] if "@" in uri else uri
+        logger.info("Connecting to MongoDB Atlas at %s", safe_host)
         _client = MongoClient(
             uri,
             serverSelectionTimeoutMS=_SERVER_SELECTION_TIMEOUT_MS,
+            tls=True,
+            tlsCAFile=certifi.where(),
         )
     return _client
 

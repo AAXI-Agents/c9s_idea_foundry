@@ -273,13 +273,12 @@ ATLASSIAN_CHECKS = {
 
 
 def check_mongodb() -> tuple[bool, str]:
-    mongo_uri = os.environ.get("MONGODB_URI", "").strip()
-    mongo_db = os.environ.get("MONGODB_DB", "").strip() or "ideas"
-    if not mongo_uri:
-        return False, "MONGODB_URI is empty"
+    atlas_uri = os.environ.get("MONGODB_ATLAS_URI", "").strip()
+    if not atlas_uri:
+        return False, "MONGODB_ATLAS_URI is empty"
 
     try:
-        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        client = MongoClient(atlas_uri, serverSelectionTimeoutMS=5000)
         client.admin.command("ping")
     except Exception as exc:  # noqa: BLE001
         return False, f"MongoDB connection error: {exc}"
@@ -289,7 +288,7 @@ def check_mongodb() -> tuple[bool, str]:
         except Exception:
             pass
 
-    return True, "MongoDB ping ok"
+    return True, "MongoDB Atlas ping ok"
 
 
 def run_checks() -> int:

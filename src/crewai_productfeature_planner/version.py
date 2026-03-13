@@ -1483,6 +1483,21 @@ _CODEX: list[CodexEntry] = [
             "12 new tests (2175 total)."
         ),
     ),
+    CodexEntry(
+        "0.17.0",
+        date(2026, 3, 13),
+        (
+            "MongoDB Atlas migration — replaced localhost MongoDB with "
+            "cloud-hosted MongoDB Atlas. Refactored mongodb.client to use "
+            "MONGODB_ATLAS_URI (mongodb+srv://) as the sole connection "
+            "method; removed MONGODB_URI, MONGODB_PORT, MONGODB_USERNAME, "
+            "MONGODB_PASSWORD env vars. Updated preflight check to "
+            "validate Atlas connectivity. Created one-time migration "
+            "script (scripts/migrate_to_atlas.py) to export all "
+            "collections and indexes from localhost to Atlas with "
+            "dry-run support and duplicate-key resilience."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
