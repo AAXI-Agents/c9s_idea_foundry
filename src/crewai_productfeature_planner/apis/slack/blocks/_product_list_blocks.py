@@ -23,7 +23,13 @@ _JIRA_PHASE_LABELS: dict[str, str] = {
     "epics_stories_done": "Epics & Stories created",
     "subtasks_ready": "Sub-tasks in progress",
     "subtasks_pending": "Sub-tasks awaiting approval",
-    "subtasks_done": "Complete",
+    "subtasks_done": "Sub-tasks created",
+    "review_ready": "Review sub-tasks in progress",
+    "review_pending": "Review sub-tasks awaiting approval",
+    "review_done": "Review sub-tasks created",
+    "qa_test_ready": "QA test sub-tasks in progress",
+    "qa_test_pending": "QA test sub-tasks awaiting approval",
+    "qa_test_done": "Complete",
 }
 
 
@@ -75,10 +81,23 @@ def product_list_blocks(
         jira_completed = product.get("jira_completed", False)
         jira_phase = product.get("jira_phase") or ""
         confluence_url = product.get("confluence_url") or ""
+        figma_url = product.get("figma_design_url") or ""
+        figma_status = product.get("figma_design_status") or ""
 
         # Build status lines — completed steps get a checkmark,
         # in-progress steps show their current phase.
         completed_parts: list[str] = []
+
+        # Figma UX design status
+        if figma_url:
+            completed_parts.append(
+                f":white_check_mark: <{figma_url}|Figma UX Design>"
+            )
+        elif figma_status in ("generating", "prompting"):
+            completed_parts.append(":hourglass_flowing_sand: UX Design in progress")
+        elif figma_status == "prompt_ready":
+            completed_parts.append(":pencil: UX Design prompt ready")
+
         if conf_published:
             if confluence_url:
                 completed_parts.append(
@@ -134,6 +153,28 @@ def product_list_blocks(
                     "action_id": f"product_confluence_{idx}",
                     "value": btn_value,
                     "style": "primary",
+                },
+            )
+
+        # UX Design buttons
+        if figma_url:
+            elements.append(
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":art: View Figma Design"},
+                    "action_id": f"product_open_figma_{idx}",
+                    "url": figma_url,
+                },
+            )
+        elif figma_status not in ("generating", "prompting"):
+            # Not started or prompt_ready or skipped → allow (re)start
+            btn_text = ":art: Start UX Design" if not figma_status else ":art: Retry UX Design"
+            elements.append(
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": btn_text},
+                    "action_id": f"product_ux_design_{idx}",
+                    "value": btn_value,
                 },
             )
 
@@ -194,6 +235,46 @@ def product_list_blocks(
                         "type": "button",
                         "text": {"type": "plain_text", "text": ":eyes: Review Sub-tasks"},
                         "action_id": f"product_jira_subtasks_{idx}",
+                        "value": btn_value,
+                    },
+                )
+            if jira_phase in ("subtasks_done", "review_ready"):
+                # Ready for Staff Eng + QA Lead review sub-tasks
+                elements.append(
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": ":detective: Publish Review Sub-tasks"},
+                        "action_id": f"product_jira_reviews_{idx}",
+                        "value": btn_value,
+                        "style": "primary",
+                    },
+                )
+            if jira_phase == "review_pending":
+                elements.append(
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": ":eyes: Review Audit Sub-tasks"},
+                        "action_id": f"product_jira_reviews_{idx}",
+                        "value": btn_value,
+                    },
+                )
+            if jira_phase in ("review_done", "qa_test_ready"):
+                # Ready for QA Engineer test sub-tasks
+                elements.append(
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": ":test_tube: Publish QA Test Sub-tasks"},
+                        "action_id": f"product_jira_qa_tests_{idx}",
+                        "value": btn_value,
+                        "style": "primary",
+                    },
+                )
+            if jira_phase == "qa_test_pending":
+                elements.append(
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": ":eyes: Review QA Test Sub-tasks"},
+                        "action_id": f"product_jira_qa_tests_{idx}",
                         "value": btn_value,
                     },
                 )

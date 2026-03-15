@@ -24,23 +24,39 @@
 - User feedback gate: Slack users can provide critique or approve (v0.4.0+)
 - Completion gate: Continue/Stop before section drafting (v0.6.5+)
 
+### Phase 1.5 — Specialist Reviews (v0.18.0)
+
+Two specialist agents produce higher-level artefacts after executive summary approval:
+
+- **Phase 1.5a — CEO Review**: The CEO Reviewer agent transforms the executive summary into an *Executive Product Summary* — a 10-star product vision document. Source: `_ceo_eng_review.py::run_ceo_review()`
+- **Phase 1.5b — Engineering Plan**: The Eng Manager agent converts the executive product summary + requirements into an *Engineering Plan* — technical architecture, phasing, data model, test strategy. Source: `_ceo_eng_review.py::run_eng_plan()`
+- **Phase 1.5c — UX Design** (v0.20.0): The UX Designer agent converts the executive product summary into a structured Figma Make prompt and optionally submits it to Figma Make API to generate a clickable prototype. Source: `_ux_design.py::run_ux_design()`
+
+All artefacts are:
+- Stored as auto-approved specialist sections in the PRD draft
+- Used as context for Phase 2 section drafting (replacing raw executive summary)
+- Persisted to MongoDB via `save_iteration()`
+- Skipped on resume when already populated
+
 ### Phase 2 — Section-by-Section Generation
 
 - 9 remaining sections processed sequentially
 - Each: Draft → Critique → Refine (min 2, max 10 cycles)
+- Context: uses `executive_product_summary` + `engineering_plan` (v0.18.0+)
 - Critique scores: completeness, specificity, consistency, clarity, actionability, no-duplication (1-10, all must ≥ 8)
 - Approved when "SECTION_READY"
 
 ### Phase 3 — Finalization
 
-- Assemble all 10 sections into markdown
+- Assemble all 12 sections into markdown
 - Write PRD file to `output/prds/`
 - Mark run as completed in MongoDB
 
 ### Phase 4 — Post-Completion Pipeline
 
 - **Confluence Publish**: Push final PRD to Confluence space
-- **Jira Ticketing**: Phased approach (see [[Jira Integration]])
+- **Jira Ticketing**: 5-phase approach (see [[Jira Integration]])
+  - Phase 1: Skeleton → Phase 2: Epics/Stories → Phase 3: Dev Sub-tasks → Phase 4: Review Sub-tasks (Staff Eng + QA Lead) → Phase 5: QA Test Sub-tasks (QA Engineer)
 
 ## Progress Events
 
@@ -66,6 +82,7 @@ Tracks the full lifecycle:
 - `requirements_breakdown` — structured requirements text
 - `status` — "new" → "inprogress" → "completed"
 - `confluence_url`, `jira_output`, `jira_skeleton`, `jira_phase`
+- `jira_review_output`, `jira_qa_test_output` (v0.19.0)
 
 Progress saved to MongoDB on every iteration, enabling pause/resume.
 

@@ -8,6 +8,12 @@ Phase 2 — **Epics & Stories**: Create the approved Epics with inter-Epic
           Pauses for user review after creation.
 Phase 3 — **Sub-tasks**: Create detailed sub-tasks under each Story
           with dependencies, documentation, test cases, and unit tests.
+Phase 4 — **Review Sub-tasks**: Staff Engineer and QA Lead create review
+          sub-tasks for each User Story to audit production readiness
+          and test methodology coverage.
+Phase 5 — **QA Test Sub-tasks**: QA Engineer creates counter-tickets to
+          each implementation sub-task for edge case, security, and
+          rendering/behaviour testing.
 """
 
 from __future__ import annotations
@@ -28,6 +34,54 @@ from crewai_productfeature_planner.orchestrator.orchestrator import (
 
 if TYPE_CHECKING:
     from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+
+
+def _build_jira_context(flow: "PRDFlow") -> str:
+    """Build the ``{additional_prd_context}`` string for Jira tasks.
+
+    Combines the standard additional PRD sections with the Engineering
+    Plan and UX Design (if available) so Jira ticket generation benefits
+    from the Eng Manager's architectural analysis and the UX Designer's
+    Figma prototypes.
+    """
+    base = build_additional_prd_context_from_draft(flow.state.draft)
+    blocks: list[str] = []
+
+    eng_plan = getattr(flow.state, "engineering_plan", "")
+    if eng_plan and eng_plan.strip():
+        blocks.append(
+            "## Engineering Plan\n\n"
+            "Use this engineering plan as the primary technical "
+            "reference for structuring Epics, Stories, and Sub-tasks:\n\n"
+            f"{eng_plan.strip()}"
+        )
+
+    # Include UX design context (Figma URL and/or prompt) so Jira tickets
+    # reference the visual design and align implementation with the UI spec.
+    figma_url = getattr(flow.state, "figma_design_url", "")
+    figma_prompt = getattr(flow.state, "figma_design_prompt", "")
+    if figma_url or figma_prompt:
+        ux_parts = ["## UX Design\n"]
+        if figma_url:
+            ux_parts.append(
+                f"Figma prototype: {figma_url}\n"
+                "Reference this Figma design for all UI implementation. "
+                "Each Story and Sub-task MUST link to the relevant Figma "
+                "frame or component when describing the UI.\n"
+            )
+        if figma_prompt:
+            # Truncate long prompts to avoid bloating the Jira context.
+            prompt_preview = figma_prompt[:3000]
+            ux_parts.append(
+                "UX Design specification (use for UI implementation details):\n\n"
+                f"{prompt_preview}"
+            )
+        blocks.append("\n".join(ux_parts))
+
+    if blocks:
+        combined = "\n\n".join(blocks)
+        return f"{combined}\n\n{base}" if base else combined
+    return base
 
 
 def _persist_jira_phase(run_id: str, phase: str) -> None:
@@ -156,11 +210,15 @@ def build_jira_skeleton_stage(
 
             idea_preview = (flow.state.idea or "PRD")[:80].strip()
             page_title = f"PRD — {idea_preview}"
-            exec_summary = flow.state.finalized_idea or flow.state.idea
+            exec_summary = (
+                flow.state.executive_product_summary
+                or flow.state.finalized_idea
+                or flow.state.idea
+            )
 
             func_req_section = flow.state.draft.get_section("functional_requirements")
             func_reqs = func_req_section.content if func_req_section else ""
-            additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
+            additional_ctx = _build_jira_context(flow)
 
             skeleton_task = Task(
                 description=task_configs["generate_jira_skeleton_task"]["description"].format(
@@ -264,7 +322,11 @@ def build_jira_epics_stories_stage(
 
             idea_preview = (flow.state.idea or "PRD")[:80].strip()
             page_title = f"PRD — {idea_preview}"
-            exec_summary = flow.state.finalized_idea or flow.state.idea
+            exec_summary = (
+                flow.state.executive_product_summary
+                or flow.state.finalized_idea
+                or flow.state.idea
+            )
             confluence_url = getattr(flow.state, "confluence_url", "")
 
             # ── Create Epic ───────────────────────────────────
@@ -313,7 +375,7 @@ def build_jira_epics_stories_stage(
             # ── Create Stories ────────────────────────────────
             func_req_section = flow.state.draft.get_section("functional_requirements")
             func_reqs = func_req_section.content if func_req_section else ""
-            additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
+            additional_ctx = _build_jira_context(flow)
 
             stories_output = ""
             if func_reqs and epic_key:
@@ -449,7 +511,7 @@ def build_jira_subtasks_stage(
 
             func_req_section = flow.state.draft.get_section("functional_requirements")
             func_reqs = func_req_section.content if func_req_section else ""
-            additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
+            additional_ctx = _build_jira_context(flow)
 
             tasks_task = Task(
                 description=task_configs["create_jira_tasks_task"]["description"].format(
@@ -515,12 +577,346 @@ def build_jira_subtasks_stage(
 
 
 # =====================================================================
+# Phase 4 — Review Sub-tasks (Staff Engineer + QA Lead)
+# =====================================================================
+
+
+def build_jira_review_subtasks_stage(
+    flow: "PRDFlow", *, require_confluence: bool = True,
+) -> AgentStage:
+    """Create an :class:`AgentStage` that generates review sub-tasks
+    for each User Story — one from the Paranoid Staff Engineer and one
+    from the QA Lead.
+
+    These review tickets ensure development work matches the Jira ticket
+    specifications and that test methodology is adequate.
+    """
+
+    def _should_skip() -> bool:
+        reason = _check_jira_prerequisites(
+            flow, require_confluence=require_confluence,
+        )
+        if reason:
+            logger.info("[JiraReviewSubtasks] Skipping — %s", reason)
+            return True
+        if flow.state.jira_phase not in ("review_ready", "subtasks_done"):
+            logger.info(
+                "[JiraReviewSubtasks] Skipping — phase is '%s', "
+                "need 'review_ready'",
+                flow.state.jira_phase,
+            )
+            return True
+        if not flow.state.jira_output and not flow.state.jira_epics_stories_output:
+            logger.info("[JiraReviewSubtasks] Skipping — no Stories/Sub-tasks output")
+            return True
+        return False
+
+    def _run() -> StageResult:
+        from crewai import Crew, Process, Task
+
+        from crewai_productfeature_planner.agents.staff_engineer import (
+            create_staff_engineer,
+            get_task_configs as get_staff_eng_task_configs,
+        )
+        from crewai_productfeature_planner.agents.qa_lead import (
+            create_qa_lead,
+            get_task_configs as get_qa_lead_task_configs,
+        )
+        from crewai_productfeature_planner.scripts.logging_config import is_verbose
+        from crewai_productfeature_planner.scripts.memory_loader import (
+            resolve_project_id,
+        )
+        from crewai_productfeature_planner.scripts.retry import (
+            crew_kickoff_with_retry,
+        )
+
+        jira_token, project_id, _ = _setup_jira_context(flow)
+
+        try:
+            confluence_url = getattr(flow.state, "confluence_url", "")
+            additional_ctx = _build_jira_context(flow)
+            eng_plan = getattr(flow.state, "engineering_plan", "")
+
+            # Combined stories + subtasks output for reviewers to audit
+            stories_and_subtasks = flow.state.jira_output or (
+                f"{flow.state.jira_epics_stories_output}"
+            )
+
+            outputs = []
+
+            # ── Staff Engineer review sub-tasks ──────────────────
+            try:
+                staff_agent = create_staff_engineer(
+                    project_id=project_id, run_id=flow.state.run_id,
+                )
+                staff_task_configs = get_staff_eng_task_configs()
+                task_cfg = staff_task_configs[
+                    "create_staff_engineer_review_subtasks_task"
+                ]
+                staff_task = Task(
+                    description=task_cfg["description"].format(
+                        stories_and_subtasks=stories_and_subtasks,
+                        engineering_plan=eng_plan or "(Not available)",
+                        additional_prd_context=additional_ctx,
+                        confluence_url=confluence_url,
+                        run_id=flow.state.run_id,
+                    ),
+                    expected_output=task_cfg["expected_output"],
+                    agent=staff_agent,
+                )
+                crew = Crew(
+                    agents=[staff_agent],
+                    tasks=[staff_task],
+                    process=Process.sequential,
+                    verbose=is_verbose(),
+                )
+                staff_result = crew_kickoff_with_retry(
+                    crew, step_label="jira_staff_eng_review",
+                )
+                outputs.append(f"Staff Engineer Reviews:\n{staff_result.raw}")
+
+                try:
+                    from crewai_productfeature_planner.mongodb.product_requirements import (
+                        append_jira_ticket,
+                    )
+                    known = set(_extract_issue_keys(stories_and_subtasks))
+                    for rkey in _extract_issue_keys(staff_result.raw):
+                        if rkey not in known:
+                            append_jira_ticket(flow.state.run_id, {
+                                "key": rkey,
+                                "type": "Sub-task",
+                                "category": "staff-review",
+                            })
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[JiraReviewSubtasks] Failed to persist staff-eng review tickets: %s",
+                        exc,
+                    )
+
+                logger.info(
+                    "[JiraReviewSubtasks] Staff Engineer review sub-tasks created (%d chars)",
+                    len(staff_result.raw),
+                )
+            except EnvironmentError:
+                logger.warning(
+                    "[JiraReviewSubtasks] Skipping Staff Engineer — no Gemini credentials",
+                )
+                outputs.append("Staff Engineer Reviews: skipped (no credentials)")
+
+            # ── QA Lead review sub-tasks ─────────────────────────
+            try:
+                qa_lead_agent = create_qa_lead(
+                    project_id=project_id, run_id=flow.state.run_id,
+                )
+                qa_lead_task_configs = get_qa_lead_task_configs()
+                task_cfg = qa_lead_task_configs[
+                    "create_qa_lead_review_subtasks_task"
+                ]
+                qa_lead_task = Task(
+                    description=task_cfg["description"].format(
+                        stories_and_subtasks=stories_and_subtasks,
+                        engineering_plan=eng_plan or "(Not available)",
+                        additional_prd_context=additional_ctx,
+                        confluence_url=confluence_url,
+                        run_id=flow.state.run_id,
+                    ),
+                    expected_output=task_cfg["expected_output"],
+                    agent=qa_lead_agent,
+                )
+                crew = Crew(
+                    agents=[qa_lead_agent],
+                    tasks=[qa_lead_task],
+                    process=Process.sequential,
+                    verbose=is_verbose(),
+                )
+                qa_lead_result = crew_kickoff_with_retry(
+                    crew, step_label="jira_qa_lead_review",
+                )
+                outputs.append(f"QA Lead Reviews:\n{qa_lead_result.raw}")
+
+                try:
+                    from crewai_productfeature_planner.mongodb.product_requirements import (
+                        append_jira_ticket,
+                    )
+                    known = set(_extract_issue_keys(stories_and_subtasks))
+                    for rkey in _extract_issue_keys(qa_lead_result.raw):
+                        if rkey not in known:
+                            append_jira_ticket(flow.state.run_id, {
+                                "key": rkey,
+                                "type": "Sub-task",
+                                "category": "qa-lead-review",
+                            })
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[JiraReviewSubtasks] Failed to persist QA Lead review tickets: %s",
+                        exc,
+                    )
+
+                logger.info(
+                    "[JiraReviewSubtasks] QA Lead review sub-tasks created (%d chars)",
+                    len(qa_lead_result.raw),
+                )
+            except EnvironmentError:
+                logger.warning(
+                    "[JiraReviewSubtasks] Skipping QA Lead — no Gemini credentials",
+                )
+                outputs.append("QA Lead Reviews: skipped (no credentials)")
+
+            return StageResult(output="\n\n".join(outputs))
+        finally:
+            _reset_jira_context(jira_token)
+
+    def _apply(result: StageResult) -> None:
+        flow.state.jira_review_output = result.output
+        flow.state.jira_phase = "review_done"
+        _persist_jira_phase(flow.state.run_id, "review_done")
+        logger.info(
+            "[JiraReviewSubtasks] Review sub-tasks created (%d chars) — "
+            "paused for review before QA test sub-tasks",
+            len(result.output),
+        )
+
+    return AgentStage(
+        name="jira_review_subtasks",
+        description="Create Staff Engineer and QA Lead review sub-tasks for each User Story",
+        run=_run,
+        should_skip=_should_skip,
+        apply=_apply,
+    )
+
+
+# =====================================================================
+# Phase 5 — QA Test Sub-tasks (QA Engineer)
+# =====================================================================
+
+
+def build_jira_qa_test_subtasks_stage(
+    flow: "PRDFlow", *, require_confluence: bool = True,
+) -> AgentStage:
+    """Create an :class:`AgentStage` that generates QA test sub-tasks
+    as counter-tickets to each implementation sub-task.
+
+    The QA Engineer creates test cases focused on edge cases, security
+    vulnerabilities, and rendering issues — complementing (not
+    duplicating) the unit tests already defined in dev sub-tasks.
+    """
+
+    def _should_skip() -> bool:
+        reason = _check_jira_prerequisites(
+            flow, require_confluence=require_confluence,
+        )
+        if reason:
+            logger.info("[JiraQATestSubtasks] Skipping — %s", reason)
+            return True
+        if flow.state.jira_phase != "qa_test_ready":
+            logger.info(
+                "[JiraQATestSubtasks] Skipping — phase is '%s', "
+                "need 'qa_test_ready'",
+                flow.state.jira_phase,
+            )
+            return True
+        if not flow.state.jira_output and not flow.state.jira_epics_stories_output:
+            logger.info("[JiraQATestSubtasks] Skipping — no Stories/Sub-tasks output")
+            return True
+        return False
+
+    def _run() -> StageResult:
+        from crewai import Crew, Process, Task
+
+        from crewai_productfeature_planner.agents.qa_engineer import (
+            create_qa_engineer,
+            get_task_configs as get_qa_eng_task_configs,
+        )
+        from crewai_productfeature_planner.scripts.logging_config import is_verbose
+        from crewai_productfeature_planner.scripts.retry import (
+            crew_kickoff_with_retry,
+        )
+
+        jira_token, project_id, _ = _setup_jira_context(flow)
+
+        try:
+            confluence_url = getattr(flow.state, "confluence_url", "")
+            additional_ctx = _build_jira_context(flow)
+            eng_plan = getattr(flow.state, "engineering_plan", "")
+
+            stories_and_subtasks = flow.state.jira_output or (
+                f"{flow.state.jira_epics_stories_output}"
+            )
+
+            qa_agent = create_qa_engineer(
+                project_id=project_id, run_id=flow.state.run_id,
+            )
+            qa_task_configs = get_qa_eng_task_configs()
+            task_cfg = qa_task_configs["create_qa_engineer_test_subtasks_task"]
+
+            qa_task = Task(
+                description=task_cfg["description"].format(
+                    stories_and_subtasks=stories_and_subtasks,
+                    engineering_plan=eng_plan or "(Not available)",
+                    additional_prd_context=additional_ctx,
+                    confluence_url=confluence_url,
+                    run_id=flow.state.run_id,
+                ),
+                expected_output=task_cfg["expected_output"],
+                agent=qa_agent,
+            )
+            crew = Crew(
+                agents=[qa_agent],
+                tasks=[qa_task],
+                process=Process.sequential,
+                verbose=is_verbose(),
+            )
+            qa_result = crew_kickoff_with_retry(
+                crew, step_label="jira_qa_engineer_tests",
+            )
+
+            try:
+                from crewai_productfeature_planner.mongodb.product_requirements import (
+                    append_jira_ticket,
+                )
+                known = set(_extract_issue_keys(stories_and_subtasks))
+                for tkey in _extract_issue_keys(qa_result.raw):
+                    if tkey not in known:
+                        append_jira_ticket(flow.state.run_id, {
+                            "key": tkey,
+                            "type": "Sub-task",
+                            "category": "qa-test",
+                        })
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[JiraQATestSubtasks] Failed to persist QA test tickets: %s",
+                    exc,
+                )
+
+            return StageResult(output=qa_result.raw)
+        finally:
+            _reset_jira_context(jira_token)
+
+    def _apply(result: StageResult) -> None:
+        flow.state.jira_qa_test_output = result.output
+        flow.state.jira_phase = "qa_test_done"
+        _persist_jira_phase(flow.state.run_id, "qa_test_done")
+        logger.info(
+            "[JiraQATestSubtasks] QA test sub-tasks created (%d chars) — complete",
+            len(result.output),
+        )
+
+    return AgentStage(
+        name="jira_qa_test_subtasks",
+        description="Create QA Engineer test sub-tasks as counter-tickets to implementation sub-tasks",
+        run=_run,
+        should_skip=_should_skip,
+        apply=_apply,
+    )
+
+
+# =====================================================================
 # Legacy — run all Jira phases sequentially (auto-approve mode)
 # =====================================================================
 
 
 def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
-    """Backward-compatible stage that runs all three Jira phases
+    """Backward-compatible stage that runs all five Jira phases
     sequentially in auto-approve mode (no user approval gates).
 
     This is used by :func:`build_post_completion_pipeline` and startup
@@ -532,7 +928,7 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
         if reason:
             logger.info("[JiraTicketing] Skipping — %s", reason)
             return True
-        if flow.state.jira_phase == "subtasks_done":
+        if flow.state.jira_phase == "qa_test_done":
             logger.info("[JiraTicketing] Skipping — already completed")
             return True
         return False
@@ -542,13 +938,17 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
             AgentOrchestrator,
         )
 
-        # Build a mini pipeline of the three phases, auto-approving
-        # skeleton so Phase 2 doesn't skip.
+        # Build a mini pipeline of all five phases, auto-approving
+        # between each so the next phase proceeds.
         skeleton = build_jira_skeleton_stage(flow)
         epics_stories = build_jira_epics_stories_stage(flow)
         subtasks = build_jira_subtasks_stage(flow)
+        reviews = build_jira_review_subtasks_stage(flow)
+        qa_tests = build_jira_qa_test_subtasks_stage(flow)
 
-        mini = AgentOrchestrator(stages=[skeleton, epics_stories, subtasks])
+        mini = AgentOrchestrator(
+            stages=[skeleton, epics_stories, subtasks, reviews, qa_tests],
+        )
 
         # After skeleton runs, auto-approve so Phase 2 proceeds.
         orig_skeleton_apply = skeleton.apply
@@ -570,6 +970,26 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
             _persist_jira_phase(flow.state.run_id, "subtasks_ready")
 
         epics_stories.apply = _auto_approve_subtasks
+
+        # After Phase 3 runs, auto-approve so Phase 4 proceeds.
+        orig_st_apply = subtasks.apply
+
+        def _auto_approve_reviews(result: StageResult) -> None:
+            orig_st_apply(result)
+            flow.state.jira_phase = "review_ready"
+            _persist_jira_phase(flow.state.run_id, "review_ready")
+
+        subtasks.apply = _auto_approve_reviews
+
+        # After Phase 4 runs, auto-approve so Phase 5 proceeds.
+        orig_rv_apply = reviews.apply
+
+        def _auto_approve_qa_tests(result: StageResult) -> None:
+            orig_rv_apply(result)
+            flow.state.jira_phase = "qa_test_ready"
+            _persist_jira_phase(flow.state.run_id, "qa_test_ready")
+
+        reviews.apply = _auto_approve_qa_tests
 
         mini.run_pipeline()
 

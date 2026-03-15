@@ -89,6 +89,13 @@ from crewai_productfeature_planner.flows._executive_summary import (
 from crewai_productfeature_planner.flows._section_loop import (
     section_approval_loop as _section_approval_loop_fn,
 )
+from crewai_productfeature_planner.flows._ceo_eng_review import (
+    run_ceo_review as _run_ceo_review_fn,
+    run_eng_plan as _run_eng_plan_fn,
+)
+from crewai_productfeature_planner.flows._ux_design import (
+    run_ux_design as _run_ux_design_fn,
+)
 from crewai_productfeature_planner.flows._finalization import (
     save_progress as _save_progress_fn,
     persist_output_path as _persist_output_path_fn,
@@ -297,6 +304,8 @@ class PRDFlow(Flow[PRDState]):
         idea: str,
         section_content: str,
         executive_summary: str,
+        executive_product_summary: str = "",
+        engineering_plan: str = "",
     ) -> tuple[dict[str, str], dict[str, str]]:
         """Execute draft tasks across *agents* in parallel."""
         return _run_agents_parallel_fn(
@@ -306,6 +315,8 @@ class PRDFlow(Flow[PRDState]):
             idea=idea,
             section_content=section_content,
             executive_summary=executive_summary,
+            executive_product_summary=executive_product_summary,
+            engineering_plan=engineering_plan,
         )
 
     @staticmethod
@@ -398,6 +409,21 @@ class PRDFlow(Flow[PRDState]):
         )
 
     # ------------------------------------------------------------------
+    # Phase 1.5 — CEO Review, Engineering Plan & UX Design (gstack agents)
+    # ------------------------------------------------------------------
+    def _run_ceo_review(self) -> str:
+        """Generate Executive Product Summary via the CEO Reviewer agent."""
+        return _run_ceo_review_fn(self)
+
+    def _run_eng_plan(self) -> str:
+        """Generate Engineering Plan via the Eng Manager agent."""
+        return _run_eng_plan_fn(self)
+
+    def _run_ux_design(self) -> str:
+        """Generate UX design via the UX Designer agent + Figma Make."""
+        return _run_ux_design_fn(self)
+
+    # ------------------------------------------------------------------
     # Step 1 — Executive Summary iteration → then section drafting
     # ------------------------------------------------------------------
     @start()
@@ -466,11 +492,16 @@ class PRDFlow(Flow[PRDState]):
             str(DEFAULT_EXEC_RESUME_THRESHOLD),
         ))
         existing_iters = len(self.state.executive_summary.iterations)
-        # If any section beyond executive_summary already has content,
-        # the flow previously completed Phase 1 and entered Phase 2.
+        # If any section beyond executive_summary and specialist sections
+        # already has content, the flow previously completed Phase 1
+        # and entered Phase 2.
+        from crewai_productfeature_planner.apis.prd._sections import (
+            SPECIALIST_SECTION_KEYS,
+        )
+        _skip_keys = {"executive_summary"} | SPECIALIST_SECTION_KEYS
         has_section_content = any(
             s.content for s in self.state.draft.sections
-            if s.key != "executive_summary"
+            if s.key not in _skip_keys
         )
         skip_phase1 = (
             existing_iters >= exec_resume_threshold
@@ -592,6 +623,60 @@ class PRDFlow(Flow[PRDState]):
                 )
                 raise req_stage.finalized_exc()
 
+        # ── Phase 1.5a: CEO Review → Executive Product Summary ───
+        if not self.state.executive_product_summary:
+            logger.info(
+                "[Phase 1.5a] Running CEO review to generate "
+                "Executive Product Summary",
+            )
+            self._run_ceo_review()
+        else:
+            logger.info(
+                "[Phase 1.5a] Skipping CEO review — executive product "
+                "summary already present (%d chars)",
+                len(self.state.executive_product_summary),
+            )
+            # Ensure the section is marked approved for the draft loop
+            eps_section = self.state.draft.get_section(
+                "executive_product_summary",
+            )
+            if eps_section is not None and not eps_section.is_approved:
+                eps_section.content = self.state.executive_product_summary
+                eps_section.is_approved = True
+
+        # ── Phase 1.5b: Eng Manager → Engineering Plan ───────────
+        if not self.state.engineering_plan:
+            logger.info(
+                "[Phase 1.5b] Running Eng Manager to generate "
+                "Engineering Plan",
+            )
+            self._run_eng_plan()
+        else:
+            logger.info(
+                "[Phase 1.5b] Skipping Eng Plan — already present "
+                "(%d chars)",
+                len(self.state.engineering_plan),
+            )
+            eng_section = self.state.draft.get_section("engineering_plan")
+            if eng_section is not None and not eng_section.is_approved:
+                eng_section.content = self.state.engineering_plan
+                eng_section.is_approved = True
+
+        # ── Phase 1.5c: UX Designer → Figma Make Design ─────────
+        if not self.state.figma_design_url and self.state.figma_design_status != "prompt_ready":
+            logger.info(
+                "[Phase 1.5c] Running UX Designer to generate "
+                "Figma Make design",
+            )
+            self._run_ux_design()
+        else:
+            logger.info(
+                "[Phase 1.5c] Skipping UX Design — already present "
+                "(status=%s, url=%s)",
+                self.state.figma_design_status,
+                bool(self.state.figma_design_url),
+            )
+
         # ── Phase 2: Section-by-section drafting ─────────────
         # Carry the Phase 1 executive summary into the PRDDraft so it
         # is not re-drafted by the section loop.
@@ -689,6 +774,8 @@ class PRDFlow(Flow[PRDState]):
                     idea=self.state.idea,
                     section_content=section.content,
                     executive_summary=self.state.executive_summary.latest_content,
+                    executive_product_summary=self.state.executive_product_summary,
+                    engineering_plan=self.state.engineering_plan,
                 )
             except Exception as exc:
                 logger.error("[Draft] Section '%s' generation failed: %s",

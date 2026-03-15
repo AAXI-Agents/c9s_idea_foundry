@@ -1,14 +1,19 @@
 """Handler for Jira phased-approval button clicks from product list.
 
 Handles the approval/rejection buttons that appear after skeleton
-generation, Epics & Stories creation, and Sub-task creation:
+generation, Epics & Stories creation, Sub-task creation, review
+sub-task creation, and QA test sub-task creation:
 
-* ``jira_skeleton_approve``  — Approve skeleton → create Epics & Stories
-* ``jira_skeleton_reject``   — Regenerate a new skeleton version
-* ``jira_review_approve``    — Approve Epics & Stories → create sub-tasks
-* ``jira_review_skip``       — Skip sub-tasks (mark Jira as complete with E&S only)
-* ``jira_subtask_approve``   — Approve sub-tasks → finalise Jira ticketing
-* ``jira_subtask_reject``    — Regenerate sub-tasks
+* ``jira_skeleton_approve``      — Approve skeleton → create Epics & Stories
+* ``jira_skeleton_reject``       — Regenerate a new skeleton version
+* ``jira_review_approve``        — Approve Epics & Stories → create sub-tasks
+* ``jira_review_skip``           — Skip all remaining phases (mark Jira as complete)
+* ``jira_subtask_approve``       — Approve sub-tasks → create review sub-tasks
+* ``jira_subtask_reject``        — Regenerate sub-tasks
+* ``jira_review_subtask_approve``  — Approve review sub-tasks → create QA test sub-tasks
+* ``jira_review_subtask_skip``     — Skip QA test sub-tasks (mark Jira as complete)
+* ``jira_qa_test_approve``       — Approve QA test sub-tasks → finalise Jira
+* ``jira_qa_test_skip``          — Skip QA tests (mark Jira as complete)
 """
 
 from __future__ import annotations
@@ -51,6 +56,14 @@ def _handle_jira_approval_action(
         _handle_subtask_approve(run_id, user_id, channel, thread_ts, send_tool, client)
     elif action_id == "jira_subtask_reject":
         _handle_subtask_reject(run_id, user_id, channel, thread_ts, send_tool, client)
+    elif action_id == "jira_review_subtask_approve":
+        _handle_review_subtask_approve(run_id, user_id, channel, thread_ts, send_tool, client)
+    elif action_id == "jira_review_subtask_skip":
+        _handle_review_subtask_skip(run_id, user_id, channel, thread_ts, send_tool, client)
+    elif action_id == "jira_qa_test_approve":
+        _handle_qa_test_approve(run_id, user_id, channel, thread_ts, send_tool, client)
+    elif action_id == "jira_qa_test_skip":
+        _handle_qa_test_skip(run_id, user_id, channel, thread_ts, send_tool, client)
     else:
         logger.warning("Unknown Jira approval action: %s", action_id)
 
@@ -198,12 +211,12 @@ def _handle_review_skip(
     send_tool,
     client,
 ) -> None:
-    """Skip sub-task creation — mark Jira as complete with Epics & Stories only."""
+    """Skip all remaining Jira phases — mark Jira as complete with Epics & Stories only."""
     from crewai_productfeature_planner.mongodb.product_requirements import (
         upsert_delivery_record,
     )
 
-    _persist_jira_phase(run_id, "subtasks_done")
+    _persist_jira_phase(run_id, "qa_test_done")
     upsert_delivery_record(run_id, jira_completed=True)
 
     send_tool.run(
@@ -211,11 +224,11 @@ def _handle_review_skip(
         thread_ts=thread_ts,
         text=(
             f"<@{user_id}> :white_check_mark: Jira ticketing marked complete "
-            "(Epics & Stories only, no sub-tasks).\n"
+            "(Epics & Stories only, remaining phases skipped).\n"
             "You can view details from the product list."
         ),
     )
-    logger.info("[JiraApproval] Sub-tasks skipped for run_id=%s — marked complete", run_id)
+    logger.info("[JiraApproval] All remaining phases skipped for run_id=%s — marked complete", run_id)
 
 
 # ---------------------------------------------------------------------------
@@ -231,26 +244,23 @@ def _handle_subtask_approve(
     send_tool,
     client,
 ) -> None:
-    """Approve sub-tasks → finalise Jira ticketing.
+    """Approve sub-tasks → advance to review sub-tasks.
 
-    Persists ``subtasks_done`` phase and marks Jira as complete.
+    Persists ``subtasks_done`` phase and notifies the user to proceed
+    with Staff Engineer + QA Lead review sub-tasks.
     """
-    from crewai_productfeature_planner.mongodb.product_requirements import (
-        upsert_delivery_record,
-    )
-
     _persist_jira_phase(run_id, "subtasks_done")
-    upsert_delivery_record(run_id, jira_completed=True)
 
     send_tool.run(
         channel=channel,
         thread_ts=thread_ts,
         text=(
             f"<@{user_id}> :white_check_mark: Jira Sub-tasks approved! "
-            "All Jira phases are now complete."
+            "You can now publish *Review Sub-tasks* (Staff Eng + QA Lead) "
+            "from the product list, or skip to mark Jira as complete."
         ),
     )
-    logger.info("[JiraApproval] Sub-tasks approved for run_id=%s — marked complete", run_id)
+    logger.info("[JiraApproval] Sub-tasks approved for run_id=%s — ready for reviews", run_id)
 
 
 def _handle_subtask_reject(
@@ -294,3 +304,119 @@ def _handle_subtask_reject(
             )
 
     threading.Thread(target=_do_regenerate_subtasks, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Review sub-task approve / skip
+# ---------------------------------------------------------------------------
+
+
+def _handle_review_subtask_approve(
+    run_id: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Approve review sub-tasks → advance to QA test sub-tasks."""
+    _persist_jira_phase(run_id, "review_done")
+
+    send_tool.run(
+        channel=channel,
+        thread_ts=thread_ts,
+        text=(
+            f"<@{user_id}> :white_check_mark: Review sub-tasks approved! "
+            "You can now publish *QA Test Sub-tasks* from the product list, "
+            "or skip to mark Jira as complete."
+        ),
+    )
+    logger.info("[JiraApproval] Review sub-tasks approved for run_id=%s — ready for QA tests", run_id)
+
+
+def _handle_review_subtask_skip(
+    run_id: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Skip QA test sub-tasks — mark Jira as complete."""
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        upsert_delivery_record,
+    )
+
+    _persist_jira_phase(run_id, "qa_test_done")
+    upsert_delivery_record(run_id, jira_completed=True)
+
+    send_tool.run(
+        channel=channel,
+        thread_ts=thread_ts,
+        text=(
+            f"<@{user_id}> :white_check_mark: Jira ticketing marked complete "
+            "(QA test sub-tasks skipped).\n"
+            "You can view details from the product list."
+        ),
+    )
+    logger.info("[JiraApproval] QA test sub-tasks skipped for run_id=%s — marked complete", run_id)
+
+
+# ---------------------------------------------------------------------------
+# QA test sub-task approve / skip
+# ---------------------------------------------------------------------------
+
+
+def _handle_qa_test_approve(
+    run_id: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Approve QA test sub-tasks → finalise Jira ticketing (all 5 phases complete)."""
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        upsert_delivery_record,
+    )
+
+    _persist_jira_phase(run_id, "qa_test_done")
+    upsert_delivery_record(run_id, jira_completed=True)
+
+    send_tool.run(
+        channel=channel,
+        thread_ts=thread_ts,
+        text=(
+            f"<@{user_id}> :white_check_mark: QA test sub-tasks approved! "
+            "All 5 Jira phases are now complete."
+        ),
+    )
+    logger.info("[JiraApproval] QA tests approved for run_id=%s — all Jira phases complete", run_id)
+
+
+def _handle_qa_test_skip(
+    run_id: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Skip QA test sub-tasks — mark Jira as complete."""
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        upsert_delivery_record,
+    )
+
+    _persist_jira_phase(run_id, "qa_test_done")
+    upsert_delivery_record(run_id, jira_completed=True)
+
+    send_tool.run(
+        channel=channel,
+        thread_ts=thread_ts,
+        text=(
+            f"<@{user_id}> :white_check_mark: Jira ticketing marked complete "
+            "(QA test sub-tasks skipped).\n"
+            "You can view details from the product list."
+        ),
+    )
+    logger.info("[JiraApproval] QA tests skipped for run_id=%s — marked complete", run_id)

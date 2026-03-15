@@ -1498,6 +1498,82 @@ _CODEX: list[CodexEntry] = [
             "dry-run support and duplicate-key resilience."
         ),
     ),
+    CodexEntry(
+        "0.17.1",
+        date(2026, 3, 13),
+        (
+            "Fix intent misclassification: idea text containing 'jira "
+            "tickets' or 'jira epics' as body content was being "
+            "reclassified from create_prd to create_jira by the phrase "
+            "override chain in _message_handler.py. Reordered phrase "
+            "overrides so has_idea_phrase is checked before "
+            "has_create_jira_phrase, and added guard so the jira phrase "
+            "override does not fire when the LLM already classified the "
+            "intent as create_prd. Added 3 regression tests."
+        ),
+    ),
+    CodexEntry(
+        "0.18.0",
+        date(2026, 3, 13),
+        (
+            "GStack agent integration — added 7 gstack-inspired agent "
+            "roles (CEO Reviewer, Eng Manager, Staff Engineer, Release "
+            "Engineer, QA Engineer, QA Lead, Retro Manager). Introduced "
+            "Phase 1.5: after executive summary approval, the CEO "
+            "Reviewer generates an 'executive_product_summary' (10-star "
+            "product vision) and the Eng Manager produces an "
+            "'engineering_plan' (technical architecture basis for Jira "
+            "tickets). Both artefacts are auto-approved specialist "
+            "sections. Phase 2 section drafting now uses both artefacts "
+            "as context instead of the raw executive summary. Jira "
+            "ticket creation uses the engineering plan as additional "
+            "context. SECTION_ORDER expanded from 10 to 12 sections. "
+            "Added SPECIALIST_SECTION_KEYS constant. Resume support "
+            "restores specialist fields from MongoDB. 12 new tests in "
+            "test_ceo_eng_review.py; 2162 total tests passing."
+        ),
+    ),
+    CodexEntry(
+        "0.19.0",
+        date(2026, 3, 13),
+        (
+            "Jira Review & QA Test sub-tasks — extended the 3-phase Jira "
+            "pipeline to 5 phases. Phase 4: Staff Engineer + QA Lead "
+            "review every user story, creating '[Staff Eng Review]' and "
+            "'[QA Lead Review]' sub-tasks per Story (structural audit + "
+            "test methodology review). Phase 5: QA Engineer creates "
+            "'[QA Test]' counter-tickets per implementation sub-task "
+            "covering edge cases, security, and rendering. Activated 3 "
+            "stub agents (staff_engineer, qa_lead, qa_engineer) with "
+            "full factories, task YAML configs, and JiraCreateIssueTool. "
+            "Extended jira_phase state machine through review_ready → "
+            "review_done → qa_test_ready → qa_test_done. Added Slack "
+            "approval buttons and handlers for phases 4 and 5. Updated "
+            "finalization pipeline, product list blocks, and approval "
+            "handler dispatch. 2162 tests passing."
+        ),
+    ),
+    CodexEntry(
+        "0.20.0",
+        date(2026, 3, 13),
+        (
+            "UX Designer agent & Figma Make integration — new UX Designer "
+            "agent (Phase 1.5c) converts the Executive Product Summary into "
+            "a structured Figma Make prompt and submits it to the Figma Make "
+            "API to generate clickable prototypes. Figma tool package "
+            "(tools/figma/) with HTTP client, submit/poll lifecycle, and "
+            "CrewAI BaseTool wrapper. Graceful fallback: when "
+            "FIGMA_ACCESS_TOKEN is not set, stores the generated prompt for "
+            "manual use (status 'prompt_ready'). Figma design URL and "
+            "status persisted to MongoDB workingIdeas. Product list shows "
+            "Figma status (✅ link, ⏳ in-progress, ✏️ prompt ready) with "
+            "Start/Retry/View buttons. UX design context (Figma URL and/or "
+            "prompt) fed into all Jira ticket generation stages so Stories "
+            "and Sub-tasks reference the visual design. New env vars: "
+            "FIGMA_ACCESS_TOKEN, FIGMA_TEAM_ID, GEMINI_UX_DESIGNER_MODEL. "
+            "55 new tests (2217 total)."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

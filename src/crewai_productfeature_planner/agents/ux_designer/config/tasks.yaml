@@ -1,0 +1,75 @@
+generate_figma_make_prompt_task:
+  description: >
+    You are a Senior UX Designer generating a **Figma Make prompt** from a
+    product executive summary.  Your prompt must be detailed enough for
+    Figma Make to generate a complete, clickable prototype with reusable
+    components.
+
+    --- EXECUTIVE PRODUCT SUMMARY ---
+    {executive_product_summary}
+    --- END ---
+
+    The original idea:
+    {idea}
+
+    Requirements breakdown (if available):
+    {requirements_breakdown}
+
+    Your task:
+    1. **Analyse the product** — identify the core user flows, key
+       screens, primary actions, and navigation structure.
+
+    2. **Define the design system** — specify:
+       - Colour palette (primary, secondary, neutral, semantic colours)
+       - Typography scale (headings, body, captions, with sizes)
+       - Spacing scale (4px base grid)
+       - Border radius and shadow tokens
+       - Icon style (outlined/filled, size convention)
+
+    3. **Map user flows** — for each major feature:
+       - Entry point → key screens → success state
+       - Error states, empty states, loading states
+       - Edge cases (long text, zero items, many items)
+
+    4. **Define reusable components** — list each component with:
+       - Name (e.g. ``Button/Primary``, ``Card/Product``)
+       - Variants (default, hover, active, disabled, loading)
+       - Auto-layout direction and padding
+       - Content slots (text, icon, image placeholders)
+
+    5. **Specify page structure** — describe each page/frame:
+       - Page name and purpose
+       - Layout grid (columns, gutter, margins)
+       - Component instances placed on the page
+       - Responsive behaviour (desktop, tablet, mobile)
+
+    6. **Interaction & navigation** — describe:
+       - Click targets and their destinations
+       - Transitions (slide, fade, instant)
+       - Scroll behaviour and sticky elements
+       - Modal / overlay triggers
+
+    Now, construct a single, comprehensive Figma Make prompt that
+    incorporates ALL of the above.  The prompt should be directly
+    usable inside Figma Make to generate the full design.
+
+    After generating the prompt, use the ``figma_make_design`` tool to
+    submit the prompt to Figma Make and generate the design.
+
+    If Figma credentials are not available (tool returns FIGMA_SKIPPED),
+    output the prompt prefixed with ``FIGMA_PROMPT:`` so it can be
+    used manually later.
+
+    If the tool returns a URL (``FIGMA_URL:...``), output the URL
+    prefixed with ``FIGMA_URL:`` so the system can capture it.
+
+  expected_output: >
+    Either:
+    - ``FIGMA_URL:<url>`` — the Figma file URL of the generated design
+    - ``FIGMA_PROMPT:<prompt>`` — the structured Figma Make prompt if
+      credentials were not available
+    - ``FIGMA_ERROR:<message>`` — if an error occurred
+
+    The prompt/output should describe a complete design system with
+    reusable components, user flows, and page layouts.
+  agent: ux_designer

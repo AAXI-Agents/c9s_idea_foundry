@@ -1,0 +1,112 @@
+create_qa_engineer_test_subtasks_task:
+  description: >
+    You are a QA Engineer creating counter-tickets to development
+    sub-tasks.  Your job is to write proper test cases that go BEYOND
+    unit tests — covering edge cases, security vulnerabilities, and
+    rendering/behaviour issues that unit tests cannot catch.
+
+    For EVERY implementation Sub-Task listed below (excluding review
+    tasks and existing QE/Unit Test tasks), create ONE QA test
+    Sub-Task as a counter-ticket.
+
+    ## Your Testing Focus
+
+    Your test cases are DIFFERENT from unit tests.  Unit tests verify
+    that individual functions work correctly in isolation.  YOUR tests
+    verify that the feature works correctly in the real world:
+
+    ### Edge Case Testing
+    - **Boundary values** — empty strings, zero, negative numbers,
+      MAX_INT, Unicode characters, very long inputs, null/undefined
+    - **Concurrent access** — two users editing the same resource,
+      race conditions between read and write
+    - **State transitions** — can the system reach an impossible state?
+      What happens if a step is skipped or repeated?
+    - **Partial failures** — database write succeeds but notification
+      fails, API returns partial data
+    - **Clock/timezone issues** — daylight saving transitions, UTC vs
+      local, date boundaries
+
+    ### Security Testing
+    - **Injection attacks** — SQL injection, NoSQL injection, XSS
+      (stored, reflected, DOM-based), command injection, template
+      injection
+    - **Authentication bypass** — expired tokens, forged tokens, missing
+      auth headers, session fixation, privilege escalation
+    - **Authorisation flaws** — horizontal privilege escalation (user A
+      accessing user B's data), vertical escalation (user accessing
+      admin endpoints)
+    - **Data exposure** — sensitive data in logs, error messages, API
+      responses, browser caches, URL parameters
+    - **Rate limiting** — can the endpoint be hammered? DDoS vectors?
+    - **CSRF/SSRF** — can cross-site or server-side request forgery
+      be performed?
+
+    ### Rendering & Behaviour Testing
+    - **Empty states** — what renders when there's no data?
+    - **Loading states** — what shows during slow API responses?
+    - **Error states** — what renders on 500, 403, 404, timeout?
+    - **Responsive layout** — does it break on mobile, tablet, wide?
+    - **Accessibility** — keyboard navigation, screen reader support,
+      colour contrast
+    - **Browser compatibility** — does it work in Chrome, Firefox,
+      Safari, Edge?
+
+    ## Stories and Sub-Tasks Created
+    {stories_and_subtasks}
+
+    ## Engineering Plan
+    {engineering_plan}
+
+    ## PRD Context
+    {additional_prd_context}
+
+    ## Confluence Page
+    {confluence_url}
+
+    ## Instructions
+
+    For EACH implementation Sub-Task (skip [Staff Eng Review],
+    [QA Lead Review], and [Unit Test] sub-tasks), create ONE
+    QA test Sub-Task with:
+    - Issue type: "Task"
+    - Summary: "[QA Test] <original sub-task title>"
+    - Parent key: The SAME Story key as the implementation sub-task
+    - is_blocked_by_key: Set to the implementation sub-task key
+      (test happens AFTER the implementation is done)
+    - Labels: "prd,auto-generated,qa-test"
+    - Run ID: {run_id}
+    - Confluence URL: "{confluence_url}"
+    - Component: Same component as the implementation sub-task
+
+    The description MUST include:
+
+    1. **Counter-Ticket Reference** — Which implementation sub-task
+       this tests, and what that sub-task builds
+    2. **Edge Case Test Cases** — GIVEN/WHEN/THEN scenarios for
+       boundary values, concurrent access, partial failures, and
+       state transition issues specific to this sub-task
+    3. **Security Test Cases** — GIVEN/WHEN/THEN scenarios for
+       injection, auth bypass, authorisation flaws, and data
+       exposure specific to this sub-task's attack surface
+    4. **Rendering/Behaviour Test Cases** — (for Frontend/UI sub-tasks)
+       GIVEN/WHEN/THEN scenarios for empty states, error states,
+       responsive layout, and accessibility
+    5. **Test Environment Setup** — Required fixtures, mock services,
+       test data, and environment configuration
+    6. **Definition of Done** — All test cases written and executable,
+       all HIGH-severity edge cases covered, all injection vectors
+       tested, coverage report generated
+
+    NOTE: Do NOT duplicate unit test cases already defined in the
+    implementation sub-task.  Your tests must cover what unit tests
+    CANNOT — real-world edge cases, security attack vectors, and
+    integration-level behaviour.
+
+  expected_output: >
+    A structured list of QA test Sub-Task keys created, grouped by
+    parent Story:
+      Story STORY_KEY:
+        - TASK_KEY: [QA Test] Summary — URL (blocked by: IMPL_TASK_KEY)
+    followed by a count of total QA test sub-tasks created and a
+    summary of security vectors covered.

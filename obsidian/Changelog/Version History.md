@@ -2,6 +2,31 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.20.x (2026-03-13)
+
+| Version | Summary |
+|---------|---------|
+| 0.20.0 | UX Designer agent & Figma Make integration — Phase 1.5c converts Executive Product Summary into Figma Make prompt; Figma tool package (submit/poll/BaseTool); graceful fallback when FIGMA_ACCESS_TOKEN absent; Figma URL/status in MongoDB + product list; UX design feeds into all Jira stages. 55 new tests (2217 total) |
+
+## v0.19.x (2026-03-13)
+
+| Version | Summary |
+|---------|---------|
+| 0.19.0 | Jira Review & QA Test sub-tasks — extended 3-phase Jira pipeline to 5 phases. Phase 4: Staff Eng + QA Lead review sub-tasks per Story. Phase 5: QA Engineer test counter-tickets per dev sub-task (edge cases, security, rendering). 3 stub agents activated. Slack approval buttons for phases 4–5. 2162 tests |
+
+## v0.18.x (2026-03-13)
+
+| Version | Summary |
+|---------|---------|
+| 0.18.0 | GStack agent integration — 7 new agent roles (CEO Reviewer, Eng Manager + 5 stubs). Phase 1.5: CEO Reviewer → `executive_product_summary`, Eng Manager → `engineering_plan`. Both auto-approved specialist sections feed Phase 2 drafting + Jira context. SECTION_ORDER 10→12. 12 new tests; 2162 total |
+
+## v0.17.x (2026-03-13)
+
+| Version | Summary |
+|---------|---------|
+| 0.17.1 | Fix intent misclassification — idea text containing "jira tickets" or "jira epics" in the body was reclassified from `create_prd` to `create_jira` by the phrase override chain. Reordered phrase overrides (`has_idea_phrase` before `has_create_jira_phrase`) and added LLM trust guard; 3 new regression tests (605 Slack tests total) |
+| 0.17.0 | MongoDB Atlas migration — replaced localhost MongoDB with cloud-hosted Atlas; refactored `mongodb.client` to use `MONGODB_ATLAS_URI`; removed old connection env vars; created one-time migration script with dry-run support |
+
 ## v0.16.x (2026-03-10)
 
 | Version | Summary |

@@ -617,6 +617,14 @@ def resume_prd_flow(
         if exec_summary.latest_content:
             flow.state.finalized_idea = exec_summary.latest_content
 
+        # Restore specialist section state from the draft sections
+        eps_section = draft.get_section("executive_product_summary")
+        if eps_section and eps_section.content:
+            flow.state.executive_product_summary = eps_section.content
+        eng_section = draft.get_section("engineering_plan")
+        if eng_section and eng_section.content:
+            flow.state.engineering_plan = eng_section.content
+
         # Restore refine_idea state
         if refinement_history:
             flow.state.idea_refined = True

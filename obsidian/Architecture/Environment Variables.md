@@ -50,6 +50,24 @@
 | `JIRA_USERNAME` | Jira API username |
 | `JIRA_API_TOKEN` | Jira API token |
 
+## Figma (v0.20.0)
+
+| Variable | Purpose |
+|----------|---------|
+| `FIGMA_ACCESS_TOKEN` | Figma API personal access token — enables Figma Make design generation |
+| `FIGMA_TEAM_ID` | Figma team ID for design file creation (optional) |
+
+## Agent Model Overrides
+
+| Variable | Purpose |
+|----------|---------|
+| `GEMINI_CEO_MODEL` | Override LLM for CEO Reviewer agent |
+| `GEMINI_ENG_MODEL` | Override LLM for Eng Manager agent |
+| `GEMINI_STAFF_ENG_MODEL` | Override LLM for Staff Engineer agent |
+| `GEMINI_QA_LEAD_MODEL` | Override LLM for QA Lead agent |
+| `GEMINI_QA_ENG_MODEL` | Override LLM for QA Engineer agent |
+| `GEMINI_UX_DESIGNER_MODEL` | Override LLM for UX Designer agent |
+
 ## Flow Configuration
 
 | Variable | Purpose |

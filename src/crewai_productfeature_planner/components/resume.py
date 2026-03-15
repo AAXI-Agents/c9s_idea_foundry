@@ -241,6 +241,32 @@ def restore_prd_state(run_info: dict) -> PRDFlow:
     if next_section:
         flow.state.current_section_key = next_section.key
 
+    # ── Restore specialist sections (CEO review, Eng plan) ────
+    if docs:
+        doc = docs[0]
+        section_obj = doc.get("section", {})
+        if isinstance(section_obj, dict):
+            # executive_product_summary
+            eps_iters = section_obj.get("executive_product_summary", [])
+            if isinstance(eps_iters, list) and eps_iters:
+                latest_eps = eps_iters[-1]
+                if isinstance(latest_eps, dict) and latest_eps.get("content"):
+                    flow.state.executive_product_summary = latest_eps["content"]
+                    logger.info(
+                        "Restored executive_product_summary (%d chars)",
+                        len(flow.state.executive_product_summary),
+                    )
+            # engineering_plan
+            eng_iters = section_obj.get("engineering_plan", [])
+            if isinstance(eng_iters, list) and eng_iters:
+                latest_eng = eng_iters[-1]
+                if isinstance(latest_eng, dict) and latest_eng.get("content"):
+                    flow.state.engineering_plan = latest_eng["content"]
+                    logger.info(
+                        "Restored engineering_plan (%d chars)",
+                        len(flow.state.engineering_plan),
+                    )
+
     approved_count = sum(1 for s in draft.sections if s.is_approved)
     exec_iter_count = len(exec_summary_draft.iterations)
     req_iter_count = len(flow.state.breakdown_history)

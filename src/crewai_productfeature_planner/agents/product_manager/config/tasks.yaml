@@ -89,8 +89,19 @@ draft_section_task:
       8. Dependencies (listing any dependencies on other teams, systems, or technologies)
       9. Assumptions (stating any assumptions made during the planning)
 
+    --- EXECUTIVE PRODUCT SUMMARY ---
+    {executive_product_summary}
+    --- END OF EXECUTIVE PRODUCT SUMMARY ---
+
+    --- ENGINEERING PLAN ---
+    {engineering_plan}
+    --- END OF ENGINEERING PLAN ---
+
     Write a comprehensive, detailed **{section_title}** section that:
-    - Use the latest iterated {executive_summary} as a reference for tone and style.
+    - Use the Executive Product Summary as the authoritative reference for
+      product vision, tone, and ambition.
+    - Use the Engineering Plan for technical architecture context and
+      implementation details.
     - Stays strictly within the scope of this section type — do NOT
       duplicate content that belongs in another section listed above.
     - Is consistent with the other sections provided as context above.
@@ -114,12 +125,18 @@ critique_section_task:
   description: >
     Critically review the **{section_title}** section of a PRD.
 
-    Use the executive summary as the authoritative reference for tone,
-    scope, and product vision:
+    Use the Executive Product Summary as the authoritative reference
+    for product vision, tone, scope, and ambition:
 
-    --- EXECUTIVE SUMMARY ---
-    {executive_summary}
-    --- END OF EXECUTIVE SUMMARY ---
+    --- EXECUTIVE PRODUCT SUMMARY ---
+    {executive_product_summary}
+    --- END OF EXECUTIVE PRODUCT SUMMARY ---
+
+    Use the Engineering Plan for technical architecture context:
+
+    --- ENGINEERING PLAN ---
+    {engineering_plan}
+    --- END OF ENGINEERING PLAN ---
 
     Here are the other sections already approved for this PRD — use them
     to check cross-section consistency and avoid duplication:
@@ -159,12 +176,18 @@ refine_section_task:
   description: >
     Refine the **{section_title}** section of a PRD based on critique section feedback.
 
-    Use the executive summary as the authoritative reference for tone,
-    scope, and product vision:
+    Use the Executive Product Summary as the authoritative reference
+    for product vision, tone, scope, and ambition:
 
-    --- EXECUTIVE SUMMARY ---
-    {executive_summary}
-    --- END OF EXECUTIVE SUMMARY ---
+    --- EXECUTIVE PRODUCT SUMMARY ---
+    {executive_product_summary}
+    --- END OF EXECUTIVE PRODUCT SUMMARY ---
+
+    Use the Engineering Plan for technical architecture context:
+
+    --- ENGINEERING PLAN ---
+    {engineering_plan}
+    --- END OF ENGINEERING PLAN ---
 
     Here are the other sections already approved for this PRD — maintain
     consistency with them and avoid duplicating their content:

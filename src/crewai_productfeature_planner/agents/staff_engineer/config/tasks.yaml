@@ -1,0 +1,74 @@
+create_staff_engineer_review_subtasks_task:
+  description: >
+    You are a paranoid staff engineer reviewing the Sub-Tasks created
+    under each User Story to ensure developer tickets are production-safe.
+
+    For EVERY User Story listed below, create ONE review Sub-Task that
+    performs a structural audit of all implementation sub-tasks under
+    that Story.
+
+    ## What to Review
+
+    For each Story's sub-tasks, audit for:
+    - **N+1 queries** — does the data layer batch correctly?
+    - **Race conditions** — are there concurrent writes without locking?
+    - **Stale reads** — is caching invalidated on relevant mutations?
+    - **Trust boundary violations** — is user input validated before use?
+    - **Missing indexes** — will queries table-scan in production?
+    - **Escaping bugs** — is output encoded for the correct context?
+    - **Broken invariants** — can state machines reach impossible states?
+    - **Bad retry logic** — are retries idempotent? exponential backoff?
+    - **Tests that miss the real failure mode** — do test cases cover the
+      actual production failure scenario, not just the happy path?
+    - **Missing error handling** — what happens when external services
+      are down, rate-limited, or return unexpected payloads?
+    - **Schema migration risks** — backward compatibility, zero-downtime?
+
+    ## Stories and Sub-Tasks Created
+    {stories_and_subtasks}
+
+    ## Engineering Plan
+    {engineering_plan}
+
+    ## PRD Context
+    {additional_prd_context}
+
+    ## Confluence Page
+    {confluence_url}
+
+    ## Instructions
+
+    For EACH User Story, create exactly ONE review Sub-Task with:
+    - Issue type: "Task"
+    - Summary: "[Staff Eng Review] <Story title> — Production Readiness Audit"
+    - Parent key: The Story key this review belongs under
+    - is_blocked_by_key: Set to the LAST implementation sub-task key
+      under this Story (review happens after all dev work)
+    - Labels: "prd,auto-generated,staff-review"
+    - Run ID: {run_id}
+    - Confluence URL: "{confluence_url}"
+    - Component: Same component as the parent Story
+
+    The description MUST include:
+
+    1. **Audit Scope** — List every implementation sub-task key being
+       reviewed, with a one-line summary of what it does
+    2. **Risk Assessment** — For each sub-task, identify the top 3
+       production risks from the checklist above.  Rate each as
+       HIGH / MEDIUM / LOW severity
+    3. **Specific Failure Scenarios** — Concrete "what if" scenarios
+       that would cause a production incident (with expected vs actual
+       behaviour)
+    4. **Required Mitigations** — Actionable fixes the developer must
+       implement before this review sub-task can pass
+    5. **Regression Test Requirements** — Specific test cases that must
+       exist to prevent these failure modes from recurring
+    6. **Definition of Done** — Checklist: all HIGH risks mitigated,
+       all required tests written, no N+1 queries, no unguarded race
+       conditions, all trust boundaries validated
+
+  expected_output: >
+    A structured list of review Sub-Task keys created, one per Story:
+      Story STORY_KEY:
+        - TASK_KEY: [Staff Eng Review] Summary — URL (blocked by: TASK_KEY)
+    followed by a count of total review sub-tasks created.

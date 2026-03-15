@@ -29,6 +29,14 @@
 | `idea_refiner/` | Idea enrichment agent (Gemini, no tools) |
 | `product_manager/` | PM agent (Gemini + OpenAI variants, 2 tools) |
 | `requirements_breakdown/` | Requirements decomposition agent |
+| `ceo_reviewer/` | CEO/Founder reviewer — generates executive product summary (v0.18.0) |
+| `eng_manager/` | Engineering Manager — generates engineering plan (v0.18.0) |
+| `staff_engineer/` | Staff engineer agent (stub, v0.18.0) |
+| `release_engineer/` | Release engineer agent (stub, v0.18.0) |
+| `qa_engineer/` | QA engineer agent (stub, v0.18.0) |
+| `qa_lead/` | QA lead agent (stub, v0.18.0) |
+| `retro_manager/` | Retro manager agent (stub, v0.18.0) |
+| `ux_designer/` | UX Designer — Figma Make prompt generation + submission (v0.20.0) |
 | `orchestrator/` | Atlassian publishing + Jira agents |
 
 ## APIs (`apis/`)
@@ -52,6 +60,8 @@
 | `_constants.py` | Constants, utility functions, exceptions, state model |
 | `_agents.py` | Agent creation, parallel execution, decision parsing |
 | `_executive_summary.py` | Phase 1 executive summary iteration |
+| `_ceo_eng_review.py` | Phase 1.5 CEO review + Engineering plan |
+| `_ux_design.py` | Phase 1.5c UX design — Figma Make prompt + submission (v0.20.0) |
 | `_section_loop.py` | Phase 2 section critique→refine loop |
 | `_finalization.py` | Save, finalize, post-completion delivery |
 
@@ -99,6 +109,7 @@
 | `directory_read_tool.py` | Directory listing |
 | `gemini_chat.py` | Gemini LLM intent classification |
 | `openai_chat.py` | OpenAI LLM intent classification |
+| `figma/` | Figma Make integration — `_config.py`, `_client.py`, `figma_make_tool.py` (v0.20.0) |
 
 ## Scripts (`scripts/`)
 

@@ -159,16 +159,24 @@ def section_approval_loop(
                 "critic" if critic_agent is not None
                 else next((n for n, a in agents.items() if a is critic), selected),
             )
-            # Exclude executive_summary from approved_sections — it is
-            # already injected as the separate {executive_summary} param.
-            _excl = {section.key, "executive_summary"}
+            # Exclude executive_summary and specialist sections from
+            # approved_sections — they are injected separately.
+            _excl = {
+                section.key, "executive_summary",
+                "executive_product_summary", "engineering_plan",
+            }
+            # Use executive_product_summary when available; fall back to
+            # the raw executive_summary for backward compat.
+            _eps = flow.state.executive_product_summary or flow.state.executive_summary.latest_content or "(Not yet available)"
+            _eng = flow.state.engineering_plan or "(Not yet available)"
             critique_task = Task(
                 description=task_configs["critique_section_task"][
                     "description"
                 ].format(
                     section_title=section.title,
                     critique_section_content=section.content,
-                    executive_summary=flow.state.executive_summary.latest_content or "(Not yet available)",
+                    executive_product_summary=_eps,
+                    engineering_plan=_eng,
                     approved_sections=flow.state.draft.approved_context(exclude_keys=_excl) or "(None yet)",
                 ),
                 expected_output=task_configs["critique_section_task"][
@@ -264,7 +272,8 @@ def section_approval_loop(
                 section_title=section.title,
                 section_content=section.content,
                 critique_section_content=flow.state.critique,
-                executive_summary=flow.state.executive_summary.latest_content or "(Not yet available)",
+                executive_product_summary=_eps,
+                engineering_plan=_eng,
                 approved_sections=flow.state.draft.approved_context_condensed(exclude_keys=_excl) or "(None yet)",
             ),
             expected_output=task_configs["refine_section_task"][

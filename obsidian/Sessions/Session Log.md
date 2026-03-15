@@ -569,3 +569,165 @@ Server crashed during Jira ticket creation ("cannot schedule new futures after s
 - `obsidian/Sessions/Session Log.md` — This entry
 
 ---
+
+## Session 008 — 2026-03-13
+
+**Scope**: Fix Intent Misclassification (idea → create_jira)
+**Version**: v0.17.0 → v0.17.1
+
+### Problem
+When a user submitted a long idea via Slack that contained phrases like "jira tickets" or "jira epics" in the idea body, the phrase override chain in `_message_handler.py` reclassified the intent from `create_prd` (correctly identified by the LLM) to `create_jira`. This caused the system to skip the entire PRD generation pipeline and jump straight to Jira ticket creation.
+
+### Root Cause
+In the phrase override chain (`_message_handler.py` ~line 196), `has_create_jira_phrase` was checked **before** `has_idea_phrase`. Since `_CREATE_JIRA_PHRASES` includes substrings like `"jira tickets"` and `"jira epics"`, long idea text containing those words as part of the description (not as a command) triggered the override, replacing the correct LLM classification.
+
+### Fix
+1. Reordered the phrase override chain: `has_idea_phrase` now checked before `has_create_jira_phrase`
+2. Added guard: `has_create_jira_phrase and intent != "create_prd"` — when the LLM correctly classifies as `create_prd`, the jira phrase override is suppressed
+
+### Files Modified
+- `src/crewai_productfeature_planner/apis/slack/_message_handler.py` — phrase override reorder + LLM trust guard
+- `tests/apis/slack/test_create_jira_intent.py` — 3 new regression tests
+- `src/crewai_productfeature_planner/version.py` — 0.17.1 codex entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+### Tests
+- 605 Slack tests passed (602 existing + 3 new regression tests)
+- 25 Jira approval gate tests passed
+
+---
+
+## Session 009 — 2026-03-13
+
+**Scope**: GStack Agent Integration
+**Version**: v0.17.1 → v0.18.0
+
+### Summary
+Integrated 7 gstack-inspired agent roles into CrewAI. Introduced Phase 1.5 (CEO Reviewer → `executive_product_summary`, Eng Manager → `engineering_plan`). Both artefacts feed Phase 2 section drafting and Jira context. SECTION_ORDER expanded from 10 to 12 sections. 5 stub agents created for future activation.
+
+### Tests
+- 12 new tests in `test_ceo_eng_review.py`
+- 2162 total tests passing
+
+---
+
+## Session 010 — 2026-03-13
+
+**Scope**: Jira Review & QA Test Sub-tasks
+**Version**: v0.18.0 → v0.19.0
+
+### Summary
+Extended the 3-phase Jira pipeline to 5 phases. Activated 3 stub agents (Staff Engineer, QA Lead, QA Engineer) with full factories, task YAML configs, and JiraCreateIssueTool.
+
+### Changes
+1. **Phase 4: Review Sub-tasks** — Staff Engineer + QA Lead review every user story as sub-tasks. Staff Eng performs structural audit (N+1 queries, race conditions, trust boundaries, missing indexes). QA Lead performs test methodology review (acceptance criteria, coverage gaps, negative tests, regression risk).
+2. **Phase 5: QA Test Sub-tasks** — QA Engineer creates `[QA Test]` counter-tickets per implementation sub-task covering edge cases, security (injection, auth bypass, CSRF/SSRF), and rendering (empty/loading/error states, responsive, accessibility).
+3. **Jira Phase State Machine** — Extended: `subtasks_done → review_ready → review_done → qa_test_ready → qa_test_done`
+4. **Slack Integration** — 6 new phase labels, 5 new button blocks, 4 new approval handlers
+
+### Files Created
+- `agents/staff_engineer/agent.py` — Full factory with `create_staff_engineer()`
+- `agents/staff_engineer/config/tasks.yaml` — Structural audit task template
+- `agents/qa_lead/agent.py` — Full factory with `create_qa_lead()`
+- `agents/qa_lead/config/tasks.yaml` — Test methodology review task template
+- `agents/qa_engineer/agent.py` — Full factory with `create_qa_engineer()`
+- `agents/qa_engineer/config/tasks.yaml` — Edge case/security test task template
+
+### Files Modified
+- `orchestrator/_jira.py` — Phase 4 + 5 stage builders, updated auto-approve chain
+- `flows/_constants.py` — `jira_review_output`, `jira_qa_test_output` fields
+- `flows/_finalization.py` — Phase 4 + 5 execution blocks
+- `apis/slack/blocks/_product_list_blocks.py` — Phase labels + buttons
+- `apis/slack/interactions_router/_product_list_handler.py` — Reviews/QA tests branches
+- `apis/slack/interactions_router/_jira_approval_handler.py` — 4 new handlers, dispatch
+- `orchestrator/stages.py`, `orchestrator/__init__.py` — Re-exports
+
+### Tests
+- 2162 tests passing (3 tests updated for new 5-phase behavior)
+
+---
+
+## Session 009 — 2026-03-13
+
+**Scope**: GStack Agent Integration (CEO Reviewer + Eng Manager + Phase 1.5)
+**Version**: v0.17.1 → v0.18.0
+
+### Summary
+Integrated 7 gstack-inspired agent roles into the CrewAI project and added a new Phase 1.5 to the PRD flow. After the executive summary is approved, the CEO Reviewer agent generates an `executive_product_summary` (10-star product vision), and the Eng Manager agent produces an `engineering_plan` (technical architecture). Both artefacts feed into Phase 2 section drafting and Jira ticket creation.
+
+### New Agent Directories
+- `agents/ceo_reviewer/` — Full agent (YAML + factory + tasks)
+- `agents/eng_manager/` — Full agent (YAML + factory + tasks)
+- `agents/staff_engineer/` — Stub
+- `agents/release_engineer/` — Stub
+- `agents/qa_engineer/` — Stub
+- `agents/qa_lead/` — Stub
+- `agents/retro_manager/` — Stub
+
+### New Files
+- `flows/_ceo_eng_review.py` — `run_ceo_review()` and `run_eng_plan()` for Phase 1.5
+- `tests/flows/test_ceo_eng_review.py` — 12 tests covering both functions
+
+### Files Modified
+- `apis/prd/_sections.py` — SECTION_ORDER expanded (10→12), added SPECIALIST_SECTION_KEYS
+- `flows/_constants.py` — PRDState fields: `executive_product_summary`, `engineering_plan`
+- `flows/prd_flow.py` — Phase 1.5a/1.5b insertion, parallel drafting context
+- `flows/_agents.py` — `run_agents_parallel()` signature + format calls
+- `flows/_section_loop.py` — critique/refine template vars, _excl set
+- `agents/product_manager/config/tasks.yaml` — section tasks use new template vars
+- `orchestrator/_jira.py` — `_build_jira_context()` helper, engineering plan injection
+- `components/resume.py` — specialist section restoration
+- `apis/prd/service.py` — specialist fields in resume_prd_flow
+- `tests/flows/test_prd_flow.py` — 57 format string replacements, section index fixes, CEO/Eng mocks
+- `tests/apis/prd/test_prd.py` — sections_total 10→12, next_section assertions
+- `version.py` — 0.18.0 codex entry
+
+### Tests
+- 2162 total tests passing (12 new in test_ceo_eng_review.py)
+
+---
+
+## Session 011 — 2026-03-13
+
+**Scope**: UX Designer Agent & Figma Make Integration (Phase 1.5c)
+**Version**: v0.19.0 → v0.20.0
+
+### Summary
+Created a UX Designer agent that runs after the Executive Product Summary (Phase 1.5c). The agent converts the summary into a structured Figma Make prompt and submits it to the Figma Make API to generate clickable prototypes. When Figma credentials are unavailable, the generated prompt is stored for manual use. The Figma design URL and status are persisted to MongoDB and shown in the Slack product list with status indicators and action buttons. Both the UX design and engineering plan now feed into all Jira ticket generation stages.
+
+### New Files
+- `tools/figma/__init__.py` — Package exports (FigmaMakeTool)
+- `tools/figma/_config.py` — Env helpers: FIGMA_ACCESS_TOKEN, FIGMA_TEAM_ID, has_figma_credentials()
+- `tools/figma/_client.py` — HTTP client: submit_figma_make(), poll_figma_make(), FigmaMakeError
+- `tools/figma/figma_make_tool.py` — CrewAI BaseTool wrapper with FIGMA_URL/SKIPPED/ERROR output
+- `agents/ux_designer/__init__.py` — Package exports
+- `agents/ux_designer/agent.py` — Factory with _build_llm() (research tier), create_ux_designer()
+- `agents/ux_designer/config/agent.yaml` — Senior UX Designer role/goal/backstory
+- `agents/ux_designer/config/tasks.yaml` — 6-step Figma Make prompt generation task
+- `flows/_ux_design.py` — run_ux_design() with output parsing and MongoDB persistence
+- `tests/tools/test_figma_tool.py` — 29 tests for Figma config, client, and tool
+- `tests/flows/test_ux_design.py` — 10 tests for UX design flow
+
+### Files Modified
+- `flows/_constants.py` — 3 new PRDState fields: figma_design_url, figma_design_prompt, figma_design_status
+- `flows/prd_flow.py` — Phase 1.5c insertion after Eng Plan (1.5b)
+- `mongodb/working_ideas/_status.py` — save_figma_design() function
+- `mongodb/working_ideas/repository.py` — Re-export save_figma_design
+- `mongodb/working_ideas/_queries.py` — figma fields in _doc_to_product_dict()
+- `apis/slack/blocks/_product_list_blocks.py` — Figma status indicators + buttons
+- `apis/slack/interactions_router/_product_list_handler.py` — _handle_ux_design() + figma field restoration in _run_jira_phase()
+- `apis/slack/interactions_router/_dispatch.py` — product_ux_design_ ack label
+- `orchestrator/_jira.py` — _build_jira_context() includes UX design blocks
+- `tests/flows/test_ceo_eng_review.py` — 5 new Jira context UX tests
+- `tests/apis/slack/test_product_list.py` — 11 new Figma block, handler, and state tests
+- `version.py` — 0.20.0 codex entry
+
+### New Environment Variables
+- `FIGMA_ACCESS_TOKEN` — Figma API personal access token
+- `FIGMA_TEAM_ID` — Figma team ID for design file creation
+- `GEMINI_UX_DESIGNER_MODEL` — Optional LLM model override for UX Designer
+
+### Tests
+- 2217 total tests passing (55 new)
+
+---

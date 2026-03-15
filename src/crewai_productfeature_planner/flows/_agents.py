@@ -114,6 +114,8 @@ def run_agents_parallel(
     idea: str,
     section_content: str,
     executive_summary: str,
+    executive_product_summary: str = "",
+    engineering_plan: str = "",
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Execute draft tasks across *agents* in parallel.
 
@@ -124,13 +126,19 @@ def run_agents_parallel(
     If one agent fails the others still succeed; the error is logged
     and that agent is omitted from the result dict.
     """
+    # Use executive_product_summary as the authoritative reference when
+    # available; fall back to the raw executive_summary for backward compat.
+    eps = executive_product_summary or executive_summary or "(Not yet available)"
+    eng = engineering_plan or "(Not yet available)"
+
     def _draft(agent_name: str, agent: Agent) -> tuple[str, str]:
         draft_task = Task(
             description=task_configs["draft_section_task"]["description"].format(
                 section_title=section_title,
                 idea=idea,
                 section_content=section_content or "(Initial draft)",
-                executive_summary=executive_summary or "(Not yet available)",
+                executive_product_summary=eps,
+                engineering_plan=eng,
             ),
             expected_output=task_configs["draft_section_task"]["expected_output"].format(
                 section_title=section_title,

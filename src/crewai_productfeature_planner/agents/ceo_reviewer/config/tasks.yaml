@@ -1,0 +1,48 @@
+generate_executive_product_summary_task:
+  description: >
+    You are a founder-CEO reviewing a product executive summary. Your job
+    is to transform it into an **Executive Product Summary** — a document
+    that captures the 10-star product vision, not just the feature spec.
+
+    The original executive summary is:
+
+    --- EXECUTIVE SUMMARY ---
+    {executive_summary}
+    --- END OF EXECUTIVE SUMMARY ---
+
+    The original idea is:
+    {idea}
+
+    Your task:
+    1. Challenge: Is this the right problem to solve? Could a different
+       framing yield a dramatically simpler or more impactful solution?
+    2. Elevate: What is the 10-star version? Find the version that is
+       10x more ambitious and delivers 10x more value for 2x effort.
+    3. User empathy: What would make a user say "this is exactly what
+       I needed"? Describe the experience from the user's perspective.
+    4. Delight opportunities: Identify 3-5 "bonus chunk" opportunities
+       (<30 min each) that would make users think "oh nice, they
+       thought of that."
+    5. Scope mapping: Show the current state → this plan → 12-month ideal.
+    6. Business impact: Articulate clearly why this matters to the
+       business, the market opportunity, and competitive positioning.
+
+    Produce a comprehensive **Executive Product Summary** that:
+    - Opens with the real problem being solved (not the literal request)
+    - Defines the product vision with taste and ambition
+    - Describes the ideal user experience
+    - Lists delight opportunities with effort estimates
+    - Maps the 12-month trajectory
+    - Provides clear success criteria tied to user outcomes
+    - Is written in compelling, professional markdown
+
+    Output ONLY the Executive Product Summary content in markdown format.
+    Do NOT wrap in JSON, code fences, or any structure.
+  expected_output: >
+    A compelling, visionary Executive Product Summary in markdown that
+    captures the 10-star product vision from the founder's perspective.
+    Includes: problem reframing, product vision, user experience narrative,
+    delight opportunities, 12-month trajectory, and success criteria.
+
+    Output ONLY the body content — no JSON wrapper, no metadata.
+  agent: ceo_reviewer

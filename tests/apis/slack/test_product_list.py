@@ -310,6 +310,121 @@ class TestProductListBlocks:
         texts = [e["text"]["text"] for e in elements]
         assert not any("Restart" in t for t in texts)
 
+    # ── Figma UX Design ──────────────────────────────────────
+
+    def test_figma_url_shows_checkmark_link(self):
+        """Product with Figma URL should show clickable link with checkmark."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "https://www.figma.com/design/abc123",
+            "figma_design_status": "completed",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        section_blocks = [b for b in blocks if b["type"] == "section"]
+        text = section_blocks[0]["text"]["text"]
+        assert ":white_check_mark:" in text
+        assert "Figma UX Design" in text
+        assert "figma.com/design/abc123" in text
+
+    def test_figma_generating_shows_hourglass(self):
+        """Product with generating status should show in-progress indicator."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "",
+            "figma_design_status": "generating",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        section_blocks = [b for b in blocks if b["type"] == "section"]
+        text = section_blocks[0]["text"]["text"]
+        assert ":hourglass_flowing_sand:" in text
+        assert "UX Design in progress" in text
+
+    def test_figma_prompting_shows_hourglass(self):
+        """Product with prompting status should show in-progress indicator."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "",
+            "figma_design_status": "prompting",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        section_blocks = [b for b in blocks if b["type"] == "section"]
+        text = section_blocks[0]["text"]["text"]
+        assert ":hourglass_flowing_sand:" in text
+
+    def test_figma_prompt_ready_shows_pencil(self):
+        """Product with prompt_ready status should show pencil emoji."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "",
+            "figma_design_status": "prompt_ready",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        section_blocks = [b for b in blocks if b["type"] == "section"]
+        text = section_blocks[0]["text"]["text"]
+        assert ":pencil:" in text
+        assert "UX Design prompt ready" in text
+
+    def test_figma_url_has_view_link_button(self):
+        """Product with Figma URL should have View Figma Design link button."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "https://www.figma.com/design/xyz",
+            "figma_design_status": "completed",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        elements = action_blocks[0]["elements"]
+        figma_btn = next(
+            (e for e in elements if e["action_id"].startswith("product_open_figma_")),
+            None,
+        )
+        assert figma_btn is not None
+        assert figma_btn["url"] == "https://www.figma.com/design/xyz"
+        assert "Figma" in figma_btn["text"]["text"]
+
+    def test_no_figma_status_shows_start_button(self):
+        """Product without Figma status should show Start UX Design button."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "",
+            "figma_design_status": "",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        elements = action_blocks[0]["elements"]
+        action_ids = [e["action_id"] for e in elements]
+        assert "product_ux_design_1" in action_ids
+        ux_btn = next(e for e in elements if e["action_id"] == "product_ux_design_1")
+        assert "Start" in ux_btn["text"]["text"]
+
+    def test_figma_skipped_shows_retry_button(self):
+        """Product with skipped Figma status should show Retry UX Design button."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "",
+            "figma_design_status": "skipped",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        elements = action_blocks[0]["elements"]
+        action_ids = [e["action_id"] for e in elements]
+        assert "product_ux_design_1" in action_ids
+        ux_btn = next(e for e in elements if e["action_id"] == "product_ux_design_1")
+        assert "Retry" in ux_btn["text"]["text"]
+
+    def test_figma_generating_hides_start_button(self):
+        """Product with in-progress Figma should NOT show Start/Retry button."""
+        product = {
+            **_PRODUCTS[0],
+            "figma_design_url": "",
+            "figma_design_status": "generating",
+        }
+        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        elements = action_blocks[0]["elements"]
+        action_ids = [e["action_id"] for e in elements]
+        assert "product_ux_design_1" not in action_ids
+
 
 # ---------------------------------------------------------------------------
 # handle_list_products session handler
@@ -901,7 +1016,7 @@ class TestJiraApprovalHandler:
         mock_threading.Thread.return_value.start.assert_called_once()
 
     def test_review_skip_marks_jira_complete(self):
-        """Skipping sub-tasks should mark Jira as complete."""
+        """Skipping review should skip all remaining phases and mark Jira complete."""
         with (
             patch(f"{_JIRA_HANDLER}._persist_jira_phase") as mock_phase,
             patch(
@@ -916,11 +1031,11 @@ class TestJiraApprovalHandler:
             _handle_jira_approval_action(
                 "jira_review_skip", "run-x", "U1", "C1", "T1",
             )
-        mock_phase.assert_called_once_with("run-x", "subtasks_done")
+        mock_phase.assert_called_once_with("run-x", "qa_test_done")
         mock_upsert.assert_called_once_with("run-x", jira_completed=True)
 
-    def test_subtask_approve_marks_jira_complete(self):
-        """Approving sub-tasks should mark Jira as complete."""
+    def test_subtask_approve_advances_to_review(self):
+        """Approving sub-tasks should advance to review phase (not mark complete)."""
         with (
             patch(f"{_JIRA_HANDLER}._persist_jira_phase") as mock_phase,
             patch(
@@ -936,7 +1051,7 @@ class TestJiraApprovalHandler:
                 "jira_subtask_approve", "run-x", "U1", "C1", "T1",
             )
         mock_phase.assert_called_once_with("run-x", "subtasks_done")
-        mock_upsert.assert_called_once_with("run-x", jira_completed=True)
+        mock_upsert.assert_not_called()
 
     def test_subtask_reject_regenerates(self):
         """Rejecting sub-tasks should reset phase and regenerate."""
@@ -1446,6 +1561,57 @@ class TestRunJiraPhaseStateReconstruction:
         assert state.jira_skeleton == ""
         assert state.jira_epics_stories_output == ""
 
+    def test_figma_design_fields_restored_from_doc(self):
+        """figma_design_url and figma_design_prompt must be restored from doc."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc(
+                figma_design_url="https://www.figma.com/design/fig123",
+                figma_design_prompt="Full design spec with pages",
+            )),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        state = captured_flow["state"]
+        assert state.figma_design_url == "https://www.figma.com/design/fig123"
+        assert state.figma_design_prompt == "Full design spec with pages"
+
+    def test_missing_figma_fields_default_to_empty(self):
+        """When figma fields are absent in MongoDB, they default to empty."""
+        draft = self._make_draft()
+        exec_summary = self._make_exec_summary()
+        restore_result = ("idea", draft, exec_summary, "", [], [])
+        captured_flow = {}
+
+        def capture_flow(flow, **_kw):
+            captured_flow["state"] = flow.state
+            return "bypass"
+
+        with (
+            patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc()),
+            patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
+            patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
+        ):
+            send = MagicMock()
+            fn = self._import_run_jira_phase()
+            fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
+
+        state = captured_flow["state"]
+        assert state.figma_design_url == ""
+        assert state.figma_design_prompt == ""
+
 
 # ---------------------------------------------------------------------------
 # _handle_confluence_publish — state restoration (no setter crash)
@@ -1911,3 +2077,50 @@ class TestProductArchiveDispatchRouting:
         # the default (action_id itself).  We verify it gets a label.
         label = _ack_action("product_archive_5", "bot")
         assert "product_archive_5" not in label  # should have been replaced
+
+
+# ---------------------------------------------------------------------------
+# UX Design dispatch + handler
+# ---------------------------------------------------------------------------
+
+
+class TestUxDesignDispatchRouting:
+    """Verify product_ux_design_ action is routed and ack-labelled."""
+
+    def test_ux_design_ack_label(self):
+        """product_ux_design_ prefix should produce UX design ack label."""
+        from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
+            _ack_action,
+        )
+        label = _ack_action("product_ux_design_1", "testuser")
+        assert "UX design" in label.lower() or "ux" in label.lower()
+        assert "testuser" in label
+
+
+class TestHandleUxDesign:
+    """Verify _handle_ux_design spawns a thread and dispatches correctly."""
+
+    @patch(f"{_PLH_MOD}.threading.Thread")
+    @patch(f"{_PLH_MOD}._ack")
+    def test_dispatches_ux_design_in_thread(self, mock_ack, mock_thread):
+        """_handle_ux_design should ack, then start a daemon thread."""
+        from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+            _handle_ux_design,
+        )
+
+        send_tool = MagicMock()
+        client = MagicMock()
+
+        _handle_ux_design(
+            "run-ux-01", 1, "U_TEST", "C_TEST", "ts123",
+            send_tool, client,
+        )
+
+        mock_ack.assert_called_once_with(
+            client, "C_TEST", "ts123", "U_TEST",
+            ":art: Starting UX Design for product #1…",
+        )
+        mock_thread.assert_called_once()
+        mock_thread.return_value.start.assert_called_once()
+        # Thread should be daemon
+        assert mock_thread.call_args[1].get("daemon") is True

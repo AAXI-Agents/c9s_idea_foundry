@@ -2,9 +2,9 @@
 
 > Phased Jira ticket creation for completed PRDs.
 
-## Phased Approach (v0.13.2+)
+## Phased Approach (v0.19.0, expanded from v0.13.2)
 
-Jira ticketing uses a 3-phase user-approval workflow:
+Jira ticketing uses a 5-phase user-approval workflow:
 
 ### Phase 1: Skeleton Outline
 - Agent generates a skeletal structure from functional requirements
@@ -34,6 +34,18 @@ Jira ticketing uses a 3-phase user-approval workflow:
 - User reviews before finalising
 - `jira_phase`: `subtasks_pending` → `subtasks_done`
 
+### Phase 4: Review Sub-tasks (v0.19.0)
+- **Staff Engineer** creates one `[Staff Eng Review]` sub-task per Story — structural audit (N+1 queries, race conditions, trust boundaries, missing indexes, etc.)
+- **QA Lead** creates one `[QA Lead Review]` sub-task per Story — test methodology review (acceptance criteria, coverage gaps, negative tests, regression risk, etc.)
+- Both run sequentially; each review sub-task is blocked by the last implementation sub-task
+- `jira_phase`: `review_ready` → `review_done`
+
+### Phase 5: QA Test Sub-tasks (v0.19.0)
+- **QA Engineer** creates one `[QA Test]` counter-ticket per implementation sub-task (skipping review/unit test sub-tasks)
+- Covers edge cases (boundary values, concurrent access, partial failures), security (injection, auth bypass, CSRF/SSRF), and rendering (empty/loading/error states, responsive, accessibility)
+- Each QA test sub-task is blocked by the corresponding implementation sub-task
+- `jira_phase`: `qa_test_ready` → `qa_test_done`
+
 ## `jira_phase` Values
 
 | Phase | Meaning |
@@ -43,7 +55,13 @@ Jira ticketing uses a 3-phase user-approval workflow:
 | `epics_stories_pending` | Epics/Stories being created |
 | `epics_stories_done` | Epics/Stories complete |
 | `subtasks_pending` | Sub-tasks generated, awaiting approval |
-| `subtasks_done` | All phases complete |
+| `subtasks_done` | Dev sub-tasks complete |
+| `review_ready` | Ready for Staff Eng + QA Lead review sub-tasks |
+| `review_pending` | Review sub-tasks being created |
+| `review_done` | Review sub-tasks complete |
+| `qa_test_ready` | Ready for QA Engineer test sub-tasks |
+| `qa_test_pending` | QA test sub-tasks being created |
+| `qa_test_done` | All 5 phases complete |
 
 ## Key Files
 
@@ -51,7 +69,10 @@ Jira ticketing uses a 3-phase user-approval workflow:
 |------|---------|
 | `tools/jira_tool.py` | REST API shim → `jira/` package |
 | `tools/jira/` | Operations, helpers, ADF converter |
-| `orchestrator/_jira.py` | Stage builders (skeleton, epics, subtasks) |
+| `orchestrator/_jira.py` | Stage builders (skeleton, epics, subtasks, reviews, QA tests) |
+| `agents/staff_engineer/` | Staff Engineer agent (review sub-tasks) |
+| `agents/qa_lead/` | QA Lead agent (review sub-tasks) |
+| `agents/qa_engineer/` | QA Engineer agent (QA test sub-tasks) |
 | `flows/_finalization.py` | Phased post-completion Jira execution |
 
 ## Jira API

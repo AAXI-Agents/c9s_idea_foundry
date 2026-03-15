@@ -1,0 +1,87 @@
+generate_engineering_plan_task:
+  description: >
+    You are an engineering manager reviewing a product's Executive Product
+    Summary to produce a comprehensive **Engineering Plan** that will serve
+    as the basis for all Jira tickets (Epics, Stories, Sub-tasks).
+
+    The Executive Product Summary is:
+
+    --- EXECUTIVE PRODUCT SUMMARY ---
+    {executive_product_summary}
+    --- END OF EXECUTIVE PRODUCT SUMMARY ---
+
+    The original idea is:
+    {idea}
+
+    The requirements breakdown (if available) is:
+    {requirements_breakdown}
+
+    Your task — produce a complete Engineering Plan that covers:
+
+    1. **Architecture Overview**
+       - System components and their boundaries (ASCII diagram)
+       - Technology stack decisions with rationale
+       - Data flow diagram (happy, nil, empty, error paths)
+
+    2. **Component Breakdown**
+       - For each major component: purpose, interfaces, dependencies
+       - State machines for stateful objects (ASCII diagrams)
+       - API contract sketches (endpoints, methods, payloads)
+
+    3. **Implementation Phases**
+       - Ordered phases from foundation → core logic → integration → polish
+       - Each phase lists concrete work items suitable for Jira tickets
+       - Dependencies between phases clearly mapped
+       - Estimated complexity per phase (S/M/L/XL)
+
+    4. **Data Model**
+       - Entity definitions with attributes and relationships
+       - Database schema decisions (tables, indexes, constraints)
+       - Migration strategy if applicable
+
+    5. **Error Handling & Failure Modes**
+       - For each component: what can go wrong, how it is handled
+       - Retry strategies, circuit breakers, graceful degradation
+       - Error classification (Critical / Major / Minor)
+
+    6. **Test Strategy**
+       - Test pyramid plan (unit, integration, E2E)
+       - Critical paths that must have test coverage
+       - Edge case test matrix
+       - Performance / load test requirements
+
+    7. **Security & Trust Boundaries**
+       - Attack surface analysis
+       - Input validation requirements
+       - Authorization boundaries
+       - Data classification (PII, credentials, etc.)
+
+    8. **Deployment & Rollout**
+       - Deployment sequence and feature flags
+       - Rollback plan (step-by-step)
+       - Post-deploy verification checklist
+
+    9. **Observability**
+       - Logging requirements per component
+       - Metrics and alerting
+       - Debugging guide for common failure scenarios
+
+    The Engineering Plan must be detailed enough that a development team
+    can create Jira Epics, Stories, and Sub-tasks directly from it.
+    Each implementation phase should map to one Epic, with concrete work
+    items as Stories.
+
+    Output ONLY the Engineering Plan content in professional markdown format.
+    Use ASCII diagrams liberally for architecture, data flow, and state machines.
+    Do NOT wrap in JSON, code fences, or any structure.
+  expected_output: >
+    A comprehensive Engineering Plan in professional markdown containing:
+    architecture overview with diagrams, component breakdown, phased
+    implementation plan, data model, error handling, test strategy,
+    security analysis, deployment plan, and observability requirements.
+
+    Each phase should be granular enough to serve as Jira Epics with
+    concrete work items as Stories.
+
+    Output ONLY the body content — no JSON wrapper, no metadata.
+  agent: eng_manager

@@ -199,14 +199,21 @@ def _interpret_and_act_inner(
     # ("add memory", "update memory", "add knowledge", …) are NOT
     # overridden here because they can appear as substrings in real idea
     # text.  The LLM is the primary classifier for those intents.
+    #
+    # IMPORTANT: ``has_idea_phrase`` must be checked BEFORE
+    # ``has_create_jira_phrase`` because long idea descriptions often
+    # contain words like "jira tickets" or "jira epics" as part of the
+    # idea body, which would falsely match _CREATE_JIRA_PHRASES.
+    # Additionally, when the LLM already classified as ``create_prd``
+    # with an idea, we trust the LLM over a jira phrase substring match.
     if has_restart_phrase:
         intent = "restart_prd"
     elif has_resume_phrase:
         intent = "resume_prd"
-    elif has_create_jira_phrase:
-        intent = "create_jira"
     elif has_idea_phrase:
         intent = "create_prd"
+    elif has_create_jira_phrase and intent != "create_prd":
+        intent = "create_jira"
 
     # ── Session-management & navigation intents ──
 

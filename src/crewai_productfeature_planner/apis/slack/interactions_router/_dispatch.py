@@ -173,6 +173,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         label = ":jira: Publishing Jira sub-tasks"
     elif action_id.startswith("product_view_"):
         label = ":mag: Viewing product details"
+    elif action_id.startswith("product_ux_design_"):
+        label = ":art: Starting UX design"
     elif action_id.startswith("product_archive_"):
         label = ":file_folder: Archiving product"
     return f"{label} by {user_name}"

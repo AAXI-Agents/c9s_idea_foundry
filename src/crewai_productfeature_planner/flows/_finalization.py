@@ -241,6 +241,8 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
         _check_jira_prerequisites,
         _persist_jira_phase,
         build_jira_epics_stories_stage,
+        build_jira_qa_test_subtasks_stage,
+        build_jira_review_subtasks_stage,
         build_jira_skeleton_stage,
         build_jira_subtasks_stage,
     )
@@ -363,8 +365,40 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
             ),
         })
 
-    # ── Mark Jira delivery complete in productRequirements ────
+    # ── Phase 4: Create Review Sub-tasks (Staff Eng + QA Lead) ──
     if flow.state.jira_phase == "subtasks_done":
+        flow.state.jira_phase = "review_ready"
+        _persist_jira_phase(flow.state.run_id, "review_ready")
+
+        flow._notify_progress("jira_review_subtasks_start", {})
+
+        review_stage = build_jira_review_subtasks_stage(flow)
+        if not review_stage.should_skip():
+            result = review_stage.run()
+            review_stage.apply(result)
+
+            flow._notify_progress("jira_review_subtasks_complete", {
+                "output_preview": (flow.state.jira_review_output or "")[:500],
+            })
+
+    # ── Phase 5: Create QA Test Sub-tasks (QA Engineer) ───────
+    if flow.state.jira_phase == "review_done":
+        flow.state.jira_phase = "qa_test_ready"
+        _persist_jira_phase(flow.state.run_id, "qa_test_ready")
+
+        flow._notify_progress("jira_qa_test_subtasks_start", {})
+
+        qa_test_stage = build_jira_qa_test_subtasks_stage(flow)
+        if not qa_test_stage.should_skip():
+            result = qa_test_stage.run()
+            qa_test_stage.apply(result)
+
+            flow._notify_progress("jira_qa_test_subtasks_complete", {
+                "output_preview": (flow.state.jira_qa_test_output or "")[:500],
+            })
+
+    # ── Mark Jira delivery complete in productRequirements ────
+    if flow.state.jira_phase == "qa_test_done":
         try:
             from crewai_productfeature_planner.mongodb.product_requirements import (
                 get_jira_tickets,

@@ -69,8 +69,12 @@ def test_prd_draft_sections_initialised():
     assert len(draft.sections) == len(SECTION_KEYS)
     assert draft.sections[0].key == "executive_summary"
     assert draft.sections[0].title == "Executive Summary"
-    assert draft.sections[1].key == "problem_statement"
-    assert draft.sections[1].title == "Problem Statement"
+    assert draft.sections[1].key == "executive_product_summary"
+    assert draft.sections[1].title == "Executive Product Summary"
+    assert draft.sections[2].key == "engineering_plan"
+    assert draft.sections[2].title == "Engineering Plan"
+    assert draft.sections[3].key == "problem_statement"
+    assert draft.sections[3].title == "Problem Statement"
     assert all(s.content == "" for s in draft.sections)
     assert all(s.iteration == 0 for s in draft.sections)
     assert all(not s.is_approved for s in draft.sections)
@@ -189,7 +193,7 @@ def test_prd_draft_next_section():
     draft = PRDDraft.create_empty()
     assert draft.next_section().key == "executive_summary"
     draft.sections[0].is_approved = True
-    assert draft.next_section().key == "problem_statement"
+    assert draft.next_section().key == "executive_product_summary"
 
 
 def test_prd_draft_assemble():
@@ -681,7 +685,7 @@ def test_run_agents_parallel_single():
             agents={AGENT_OPENAI: mock_agent},
             task_configs={
                 "draft_section_task": {
-                    "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
+                    "description": "Draft {section_title} for {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
                     "expected_output": "A {section_title} section",
                 },
             },
@@ -719,7 +723,7 @@ def test_run_agents_parallel_multi():
             agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
             task_configs={
                 "draft_section_task": {
-                    "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
+                    "description": "Draft {section_title} for {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
                     "expected_output": "A {section_title} section",
                 },
             },
@@ -754,7 +758,7 @@ def test_run_agents_parallel_one_fails():
             agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
             task_configs={
                 "draft_section_task": {
-                    "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
+                    "description": "Draft {section_title} for {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
                     "expected_output": "A {section_title} section",
                 },
             },
@@ -787,7 +791,7 @@ def test_run_agents_parallel_all_fail():
                 agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
                 task_configs={
                     "draft_section_task": {
-                        "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
+                        "description": "Draft {section_title} for {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
                         "expected_output": "A {section_title} section",
                     },
                 },
@@ -821,7 +825,7 @@ def test_run_agents_parallel_reorders_default_first(monkeypatch):
             agents={AGENT_OPENAI: MagicMock(), _SECOND_AGENT: MagicMock()},
             task_configs={
                 "draft_section_task": {
-                    "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
+                    "description": "Draft {section_title} for {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
                     "expected_output": "A {section_title} section",
                 },
             },
@@ -861,7 +865,7 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
             agents=agents,
             task_configs={
                 "draft_section_task": {
-                    "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
+                    "description": "Draft {section_title} for {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
                     "expected_output": "A {section_title} section",
                 },
             },
@@ -888,7 +892,7 @@ def test_failed_optional_agent_dropped_for_remaining_sections():
             agents=agents,
             task_configs={
                 "draft_section_task": {
-                    "description": "Draft {section_title} for {idea} content: {section_content} exec: {executive_summary}",
+                    "description": "Draft {section_title} for {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
                     "expected_output": "A {section_title} section",
                 },
             },
@@ -1280,6 +1284,12 @@ def test_requirements_approval_callback_continue_proceeds(monkeypatch):
     flow.requirements_approval_callback = req_cb
     flow.executive_summary_callback = lambda *a: True
 
+    # Pre-populate specialist state so Phase 1.5 is skipped.
+    # Only set the state fields — do NOT set section content, because
+    # the requirements approval gate auto-approves when any section has content.
+    flow.state.executive_product_summary = "CEO vision"
+    flow.state.engineering_plan = "Eng plan"
+
     # Mock agent creation, but let it reach the section loop
     # where we raise to stop execution cleanly
     mock_agent = MagicMock()
@@ -1331,6 +1341,11 @@ def test_requirements_callback_skipped_when_not_broken_down(monkeypatch):
 
     flow.requirements_approval_callback = req_cb
     flow.executive_summary_callback = lambda *a: True
+
+    # Pre-populate specialist state so Phase 1.5 is skipped.
+    # Only set state fields — no section content (requirements gate auto-approves otherwise).
+    flow.state.executive_product_summary = "CEO vision"
+    flow.state.engineering_plan = "Eng plan"
 
     mock_agent = MagicMock()
     monkeypatch.setattr(
@@ -1447,11 +1462,11 @@ def test_section_iterates_min_before_auto_approve(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1502,11 +1517,11 @@ def test_section_force_approved_at_max(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1558,11 +1573,11 @@ def test_section_ready_before_min_keeps_iterating(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1611,11 +1626,11 @@ def test_section_saves_each_iteration_to_db(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1676,11 +1691,11 @@ def test_section_critique_updates_each_iteration(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1790,11 +1805,11 @@ def test_degenerate_output_exceeds_max_chars(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1844,11 +1859,11 @@ def test_degenerate_output_exceeds_growth_factor(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1904,11 +1919,11 @@ def test_degenerate_refine_retries_below_min_iter(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -1960,11 +1975,11 @@ def test_degenerate_refine_force_approves_at_min_iter(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -2020,11 +2035,11 @@ def test_normal_output_not_flagged_as_degenerate(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -2364,15 +2379,15 @@ def test_callback_true_continues_to_sections(
             "expected_output": "Critique",
         },
         "draft_section_task": {
-            "description": "Section: {section_title} {idea} content: {section_content} exec: {executive_summary}",
+            "description": "Section: {section_title} {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
             "expected_output": "Draft {section_title}",
         },
         "critique_section_task": {
-            "description": "Critique: {section_title} {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique: {section_title} {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Section critique",
         },
         "refine_section_task": {
-            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -2395,13 +2410,32 @@ def test_callback_true_continues_to_sections(
     flow.state.requirements_broken_down = True  # skip requirements stage
     flow.executive_summary_callback = lambda content, idea, run_id, iters: True
 
+    def _mock_ceo_review(self_):
+        self_.state.executive_product_summary = "CEO vision"
+        sec = self_.state.draft.get_section("executive_product_summary")
+        if sec:
+            sec.content = "CEO vision"
+            sec.is_approved = True
+        return "CEO vision"
+
+    def _mock_eng_plan(self_):
+        self_.state.engineering_plan = "Eng plan"
+        sec = self_.state.draft.get_section("engineering_plan")
+        if sec:
+            sec.content = "Eng plan"
+            sec.is_approved = True
+        return "Eng plan"
+
     # Should not raise, should return finalized PRD
     _ES = "crewai_productfeature_planner.flows._executive_summary"
     _AG = "crewai_productfeature_planner.flows._agents"
+    _FL = "crewai_productfeature_planner.flows.prd_flow.PRDFlow"
     with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
          patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
-         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_FL}._run_ceo_review", _mock_ceo_review), \
+         patch(f"{_FL}._run_eng_plan", _mock_eng_plan):
         result = flow.generate_sections()
     assert result is not None
     # Executive summary should be carried from Phase 1
@@ -2409,8 +2443,18 @@ def test_callback_true_continues_to_sections(
     assert exec_sec.key == "executive_summary"
     assert exec_sec.content == "Exec summary"
     assert exec_sec.is_approved is True
+    # Specialist sections should be filled by Phase 1.5
+    eps_sec = flow.state.draft.get_section("executive_product_summary")
+    assert eps_sec.content == "CEO vision"
+    assert eps_sec.is_approved is True
+    eng_sec = flow.state.draft.get_section("engineering_plan")
+    assert eng_sec.content == "Eng plan"
+    assert eng_sec.is_approved is True
     # Remaining 9 sections should be filled by Phase 2
-    for section in flow.state.draft.sections[1:]:
+    from crewai_productfeature_planner.apis.prd._sections import SPECIALIST_SECTION_KEYS
+    for section in flow.state.draft.sections:
+        if section.key in {"executive_summary"} | SPECIALIST_SECTION_KEYS:
+            continue
         assert section.content != "", f"Section '{section.key}' was not filled"
 
 
@@ -2458,15 +2502,15 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
             "expected_output": "Critique",
         },
         "draft_section_task": {
-            "description": "Section: {section_title} {idea} content: {section_content} exec: {executive_summary}",
+            "description": "Section: {section_title} {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
             "expected_output": "Draft {section_title}",
         },
         "critique_section_task": {
-            "description": "Critique: {section_title} {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique: {section_title} {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Section critique",
         },
         "refine_section_task": {
-            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -2498,10 +2542,30 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
 
     _ES = "crewai_productfeature_planner.flows._executive_summary"
     _AG = "crewai_productfeature_planner.flows._agents"
+    _FL = "crewai_productfeature_planner.flows.prd_flow.PRDFlow"
+
+    def _mock_ceo(self_):
+        self_.state.executive_product_summary = "CEO vision"
+        sec = self_.state.draft.get_section("executive_product_summary")
+        if sec:
+            sec.content = "CEO vision"
+            sec.is_approved = True
+        return "CEO vision"
+
+    def _mock_eng(self_):
+        self_.state.engineering_plan = "Eng plan"
+        sec = self_.state.draft.get_section("engineering_plan")
+        if sec:
+            sec.content = "Eng plan"
+            sec.is_approved = True
+        return "Eng plan"
+
     with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
          patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
-         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_FL}._run_ceo_review", _mock_ceo), \
+         patch(f"{_FL}._run_eng_plan", _mock_eng):
         result = flow.generate_sections()
 
     assert result is not None
@@ -2516,7 +2580,10 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
     assert exec_sec.content == "Exec summary v3"
     assert exec_sec.is_approved is True
     # Remaining 9 sections should be filled by Phase 2
-    for section in flow.state.draft.sections[1:]:
+    from crewai_productfeature_planner.apis.prd._sections import SPECIALIST_SECTION_KEYS as _ssk1
+    for section in flow.state.draft.sections:
+        if section.key in {"executive_summary"} | _ssk1:
+            continue
         assert section.content != "", f"Section '{section.key}' was not filled"
 
 
@@ -2559,15 +2626,15 @@ def test_phase1_runs_when_below_threshold(
             "expected_output": "Critique",
         },
         "draft_section_task": {
-            "description": "Section: {section_title} {idea} content: {section_content} exec: {executive_summary}",
+            "description": "Section: {section_title} {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
             "expected_output": "Draft {section_title}",
         },
         "critique_section_task": {
-            "description": "Critique: {section_title} {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique: {section_title} {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Section critique",
         },
         "refine_section_task": {
-            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -2601,10 +2668,30 @@ def test_phase1_runs_when_below_threshold(
 
     _ES = "crewai_productfeature_planner.flows._executive_summary"
     _AG = "crewai_productfeature_planner.flows._agents"
+    _FL = "crewai_productfeature_planner.flows.prd_flow.PRDFlow"
+
+    def _mock_ceo(self_):
+        self_.state.executive_product_summary = "CEO vision"
+        sec = self_.state.draft.get_section("executive_product_summary")
+        if sec:
+            sec.content = "CEO vision"
+            sec.is_approved = True
+        return "CEO vision"
+
+    def _mock_eng(self_):
+        self_.state.engineering_plan = "Eng plan"
+        sec = self_.state.draft.get_section("engineering_plan")
+        if sec:
+            sec.content = "Eng plan"
+            sec.is_approved = True
+        return "Eng plan"
+
     with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
          patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
-         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff):
+         patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
+         patch(f"{_FL}._run_ceo_review", _mock_ceo), \
+         patch(f"{_FL}._run_eng_plan", _mock_eng):
         result = flow.generate_sections()
 
     assert result is not None
@@ -2657,15 +2744,15 @@ def test_resume_skips_draft_for_in_progress_section(
             "expected_output": "Critique",
         },
         "draft_section_task": {
-            "description": "Section: {section_title} {idea} content: {section_content} exec: {executive_summary}",
+            "description": "Section: {section_title} {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
             "expected_output": "Draft {section_title}",
         },
         "critique_section_task": {
-            "description": "Critique: {section_title} {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique: {section_title} {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Section critique",
         },
         "refine_section_task": {
-            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -2684,12 +2771,15 @@ def test_resume_skips_draft_for_in_progress_section(
             )
         )
 
-    # Simulate resume: sections 1-4 approved (exec_summary + 3 sections)
-    # Section 5 (index 4) has content at iteration 2 but NOT approved
+    # Simulate resume: sections 0-3 approved (exec_summary + specialists + problem_statement)
+    # Section 4 (user_personas) has content at iteration 2 but NOT approved
     for i in range(4):
         flow.state.draft.sections[i].content = f"Approved section {i} content"
         flow.state.draft.sections[i].is_approved = True
         flow.state.draft.sections[i].iteration = 3
+    # Also set specialist state so Phase 1.5 is skipped
+    flow.state.executive_product_summary = "Approved section 1 content"
+    flow.state.engineering_plan = "Approved section 2 content"
 
     # The in-progress section — has content from a prior run
     in_progress = flow.state.draft.sections[4]
@@ -2698,13 +2788,13 @@ def test_resume_skips_draft_for_in_progress_section(
     in_progress.selected_agent = AGENT_OPENAI
 
     # Calls needed:
-    # - Section 5 (index 4): already has content → skip draft → critique + SECTION_READY
-    # - Sections 6-10 (indices 5-9): need full draft + critique (SECTION_READY)
+    # - Section 4 (user_personas): already has content → skip draft → critique + SECTION_READY
+    # - Sections 5-11 (7 remaining): need full draft + critique (SECTION_READY)
     calls = []
-    # Section 5: critique only (SECTION_READY — will auto-approve since min=1, iter=2)
+    # Section 4: critique only (SECTION_READY — will auto-approve since min=1, iter=2)
     calls.append(MagicMock(raw="SECTION_READY: looking good"))
-    # Sections 6-10: draft + critique each
-    for _ in range(5):
+    # Sections 5-11: draft + critique each
+    for _ in range(7):
         calls.append(MagicMock(raw="New section content"))
         calls.append(MagicMock(raw="SECTION_READY: ok"))
     mock_kickoff.side_effect = calls
@@ -2771,15 +2861,15 @@ def test_resume_wipes_degenerate_restored_content(
             "expected_output": "Critique",
         },
         "draft_section_task": {
-            "description": "Section: {section_title} {idea} content: {section_content} exec: {executive_summary}",
+            "description": "Section: {section_title} {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
             "expected_output": "Draft {section_title}",
         },
         "critique_section_task": {
-            "description": "Critique: {section_title} {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique: {section_title} {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Section critique",
         },
         "refine_section_task": {
-            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -2798,13 +2888,16 @@ def test_resume_wipes_degenerate_restored_content(
             )
         )
 
-    # Sections 0-3 approved
+    # Sections 0-3 approved (exec_summary, exec_product_summary, eng_plan, problem_statement)
     for i in range(4):
         flow.state.draft.sections[i].content = f"Approved section {i}"
         flow.state.draft.sections[i].is_approved = True
         flow.state.draft.sections[i].iteration = 3
+    # Also set specialist state so Phase 1.5 is skipped
+    flow.state.executive_product_summary = "Approved section 1"
+    flow.state.engineering_plan = "Approved section 2"
 
-    # Section 4 has DEGENERATE restored content (133k chars of garbage)
+    # Section 4 (user_personas) has DEGENERATE restored content (133k chars of garbage)
     degenerate_section = flow.state.draft.sections[4]
     degenerate_section.content = "of" * 50_000  # 100,000 chars > 5000 max
     degenerate_section.iteration = 2
@@ -2812,9 +2905,9 @@ def test_resume_wipes_degenerate_restored_content(
 
     # Calls needed:
     # - Section 4: wiped → fresh draft + critique (SECTION_READY)
-    # - Sections 5-9: fresh draft + critique each
+    # - Sections 5-11: fresh draft + critique each (7 sections)
     calls = []
-    for _ in range(6):
+    for _ in range(8):
         calls.append(MagicMock(raw="Fresh draft content"))
         calls.append(MagicMock(raw="SECTION_READY: ok"))
     mock_kickoff.side_effect = calls
@@ -3068,7 +3161,7 @@ class TestPhasedJiraMarksComplete:
         _mock_persist_phase,
         _mock_prereqs,
     ):
-        """After all 3 phases, upsert_delivery_record(jira_completed=True)."""
+        """After all 5 phases, upsert_delivery_record(jira_completed=True)."""
         from crewai_productfeature_planner.flows._finalization import (
             _run_phased_post_completion,
         )
@@ -3076,7 +3169,7 @@ class TestPhasedJiraMarksComplete:
         flow = PRDFlow()
         flow.state.run_id = "phased-test-1"
         flow.state.jira_output = "Epic: PRD-1\nStories: PRD-2"
-        flow.state.jira_phase = "subtasks_done"
+        flow.state.jira_phase = "qa_test_done"
         flow.jira_skeleton_approval_callback = MagicMock()
 
         # Make all stages report "should skip" (phases already done)
@@ -3128,11 +3221,11 @@ def test_section_critique_failure_force_approves(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -3187,11 +3280,11 @@ def test_section_refine_failure_force_approves(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -3234,11 +3327,11 @@ def test_billing_error_still_propagates_from_critique(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -3292,7 +3385,7 @@ def test_exec_summary_critique_failure_force_approves(
             "expected_output": "Executive summary",
         },
         "critique_prd_task": {
-            "description": "Critique: {critique} exec: {executive_summary}",
+            "description": "Critique: {critique} {executive_summary}",
             "expected_output": "Critique",
         },
     }
@@ -3339,11 +3432,11 @@ def test_section_critique_503_propagates(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -3398,11 +3491,11 @@ def test_section_refine_503_propagates(
     agents = {AGENT_OPENAI: MagicMock()}
     task_configs = {
         "critique_section_task": {
-            "description": "Critique {section_title}: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique {section_title}: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "A critique",
         },
         "refine_section_task": {
-            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -3458,7 +3551,7 @@ def test_exec_summary_503_propagates(
             "expected_output": "Executive summary",
         },
         "critique_prd_task": {
-            "description": "Critique: {critique} exec: {executive_summary}",
+            "description": "Critique: {critique} {executive_summary}",
             "expected_output": "Critique",
         },
     }
@@ -3516,15 +3609,15 @@ def test_skip_phase1_when_sections_have_content(
             "expected_output": "Critique",
         },
         "draft_section_task": {
-            "description": "Section: {section_title} {idea} content: {section_content} exec: {executive_summary}",
+            "description": "Section: {section_title} {idea} content: {section_content} eps: {executive_product_summary} eng: {engineering_plan}",
             "expected_output": "Draft {section_title}",
         },
         "critique_section_task": {
-            "description": "Critique: {section_title} {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Critique: {section_title} {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Section critique",
         },
         "refine_section_task": {
-            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} exec: {executive_summary} approved: {approved_sections}",
+            "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
             "expected_output": "Refined {section_title} based on {critique_section_content}",
         },
     }
@@ -3541,15 +3634,18 @@ def test_skip_phase1_when_sections_have_content(
         )
     )
 
-    # Simulate resume: 8/10 sections completed (exec summary + 7 sections)
+    # Simulate resume: 8/12 sections completed (exec_summary + specialists + 5 regular)
     for i in range(8):
         flow.state.draft.sections[i].content = f"Approved section {i} content"
         flow.state.draft.sections[i].is_approved = True
         flow.state.draft.sections[i].iteration = 2
+    # Also set specialist state so Phase 1.5 is skipped
+    flow.state.executive_product_summary = "Approved section 1 content"
+    flow.state.engineering_plan = "Approved section 2 content"
 
-    # Remaining 2 sections need drafting (draft + critique each)
+    # Remaining 4 sections need drafting (draft + critique each)
     section_calls = []
-    for _ in range(2):
+    for _ in range(4):
         section_calls.append(MagicMock(raw="Section content"))
         section_calls.append(MagicMock(raw="SECTION_READY: ok"))
     mock_kickoff.side_effect = section_calls

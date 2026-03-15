@@ -1,0 +1,81 @@
+create_qa_lead_review_subtasks_task:
+  description: >
+    You are a QA Lead reviewing the Sub-Tasks created under each
+    User Story to ensure development will be done correctly as
+    prescribed in the Jira tickets.
+
+    For EVERY User Story listed below, create ONE review Sub-Task that
+    validates the test methodology and acceptance criteria coverage
+    across all implementation sub-tasks under that Story.
+
+    ## What to Review
+
+    For each Story's sub-tasks, verify:
+    - **Acceptance criteria completeness** — does every sub-task have
+      measurable, verifiable acceptance criteria?
+    - **Test coverage gaps** — are there code paths, user flows, or
+      state transitions without corresponding test cases?
+    - **Negative test cases** — are failure modes, invalid inputs,
+      and boundary conditions explicitly covered?
+    - **Integration test coverage** — do tests verify cross-component
+      interactions, not just isolated units?
+    - **Regression risk** — which existing features might break?  Are
+      there regression tests to catch it?
+    - **Data integrity validation** — are there tests for data
+      consistency across services and storage layers?
+    - **Performance acceptance criteria** — are response time, throughput,
+      and resource consumption limits defined and testable?
+    - **User flow verification** — do end-to-end scenarios cover the
+      complete user journey from start to finish?
+    - **Error recovery paths** — are there tests for graceful degradation,
+      retry behaviour, and partial failure handling?
+
+    ## Stories and Sub-Tasks Created
+    {stories_and_subtasks}
+
+    ## Engineering Plan
+    {engineering_plan}
+
+    ## PRD Context
+    {additional_prd_context}
+
+    ## Confluence Page
+    {confluence_url}
+
+    ## Instructions
+
+    For EACH User Story, create exactly ONE review Sub-Task with:
+    - Issue type: "Task"
+    - Summary: "[QA Lead Review] <Story title> — Test Methodology Audit"
+    - Parent key: The Story key this review belongs under
+    - is_blocked_by_key: Set to the LAST implementation sub-task key
+      under this Story (review happens after all dev work)
+    - Labels: "prd,auto-generated,qa-lead-review"
+    - Run ID: {run_id}
+    - Confluence URL: "{confluence_url}"
+    - Component: Same component as the parent Story
+
+    The description MUST include:
+
+    1. **Test Coverage Matrix** — Table mapping each sub-task to its
+       test types (unit, integration, e2e, performance) with
+       COVERED / MISSING / PARTIAL status
+    2. **Missing Test Scenarios** — Concrete GIVEN/WHEN/THEN test
+       cases that are not covered by existing sub-task test specs
+    3. **Acceptance Criteria Gaps** — Sub-tasks where the Definition
+       of Done is vague, untestable, or incomplete
+    4. **Regression Risk Assessment** — Features or flows that may
+       break due to this Story's changes, with specific regression
+       tests to add
+    5. **Test Data Requirements** — Test fixtures, mock data, or
+       seed data needed that are missing from sub-task specs
+    6. **Definition of Done** — Checklist: all test gaps addressed,
+       all acceptance criteria are measurable, regression tests
+       planned, performance criteria defined
+
+  expected_output: >
+    A structured list of QA Lead review Sub-Task keys created,
+    one per Story:
+      Story STORY_KEY:
+        - TASK_KEY: [QA Lead Review] Summary — URL (blocked by: TASK_KEY)
+    followed by a count of total review sub-tasks created.

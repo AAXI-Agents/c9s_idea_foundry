@@ -6,6 +6,8 @@ Handles buttons from the product list (``list products`` intent):
 * ``product_jira_skeleton_<N>`` — Generate/review Jira skeleton
 * ``product_jira_epics_<N>``    — Create Jira Epics & Stories
 * ``product_jira_subtasks_<N>`` — Create Jira Sub-tasks
+* ``product_jira_reviews_<N>``  — Create Staff Eng + QA Lead review Sub-tasks
+* ``product_jira_qa_tests_<N>`` — Create QA Engineer test Sub-tasks
 * ``product_view_<N>``          — View delivery details
 * ``product_archive_<N>``       — Archive (hide from future listings)
 """
@@ -67,6 +69,21 @@ def _handle_product_list_action(
         )
     elif action_id.startswith("product_jira_subtasks_"):
         _handle_jira_subtasks(
+            run_id, idea_number, user_id, channel, thread_ts,
+            send_tool, client,
+        )
+    elif action_id.startswith("product_jira_reviews_"):
+        _handle_jira_reviews(
+            run_id, idea_number, user_id, channel, thread_ts,
+            send_tool, client,
+        )
+    elif action_id.startswith("product_jira_qa_tests_"):
+        _handle_jira_qa_tests(
+            run_id, idea_number, user_id, channel, thread_ts,
+            send_tool, client,
+        )
+    elif action_id.startswith("product_ux_design_"):
+        _handle_ux_design(
             run_id, idea_number, user_id, channel, thread_ts,
             send_tool, client,
         )
@@ -256,6 +273,117 @@ def _handle_confluence_publish(
     threading.Thread(target=_do_publish, daemon=True).start()
 
 
+def _handle_ux_design(
+    run_id: str,
+    idea_number: int,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Generate a UX design via the UX Designer agent + Figma Make."""
+    _ack(client, channel, thread_ts, user_id,
+         f":art: Starting UX Design for product #{idea_number}…")
+
+    def _do_ux_design():
+        try:
+            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                find_run_any_status,
+            )
+            doc = find_run_any_status(run_id)
+            if not doc:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=f"<@{user_id}> :x: Could not find product (run `{run_id[:8]}…`).",
+                )
+                return
+
+            from crewai_productfeature_planner.apis.prd.service import (
+                restore_prd_state,
+            )
+            from crewai_productfeature_planner.flows.prd_flow import PRDFlow
+
+            flow = PRDFlow()
+            flow.state.run_id = run_id
+            flow.state.idea = doc.get("idea", "")
+
+            restored = restore_prd_state(run_id)
+            if restored:
+                idea, draft, exec_summary, requirements_breakdown, breakdown_history, refinement_history = restored
+                flow.state.idea = idea
+                flow.state.draft = draft
+                flow.state.executive_summary = exec_summary
+                flow.state.requirements_breakdown = requirements_breakdown
+                if exec_summary.latest_content:
+                    flow.state.finalized_idea = exec_summary.latest_content
+                if refinement_history:
+                    flow.state.idea_refined = True
+                    flow.state.refinement_history = refinement_history
+                    latest = refinement_history[-1]
+                    if latest.get("idea"):
+                        flow.state.idea = latest["idea"]
+
+            # Restore specialist fields from MongoDB doc.
+            eps_section = doc.get("section", {}).get(
+                "executive_product_summary", [],
+            )
+            if eps_section and isinstance(eps_section, list):
+                last = eps_section[-1] if eps_section else {}
+                flow.state.executive_product_summary = last.get("content", "")
+
+            if not flow.state.executive_product_summary:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :warning: No Executive Product Summary found "
+                        "for this product. Run the PRD flow first."
+                    ),
+                )
+                return
+
+            from crewai_productfeature_planner.flows._ux_design import run_ux_design
+
+            figma_url = run_ux_design(flow)
+
+            if figma_url:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :white_check_mark: UX Design generated!\n"
+                        f":art: <{figma_url}|View Figma Design>"
+                    ),
+                )
+            elif flow.state.figma_design_status == "prompt_ready":
+                prompt_preview = (flow.state.figma_design_prompt or "")[:500]
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :pencil: Figma Make prompt generated but "
+                        "Figma credentials not configured.\n"
+                        f"Set `FIGMA_ACCESS_TOKEN` to enable auto-generation.\n\n"
+                        f"*Prompt preview:*\n```{prompt_preview}```"
+                    ),
+                )
+            else:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :warning: UX Design generation skipped — "
+                        f"status: {flow.state.figma_design_status or 'unknown'}"
+                    ),
+                )
+
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[UXDesign] Failed for run_id=%s", run_id)
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=f"<@{user_id}> :x: UX Design failed: {exc}",
+            )
+
+    threading.Thread(target=_do_ux_design, daemon=True).start()
+
+
 def _handle_jira_skeleton(
     run_id: str,
     idea_number: int,
@@ -396,6 +524,62 @@ def _handle_jira_subtasks(
             )
 
     threading.Thread(target=_do_subtasks, daemon=True).start()
+
+
+def _handle_jira_reviews(
+    run_id: str,
+    idea_number: int,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Create Staff Engineer + QA Lead review Sub-tasks."""
+    _ack(client, channel, thread_ts, user_id,
+         f":detective: Creating review Sub-tasks for product #{idea_number}…")
+
+    def _do_reviews():
+        try:
+            _run_jira_phase(
+                run_id, "reviews", user_id, channel, thread_ts, send_tool,
+            )
+        except Exception as exc:
+            logger.error("Jira review sub-tasks failed for run_id=%s: %s", run_id, exc)
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=f"<@{user_id}> :x: Review sub-task creation failed: {exc}",
+            )
+
+    threading.Thread(target=_do_reviews, daemon=True).start()
+
+
+def _handle_jira_qa_tests(
+    run_id: str,
+    idea_number: int,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Create QA Engineer test Sub-tasks."""
+    _ack(client, channel, thread_ts, user_id,
+         f":test_tube: Creating QA test Sub-tasks for product #{idea_number}…")
+
+    def _do_qa_tests():
+        try:
+            _run_jira_phase(
+                run_id, "qa_tests", user_id, channel, thread_ts, send_tool,
+            )
+        except Exception as exc:
+            logger.error("Jira QA test sub-tasks failed for run_id=%s: %s", run_id, exc)
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=f"<@{user_id}> :x: QA test sub-task creation failed: {exc}",
+            )
+
+    threading.Thread(target=_do_qa_tests, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -689,7 +873,7 @@ def _handle_product_archive(
 
 def _run_jira_phase(
     run_id: str,
-    phase: str,  # "skeleton" | "epics_stories" | "subtasks"
+    phase: str,  # "skeleton" | "epics_stories" | "subtasks" | "reviews" | "qa_tests"
     user_id: str,
     channel: str,
     thread_ts: str,
@@ -709,6 +893,8 @@ def _run_jira_phase(
         _check_jira_prerequisites,
         _persist_jira_phase,
         build_jira_epics_stories_stage,
+        build_jira_qa_test_subtasks_stage,
+        build_jira_review_subtasks_stage,
         build_jira_skeleton_stage,
         build_jira_subtasks_stage,
     )
@@ -781,6 +967,11 @@ def _run_jira_phase(
     flow.state.jira_phase = doc.get("jira_phase") or ""
     flow.state.jira_skeleton = doc.get("jira_skeleton") or ""
     flow.state.jira_epics_stories_output = doc.get("jira_epics_stories_output") or ""
+    flow.state.jira_output = doc.get("jira_output") or ""
+    flow.state.jira_review_output = doc.get("jira_review_output") or ""
+    flow.state.jira_qa_test_output = doc.get("jira_qa_test_output") or ""
+    flow.state.figma_design_url = doc.get("figma_design_url") or ""
+    flow.state.figma_design_prompt = doc.get("figma_design_prompt") or ""
 
     # The interactive Jira flow should not require Confluence — a user
     # can create Jira tickets for a PRD that was never published.
@@ -951,9 +1142,93 @@ def _run_jira_phase(
                 text=f"<@{user_id}> :information_source: Sub-tasks stage was skipped.",
             )
 
+    elif phase == "reviews":
+        if flow.state.jira_phase not in ("subtasks_done", "review_ready"):
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=(
+                    f"<@{user_id}> :warning: Cannot create review sub-tasks — "
+                    "implementation sub-tasks must be created first. "
+                    "Current phase: *" + (flow.state.jira_phase or "not started") + "*"
+                ),
+            )
+            return
 
-# ---------------------------------------------------------------------------
-# Helpers
+        flow.state.jira_phase = "review_ready"
+        _persist_jira_phase(run_id, "review_ready")
+
+        stage = build_jira_review_subtasks_stage(flow, require_confluence=False)
+        if not stage.should_skip():
+            result = stage.run()
+            review_output = result.output
+            stage.apply(result)
+
+            # Override phase to review_pending for approval step
+            flow.state.jira_phase = "review_pending"
+            _persist_jira_phase(run_id, "review_pending")
+
+            if review_output:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :detective: *Staff Engineer & QA Lead review "
+                        f"sub-tasks created!*\n\n"
+                        f"{review_output[:2800]}\n\n"
+                        "When ready, click *Publish QA Test Sub-tasks* "
+                        "from the product list."
+                    ),
+                )
+            else:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=f"<@{user_id}> :warning: Review sub-tasks stage produced no output.",
+                )
+        else:
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=f"<@{user_id}> :information_source: Review sub-tasks stage was skipped.",
+            )
+
+    elif phase == "qa_tests":
+        if flow.state.jira_phase not in ("review_done", "qa_test_ready"):
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=(
+                    f"<@{user_id}> :warning: Cannot create QA test sub-tasks — "
+                    "review sub-tasks must be created first. "
+                    "Current phase: *" + (flow.state.jira_phase or "not started") + "*"
+                ),
+            )
+            return
+
+        flow.state.jira_phase = "qa_test_ready"
+        _persist_jira_phase(run_id, "qa_test_ready")
+
+        stage = build_jira_qa_test_subtasks_stage(flow, require_confluence=False)
+        if not stage.should_skip():
+            result = stage.run()
+            qa_output = result.output
+            stage.apply(result)
+
+            if qa_output:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :test_tube: *QA Engineer test sub-tasks created!*\n\n"
+                        f"{qa_output[:2800]}\n\n"
+                        ":white_check_mark: Jira ticket creation is now complete."
+                    ),
+                )
+            else:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=f"<@{user_id}> :warning: QA test sub-tasks stage produced no output.",
+                )
+        else:
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=f"<@{user_id}> :information_source: QA test sub-tasks stage was skipped.",
+            )
 # ---------------------------------------------------------------------------
 
 

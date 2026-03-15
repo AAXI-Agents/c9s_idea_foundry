@@ -132,7 +132,7 @@ def test_get_run_status_found(client):
     assert body["run_id"] == run_id
     assert body["flow_name"] == "prd"
     assert body["sections_approved"] == 0
-    assert body["sections_total"] == 10
+    assert body["sections_total"] == 12
 
 
 def test_get_run_status_not_found(client):
@@ -653,7 +653,7 @@ def test_pause_awaiting_approval(client):
     assert body["action"] == "paused"
     assert body["section"] == "executive_summary"
     assert body["sections_approved"] == 0
-    assert body["sections_total"] == 10
+    assert body["sections_total"] == 12
     assert body["is_final_section"] is False
     assert event.is_set()
     assert pause_requested.get("r-pause") is True
@@ -734,8 +734,8 @@ def test_resume_success(mock_find, mock_resume, client):
     assert body["run_id"] == "abc123"
     assert body["status"] == "running"
     assert body["sections_approved"] == 1
-    assert body["sections_total"] == 10
-    assert body["next_section"] == "problem_statement"
+    assert body["sections_total"] == 12
+    assert body["next_section"] == "executive_product_summary"
     assert "abc123" in runs
 
 
@@ -1739,7 +1739,8 @@ def test_restore_prd_state_last_section_approved_by_section_ready():
         # 8 sections completed (exec_summary + 7 sections)
         section_data = {}
         keys = [
-            "executive_summary", "problem_statement", "user_personas",
+            "executive_summary", "executive_product_summary",
+            "engineering_plan", "problem_statement", "user_personas",
             "functional_requirements", "no_functional_requirements",
             "edge_cases", "error_handling", "success_metrics",
         ]
@@ -1762,7 +1763,7 @@ def test_restore_prd_state_last_section_approved_by_section_ready():
             restore_prd_state("r-resume")
         )
 
-    # All 8 sections with content should be approved (including the last one)
+    # All 10 sections with content should be approved (including the last one)
     for key in keys:
         sec = draft.get_section(key)
         assert sec is not None
@@ -1770,12 +1771,12 @@ def test_restore_prd_state_last_section_approved_by_section_ready():
             f"Section '{key}' should be approved but is_approved={sec.is_approved}"
         )
 
-    # Sections 9 and 10 should NOT be approved (no content)
+    # Remaining sections should NOT be approved (no content)
     remaining = draft.get_section("dependencies")
     assert remaining is not None
     assert remaining.is_approved is False
 
-    # next_section should be section 9 (dependencies)
+    # next_section should be dependencies (first unapproved section)
     next_sec = draft.next_section()
     assert next_sec is not None
     assert next_sec.key == "dependencies"
