@@ -145,6 +145,7 @@ def project_create_prompt_blocks(user_id: str) -> list[dict]:
 
 def project_setup_step_blocks(
     project_name: str, step: str, step_number: int, total_steps: int,
+    current_value: str = "",
 ) -> list[dict]:
     """Prompt for the next project-setup field.
 
@@ -152,6 +153,11 @@ def project_setup_step_blocks(
     The user may reply with the value or type ``skip`` to leave it blank.
     """
     _STEP_LABELS = {
+        "project_name": (
+            ":pencil: *Project Name*\n\n"
+            "Enter the name for this project.\n\n"
+            "_Type `skip` to keep the current name._"
+        ),
         "confluence_space_key": (
             ":confluence: *Confluence Space Key*\n\n"
             "Enter the Confluence space key for this project "
@@ -164,8 +170,32 @@ def project_setup_step_blocks(
             "This is used when creating Jira tickets for PRDs.\n\n"
             "_Type `skip` to leave blank and use the default._"
         ),
+        "figma_api_key": (
+            ":art: *Figma API Key*\n\n"
+            "Enter your Figma personal access token.  "
+            "Generate one at *Figma > Settings > Security > "
+            "Personal access tokens*.\n\n"
+            "This enables Figma project lookups and file management "
+            "via the REST API.\n\n"
+            "_Type `skip` to leave blank — Playwright session login "
+            "will be used instead._"
+        ),
+        "figma_team_id": (
+            ":art: *Figma Team ID*\n\n"
+            "Enter your Figma team ID (the number in your team URL: "
+            "`figma.com/files/team/<TEAM_ID>/...`).\n\n"
+            "This is used to list and create Figma projects for "
+            "your ideas.\n\n"
+            "_Type `skip` to leave blank._"
+        ),
     }
     label = _STEP_LABELS.get(step, f"*{step}*")
+    current_hint = ""
+    if current_value:
+        display_val = current_value
+        if step == "figma_api_key" and len(display_val) > 8:
+            display_val = display_val[:8] + "\u2026"
+        current_hint = f"\n_Current value:_ `{display_val}`"
     return [
         {
             "type": "section",
@@ -174,7 +204,7 @@ def project_setup_step_blocks(
                 "text": (
                     f":gear: *Setting up project:* {project_name} "
                     f"(step {step_number}/{total_steps})\n\n"
-                    f"{label}"
+                    f"{label}{current_hint}"
                 ),
             },
         },
@@ -195,7 +225,13 @@ def project_setup_complete_blocks(project_name: str, details: dict) -> list[dict
         lines.append(f"• Jira project key: `{jpk}`")
     if cpid:
         lines.append(f"• Confluence parent ID: `{cpid}`")
-    if not (csk or jpk or cpid):
+    fak = details.get("figma_api_key", "")
+    ftid = details.get("figma_team_id", "")
+    if fak:
+        lines.append(f"• Figma API key: `{fak[:8]}…`")
+    if ftid:
+        lines.append(f"• Figma team ID: `{ftid}`")
+    if not (csk or jpk or cpid or fak or ftid):
         lines.append("_No extra keys configured — defaults will be used._")
     lines.append(
         "\nYou can now start iterating ideas!  Just say something like "

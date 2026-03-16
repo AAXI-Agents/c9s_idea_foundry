@@ -66,10 +66,24 @@ def run_ux_design(flow: PRDFlow) -> str:
     idea = flow.state.idea
     requirements = flow.state.requirements_breakdown
 
+    # Resolve project config for Figma credentials.
+    project_config = None
+    if project_id:
+        try:
+            from crewai_productfeature_planner.mongodb.project_config import (
+                get_project,
+            )
+            project_config = get_project(project_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("[UX Design] Could not load project config")
+
     if not eps:
         logger.info(
             "[UX Design] Skipping — no executive product summary available.",
         )
+        flow._notify_progress("ux_design_skipped", {
+            "reason": "no_executive_product_summary",
+        })
         return ""
 
     logger.info(
@@ -87,7 +101,10 @@ def run_ux_design(flow: PRDFlow) -> str:
 
     # Create agent.
     try:
-        ux_agent = create_ux_designer(project_id=project_id)
+        ux_agent = create_ux_designer(
+            project_id=project_id,
+            project_config=project_config,
+        )
     except EnvironmentError:
         logger.warning(
             "[UX Design] Skipping — no Gemini credentials available.",

@@ -199,6 +199,52 @@ class TestUpdateConfigPhraseOverride:
 
         mock_handler.assert_called_once()
 
+    @patch(f"{_EVENTS_MODULE}._handle_update_config")
+    def test_project_config_phrase_triggers_update_config(self, mock_handler):
+        """Phrases like 'project config' should trigger update_config intent."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        mock_interpret, mock_send = _make_mocks("general_question")
+
+        with (
+            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
+                  return_value=mock_interpret),
+            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
+                  return_value=mock_send),
+            patch(
+                "crewai_productfeature_planner.mongodb.agent_interactions"
+                ".repository.log_interaction",
+                MagicMock(),
+            ),
+            patch(f"{_SESSION_MODULE}.get_context_session",
+                  return_value=_ACTIVE_SESSION),
+        ):
+            er._interpret_and_act(
+                "C1", "T1", "U1", "project config", "E1",
+            )
+
+        mock_handler.assert_called_once()
+
+
+class TestConfigPhraseFallback:
+    """Verify new config phrases resolve to update_config in phrase fallback."""
+
+    def test_new_config_phrases(self):
+        from crewai_productfeature_planner.apis.slack._intent_phrases import (
+            _phrase_fallback,
+        )
+
+        for phrase in (
+            "project config", "project configuration",
+            "configure project", "reconfigure", "project settings",
+            "edit config", "update project config",
+        ):
+            result = _phrase_fallback(phrase)
+            assert result["intent"] == "update_config", (
+                f"Phrase '{phrase}' did not match update_config, "
+                f"got {result['intent']}"
+            )
+
 
 class TestCreateIdeaPhraseDetection:
     """Verify 'create idea' variants are detected as create_prd."""

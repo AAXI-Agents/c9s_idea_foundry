@@ -83,6 +83,22 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
                 "already in progress (resumed run)",
             )
             return False
+        # If specialist agents already produced output (CEO review,
+        # Eng Plan, or UX Design), the user already passed the
+        # requirements gate in a prior run attempt.
+        if (
+            flow.state.executive_product_summary
+            or flow.state.engineering_plan
+            or flow.state.figma_design_status
+        ):
+            logger.info(
+                "[RequirementsBreakdown] Auto-approving — specialist "
+                "agents already ran (resumed run; eps=%s, eng=%s, ux=%s)",
+                bool(flow.state.executive_product_summary),
+                bool(flow.state.engineering_plan),
+                flow.state.figma_design_status or "(none)",
+            )
+            return False
         return (
             flow.state.requirements_broken_down
             and flow._resolve_callback("requirements_approval_callback") is not None

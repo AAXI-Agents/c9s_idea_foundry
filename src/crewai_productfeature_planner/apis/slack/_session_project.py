@@ -240,6 +240,7 @@ def handle_project_setup_reply(
         activate_channel_project,
         activate_project,
         advance_pending_setup,
+        get_pending_setup,
         is_dm,
     )
     from crewai_productfeature_planner.mongodb.project_config import update_project
@@ -249,10 +250,16 @@ def handle_project_setup_reply(
     if not client:
         return
 
-    # "skip" / "s" / empty -> store as empty string
+    # "skip" / "s" / empty -> store as empty string (keep existing for project_name)
     value = text.strip()
-    if value.lower() in ("skip", "s", "-"):
-        value = ""
+    is_skip = value.lower() in ("skip", "s", "-")
+    if is_skip:
+        # For project_name, "skip" means keep the current name
+        pending = get_pending_setup(user)
+        if pending and pending.get("step") == "project_name":
+            value = pending.get("project_name", "")
+        else:
+            value = ""
 
     entry = advance_pending_setup(user, value)
     if entry is None:
@@ -265,7 +272,18 @@ def handle_project_setup_reply(
     if step == "done":
         # Finalise: persist keys and activate session
         update_fields: dict[str, str] = {}
-        for key in ("confluence_space_key", "jira_project_key"):
+        for key in (
+            "project_name",
+            "confluence_space_key",
+            "jira_project_key",
+            "figma_api_key",
+            "figma_team_id",
+        ):
+            if key == "project_name":
+                # The wizard stores the resolved name; persist as "name"
+                if entry.get("project_name"):
+                    update_fields["name"] = entry["project_name"]
+                continue
             if entry.get(key):
                 update_fields[key] = entry[key]
         if update_fields:
@@ -294,7 +312,7 @@ def handle_project_setup_reply(
             client.chat_postMessage(
                 channel=channel, thread_ts=thread_ts,
                 blocks=project_setup_complete_blocks(project_name, entry),
-                text=f"Project '{project_name}' created and session started!",
+                text=f"Project '{project_name}' configured and session started!",
             )
         except Exception as exc:
             logger.error("Failed to post setup-complete: %s", exc)
@@ -313,13 +331,18 @@ def handle_project_setup_reply(
         )
         return
 
-    # Post prompt for the next step
+    # Post prompt for the next step, showing current value if reconfiguring
     step_idx = _SETUP_STEPS.index(step) + 1
     total = len(_SETUP_STEPS)
+    current_entry = get_pending_setup(user)
+    current_value = current_entry.get(step, "") if current_entry else ""
     try:
         client.chat_postMessage(
             channel=channel, thread_ts=thread_ts,
-            blocks=project_setup_step_blocks(project_name, step, step_idx, total),
+            blocks=project_setup_step_blocks(
+                project_name, step, step_idx, total,
+                current_value=current_value,
+            ),
             text=f"Enter {step.replace('_', ' ')} (or type 'skip').",
         )
     except Exception as exc:

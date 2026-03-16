@@ -109,7 +109,7 @@
 
 - **LLM**: Gemini (Research tier — `GEMINI_UX_DESIGNER_MODEL`)
 - **Tools**: FigmaMakeTool
-- **Purpose**: Convert the Executive Product Summary into a structured Figma Make prompt covering design system (colours, typography, spacing), user flows (with error/empty/loading states), reusable components (with variants), responsive page layouts, and interactions. Submits to Figma Make API when `FIGMA_ACCESS_TOKEN` is set; otherwise stores prompt for manual use.
+- **Purpose**: Convert the Executive Product Summary into a structured Figma Make prompt covering design system (colours, typography, spacing), user flows (with error/empty/loading states), reusable components (with variants), responsive page layouts, and interactions. Submits to Figma Make via Playwright browser automation when a Figma session is configured (see `login.py`); otherwise stores prompt for manual use.
 - **Phase**: 1.5c (after Engineering Plan)
 - **Source**: `agents/ux_designer/`
 

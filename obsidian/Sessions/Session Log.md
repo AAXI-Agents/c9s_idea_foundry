@@ -731,3 +731,188 @@ Created a UX Designer agent that runs after the Executive Product Summary (Phase
 - 2217 total tests passing (55 new)
 
 ---
+
+## Session 017 — 2026-03-15
+
+**Scope**: Resume Gate Bypass Fix
+**Version**: v0.20.0 → v0.20.1
+
+### Problem
+Resumed PRD flows got stuck at two approval gates:
+1. **Requirements approval gate** — `_requires_approval()` only checked `any(s.content for s in draft.sections)`, which returned False when specialist sections (CEO, Eng, UX) had content but regular sections hadn't started yet.
+2. **"Proceed to sections?" gate** — always fired on resume even when all specialist agents had already run, causing a 10-minute timeout before continuing.
+
+Combined, these two gates consumed 20 minutes of timeout on every resume, often causing the server to restart before Phase 2 could begin.
+
+### Root Cause
+- `_requires_approval()` in `_requirements.py` didn't account for specialist agent state (`executive_product_summary`, `engineering_plan`, `figma_design_status`)
+- The user decision gate in `prd_flow.py` had no skip logic for resumed runs where specialists already completed
+
+### Work Done
+- **`orchestrator/_requirements.py`**: Added specialist state checks to `_requires_approval()` — auto-approves when `executive_product_summary`, `engineering_plan`, or `figma_design_status` are set
+- **`flows/prd_flow.py`**: Added `specialists_all_skipped` flag tracking whether all three specialist steps were skipped (resume case). User decision gate now bypassed when `specialists_all_skipped` or `has_section_content` is true
+- **`tests/flows/test_prd_flow.py`**: Fixed `test_callback_false_raises_completed` — added `_has_gemini_credentials` mock and `monkeypatch.delenv` for Gemini API keys so specialist agents don't hit live API. Removed pre-populated specialist state from `test_requirements_approval_callback_continue_proceeds` to match new gate behavior
+- **`version.py`**: v0.20.1 codex entry
+
+### Files Modified
+- `src/crewai_productfeature_planner/orchestrator/_requirements.py`
+- `src/crewai_productfeature_planner/flows/prd_flow.py`
+- `tests/flows/test_prd_flow.py`
+- `src/crewai_productfeature_planner/version.py`
+
+### Tests
+- All existing tests passing (163 flow + 162 orchestrator + 81 API + 277 agent tests verified)
+
+---
+
+## Session 018 — 2026-03-16
+
+**Scope**: Retry UX Design dispatch fix + test performance
+**Version**: v0.20.1 → v0.20.2
+
+### Problem 1 — Retry UX Design button click ignored
+The "Retry UX Design" button in the Slack product list did nothing when clicked. The button was correctly rendered with `action_id=product_ux_design_<N>`, and the handler `_handle_ux_design()` was fully implemented, but the dispatcher's `_PRODUCT_PREFIXES` tuple was missing `"product_ux_design_"` — so the click was silently dropped.
+
+### Problem 2 — Test suite taking 199s (6 tests at 25-28s each)
+Six end-to-end `generate_sections()` tests in `test_prd_flow.py` were calling the live Gemini API via the unmocked `_run_ux_design()` method. Each test waited ~25s for the real UX Designer agent to generate a Figma Make prompt.
+
+### Work Done
+- **`_dispatch.py`**: Added `"product_ux_design_"` to `_PRODUCT_PREFIXES`
+- **`test_product_list.py`**: Added `test_ux_design_prefix_in_product_prefixes` regression test
+- **`test_prd_flow.py`**: Added `_run_ux_design` mock to 3 tests and `figma_design_status = "prompt_ready"` to 3 tests
+
+### Files Modified
+- `src/crewai_productfeature_planner/apis/slack/interactions_router/_dispatch.py`
+- `tests/apis/slack/test_product_list.py`
+- `tests/flows/test_prd_flow.py`
+- `src/crewai_productfeature_planner/version.py`
+
+### Tests
+- 2205 passed, full suite: 199s → 32s (84% faster)
+
+---
+
+## Session 019 — 2026-03-16
+
+**Scope**: Figma Make — Playwright browser automation
+**Version**: v0.20.2 → v0.21.0
+
+### Problem
+The `_client.py` used `POST /v1/ai/make` against the Figma REST API, but this endpoint **does not exist** — confirmed by fetching the Figma OpenAPI spec. The `/v1/ai/make` endpoint was fabricated by the LLM that originally wrote the tool.
+
+### Solution
+Replaced the urllib-based HTTP client with **Playwright headless Chromium** automation that drives the Figma Make web UI at `figma.com/make/new`.
+
+### Work Done
+- **`_config.py`**: Complete rewrite — removed `FIGMA_API_BASE`, `DEFAULT_POLL_INTERVAL`, `DEFAULT_POLL_TIMEOUT`, `get_figma_access_token()`, `get_figma_team_id()`. Added `FIGMA_MAKE_URL`, `DEFAULT_MAKE_TIMEOUT`, `DEFAULT_SESSION_DIR`, `get_figma_session_dir()`, `get_figma_session_path()`, `get_figma_make_timeout()`, `get_figma_headless()`. Updated `has_figma_credentials()` to check for Playwright session state file.
+- **`_client.py`**: Complete rewrite — removed `_request()`, `submit_figma_make()`, `poll_figma_make()`. Added `run_figma_make(prompt)` using Playwright: launch Chromium → load session state → navigate to `/make/new` → detect login redirect → find chat input → fill prompt → press Enter/click Send → wait for URL change → wait for networkidle → return file URL. Helper functions: `_find_chat_input()`, `_send_prompt()`, `_wait_for_generation()`.
+- **`figma_make_tool.py`**: Updated imports from `submit_figma_make`/`poll_figma_make` to `run_figma_make`. Simplified `_run()` to single function call. Updated skip message.
+- **`__init__.py`**: Updated docstring for Playwright approach and new env vars.
+- **`login.py`**: New interactive login script — opens visible Chromium for manual Figma login, saves Playwright `storage_state()` to session dir.
+- **`_product_list_handler.py`**: Updated "FIGMA_ACCESS_TOKEN" message to login script instructions.
+- **`pyproject.toml`**: Added `playwright>=1.40` dependency.
+- **`test_figma_tool.py`**: Complete rewrite — 32 tests covering config, client helpers, `run_figma_make`, and `FigmaMakeTool` with Playwright mocks.
+
+### Env Var Changes
+| Removed | Added |
+|---------|-------|
+| `FIGMA_ACCESS_TOKEN` | `FIGMA_SESSION_DIR` (default `~/.figma_session`) |
+| `FIGMA_TEAM_ID` | `FIGMA_MAKE_TIMEOUT` (default 300) |
+| `FIGMA_API_BASE` | `FIGMA_HEADLESS` (default `"true"`) |
+
+### Auth Approach
+Playwright `storage_state()` JSON file saved from one-time interactive login session via `login.py`. Reused automatically for headless automation.
+
+### Files Modified
+- `src/.../tools/figma/_config.py` (rewritten)
+- `src/.../tools/figma/_client.py` (rewritten)
+- `src/.../tools/figma/figma_make_tool.py` (updated)
+- `src/.../tools/figma/__init__.py` (updated)
+- `src/.../tools/figma/login.py` (new)
+- `src/.../apis/slack/interactions_router/_product_list_handler.py` (updated)
+- `pyproject.toml` (updated)
+- `tests/tools/test_figma_tool.py` (rewritten)
+- `src/.../version.py` (bumped to 0.21.0)
+
+### Tests
+- 2221 passed in 37s (net +16 from test rewrite)
+
+---
+
+## Session 019 — 2026-03-16
+
+**Scope**: Figma Project Config + OAuth + REST API
+**Version**: v0.21.1 → v0.22.0
+
+### Work Done
+- Added 5 Figma fields to `projectConfig` MongoDB schema: `figma_api_key`, `figma_team_id`, `figma_oauth_token`, `figma_oauth_refresh_token`, `figma_oauth_expires_at`
+- Created `_api.py` — Figma REST API client (`get_team_projects`, `get_project_files`, `get_file_info`, `refresh_oauth_token`, `exchange_oauth_code`)
+- Updated `_config.py` — project-level credential resolution chain (API key → OAuth token → Playwright session). New: `get_figma_credentials()`, `has_figma_credentials(project_config)`, `_oauth_expired()`, `get_figma_client_id()`, `get_figma_client_secret()`, `FIGMA_OAUTH_URL`, `OAUTH_REDIRECT_URI`
+- Updated `_client.py` — OAuth token cookie injection via `_build_context()`. `run_figma_make()` now accepts `project_config` kwarg.
+- Rewritten `login.py` — dual mode: `--oauth` flag for OAuth2 flow (local HTTP server + Playwright consent), default session login unchanged
+- Setup wizard expanded from 2 to 4 steps: added `figma_api_key` and `figma_team_id`
+- Wired `project_config` through agent → tool pipeline: `_ux_design.py` → `create_ux_designer(project_config=...)` → `FigmaMakeTool._project_config`
+- Expanded tests from 32 to 64 for Figma module, updated setup wizard tests
+
+### New Env Vars
+| Variable | Purpose |
+|----------|---------|
+| `FIGMA_CLIENT_ID` | OAuth2 app client ID |
+| `FIGMA_CLIENT_SECRET` | OAuth2 app client secret |
+
+### Files Modified
+- `src/.../mongodb/project_config/repository.py` (schema + create_project)
+- `src/.../tools/figma/_api.py` (new)
+- `src/.../tools/figma/_config.py` (rewritten)
+- `src/.../tools/figma/_client.py` (rewritten)
+- `src/.../tools/figma/login.py` (rewritten)
+- `src/.../tools/figma/figma_make_tool.py` (updated)
+- `src/.../tools/figma/__init__.py` (updated)
+- `src/.../apis/slack/session_manager.py` (4 setup steps)
+- `src/.../apis/slack/blocks/_session_blocks.py` (Figma step labels + summary)
+- `src/.../apis/slack/_session_project.py` (persist Figma keys)
+- `src/.../agents/ux_designer/agent.py` (project_config injection)
+- `src/.../flows/_ux_design.py` (load project config)
+- `tests/tools/test_figma_tool.py` (expanded)
+- `tests/apis/slack/test_interaction_tracking.py` (updated for 4 steps)
+- `src/.../version.py` (bumped to 0.22.0)
+
+### Tests
+- 2253 passed in 38s (net +32 from new Figma tests)
+
+---
+
+## Session 020 — 2026-03-16
+
+**Scope**: Project Config Reconfiguration Wizard + Config Button
+**Version**: v0.22.0 → v0.22.1
+
+### Work Done
+- Expanded `_UPDATE_CONFIG_PHRASES` from 12 to 21 phrases — added "project config", "project configuration", "configure project", "edit config", "edit project config", "change config", "reconfigure", "reconfigure project", "update project config", "project settings", "edit settings"
+- Rewrote `handle_update_config()` from inline field updater to full 5-step setup wizard launcher with pre-populated current values
+- Expanded `_SETUP_STEPS` from 4 to 5: added `project_name` as first step
+- New `_NEW_PROJECT_START_STEP = "confluence_space_key"` — new project creation skips project_name step
+- New `mark_pending_reconfig()` in `session_manager.py` — starts wizard at step 0 (project_name) with existing config pre-populated
+- Added `current_value` parameter to `project_setup_step_blocks()` — shows "Current value: `X`" hint during reconfiguration
+- Added `:gear: Config` button to product list header (action_id `product_config`, block_id `product_project_actions_{project_id}`)
+- Added `product_config` action routing in `_dispatch.py` → `_handle_product_config()` in `_product_list_handler.py`
+- `handle_project_setup_reply()` now handles `project_name` step; skip preserves existing name
+
+### Files Modified
+- `src/.../apis/slack/_intent_phrases.py` — 9 new config phrases
+- `src/.../apis/slack/session_manager.py` — 5-step tuple, `_NEW_PROJECT_START_STEP`, `mark_pending_reconfig()`
+- `src/.../apis/slack/blocks/_session_blocks.py` — `project_name` label, `current_value` param
+- `src/.../apis/slack/_session_project.py` — project_name handling, skip preservation, name persistence
+- `src/.../apis/slack/_session_memory.py` — `handle_update_config()` rewritten as wizard launcher
+- `src/.../apis/slack/blocks/_product_list_blocks.py` — Config button at project level
+- `src/.../apis/slack/interactions_router/_dispatch.py` — `product_config` action routing
+- `src/.../apis/slack/interactions_router/_product_list_handler.py` — `_handle_product_config()`
+- `tests/apis/slack/test_interaction_tracking.py` — 4 new reconfig tests, assertion fix
+- `tests/apis/slack/test_product_list.py` — `_product_action_blocks()` helper, Config button test
+- `tests/apis/slack/test_configure_memory_intent.py` — phrase override + fallback tests
+- `src/.../version.py` — bumped to 0.22.1
+
+### Tests
+- 2260 passed in 41s (net +7 new tests)
+
+---

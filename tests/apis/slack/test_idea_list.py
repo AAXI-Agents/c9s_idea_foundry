@@ -29,7 +29,7 @@ _IDEAS = [
         "status": "paused",
         "iteration": 3,
         "sections_done": 5,
-        "total_sections": 10,
+        "total_sections": 12,
     },
     {
         "run_id": "run-bbb",
@@ -37,7 +37,7 @@ _IDEAS = [
         "status": "inprogress",
         "iteration": 1,
         "sections_done": 2,
-        "total_sections": 10,
+        "total_sections": 12,
     },
     {
         "run_id": "run-ccc",
@@ -45,7 +45,7 @@ _IDEAS = [
         "status": "completed",
         "iteration": 5,
         "sections_done": 10,
-        "total_sections": 10,
+        "total_sections": 12,
     },
     {
         "run_id": "run-ddd",
@@ -53,7 +53,7 @@ _IDEAS = [
         "status": "failed",
         "iteration": 2,
         "sections_done": 3,
-        "total_sections": 10,
+        "total_sections": 12,
     },
 ]
 
@@ -143,7 +143,7 @@ class TestIdeaListBlocks:
             "status": "paused",
             "iteration": 1,
             "sections_done": 0,
-            "total_sections": 10,
+            "total_sections": 12,
         }]
         blocks = idea_list_blocks(long_idea, _USER, _PROJECT_NAME, _PROJECT_ID)
         section_blocks = [b for b in blocks if b["type"] == "section"]
@@ -178,14 +178,14 @@ class TestIdeaListBlocks:
                 "status": "failed",
                 "iteration": 2,
                 "sections_done": 3,
-                "total_sections": 10,
+                "total_sections": 12,
             },
             {
                 "run_id": "run-none",
                 "status": "failed",
                 "iteration": 1,
                 "sections_done": 0,
-                "total_sections": 10,
+                "total_sections": 12,
             },
         ]
         blocks = idea_list_blocks(empty_ideas, _USER, _PROJECT_NAME, _PROJECT_ID)
@@ -279,7 +279,7 @@ class TestHandleListIdeas:
                 "status": "completed",
                 "iteration": 5,
                 "sections_done": 10,
-                "total_sections": 10,
+                "total_sections": 12,
                 "confluence_published": True,
                 "confluence_url": "https://example.atlassian.net/wiki/123",
                 "jira_completed": False,
@@ -325,7 +325,7 @@ class TestHandleListIdeas:
                 "status": "completed",
                 "iteration": 5,
                 "sections_done": 10,
-                "total_sections": 10,
+                "total_sections": 12,
                 "confluence_published": False,
                 "confluence_url": "",
                 "jira_completed": False,
@@ -702,7 +702,7 @@ class TestHandleArchiveIdea:
         "crewai_productfeature_planner.mongodb.working_ideas.repository.find_ideas_by_project",
         return_value=[
             {"run_id": "run-aaa", "idea": "Test idea", "status": "paused",
-             "sections_done": 3, "total_sections": 10},
+             "sections_done": 3, "total_sections": 12},
         ],
     )
     @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")

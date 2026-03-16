@@ -54,6 +54,7 @@ def _build_llm() -> LLM:
 
 def create_ux_designer(
     project_id: str | None = None,
+    project_config: dict | None = None,
 ) -> Agent:
     """Create a UX Designer agent with FigmaMakeTool.
 
@@ -61,6 +62,8 @@ def create_ux_designer(
     ----------
     project_id:
         Optional project identifier for memory enrichment.
+    project_config:
+        Optional project config dict with Figma credentials.
     """
     has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
     has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
@@ -79,12 +82,15 @@ def create_ux_designer(
         agent_config["backstory"].strip(), project_id,
     )
 
+    figma_tool = FigmaMakeTool()
+    figma_tool._project_config = project_config
+
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
         backstory=backstory,
         llm=_build_llm(),
-        tools=[FigmaMakeTool()],
+        tools=[figma_tool],
         verbose=is_verbose(),
         allow_delegation=False,
     )

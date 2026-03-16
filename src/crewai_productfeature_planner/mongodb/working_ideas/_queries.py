@@ -17,6 +17,10 @@ from crewai_productfeature_planner.mongodb.working_ideas._common import (
     logger,
 )
 
+# Must match len(SECTION_ORDER) in apis.prd._sections — duplicated here
+# to avoid a circular import through the apis package __init__.
+_TOTAL_SECTIONS = 12
+
 
 def find_completed_without_confluence() -> list[dict[str, Any]]:
     """Find completed working ideas that have not been published to Confluence.
@@ -221,7 +225,7 @@ def find_unfinalized() -> list[dict[str, Any]]:
                 "created_at": doc.get("created_at"),
                 "sections": sections,
                 "sections_done": len(sections),
-                "total_sections": 10,
+                "total_sections": _TOTAL_SECTIONS,
                 "exec_summary_iterations": exec_iter_count,
                 "req_breakdown_iterations": req_iter_count,
                 "section_missing": "section" not in doc,
@@ -332,7 +336,7 @@ def _do_backfill(
 def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
     """Convert a raw working-idea document to the dict format
     returned by :func:`find_ideas_by_project`."""
-    total_sections = 10
+    total_sections = _TOTAL_SECTIONS
     status = doc.get("status", "unknown")
 
     section_obj = doc.get("section") or {}

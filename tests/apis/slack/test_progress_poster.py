@@ -112,7 +112,7 @@ class TestExistingProgressEvents:
             "section_title": "Problem Statement",
             "section_key": "problem_statement",
             "section_step": 2,
-            "total_sections": 10,
+            "total_sections": 12,
         })
         send.run.assert_called_once()
         msg = send.run.call_args[1]["text"]

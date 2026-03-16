@@ -70,6 +70,23 @@ def product_list_blocks(
         {"type": "divider"},
     ]
 
+    # Project-level actions (Config button)
+    blocks.append(
+        {
+            "type": "actions",
+            "block_id": f"product_project_actions_{project_id}",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":gear: Config"},
+                    "action_id": "product_config",
+                    "value": project_id,
+                },
+            ],
+        },
+    )
+    blocks.append({"type": "divider"})
+
     for idx, product in enumerate(products, 1):
         idea_text = product.get("idea") or "Untitled"
         if len(idea_text) > 120:
@@ -174,6 +191,15 @@ def product_list_blocks(
                     "type": "button",
                     "text": {"type": "plain_text", "text": btn_text},
                     "action_id": f"product_ux_design_{idx}",
+                    "value": btn_value,
+                },
+            )
+            # Always offer the manual fallback alongside the API button
+            elements.append(
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":page_facing_up: Manual UX Design"},
+                    "action_id": f"product_manual_ux_{idx}",
                     "value": btn_value,
                 },
             )

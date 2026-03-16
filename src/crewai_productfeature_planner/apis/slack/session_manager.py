@@ -419,9 +419,15 @@ def pop_pending_memory(user_id: str) -> dict[str, str] | None:
 # The setup steps in order.  After the last step the project is
 # finalised and the session starts.
 _SETUP_STEPS = (
+    "project_name",
     "confluence_space_key",
     "jira_project_key",
+    "figma_api_key",
+    "figma_team_id",
 )
+
+# Steps used for new project creation (name already collected)
+_NEW_PROJECT_START_STEP = "confluence_space_key"
 
 
 def mark_pending_setup(
@@ -431,16 +437,48 @@ def mark_pending_setup(
     project_id: str,
     project_name: str,
 ) -> None:
-    """Begin the project-setup wizard for *user_id*."""
+    """Begin the project-setup wizard for *user_id* (new project).
+
+    Starts at the *second* step (confluence_space_key) because the
+    project name was already collected during creation.
+    """
     with _lock:
         _pending_project_setup[user_id] = {
             "channel": channel,
             "thread_ts": thread_ts,
             "project_id": project_id,
             "project_name": project_name,
-            "step": _SETUP_STEPS[0],
+            "step": _NEW_PROJECT_START_STEP,
             "confluence_space_key": "",
             "jira_project_key": "",
+            "figma_api_key": "",
+            "figma_team_id": "",
+        }
+
+
+def mark_pending_reconfig(
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    project_id: str,
+    project_config: dict,
+) -> None:
+    """Begin a reconfigure wizard for an existing project.
+
+    Starts at ``project_name`` (the first step) and pre-populates
+    current values so the user sees them in the prompt.
+    """
+    with _lock:
+        _pending_project_setup[user_id] = {
+            "channel": channel,
+            "thread_ts": thread_ts,
+            "project_id": project_id,
+            "project_name": project_config.get("name", ""),
+            "step": _SETUP_STEPS[0],
+            "confluence_space_key": project_config.get("confluence_space_key", ""),
+            "jira_project_key": project_config.get("jira_project_key", ""),
+            "figma_api_key": project_config.get("figma_api_key", ""),
+            "figma_team_id": project_config.get("figma_team_id", ""),
         }
 
 

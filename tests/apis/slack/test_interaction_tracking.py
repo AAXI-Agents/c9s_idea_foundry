@@ -882,6 +882,16 @@ class TestProjectSetupWizard:
         # Step 2: jira_project_key
         entry = advance_pending_setup("U1", "FEAT")
         assert entry["jira_project_key"] == "FEAT"
+        assert entry["step"] == "figma_api_key"
+
+        # Step 3: figma_api_key
+        entry = advance_pending_setup("U1", "figd_test123")
+        assert entry["figma_api_key"] == "figd_test123"
+        assert entry["step"] == "figma_team_id"
+
+        # Step 4: figma_team_id
+        entry = advance_pending_setup("U1", "99999")
+        assert entry["figma_team_id"] == "99999"
         assert entry["step"] == "done"
 
         # After done, the entry is removed
@@ -895,10 +905,14 @@ class TestProjectSetupWizard:
 
         mark_pending_setup("U1", "C1", "T1", "proj1", "Test")
         advance_pending_setup("U1", "")  # skip confluence
-        entry = advance_pending_setup("U1", "")  # skip jira
+        advance_pending_setup("U1", "")  # skip jira
+        advance_pending_setup("U1", "")  # skip figma api key
+        entry = advance_pending_setup("U1", "")  # skip figma team id
         assert entry["step"] == "done"
         assert entry["confluence_space_key"] == ""
         assert entry["jira_project_key"] == ""
+        assert entry["figma_api_key"] == ""
+        assert entry["figma_team_id"] == ""
 
     def test_has_pending_state_includes_setup(self):
         from crewai_productfeature_planner.apis.slack.session_manager import (
@@ -974,9 +988,11 @@ class TestProjectSetupWizard:
             mock_client = MagicMock()
             mock_client_fn.return_value = mock_client
 
-            # Step through all 2 steps
+            # Step through all 4 steps
             er._handle_project_setup_reply("C1", "T1", "U1", "ENG")
             er._handle_project_setup_reply("C1", "T1", "U1", "FEAT")
+            er._handle_project_setup_reply("C1", "T1", "U1", "figd_key")
+            er._handle_project_setup_reply("C1", "T1", "U1", "99999")
 
         # Entry should be cleared
         assert get_pending_setup("U1") is None
@@ -984,8 +1000,11 @@ class TestProjectSetupWizard:
         # Project config should be updated with the keys
         mock_update.assert_called_once_with(
             "proj1",
+            name="Test",
             confluence_space_key="ENG",
             jira_project_key="FEAT",
+            figma_api_key="figd_key",
+            figma_team_id="99999",
         )
 
         # Channel session should be activated
@@ -1001,10 +1020,10 @@ class TestProjectSetupWizard:
             project_setup_step_blocks,
         )
 
-        blocks = project_setup_step_blocks("My Project", "jira_project_key", 2, 2)
+        blocks = project_setup_step_blocks("My Project", "jira_project_key", 2, 4)
         text = blocks[0]["text"]["text"]
         assert "Jira Project Key" in text
-        assert "step 2/2" in text
+        assert "step 2/4" in text
 
     def test_setup_complete_blocks_show_keys(self):
         from crewai_productfeature_planner.apis.slack.blocks import (
@@ -1014,11 +1033,103 @@ class TestProjectSetupWizard:
         blocks = project_setup_complete_blocks("My Project", {
             "confluence_space_key": "ENG",
             "jira_project_key": "FEAT",
+            "figma_api_key": "figd_longkey123",
+            "figma_team_id": "99999",
         })
         text = blocks[0]["text"]["text"]
         assert "ENG" in text
         assert "FEAT" in text
+        assert "figd_lon…" in text
+        assert "99999" in text
         assert "set up and ready" in text
+
+    def test_reconfig_wizard_starts_at_project_name(self):
+        """mark_pending_reconfig should start at project_name step with existing values."""
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_pending_setup,
+            mark_pending_reconfig,
+            pop_pending_setup,
+        )
+
+        existing = {
+            "name": "Old Name",
+            "confluence_space_key": "ENG",
+            "jira_project_key": "FEAT",
+            "figma_api_key": "figd_old",
+            "figma_team_id": "11111",
+        }
+        mark_pending_reconfig("U1", "C1", "T1", "proj1", existing)
+        entry = get_pending_setup("U1")
+        assert entry is not None
+        assert entry["step"] == "project_name"
+        assert entry["project_name"] == "Old Name"
+        assert entry["confluence_space_key"] == "ENG"
+        assert entry["figma_api_key"] == "figd_old"
+        pop_pending_setup("U1")
+
+    def test_reconfig_advance_through_all_5_steps(self):
+        """Reconfig wizard should walk through all 5 steps including project_name."""
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            advance_pending_setup,
+            get_pending_setup,
+            mark_pending_reconfig,
+        )
+
+        existing = {"name": "Old", "confluence_space_key": "", "jira_project_key": "",
+                     "figma_api_key": "", "figma_team_id": ""}
+        mark_pending_reconfig("U1", "C1", "T1", "proj1", existing)
+
+        # Step 1: project_name
+        entry = advance_pending_setup("U1", "New Name")
+        assert entry["project_name"] == "New Name"
+        assert entry["step"] == "confluence_space_key"
+
+        # Step 2: confluence_space_key
+        entry = advance_pending_setup("U1", "NEWENG")
+        assert entry["confluence_space_key"] == "NEWENG"
+        assert entry["step"] == "jira_project_key"
+
+        # Step 3: jira_project_key
+        entry = advance_pending_setup("U1", "NEWPROJ")
+        assert entry["jira_project_key"] == "NEWPROJ"
+        assert entry["step"] == "figma_api_key"
+
+        # Step 4: figma_api_key
+        entry = advance_pending_setup("U1", "figd_new")
+        assert entry["figma_api_key"] == "figd_new"
+        assert entry["step"] == "figma_team_id"
+
+        # Step 5: figma_team_id
+        entry = advance_pending_setup("U1", "22222")
+        assert entry["figma_team_id"] == "22222"
+        assert entry["step"] == "done"
+
+        assert get_pending_setup("U1") is None
+
+    def test_setup_step_blocks_show_current_value(self):
+        """project_setup_step_blocks should display current_value when given."""
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            project_setup_step_blocks,
+        )
+
+        blocks = project_setup_step_blocks(
+            "My Project", "confluence_space_key", 2, 5,
+            current_value="ENG",
+        )
+        text = blocks[0]["text"]["text"]
+        assert "Current value:" in text
+        assert "ENG" in text
+
+    def test_setup_step_blocks_project_name_label(self):
+        """project_setup_step_blocks should show Project Name label."""
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            project_setup_step_blocks,
+        )
+
+        blocks = project_setup_step_blocks("My Project", "project_name", 1, 5)
+        text = blocks[0]["text"]["text"]
+        assert "Project Name" in text
+        assert "step 1/5" in text
 
 _IH_MODULE = "crewai_productfeature_planner.apis.slack.interactive_handlers"
 

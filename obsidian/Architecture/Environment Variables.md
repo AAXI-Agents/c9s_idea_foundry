@@ -50,12 +50,21 @@
 | `JIRA_USERNAME` | Jira API username |
 | `JIRA_API_TOKEN` | Jira API token |
 
-## Figma (v0.20.0)
+## Figma (v0.22.0 — Playwright + OAuth + REST API)
 
 | Variable | Purpose |
 |----------|---------|
-| `FIGMA_ACCESS_TOKEN` | Figma API personal access token — enables Figma Make design generation |
-| `FIGMA_TEAM_ID` | Figma team ID for design file creation (optional) |
+| `FIGMA_SESSION_DIR` | Directory for Playwright session state (default `~/.figma_session`) |
+| `FIGMA_MAKE_TIMEOUT` | Timeout in seconds for design generation (default `300`) |
+| `FIGMA_HEADLESS` | Run browser in headless mode — `"true"` (default) or `"false"` |
+| `FIGMA_CLIENT_ID` | OAuth2 app client ID (for token exchange) |
+| `FIGMA_CLIENT_SECRET` | OAuth2 app client secret |
+
+> **Auth priority**: Project API key → OAuth token (not expired) → Playwright session file.
+>
+> **Project-level config** (stored in `projectConfig` collection): `figma_api_key`, `figma_team_id`, `figma_oauth_token`, `figma_oauth_refresh_token`, `figma_oauth_expires_at`.
+>
+> **Setup**: Run `python -m crewai_productfeature_planner.tools.figma.login` for session login, or `--oauth` flag for OAuth2 flow.
 
 ## Agent Model Overrides
 

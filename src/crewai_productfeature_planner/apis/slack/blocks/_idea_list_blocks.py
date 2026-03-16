@@ -44,7 +44,7 @@ def idea_list_blocks(
         status = idea_doc.get("status", "unknown")
         emoji = _IDEA_STATUS_EMOJI.get(status, ":question:")
         sections_done = idea_doc.get("sections_done", 0)
-        total_sections = idea_doc.get("total_sections", 10)
+        total_sections = idea_doc.get("total_sections", 12)
         iteration = idea_doc.get("iteration", 0)
 
         blocks.append(

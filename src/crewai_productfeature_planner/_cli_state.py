@@ -248,6 +248,31 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
     if next_section:
         flow.state.current_section_key = next_section.key
 
+    # ── Restore UX design state ──────────────────────────────
+    if docs:
+        doc = docs[0]
+        if doc.get("figma_design_url"):
+            flow.state.figma_design_url = doc["figma_design_url"]
+        if doc.get("figma_design_status"):
+            flow.state.figma_design_status = doc["figma_design_status"]
+        if doc.get("figma_design_prompt"):
+            flow.state.figma_design_prompt = doc["figma_design_prompt"]
+        if flow.state.figma_design_url or flow.state.figma_design_status:
+            logger.info(
+                "Restored UX design state: status=%s, url=%s",
+                flow.state.figma_design_status,
+                bool(flow.state.figma_design_url),
+            )
+
+    # Restore specialist section state so Phase 1.5 skip conditions
+    # work correctly on resume.
+    eps_section = draft.get_section("executive_product_summary")
+    if eps_section and eps_section.content:
+        flow.state.executive_product_summary = eps_section.content
+    eng_section = draft.get_section("engineering_plan")
+    if eng_section and eng_section.content:
+        flow.state.engineering_plan = eng_section.content
+
     approved_count = sum(1 for s in draft.sections if s.is_approved)
     exec_iter_count = len(exec_summary_draft.iterations)
     req_iter_count = len(flow.state.breakdown_history)

@@ -87,6 +87,11 @@ def _handle_product_list_action(
             run_id, idea_number, user_id, channel, thread_ts,
             send_tool, client,
         )
+    elif action_id.startswith("product_manual_ux_"):
+        _handle_manual_ux_design(
+            run_id, idea_number, user_id, channel, thread_ts,
+            send_tool, client,
+        )
     elif action_id.startswith("product_view_"):
         _handle_view_details(
             run_id, idea_number, user_id, channel, thread_ts,
@@ -99,6 +104,61 @@ def _handle_product_list_action(
         )
     else:
         logger.warning("Unknown product action_id: %s", action_id)
+
+
+def _handle_product_config(
+    project_id: str,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+) -> None:
+    """Launch the project configuration wizard from the product list.
+
+    The button value is just ``project_id`` (no idea_number or run_id).
+    """
+    from crewai_productfeature_planner.apis.slack.blocks import (
+        project_setup_step_blocks,
+    )
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        _SETUP_STEPS,
+        mark_pending_reconfig,
+    )
+    from crewai_productfeature_planner.mongodb.project_config import get_project
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    client = _get_slack_client()
+    if not client:
+        return
+
+    project_config = get_project(project_id) or {}
+    project_name = project_config.get("name", "your project")
+
+    mark_pending_reconfig(
+        user_id=user_id,
+        channel=channel,
+        thread_ts=thread_ts,
+        project_id=project_id,
+        project_config=project_config,
+    )
+
+    first_step = _SETUP_STEPS[0]
+    current_value = (
+        project_config.get("name", "")
+        if first_step == "project_name"
+        else project_config.get(first_step, "")
+    )
+    try:
+        client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            blocks=project_setup_step_blocks(
+                project_name, first_step, 1, len(_SETUP_STEPS),
+                current_value=current_value,
+            ),
+            text=f"Configure {first_step.replace('_', ' ')} (or type 'skip').",
+        )
+    except Exception as exc:
+        logger.error("Failed to post reconfig step: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -360,8 +420,8 @@ def _handle_ux_design(
                     channel=channel, thread_ts=thread_ts,
                     text=(
                         f"<@{user_id}> :pencil: Figma Make prompt generated but "
-                        "Figma credentials not configured.\n"
-                        f"Set `FIGMA_ACCESS_TOKEN` to enable auto-generation.\n\n"
+                        "Figma session not configured.\n"
+                        f"Run `python -m crewai_productfeature_planner.tools.figma.login` to authenticate.\n\n"
                         f"*Prompt preview:*\n```{prompt_preview}```"
                     ),
                 )
@@ -382,6 +442,123 @@ def _handle_ux_design(
             )
 
     threading.Thread(target=_do_ux_design, daemon=True).start()
+
+
+def _handle_manual_ux_design(
+    run_id: str,
+    idea_number: int,
+    user_id: str,
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    client,
+) -> None:
+    """Generate a Markdown file from executive_product_summary + ux_design
+    section that the user can copy-paste into Figma Make manually."""
+    _ack(client, channel, thread_ts, user_id,
+         f":page_facing_up: Generating manual UX design file for product #{idea_number}…")
+
+    def _do_manual_ux():
+        try:
+            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                find_run_any_status,
+            )
+            doc = find_run_any_status(run_id)
+            if not doc:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=f"<@{user_id}> :x: Could not find product (run `{run_id[:8]}…`).",
+                )
+                return
+
+            # Extract executive_product_summary
+            eps_section = doc.get("section", {}).get(
+                "executive_product_summary", [],
+            )
+            eps_content = ""
+            if eps_section and isinstance(eps_section, list):
+                last = eps_section[-1] if eps_section else {}
+                eps_content = last.get("content", "")
+
+            # Extract ux_design section (prompt text from previous runs)
+            ux_section = doc.get("section", {}).get("ux_design", [])
+            ux_content = ""
+            if ux_section and isinstance(ux_section, list):
+                last = ux_section[-1] if ux_section else {}
+                ux_content = last.get("content", "")
+
+            if not eps_content:
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :warning: No Executive Product Summary found "
+                        "for this product. Run the PRD flow first."
+                    ),
+                )
+                return
+
+            idea_text = doc.get("idea", "Untitled")
+
+            # Build Markdown content
+            lines = [
+                f"# UX Design — {idea_text}",
+                "",
+                "Copy the content below into [Figma Make](https://www.figma.com/make/new) to generate your UX design.",
+                "",
+                "---",
+                "",
+                "## Executive Product Summary",
+                "",
+                eps_content,
+                "",
+            ]
+            if ux_content:
+                lines.extend([
+                    "---",
+                    "",
+                    "## UX Design Prompt",
+                    "",
+                    ux_content,
+                    "",
+                ])
+            lines.extend([
+                "---",
+                "",
+                "*Generated by C9 PRD Planner*",
+            ])
+            md_text = "\n".join(lines)
+
+            # Post as a Slack file/snippet so it's easy to copy
+            try:
+                client.files_upload_v2(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    content=md_text,
+                    filename=f"ux_design_{run_id[:8]}.md",
+                    title=f"UX Design — {idea_text[:80]}",
+                    initial_comment=(
+                        f"<@{user_id}> :page_facing_up: Here's your UX design file. "
+                        "Copy the content into Figma Make to generate your design."
+                    ),
+                )
+            except Exception:  # noqa: BLE001
+                # Fallback: post as plain text if file upload fails
+                send_tool.run(
+                    channel=channel, thread_ts=thread_ts,
+                    text=(
+                        f"<@{user_id}> :page_facing_up: *Manual UX Design*\n\n"
+                        f"```\n{md_text}\n```"
+                    ),
+                )
+
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[ManualUX] Failed for run_id=%s", run_id)
+            send_tool.run(
+                channel=channel, thread_ts=thread_ts,
+                text=f"<@{user_id}> :x: Manual UX design file generation failed: {exc}",
+            )
+
+    threading.Thread(target=_do_manual_ux, daemon=True).start()
 
 
 def _handle_jira_skeleton(

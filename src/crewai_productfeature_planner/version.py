@@ -1574,6 +1574,101 @@ _CODEX: list[CodexEntry] = [
             "55 new tests (2217 total)."
         ),
     ),
+    CodexEntry(
+        "0.20.1",
+        date(2026, 3, 15),
+        (
+            "Resume gate bypass fix — resumed PRD flows no longer get "
+            "stuck at the requirements approval gate or the 'proceed to "
+            "sections?' gate when specialist agents (CEO, Eng, UX) already "
+            "ran in a prior attempt. _requires_approval() now checks "
+            "flow.state.executive_product_summary, engineering_plan, and "
+            "figma_design_status to auto-approve. User decision gate "
+            "skipped when all specialist agents were skipped (resume) or "
+            "Phase 2 sections already have content. Fixed "
+            "test_callback_false_raises_completed to mock Gemini "
+            "credentials and specialist agents."
+        ),
+    ),
+    CodexEntry(
+        "0.20.2",
+        date(2026, 3, 16),
+        (
+            "Retry UX Design dispatch fix + test performance — "
+            "Added 'product_ux_design_' to _PRODUCT_PREFIXES in "
+            "_dispatch.py so the Retry UX Design button click is "
+            "routed to _handle_ux_design(). Added regression test. "
+            "Fixed 6 slow tests (28s each → <1s) that were hitting the "
+            "live Gemini API via unmocked _run_ux_design(). Full test "
+            "suite: 199s → 32s. 2205 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.21.0",
+        date(2026, 3, 16),
+        (
+            "Figma Make — Playwright browser automation — "
+            "Replaced non-existent /v1/ai/make REST API with Playwright "
+            "headless Chromium automation against the Figma Make web UI "
+            "(figma.com/make/new). New _client.py drives headless browser: "
+            "navigate → enter prompt → wait for URL change → return file URL. "
+            "New _config.py with FIGMA_SESSION_DIR, FIGMA_MAKE_TIMEOUT, "
+            "FIGMA_HEADLESS env vars. New login.py interactive session helper "
+            "for one-time Figma auth. Removed FIGMA_ACCESS_TOKEN / "
+            "FIGMA_TEAM_ID / FIGMA_API_BASE. Added playwright>=1.40 to deps. "
+            "32 Figma tests rewritten. 2221 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.21.1",
+        date(2026, 3, 16),
+        (
+            "Fix 12/10 section count in idea list — "
+            "total_sections was hardcoded to 10 in _queries.py and "
+            "fallback defaults in _flow_handlers.py and "
+            "_idea_list_blocks.py, but SECTION_ORDER grew to 12 in "
+            "v0.18.0 when specialist sections were added. sections_done "
+            "counted all 12 keys from MongoDB, producing '12/10'. "
+            "Added _TOTAL_SECTIONS = 12 in _queries.py, updated all "
+            "fallback defaults to 12, added TOTAL_SECTIONS constant "
+            "to _sections.py. 2221 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.22.0",
+        date(2026, 3, 16),
+        (
+            "Figma project config + OAuth + REST API — "
+            "Added figma_api_key, figma_team_id, figma_oauth_token, "
+            "figma_oauth_refresh_token, figma_oauth_expires_at to "
+            "projectConfig schema. New _api.py REST client "
+            "(get_team_projects, get_project_files, get_file_info, "
+            "refresh_oauth_token, exchange_oauth_code). Updated "
+            "_config.py with project-level credential resolution "
+            "(API key → OAuth → session file). Updated _client.py "
+            "with _build_context() OAuth cookie injection. Rewritten "
+            "login.py with dual mode (--oauth flag for OAuth2 flow, "
+            "default session login). Setup wizard expanded from 2 to "
+            "4 steps (added figma_api_key, figma_team_id). Wired "
+            "project_config through agent/flow pipeline. 2253 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.22.1",
+        date(2026, 3, 16),
+        (
+            "Project config wizard + Config button — "
+            "Expanded update_config intent with broad config phrases "
+            "(project config, configure project, reconfigure, project "
+            "settings, etc.). Rewrote handle_update_config to launch "
+            "the 5-step setup wizard (project name, Confluence key, "
+            "Jira key, Figma API key, Figma team ID) for existing "
+            "projects with current values shown. Added `:gear: Config` "
+            "button to product list header. New mark_pending_reconfig() "
+            "in session_manager. Dispatch routes product_config to "
+            "_handle_product_config. 2260 tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

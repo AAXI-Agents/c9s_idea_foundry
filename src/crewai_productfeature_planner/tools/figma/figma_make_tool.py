@@ -1,7 +1,8 @@
 """CrewAI tool for generating designs via Figma Make.
 
-Wraps the Figma Make API client in a CrewAI ``BaseTool`` so agents can
-submit design prompts and receive the completed Figma file URL.
+Wraps the Playwright-based Figma Make browser automation in a CrewAI
+``BaseTool`` so agents can submit design prompts and receive the
+completed Figma file URL.
 """
 
 from __future__ import annotations
@@ -14,8 +15,7 @@ from pydantic import BaseModel, Field
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.tools.figma._client import (
     FigmaMakeError,
-    poll_figma_make,
-    submit_figma_make,
+    run_figma_make,
 )
 from crewai_productfeature_planner.tools.figma._config import (
     has_figma_credentials,
@@ -41,9 +41,10 @@ class FigmaMakeInput(BaseModel):
 class FigmaMakeTool(BaseTool):
     """Submit a design prompt to Figma Make and return the file URL.
 
-    The tool submits the prompt, polls until the design is generated,
-    and returns the Figma file URL.  If Figma credentials are not
-    configured, it returns an informative message instead of failing.
+    The tool drives a headless browser to enter the prompt in Figma
+    Make, waits for the design file to be created, and returns the
+    Figma file URL.  If a Figma session is not configured, it returns
+    an informative message instead of failing.
     """
 
     name: str = "figma_make_design"
@@ -52,31 +53,28 @@ class FigmaMakeTool(BaseTool):
         "Provide a detailed design prompt and receive the Figma file URL."
     )
     args_schema: Type[BaseModel] = FigmaMakeInput
+    # Injected by the caller (e.g. _ux_design.py) before the crew runs.
+    _project_config: dict | None = None
 
     def _run(self, prompt: str) -> str:
         """Execute the Figma Make design generation."""
-        if not has_figma_credentials():
+        project_config = self._project_config
+        if not has_figma_credentials(project_config):
             return (
                 "FIGMA_SKIPPED: Figma credentials not configured. "
-                "Set FIGMA_ACCESS_TOKEN to enable design generation."
+                "Add a Figma API key or OAuth token to the project "
+                "config, or run the login script."
             )
 
         try:
-            # Submit the design prompt
-            submit_resp = submit_figma_make(prompt)
-            request_id = submit_resp.get("request_id")
-            if not request_id:
-                return f"FIGMA_ERROR: No request_id in response: {submit_resp}"
-
-            # Poll until completion
-            result = poll_figma_make(request_id)
+            result = run_figma_make(prompt, project_config=project_config)
             file_url = result.get("file_url", "")
             file_key = result.get("file_key", "")
 
             if file_url:
                 return f"FIGMA_URL:{file_url}"
             if file_key:
-                url = f"https://www.figma.com/design/{file_key}"
+                url = f"https://www.figma.com/make/{file_key}"
                 return f"FIGMA_URL:{url}"
 
             return f"FIGMA_ERROR: Design completed but no URL returned: {result}"

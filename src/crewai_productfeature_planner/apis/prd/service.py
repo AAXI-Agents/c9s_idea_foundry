@@ -625,6 +625,28 @@ def resume_prd_flow(
         if eng_section and eng_section.content:
             flow.state.engineering_plan = eng_section.content
 
+        # Restore UX design state from the working-idea document
+        try:
+            from crewai_productfeature_planner.mongodb.working_ideas import (
+                find_run_any_status,
+            )
+            ux_doc = find_run_any_status(run_id)
+            if ux_doc:
+                if ux_doc.get("figma_design_url"):
+                    flow.state.figma_design_url = ux_doc["figma_design_url"]
+                if ux_doc.get("figma_design_status"):
+                    flow.state.figma_design_status = ux_doc["figma_design_status"]
+                if ux_doc.get("figma_design_prompt"):
+                    flow.state.figma_design_prompt = ux_doc["figma_design_prompt"]
+                if any((flow.state.figma_design_url, flow.state.figma_design_status)):
+                    logger.info(
+                        "Restored UX design state: status=%s, url=%s",
+                        flow.state.figma_design_status,
+                        bool(flow.state.figma_design_url),
+                    )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to restore UX design state for %s", run_id, exc_info=True)
+
         # Restore refine_idea state
         if refinement_history:
             flow.state.idea_refined = True

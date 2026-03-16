@@ -121,11 +121,20 @@ def handle_update_config(
     confluence_space_key: str | None = None,
     jira_project_key: str | None = None,
 ) -> None:
-    """Update project configuration with Confluence/Jira keys.
+    """Launch the project configuration wizard for the active project.
 
-    If no key values are provided, prompt the user to supply them.
+    Walks the user through all configuration fields (project name,
+    Confluence key, Jira key, Figma API key, Figma team ID) with
+    current values shown so the user can update or skip each one.
     """
-    from crewai_productfeature_planner.mongodb.project_config import update_project
+    from crewai_productfeature_planner.apis.slack.blocks import (
+        project_setup_step_blocks,
+    )
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        _SETUP_STEPS,
+        mark_pending_reconfig,
+    )
+    from crewai_productfeature_planner.mongodb.project_config import get_project
 
     project_id = session.get("project_id") if session else None
     project_name = session.get("project_name", "your project") if session else None
@@ -138,37 +147,36 @@ def handle_update_config(
         )
         return
 
-    fields: dict[str, str] = {}
-    if confluence_space_key:
-        fields["confluence_space_key"] = confluence_space_key
-    if jira_project_key:
-        fields["jira_project_key"] = jira_project_key
+    # Load current config from MongoDB
+    project_config = get_project(project_id) or {}
 
-    if not fields:
-        reply(
-            channel, thread_ts,
-            f"<@{user}> I can update your project configuration. "
-            "Please provide the values, for example:\n"
-            ">  _\"set confluence key MYSPACE and jira key PROJ\"_",
-        )
-        return
+    # Start the reconfigure wizard
+    mark_pending_reconfig(
+        user_id=user,
+        channel=channel,
+        thread_ts=thread_ts,
+        project_id=project_id,
+        project_config=project_config,
+    )
 
-    count = update_project(project_id, **fields)
+    # Post the first step prompt with current value
+    first_step = _SETUP_STEPS[0]
+    current_value = project_config.get("name", "") if first_step == "project_name" else project_config.get(first_step, "")
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
-    if count:
-        parts = []
-        if confluence_space_key:
-            parts.append(f"Confluence space key → `{confluence_space_key}`")
-        if jira_project_key:
-            parts.append(f"Jira project key → `{jira_project_key}`")
-        summary = "\n".join(f"• {p}" for p in parts)
-        reply(
-            channel, thread_ts,
-            f"<@{user}> :white_check_mark: Updated *{project_name}* config:\n{summary}",
-        )
-    else:
-        reply(
-            channel, thread_ts,
-            f"<@{user}> :warning: Could not update the project configuration. "
-            "Please check the project ID and try again.",
-        )
+    client = _get_slack_client()
+    if client:
+        try:
+            client.chat_postMessage(
+                channel=channel, thread_ts=thread_ts,
+                blocks=project_setup_step_blocks(
+                    project_name or "your project",
+                    first_step,
+                    1,
+                    len(_SETUP_STEPS),
+                    current_value=current_value,
+                ),
+                text=f"Configure {first_step.replace('_', ' ')} (or type 'skip').",
+            )
+        except Exception as exc:
+            logger.error("Failed to post reconfig step: %s", exc)

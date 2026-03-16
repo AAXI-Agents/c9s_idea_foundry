@@ -1284,12 +1284,6 @@ def test_requirements_approval_callback_continue_proceeds(monkeypatch):
     flow.requirements_approval_callback = req_cb
     flow.executive_summary_callback = lambda *a: True
 
-    # Pre-populate specialist state so Phase 1.5 is skipped.
-    # Only set the state fields — do NOT set section content, because
-    # the requirements approval gate auto-approves when any section has content.
-    flow.state.executive_product_summary = "CEO vision"
-    flow.state.engineering_plan = "Eng plan"
-
     # Mock agent creation, but let it reach the section loop
     # where we raise to stop execution cleanly
     mock_agent = MagicMock()
@@ -2300,6 +2294,7 @@ def test_iterate_exec_summary_critique_text_persisted(_mock_task, _mock_crew, mo
 # ══════════════════════════════════════════════════════════════
 
 
+@patch("crewai_productfeature_planner.orchestrator._requirements._has_gemini_credentials", return_value=False)
 @patch("crewai_productfeature_planner.flows._executive_summary.save_finalized_idea")
 @patch("crewai_productfeature_planner.flows._executive_summary.save_executive_summary")
 @patch("crewai_productfeature_planner.flows._executive_summary.update_executive_summary_critique")
@@ -2311,11 +2306,15 @@ def test_iterate_exec_summary_critique_text_persisted(_mock_task, _mock_crew, mo
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
 def test_callback_false_raises_completed(
     mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
-    mock_kickoff, mock_update_crit, mock_save, mock_save_fin, monkeypatch,
+    mock_kickoff, mock_update_crit, mock_save, mock_save_fin,
+    _mock_req_creds, monkeypatch,
 ):
     """executive_summary_callback returning False should raise ExecutiveSummaryCompleted."""
     monkeypatch.setenv("PRD_SECTION_MIN_ITERATIONS", "1")
     monkeypatch.setenv("PRD_SECTION_MAX_ITERATIONS", "1")
+    # Remove Gemini credentials so specialist agents (CEO, Eng, UX) skip
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
 
     mock_agents.return_value = {AGENT_OPENAI: MagicMock()}
     mock_task_configs.return_value = {
@@ -2426,6 +2425,10 @@ def test_callback_true_continues_to_sections(
             sec.is_approved = True
         return "Eng plan"
 
+    def _mock_ux(self_):
+        self_.state.figma_design_status = "prompt_ready"
+        return ""
+
     # Should not raise, should return finalized PRD
     _ES = "crewai_productfeature_planner.flows._executive_summary"
     _AG = "crewai_productfeature_planner.flows._agents"
@@ -2435,7 +2438,8 @@ def test_callback_true_continues_to_sections(
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
          patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_FL}._run_ceo_review", _mock_ceo_review), \
-         patch(f"{_FL}._run_eng_plan", _mock_eng_plan):
+         patch(f"{_FL}._run_eng_plan", _mock_eng_plan), \
+         patch(f"{_FL}._run_ux_design", _mock_ux):
         result = flow.generate_sections()
     assert result is not None
     # Executive summary should be carried from Phase 1
@@ -2560,12 +2564,17 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
             sec.is_approved = True
         return "Eng plan"
 
+    def _mock_ux(self_):
+        self_.state.figma_design_status = "prompt_ready"
+        return ""
+
     with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
          patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
          patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_FL}._run_ceo_review", _mock_ceo), \
-         patch(f"{_FL}._run_eng_plan", _mock_eng):
+         patch(f"{_FL}._run_eng_plan", _mock_eng), \
+         patch(f"{_FL}._run_ux_design", _mock_ux):
         result = flow.generate_sections()
 
     assert result is not None
@@ -2686,12 +2695,17 @@ def test_phase1_runs_when_below_threshold(
             sec.is_approved = True
         return "Eng plan"
 
+    def _mock_ux(self_):
+        self_.state.figma_design_status = "prompt_ready"
+        return ""
+
     with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
          patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
          patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_FL}._run_ceo_review", _mock_ceo), \
-         patch(f"{_FL}._run_eng_plan", _mock_eng):
+         patch(f"{_FL}._run_eng_plan", _mock_eng), \
+         patch(f"{_FL}._run_ux_design", _mock_ux):
         result = flow.generate_sections()
 
     assert result is not None
@@ -2780,6 +2794,7 @@ def test_resume_skips_draft_for_in_progress_section(
     # Also set specialist state so Phase 1.5 is skipped
     flow.state.executive_product_summary = "Approved section 1 content"
     flow.state.engineering_plan = "Approved section 2 content"
+    flow.state.figma_design_status = "prompt_ready"
 
     # The in-progress section — has content from a prior run
     in_progress = flow.state.draft.sections[4]
@@ -2896,6 +2911,7 @@ def test_resume_wipes_degenerate_restored_content(
     # Also set specialist state so Phase 1.5 is skipped
     flow.state.executive_product_summary = "Approved section 1"
     flow.state.engineering_plan = "Approved section 2"
+    flow.state.figma_design_status = "prompt_ready"
 
     # Section 4 (user_personas) has DEGENERATE restored content (133k chars of garbage)
     degenerate_section = flow.state.draft.sections[4]
@@ -3642,6 +3658,7 @@ def test_skip_phase1_when_sections_have_content(
     # Also set specialist state so Phase 1.5 is skipped
     flow.state.executive_product_summary = "Approved section 1 content"
     flow.state.engineering_plan = "Approved section 2 content"
+    flow.state.figma_design_status = "prompt_ready"
 
     # Remaining 4 sections need drafting (draft + critique each)
     section_calls = []

@@ -175,6 +175,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         label = ":mag: Viewing product details"
     elif action_id.startswith("product_ux_design_"):
         label = ":art: Starting UX design"
+    elif action_id.startswith("product_manual_ux_"):
+        label = ":page_facing_up: Generating manual UX design file"
     elif action_id.startswith("product_archive_"):
         label = ":file_folder: Archiving product"
     return f"{label} by {user_name}"
@@ -407,11 +409,42 @@ async def slack_interactions(request: Request) -> JSONResponse:
 
             return JSONResponse({"ok": True})
 
+        # ── Product config action (project-level gear button) ──
+        if action_id == "product_config":
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack product config action: user=%s project=%s",
+                user_name, run_id,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
+                _handle_product_config,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_product_config,
+                    run_id, user_id, channel_id, thread_ts,
+                ),
+            )
+
+            return JSONResponse({"ok": True})
+
         # ── Product list delivery actions ──
         _PRODUCT_PREFIXES = (
             "product_confluence_", "product_jira_skeleton_",
             "product_jira_epics_", "product_jira_subtasks_",
             "product_view_", "product_archive_",
+            "product_ux_design_", "product_manual_ux_",
         )
         if any(action_id.startswith(p) for p in _PRODUCT_PREFIXES):
             channel_info = payload.get("channel", {})

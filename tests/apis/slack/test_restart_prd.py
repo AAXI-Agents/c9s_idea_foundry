@@ -233,7 +233,7 @@ class TestHandleRestartPrd:
                 "run_id": "run-xyz",
                 "idea": "Dark mode feature",
                 "sections_done": 3,
-                "total_sections": 10,
+                "total_sections": 12,
                 "project_id": "proj-1",
             }
         ],
@@ -276,14 +276,14 @@ class TestHandleRestartPrd:
                 "run_id": "run-proj",
                 "idea": "Right idea",
                 "sections_done": 1,
-                "total_sections": 10,
+                "total_sections": 12,
                 "project_id": "proj-A",
             },
             {
                 "run_id": "run-other",
                 "idea": "Wrong idea",
                 "sections_done": 5,
-                "total_sections": 10,
+                "total_sections": 12,
                 "project_id": "proj-B",
             },
         ],
@@ -316,7 +316,7 @@ class TestHandleRestartPrd:
                 "run_id": "run-long",
                 "idea": "A" * 3000,
                 "sections_done": 2,
-                "total_sections": 10,
+                "total_sections": 12,
                 "project_id": "proj-1",
             }
         ],
@@ -624,9 +624,9 @@ class TestResolveIdeaByNumber:
         ".find_ideas_by_project",
         return_value=[
             {"run_id": "run-a", "idea": "First idea", "status": "paused",
-             "sections_done": 3, "total_sections": 10},
+             "sections_done": 3, "total_sections": 12},
             {"run_id": "run-b", "idea": "Second idea", "status": "paused",
-             "sections_done": 5, "total_sections": 10},
+             "sections_done": 5, "total_sections": 12},
         ],
     )
     def test_out_of_range_posts_error(self, mock_find):
@@ -646,9 +646,9 @@ class TestResolveIdeaByNumber:
         ".find_ideas_by_project",
         return_value=[
             {"run_id": "run-a", "idea": "First idea", "status": "paused",
-             "sections_done": 3, "total_sections": 10},
+             "sections_done": 3, "total_sections": 12},
             {"run_id": "run-b", "idea": "Second idea", "status": "inprogress",
-             "sections_done": 5, "total_sections": 10},
+             "sections_done": 5, "total_sections": 12},
         ],
     )
     def test_selects_correct_idea(self, mock_find):
@@ -669,7 +669,7 @@ class TestResolveIdeaByNumber:
         ".find_ideas_by_project",
         return_value=[
             {"run_id": "run-a", "idea": "Only idea", "status": "paused",
-             "sections_done": 1, "total_sections": 10},
+             "sections_done": 1, "total_sections": 12},
         ],
     )
     def test_zero_out_of_range(self, mock_find):
@@ -700,9 +700,9 @@ class TestRestartWithIdeaNumber:
         ".find_ideas_by_project",
         return_value=[
             {"run_id": "run-1", "idea": "Idea one", "status": "paused",
-             "sections_done": 2, "total_sections": 10},
+             "sections_done": 2, "total_sections": 12},
             {"run_id": "run-2", "idea": "Idea two", "status": "inprogress",
-             "sections_done": 4, "total_sections": 10},
+             "sections_done": 4, "total_sections": 12},
         ],
     )
     def test_restart_idea_number_selects_correct_run(self, mock_find, mock_client):
@@ -730,7 +730,7 @@ class TestRestartWithIdeaNumber:
         ".find_ideas_by_project",
         return_value=[
             {"run_id": "run-x", "idea": "Only idea", "status": "paused",
-             "sections_done": 1, "total_sections": 10},
+             "sections_done": 1, "total_sections": 12},
         ],
     )
     def test_restart_idea_number_out_of_range(self, mock_find):
@@ -768,9 +768,9 @@ class TestResumeWithIdeaNumber:
         ".find_ideas_by_project",
         return_value=[
             {"run_id": "run-a", "idea": "Alpha idea", "status": "paused",
-             "sections_done": 1, "total_sections": 10},
+             "sections_done": 1, "total_sections": 12},
             {"run_id": "run-b", "idea": "Beta idea", "status": "paused",
-             "sections_done": 6, "total_sections": 10},
+             "sections_done": 6, "total_sections": 12},
         ],
     )
     def test_resume_idea_number_selects_correct_run(

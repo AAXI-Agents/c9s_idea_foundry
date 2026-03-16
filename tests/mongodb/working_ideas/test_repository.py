@@ -1835,10 +1835,10 @@ class TestDocToIdeaDict:
         }
         result = self._call(doc)
         assert result["sections_done"] == result["total_sections"]
-        assert result["sections_done"] == 10
+        assert result["sections_done"] == 12
 
     def test_nine_sections_plus_exec_gives_ten(self):
-        """Nine section keys + executive_summary = 10/10."""
+        """Nine section keys + executive_summary = 10/12."""
         section_keys = [
             "problem_statement", "user_personas",
             "functional_requirements", "no_functional_requirements",
@@ -1854,10 +1854,10 @@ class TestDocToIdeaDict:
         }
         result = self._call(doc)
         assert result["sections_done"] == 10
-        assert result["total_sections"] == 10
+        assert result["total_sections"] == 12
 
     def test_no_exec_summary_gives_nine(self):
-        """Nine section keys but no executive_summary = 9/10."""
+        """Nine section keys but no executive_summary = 9/12."""
         section_keys = [
             "problem_statement", "user_personas",
             "functional_requirements", "no_functional_requirements",

@@ -55,7 +55,7 @@ Key fields: `run_id`, `confluence_url`, `confluence_page_id`, `confluence_publis
 
 Per-project settings.
 
-Key fields: `project_id`, `confluence_space_key`, `jira_project_key`
+Key fields: `project_id`, `confluence_space_key`, `jira_project_key`, `figma_api_key`, `figma_team_id`, `figma_oauth_token`, `figma_oauth_refresh_token`, `figma_oauth_expires_at`
 
 ### `projectMemory`
 

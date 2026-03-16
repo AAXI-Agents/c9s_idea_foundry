@@ -30,13 +30,17 @@ Two specialist agents produce higher-level artefacts after executive summary app
 
 - **Phase 1.5a — CEO Review**: The CEO Reviewer agent transforms the executive summary into an *Executive Product Summary* — a 10-star product vision document. Source: `_ceo_eng_review.py::run_ceo_review()`
 - **Phase 1.5b — Engineering Plan**: The Eng Manager agent converts the executive product summary + requirements into an *Engineering Plan* — technical architecture, phasing, data model, test strategy. Source: `_ceo_eng_review.py::run_eng_plan()`
-- **Phase 1.5c — UX Design** (v0.20.0): The UX Designer agent converts the executive product summary into a structured Figma Make prompt and optionally submits it to Figma Make API to generate a clickable prototype. Source: `_ux_design.py::run_ux_design()`
+- **Phase 1.5c — UX Design** (v0.20.0, Playwright v0.21.0): The UX Designer agent converts the executive product summary into a structured Figma Make prompt and optionally submits it to Figma Make via Playwright headless browser automation to generate a clickable prototype. Source: `_ux_design.py::run_ux_design()`
 
 All artefacts are:
 - Stored as auto-approved specialist sections in the PRD draft
 - Used as context for Phase 2 section drafting (replacing raw executive summary)
 - Persisted to MongoDB via `save_iteration()`
 - Skipped on resume when already populated
+
+**User decision gate** (v0.20.1): After all specialist agents run, a "proceed to sections?" gate fires so the user can review requirements, exec product summary, engineering plan, and Figma design. On resume, this gate is automatically bypassed when all specialists were skipped (already completed) or Phase 2 sections already have content.
+
+**Requirements gate bypass** (v0.20.1): The requirements approval gate (`_requires_approval()`) auto-approves on resume when specialist agent state is present (`executive_product_summary`, `engineering_plan`, or `figma_design_status`), preventing 10-minute timeout re-prompts.
 
 ### Phase 2 — Section-by-Section Generation
 

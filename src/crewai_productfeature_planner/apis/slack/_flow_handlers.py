@@ -197,6 +197,50 @@ def make_progress_poster(
                 f"after {iters} iteration(s)."
             )
 
+        # ── Phase 1.5 — Specialist agent events ──────────────
+
+        elif event_type == "ceo_review_start":
+            msg = ":briefcase: Starting *CEO Review* — generating Executive Product Summary…"
+
+        elif event_type == "ceo_review_complete":
+            length = details.get("content_length", 0)
+            msg = f":white_check_mark: *CEO Review* complete ({length:,} chars)."
+
+        elif event_type == "ceo_review_skipped":
+            msg = ":fast_forward: *CEO Review* skipped (no Gemini credentials)."
+
+        elif event_type == "eng_plan_start":
+            msg = ":hammer_and_wrench: Starting *Engineering Plan* generation…"
+
+        elif event_type == "eng_plan_complete":
+            length = details.get("content_length", 0)
+            msg = f":white_check_mark: *Engineering Plan* complete ({length:,} chars)."
+
+        elif event_type == "eng_plan_skipped":
+            msg = ":fast_forward: *Engineering Plan* skipped (no Gemini credentials)."
+
+        elif event_type == "ux_design_start":
+            msg = ":art: Starting *UX Design* — generating Figma Make design…"
+
+        elif event_type == "ux_design_complete":
+            figma_url = details.get("figma_url", "")
+            status = details.get("status", "")
+            if figma_url:
+                msg = f":white_check_mark: *UX Design* complete! <{figma_url}|View in Figma>"
+            elif status == "prompt_ready":
+                msg = ":white_check_mark: *UX Design* complete — Figma prompt generated (no Figma credentials to submit)."
+            else:
+                msg = ":white_check_mark: *UX Design* complete."
+
+        elif event_type == "ux_design_skipped":
+            reason = details.get("reason", "")
+            if reason == "no_executive_product_summary":
+                msg = ":fast_forward: *UX Design* skipped (no Executive Product Summary available)."
+            elif reason == "no_credentials":
+                msg = ":fast_forward: *UX Design* skipped (no Gemini credentials)."
+            else:
+                msg = ":fast_forward: *UX Design* skipped."
+
         elif event_type == "section_iteration":
             title = details.get("section_title", "")
             step = details.get("section_step", 0)
@@ -980,7 +1024,7 @@ def handle_resume_prd(
         idea = run_info.get("idea") or "(unknown idea)"
         status = run_info.get("status", "unknown")
         sections_done = run_info.get("sections_done", 0)
-        total_sections = run_info.get("total_sections", 10)
+        total_sections = run_info.get("total_sections", 12)
 
         # A completed idea cannot be resumed — suggest rescan instead.
         if status == "completed":
@@ -1250,7 +1294,7 @@ def handle_restart_prd(
         run_id = run_info["run_id"]
         idea = run_info.get("idea") or "(unknown idea)"
         sections_done = run_info.get("sections_done", 0)
-        total_sections = run_info.get("total_sections", 10)
+        total_sections = run_info.get("total_sections", 12)
 
         # Post confirmation buttons
         from crewai_productfeature_planner.tools.slack_tools import _get_slack_client

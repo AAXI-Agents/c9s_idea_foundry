@@ -2,10 +2,26 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.22.x (2026-03-16)
+
+| Version | Summary |
+|---------|---------|
+| 0.22.1 | Project config wizard + Config button — expanded `_UPDATE_CONFIG_PHRASES` (12→21) with project config/configure/reconfigure/settings phrases; rewrote `handle_update_config` to launch 5-step setup wizard with pre-populated current values; added `:gear: Config` button to product list header; new `mark_pending_reconfig()` in session_manager; `product_config` dispatch → `_handle_product_config`; `project_name` as step 1 (skipped for new projects). 2260 tests |
+| 0.22.0 | Figma project config + OAuth + REST API — 5 Figma fields in `projectConfig` schema; `_api.py` REST client; project-level credential resolution (API key → OAuth → session); OAuth cookie injection in `_client.py`; dual-mode `login.py` (--oauth flag); setup wizard 2→4 steps; agent/flow pipeline wiring. 2253 tests |
+
+## v0.21.x (2026-03-16)
+
+| Version | Summary |
+|---------|---------|
+| 0.21.1 | Fix 12/10 section count in idea list — `total_sections` hardcoded to 10 since v0.18.0 added 2 specialist sections; updated `_queries.py`, `_flow_handlers.py`, `_idea_list_blocks.py` to use 12. 2221 tests |
+| 0.21.0 | Figma Make — Playwright browser automation — replaced non-existent `/v1/ai/make` REST API with headless Chromium automation against `figma.com/make/new`. New `_client.py` (Playwright), `_config.py` (session-based auth), `login.py` (one-time interactive login). Removed `FIGMA_ACCESS_TOKEN`/`FIGMA_TEAM_ID`/`FIGMA_API_BASE`; added `FIGMA_SESSION_DIR`/`FIGMA_MAKE_TIMEOUT`/`FIGMA_HEADLESS`. 32 Figma tests rewritten. 2221 tests |
+
 ## v0.20.x (2026-03-13)
 
 | Version | Summary |
 |---------|---------|
+| 0.20.2 | Retry UX Design dispatch fix + test performance — added `product_ux_design_` to `_PRODUCT_PREFIXES`; mocked `_run_ux_design` in 6 slow tests (199s → 32s total). 2205 tests |
+| 0.20.1 | Resume gate bypass fix — requirements approval gate and user decision gate no longer block on resume when specialist agents already ran. `_requires_approval()` checks specialist state; user decision gate skipped when all specialists were skipped or Phase 2 started |
 | 0.20.0 | UX Designer agent & Figma Make integration — Phase 1.5c converts Executive Product Summary into Figma Make prompt; Figma tool package (submit/poll/BaseTool); graceful fallback when FIGMA_ACCESS_TOKEN absent; Figma URL/status in MongoDB + product list; UX design feeds into all Jira stages. 55 new tests (2217 total) |
 
 ## v0.19.x (2026-03-13)

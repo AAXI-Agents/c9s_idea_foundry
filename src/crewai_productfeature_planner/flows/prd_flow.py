@@ -522,34 +522,6 @@ class PRDFlow(Flow[PRDState]):
             self.state.finalized_idea = (
                 self.state.executive_summary.latest_content
             )
-
-            # ── Still let the user review before moving to Phase 2 ──
-            exec_cb = self._resolve_callback("executive_summary_callback")
-            if exec_cb is not None:
-                continue_to_sections = exec_cb(
-                    self.state.executive_summary.latest_content,
-                    self.state.idea,
-                    self.state.run_id,
-                    [
-                        {
-                            "iteration": it.iteration,
-                            "content": it.content,
-                            "critique": it.critique,
-                        }
-                        for it in self.state.executive_summary.iterations
-                    ],
-                )
-                if not continue_to_sections:
-                    logger.info(
-                        "[Phase 1] User chose not to continue after "
-                        "reviewing resumed executive summary"
-                    )
-                    raise ExecutiveSummaryCompleted()
-            else:
-                logger.info(
-                    "[Phase 1] No executive_summary_callback set — "
-                    "auto-continuing to section drafting (skipped phase)"
-                )
         else:
             # ── Phase 1: Executive Summary iteration ─────────────
             logger.info(
@@ -559,35 +531,6 @@ class PRDFlow(Flow[PRDState]):
             self._iterate_executive_summary(
                 agents, task_configs, critic_agent=critic_agent,
             )
-
-            # ── User decision gate — continue to sections? ───────
-            exec_cb = self._resolve_callback("executive_summary_callback")
-            if exec_cb is not None:
-                continue_to_sections = exec_cb(
-                    self.state.executive_summary.latest_content,
-                    self.state.idea,
-                    self.state.run_id,
-                    [
-                        {
-                            "iteration": it.iteration,
-                            "content": it.content,
-                            "critique": it.critique,
-                        }
-                        for it in self.state.executive_summary.iterations
-                    ],
-                )
-                if not continue_to_sections:
-                    logger.info(
-                        "[Phase 1] User chose not to continue to sections — "
-                        "stopping after executive summary"
-                    )
-                    raise ExecutiveSummaryCompleted()
-            else:
-                # No callback — auto-continue to sections
-                logger.info(
-                    "[Phase 1] No executive_summary_callback set — "
-                    "auto-continuing to section drafting"
-                )
 
         # ── Requirements Breakdown (runs after exec summary approval) ──
         from crewai_productfeature_planner.orchestrator._requirements import (
@@ -624,7 +567,9 @@ class PRDFlow(Flow[PRDState]):
                 raise req_stage.finalized_exc()
 
         # ── Phase 1.5a: CEO Review → Executive Product Summary ───
+        specialists_all_skipped = True
         if not self.state.executive_product_summary:
+            specialists_all_skipped = False
             logger.info(
                 "[Phase 1.5a] Running CEO review to generate "
                 "Executive Product Summary",
@@ -646,6 +591,7 @@ class PRDFlow(Flow[PRDState]):
 
         # ── Phase 1.5b: Eng Manager → Engineering Plan ───────────
         if not self.state.engineering_plan:
+            specialists_all_skipped = False
             logger.info(
                 "[Phase 1.5b] Running Eng Manager to generate "
                 "Engineering Plan",
@@ -664,6 +610,7 @@ class PRDFlow(Flow[PRDState]):
 
         # ── Phase 1.5c: UX Designer → Figma Make Design ─────────
         if not self.state.figma_design_url and self.state.figma_design_status != "prompt_ready":
+            specialists_all_skipped = False
             logger.info(
                 "[Phase 1.5c] Running UX Designer to generate "
                 "Figma Make design",
@@ -676,6 +623,47 @@ class PRDFlow(Flow[PRDState]):
                 self.state.figma_design_status,
                 bool(self.state.figma_design_url),
             )
+
+        # ── User decision gate — proceed to section drafting? ────
+        # Fires after all specialist agents (CEO, Eng, UX) have run so
+        # the user can review requirements, executive product summary,
+        # engineering plan, and Figma design before committing.
+        # On resume, skip the gate when all specialists were already done
+        # (user approved in a prior run), or when Phase 2 sections
+        # already have content (flow previously entered Phase 2).
+        exec_cb = self._resolve_callback("executive_summary_callback")
+        if exec_cb is not None and not (specialists_all_skipped or has_section_content):
+            continue_to_sections = exec_cb(
+                self.state.executive_summary.latest_content,
+                self.state.idea,
+                self.state.run_id,
+                [
+                    {
+                        "iteration": it.iteration,
+                        "content": it.content,
+                        "critique": it.critique,
+                    }
+                    for it in self.state.executive_summary.iterations
+                ],
+            )
+            if not continue_to_sections:
+                logger.info(
+                    "[Phase 1.5] User chose not to continue to sections — "
+                    "stopping after specialist agents"
+                )
+                raise ExecutiveSummaryCompleted()
+        else:
+            if specialists_all_skipped or has_section_content:
+                logger.info(
+                    "[Phase 1.5] Skipping user decision gate — resumed "
+                    "run (specialists_skipped=%s, sections_started=%s)",
+                    specialists_all_skipped, has_section_content,
+                )
+            else:
+                logger.info(
+                    "[Phase 1.5] No executive_summary_callback set — "
+                    "auto-continuing to section drafting"
+                )
 
         # ── Phase 2: Section-by-section drafting ─────────────
         # Carry the Phase 1 executive summary into the PRDDraft so it

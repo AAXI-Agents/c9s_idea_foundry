@@ -723,7 +723,7 @@ class TestResumePathPassesJiraCallbacks:
             "idea": "Test idea",
             "status": "paused",
             "sections_done": 9,
-            "total_sections": 10,
+            "total_sections": 12,
         }],
     )
     def test_resume_builds_jira_callbacks(
@@ -762,7 +762,7 @@ class TestResumePathPassesJiraCallbacks:
             "idea": "Test idea 2",
             "status": "paused",
             "sections_done": 5,
-            "total_sections": 10,
+            "total_sections": 12,
         }],
     )
     def test_resume_registers_interactive_run(

@@ -1,20 +1,26 @@
 """Repository for the ``projectConfig`` collection.
 
 Stores project-level configuration including Confluence space keys,
-Jira project keys, reference URLs, and Slack-uploaded document refs.
-Each project has a UUID ``project_id`` that can be referenced by
-working ideas to bind runs to a specific project context.
+Jira project keys, Figma credentials, reference URLs, and
+Slack-uploaded document refs.  Each project has a UUID
+``project_id`` that can be referenced by working ideas to bind
+runs to a specific project context.
 
 Document schema::
 
     {
-        "project_id":           str,   # UUID hex (primary key)
-        "name":                 str,   # human-readable project name
-        "confluence_space_key": str,   # Confluence space for this project
-        "jira_project_key":     str,   # Jira project for this project
-        "confluence_parent_id": str,   # optional Confluence parent page ID
-        "reference_urls":       [str], # public URLs for context/research
-        "slack_file_refs":      [      # documents uploaded via Slack
+        "project_id":                str,   # UUID hex (primary key)
+        "name":                      str,   # human-readable project name
+        "confluence_space_key":      str,   # Confluence space for this project
+        "jira_project_key":          str,   # Jira project for this project
+        "confluence_parent_id":      str,   # optional Confluence parent page ID
+        "figma_api_key":             str,   # Figma personal access token
+        "figma_team_id":             str,   # Figma team ID for project listing
+        "figma_oauth_token":         str,   # Figma OAuth2 access token
+        "figma_oauth_refresh_token": str,   # Figma OAuth2 refresh token
+        "figma_oauth_expires_at":    str,   # ISO-8601 expiry of OAuth token
+        "reference_urls":            [str], # public URLs for context/research
+        "slack_file_refs":           [      # documents uploaded via Slack
             {
                 "file_id":     str,
                 "name":        str,
@@ -22,8 +28,8 @@ Document schema::
                 "uploaded_at": str,    # ISO-8601
             }
         ],
-        "created_at":           str,   # ISO-8601
-        "updated_at":           str,   # ISO-8601
+        "created_at":                str,   # ISO-8601
+        "updated_at":                str,   # ISO-8601
     }
 """
 
@@ -59,6 +65,8 @@ def create_project(
     confluence_space_key: str = "",
     jira_project_key: str = "",
     confluence_parent_id: str = "",
+    figma_api_key: str = "",
+    figma_team_id: str = "",
     reference_urls: list[str] | None = None,
     slack_file_refs: list[dict[str, str]] | None = None,
 ) -> str | None:
@@ -69,6 +77,8 @@ def create_project(
         confluence_space_key: Confluence space key for publishing.
         jira_project_key: Jira project key for ticket creation.
         confluence_parent_id: Optional Confluence parent page ID.
+        figma_api_key: Figma personal access token.
+        figma_team_id: Figma team ID for project listing.
         reference_urls: Optional list of public reference URLs.
         slack_file_refs: Optional list of Slack file reference dicts
             (each with ``file_id``, ``name``, ``url``, ``uploaded_at``).
@@ -85,6 +95,11 @@ def create_project(
         "confluence_space_key": confluence_space_key,
         "jira_project_key": jira_project_key,
         "confluence_parent_id": confluence_parent_id,
+        "figma_api_key": figma_api_key,
+        "figma_team_id": figma_team_id,
+        "figma_oauth_token": "",
+        "figma_oauth_refresh_token": "",
+        "figma_oauth_expires_at": "",
         "reference_urls": reference_urls or [],
         "slack_file_refs": slack_file_refs or [],
         "created_at": now,

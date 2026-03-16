@@ -89,6 +89,10 @@ _UPDATE_CONFIG_PHRASES = (
     "add jira", "configure confluence", "configure jira",
     "space key", "parent page id", "parent id",
     "update config", "set config",
+    "project config", "project configuration", "configure project",
+    "edit config", "edit project config", "change config",
+    "reconfigure", "reconfigure project", "update project config",
+    "project settings", "edit settings",
 )
 _RESUME_PRD_PHRASES = (
     "resume prd", "resume prd flow", "resume flow",
