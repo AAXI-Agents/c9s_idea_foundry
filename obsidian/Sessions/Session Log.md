@@ -1130,3 +1130,35 @@ Establish a mandatory logging standard in the CODEX and implement it across all 
 - 2303 passed (4 deselected: pre-existing retry test)
 
 ---
+
+## Session 020 — SERVER_ENV Three-Tier Public URL Resolution
+**Date**: 2026-03-17 | **Version**: 0.26.0 → 0.27.0
+
+### Goal
+Wire `SERVER_ENV` (DEV/UAT/PROD) to control public URL resolution. Previously `.env` documented these variables but no Python code read them.
+
+### Changes
+
+**New Functions in `scripts/ngrok_tunnel.py`:**
+1. `get_server_env()` — reads and validates `SERVER_ENV` (default DEV).
+2. `is_dev()` — returns True when SERVER_ENV=DEV.
+3. `get_public_url(port)` — DEV→start_tunnel, UAT→`https://{DOMAIN_NAME_UAT}`, PROD→`https://{DOMAIN_NAME_PROD}`. Auto-prepends https:// if scheme missing.
+
+**main.py `start_api()` Rewired:**
+4. Imports and uses `get_server_env`, `is_dev`, `get_public_url`, `start_tunnel`.
+5. `--ngrok` flag kept as override. Logs SERVER_ENV on startup. Calls `update_slack_app_urls` for all environments.
+
+**start_server.sh Rewired:**
+6. Reads `ENV="${SERVER_ENV:-DEV}"`, only kills ngrok in DEV mode. Single command — no `--ngrok` flag needed.
+
+**Documentation:**
+7. `.env.example` — added SERVER_ENV, DOMAIN_NAME_UAT, DOMAIN_NAME_PROD with docs.
+8. `slack_config.py` — docstring updated with SERVER_ENV info.
+9. `obsidian/Architecture/Environment Variables.md` — added 3 new vars.
+10. `obsidian/Changelog/Version History.md` — added v0.27.0.
+
+### Tests
+- 11 new tests in `test_ngrok_tunnel.py`: get_server_env (default, reads env, rejects invalid), is_dev (DEV/UAT/PROD), get_public_url (DEV tunnel, UAT domain, PROD domain, missing domain errors, https prepend, existing scheme).
+- 2320 passed
+
+---

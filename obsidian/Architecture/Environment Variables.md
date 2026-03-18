@@ -28,8 +28,11 @@
 
 | Variable | Purpose |
 |----------|---------|
+| `SERVER_ENV` | Deployment tier — `DEV` (ngrok tunnel), `UAT` (static domain), `PROD` (static domain). Default `DEV` |
+| `DOMAIN_NAME_UAT` | Public domain for UAT (e.g. `prd-planner-uat.cloudninesoftware.vn`). Required when `SERVER_ENV=UAT` |
+| `DOMAIN_NAME_PROD` | Public domain for PROD (e.g. `prd-planner.cloudninesoftware.vn`). Required when `SERVER_ENV=PROD` |
 | `NGROK_DOMAIN` | Stable ngrok domain (avoids manifest updates) |
-| `NGROK_AUTHTOKEN` | ngrok authentication |
+| `NGROK_AUTHTOKEN` | ngrok authentication (required for DEV mode) |
 
 ## Database
 

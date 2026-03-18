@@ -1,17 +1,23 @@
-"""Ngrok tunnel helper for remote access.
+"""Ngrok tunnel helper and public URL resolution.
 
-Usage:
-    from crewai_productfeature_planner.ngrok_tunnel import start_tunnel, stop_tunnel
+Provides three main capabilities:
 
-    # Open a tunnel on port 8000
-    public_url = start_tunnel(port=8000)
-    print(f"Remote URL: {public_url}")
+1. **Ngrok tunnel management** — :func:`start_tunnel` / :func:`stop_tunnel`
+2. **Public URL resolution** — :func:`get_public_url` reads ``SERVER_ENV``
+   to determine the correct public-facing URL:
 
-    # When done
-    stop_tunnel()
+   * ``DEV``  — starts an ngrok tunnel and returns the tunnel URL.
+   * ``UAT``  — returns ``https://{DOMAIN_NAME_UAT}``, no tunnel.
+   * ``PROD`` — returns ``https://{DOMAIN_NAME_PROD}``, no tunnel.
 
-Requires NGROK_AUTHTOKEN in the environment (loaded from .env).
+3. **Environment helper** — :func:`get_server_env` returns the normalised
+   ``SERVER_ENV`` value (``DEV``, ``UAT``, or ``PROD``; default ``DEV``).
+
+Requires ``NGROK_AUTHTOKEN`` for DEV mode, ``DOMAIN_NAME_UAT`` for UAT,
+and ``DOMAIN_NAME_PROD`` for PROD.
 """
+
+from __future__ import annotations
 
 import logging
 import os
@@ -85,3 +91,67 @@ def stop_tunnel() -> None:
     ngrok.disconnect_all()
     ngrok.kill()
     logger.info("All ngrok tunnels closed")
+
+
+# ---------------------------------------------------------------------------
+# SERVER_ENV & public URL resolution
+# ---------------------------------------------------------------------------
+
+_VALID_SERVER_ENVS = {"DEV", "UAT", "PROD"}
+
+
+def get_server_env() -> str:
+    """Return the normalised ``SERVER_ENV`` value (``DEV``, ``UAT``, or ``PROD``).
+
+    Defaults to ``DEV`` when the variable is unset or empty.
+    Raises ``ValueError`` for unrecognised values.
+    """
+    raw = os.environ.get("SERVER_ENV", "DEV").strip().upper()
+    if raw not in _VALID_SERVER_ENVS:
+        raise ValueError(
+            f"Invalid SERVER_ENV='{raw}'. Must be one of: {sorted(_VALID_SERVER_ENVS)}"
+        )
+    return raw
+
+
+def is_dev() -> bool:
+    """Return ``True`` when running in DEV mode (ngrok tunnel)."""
+    return get_server_env() == "DEV"
+
+
+def get_public_url(port: int = DEFAULT_PORT) -> str:
+    """Resolve the public URL based on ``SERVER_ENV``.
+
+    * ``DEV``  — starts an ngrok tunnel on *port* and returns the tunnel URL.
+    * ``UAT``  — returns ``https://{DOMAIN_NAME_UAT}``.
+    * ``PROD`` — returns ``https://{DOMAIN_NAME_PROD}``.
+
+    Raises ``RuntimeError`` when a required env var is missing.
+    """
+    env = get_server_env()
+
+    if env == "DEV":
+        logger.info("[Env] SERVER_ENV=DEV — starting ngrok tunnel on port %d", port)
+        return start_tunnel(port=port)
+
+    if env == "UAT":
+        domain = os.environ.get("DOMAIN_NAME_UAT", "").strip()
+        if not domain:
+            raise RuntimeError(
+                "SERVER_ENV=UAT but DOMAIN_NAME_UAT is not set. "
+                "Add it to your .env file."
+            )
+    else:  # PROD
+        domain = os.environ.get("DOMAIN_NAME_PROD", "").strip()
+        if not domain:
+            raise RuntimeError(
+                "SERVER_ENV=PROD but DOMAIN_NAME_PROD is not set. "
+                "Add it to your .env file."
+            )
+
+    # Ensure the domain has a scheme
+    if not domain.startswith("http"):
+        domain = f"https://{domain}"
+
+    logger.info("[Env] SERVER_ENV=%s — using domain %s", env, domain)
+    return domain

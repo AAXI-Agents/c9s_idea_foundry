@@ -1,4 +1,44 @@
+# ── Secrets & environment ──────────────────────────────────────
 .env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ── Python ────────────────────────────────────────────────────
 __pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# ── OS / editor ──────────────────────────────────────────────
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ── Logs ─────────────────────────────────────────────────────
 logs/
+
+# ── Backup files ─────────────────────────────────────────────
+*.bak
+*.orig
+*.old
+
+# ── Generated output ─────────────────────────────────────────
+output/prds/
+src/output/
+
+# ── Obsidian local config ────────────────────────────────────
+obsidian/.obsidian/
+
+# ── IDE / tool config ────────────────────────────────────────
+.idea/
+*.iml

@@ -8,6 +8,9 @@ from crewai_productfeature_planner.scripts.ngrok_tunnel import (
     start_tunnel,
     stop_tunnel,
     _configure_auth,
+    get_server_env,
+    get_public_url,
+    is_dev,
     DEFAULT_PORT,
 )
 
@@ -187,3 +190,124 @@ def test_stop_tunnel_disconnects_and_kills():
 
     mock_ngrok.disconnect_all.assert_called_once()
     mock_ngrok.kill.assert_called_once()
+
+
+# ── get_server_env ───────────────────────────────────────────
+
+
+def test_get_server_env_default_is_dev(monkeypatch):
+    """Unset SERVER_ENV should default to DEV."""
+    monkeypatch.delenv("SERVER_ENV", raising=False)
+    assert get_server_env() == "DEV"
+
+
+def test_get_server_env_reads_env_var(monkeypatch):
+    """get_server_env should return the normalised value from the env."""
+    for val in ("UAT", "uat", " Uat ", "PROD", "prod", " Prod "):
+        monkeypatch.setenv("SERVER_ENV", val)
+        assert get_server_env() == val.strip().upper()
+
+
+def test_get_server_env_rejects_invalid(monkeypatch):
+    """Invalid SERVER_ENV values should raise ValueError."""
+    monkeypatch.setenv("SERVER_ENV", "STAGING")
+    with pytest.raises(ValueError, match="Invalid SERVER_ENV"):
+        get_server_env()
+
+
+# ── is_dev ───────────────────────────────────────────────────
+
+
+def test_is_dev_true_for_dev(monkeypatch):
+    """is_dev() should return True when SERVER_ENV is DEV."""
+    monkeypatch.setenv("SERVER_ENV", "DEV")
+    assert is_dev() is True
+
+
+def test_is_dev_false_for_uat(monkeypatch):
+    """is_dev() should return False when SERVER_ENV is UAT."""
+    monkeypatch.setenv("SERVER_ENV", "UAT")
+    assert is_dev() is False
+
+
+def test_is_dev_false_for_prod(monkeypatch):
+    """is_dev() should return False when SERVER_ENV is PROD."""
+    monkeypatch.setenv("SERVER_ENV", "PROD")
+    assert is_dev() is False
+
+
+# ── get_public_url ───────────────────────────────────────────
+
+
+def test_get_public_url_dev_calls_start_tunnel(monkeypatch):
+    """DEV mode should delegate to start_tunnel and return its URL."""
+    monkeypatch.setenv("SERVER_ENV", "DEV")
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.public_url = "https://dev.ngrok.io"
+
+    with (
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.conf") as mock_conf,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.ngrok") as mock_ngrok,
+    ):
+        mock_conf.get_default.return_value = MagicMock()
+        mock_ngrok.connect.return_value = mock_tunnel
+
+        url = get_public_url(port=9000)
+
+    assert url == "https://dev.ngrok.io"
+    mock_ngrok.connect.assert_called_once()
+
+
+def test_get_public_url_uat_returns_domain(monkeypatch):
+    """UAT mode should return https://{DOMAIN_NAME_UAT}."""
+    monkeypatch.setenv("SERVER_ENV", "UAT")
+    monkeypatch.setenv("DOMAIN_NAME_UAT", "prd-uat.example.com")
+
+    url = get_public_url()
+
+    assert url == "https://prd-uat.example.com"
+
+
+def test_get_public_url_prod_returns_domain(monkeypatch):
+    """PROD mode should return https://{DOMAIN_NAME_PROD}."""
+    monkeypatch.setenv("SERVER_ENV", "PROD")
+    monkeypatch.setenv("DOMAIN_NAME_PROD", "prd.example.com")
+
+    url = get_public_url()
+
+    assert url == "https://prd.example.com"
+
+
+def test_get_public_url_uat_missing_domain_raises(monkeypatch):
+    """UAT mode without DOMAIN_NAME_UAT should raise RuntimeError."""
+    monkeypatch.setenv("SERVER_ENV", "UAT")
+    monkeypatch.delenv("DOMAIN_NAME_UAT", raising=False)
+
+    with pytest.raises(RuntimeError, match="DOMAIN_NAME_UAT is not set"):
+        get_public_url()
+
+
+def test_get_public_url_prod_missing_domain_raises(monkeypatch):
+    """PROD mode without DOMAIN_NAME_PROD should raise RuntimeError."""
+    monkeypatch.setenv("SERVER_ENV", "PROD")
+    monkeypatch.delenv("DOMAIN_NAME_PROD", raising=False)
+
+    with pytest.raises(RuntimeError, match="DOMAIN_NAME_PROD is not set"):
+        get_public_url()
+
+
+def test_get_public_url_prepends_https(monkeypatch):
+    """Domain without scheme should get https:// prepended."""
+    monkeypatch.setenv("SERVER_ENV", "UAT")
+    monkeypatch.setenv("DOMAIN_NAME_UAT", "bare-domain.example.com")
+
+    assert get_public_url() == "https://bare-domain.example.com"
+
+
+def test_get_public_url_preserves_existing_scheme(monkeypatch):
+    """Domain already starting with http should not get double scheme."""
+    monkeypatch.setenv("SERVER_ENV", "PROD")
+    monkeypatch.setenv("DOMAIN_NAME_PROD", "https://already-set.example.com")
+
+    assert get_public_url() == "https://already-set.example.com"

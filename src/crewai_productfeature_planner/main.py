@@ -434,11 +434,20 @@ def start_api():
     """
     Start the FastAPI server for triggering flows via HTTP.
 
+    The ``SERVER_ENV`` environment variable determines how the public URL
+    is resolved:
+
+    * **DEV**  — starts an ngrok tunnel (requires ``NGROK_AUTHTOKEN``).
+    * **UAT**  — uses ``DOMAIN_NAME_UAT`` (no tunnel).
+    * **PROD** — uses ``DOMAIN_NAME_PROD`` (no tunnel).
+
+    The ``--ngrok`` flag can still force a tunnel in any environment.
+
     Usage:
-        uv run start_api                        # localhost:8000
-        uv run start_api --ngrok                # with ngrok tunnel
+        uv run start_api                        # uses SERVER_ENV (default DEV)
+        uv run start_api --ngrok                # force ngrok tunnel
         uv run start_api --port 3000            # custom port
-        uv run start_api --host 0.0.0.0 --port 9000 --ngrok
+        uv run start_api --host 0.0.0.0 --port 9000
     """
     import argparse
 
@@ -447,23 +456,43 @@ def start_api():
     parser = argparse.ArgumentParser(description="Start the CrewAI Flow API server")
     parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000)")
-    parser.add_argument("--ngrok", action="store_true", help="Open an ngrok tunnel for remote access")
+    parser.add_argument("--ngrok", action="store_true", help="Force an ngrok tunnel (overrides SERVER_ENV)")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
     args = parser.parse_args()
 
+    from crewai_productfeature_planner.scripts.ngrok_tunnel import (
+        get_public_url,
+        get_server_env,
+        is_dev,
+        start_tunnel,
+    )
     from crewai_productfeature_planner.version import get_version
+
+    env = get_server_env()
     logger.info(
-        "Starting API server v%s on %s:%d",
-        get_version(), args.host, args.port,
+        "Starting API server v%s on %s:%d (SERVER_ENV=%s)",
+        get_version(), args.host, args.port, env,
     )
 
+    # Resolve the public URL based on environment (or --ngrok override).
+    public_url: str | None = None
+
     if args.ngrok:
-        from crewai_productfeature_planner.scripts.ngrok_tunnel import start_tunnel
+        # Explicit --ngrok flag overrides SERVER_ENV.
         public_url = start_tunnel(port=args.port)
-        print(f"\n🌐 Ngrok tunnel: {public_url}")
+        logger.info("[Env] --ngrok flag: tunnel at %s", public_url)
+    elif is_dev():
+        # DEV mode: start ngrok tunnel automatically.
+        public_url = get_public_url(port=args.port)
+    elif env in ("UAT", "PROD"):
+        # UAT / PROD: use the configured domain (no tunnel).
+        public_url = get_public_url(port=args.port)
+
+    if public_url:
+        print(f"\n🌐 Public URL ({env}): {public_url}")
         print(f"   Swagger docs: {public_url}/docs\n")
 
-        # Auto-update Slack app request URLs to match the new tunnel.
+        # Auto-update Slack app request URLs to match the public URL.
         from crewai_productfeature_planner.scripts.slack_config import update_slack_app_urls
         update_slack_app_urls(public_url)
 

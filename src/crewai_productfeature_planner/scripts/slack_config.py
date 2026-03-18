@@ -1,8 +1,12 @@
-"""Auto-configure Slack app request URLs after the ngrok tunnel opens.
+"""Auto-configure Slack app request URLs after the public URL is resolved.
 
-When the server starts with ``--ngrok``, the public URL changes on every
-restart (unless ``NGROK_DOMAIN`` is set for a static domain).  Slack must
-be told the new URL for three surfaces:
+When the server starts, the public URL is determined by ``SERVER_ENV``:
+
+* **DEV**  — ngrok tunnel URL (changes on restart unless ``NGROK_DOMAIN`` set)
+* **UAT**  — ``DOMAIN_NAME_UAT`` (static)
+* **PROD** — ``DOMAIN_NAME_PROD`` (static)
+
+Slack must know the public URL for three surfaces:
 
 1. **Interactivity & Shortcuts** → ``/slack/interactions``
 2. **Event Subscriptions**       → ``/slack/events``

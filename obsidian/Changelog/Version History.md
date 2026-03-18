@@ -2,6 +2,12 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.27.x (2026-03-17)
+
+| Version | Summary |
+|---------|---------|
+| 0.27.0 | SERVER_ENV three-tier public URL resolution. get_server_env(), is_dev(), get_public_url() in ngrok_tunnel.py. DEV→ngrok, UAT→DOMAIN_NAME_UAT, PROD→DOMAIN_NAME_PROD. Rewired main.py and start_server.sh. 11 new tests, 2320 total |
+
 ## v0.26.x (2026-03-17)
 
 | Version | Summary |

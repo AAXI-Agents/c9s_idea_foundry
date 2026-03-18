@@ -2,7 +2,10 @@
 set -euo pipefail
 
 # Start the FastAPI server.
-# If NGROK_AUTHTOKEN is set, an ngrok tunnel will be opened.
+# SERVER_ENV controls the public URL strategy:
+#   DEV  — starts ngrok tunnel (requires NGROK_AUTHTOKEN)
+#   UAT  — uses DOMAIN_NAME_UAT (no tunnel)
+#   PROD — uses DOMAIN_NAME_PROD (no tunnel)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -27,12 +30,17 @@ if [[ -z "${SSL_CERT_FILE:-}" ]]; then
 fi
 
 PORT="${API_PORT:-8000}"
+ENV="${SERVER_ENV:-DEV}"
 
-# Kill any existing process on the API port and ngrok
+# Kill any existing process on the API port
 echo "Stopping any process on port $PORT..."
 lsof -ti:"$PORT" | xargs kill -9 2>/dev/null || true
-lsof -ti:4040 | xargs kill -9 2>/dev/null || true
-pkill -f "ngrok" 2>/dev/null || true
+
+# Only kill ngrok if we're in DEV mode (ngrok is used)
+if [[ "$ENV" == "DEV" ]]; then
+	lsof -ti:4040 | xargs kill -9 2>/dev/null || true
+	pkill -f "ngrok" 2>/dev/null || true
+fi
 
 # Wait until the port is actually free (up to 5 seconds)
 for i in {1..10}; do
@@ -42,10 +50,5 @@ for i in {1..10}; do
 	sleep 0.5
 done
 
-if [[ -n "${NGROK_AUTHTOKEN:-}" ]]; then
-	echo "Starting API with ngrok tunnel on port $PORT..."
-	uv run start_api --ngrok --port "$PORT"
-else
-	echo "NGROK_AUTHTOKEN not set; starting API without ngrok on port $PORT."
-	uv run start_api --port "$PORT"
-fi
+echo "SERVER_ENV=$ENV — starting API on port $PORT..."
+uv run start_api --port "$PORT"

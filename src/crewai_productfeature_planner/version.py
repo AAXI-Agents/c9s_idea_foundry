@@ -1790,6 +1790,21 @@ _CODEX: list[CodexEntry] = [
             "2303 tests."
         ),
     ),
+    CodexEntry(
+        "0.27.0",
+        date(2026, 3, 17),
+        (
+            "SERVER_ENV three-tier public URL resolution. "
+            "Added get_server_env(), is_dev(), get_public_url() to "
+            "ngrok_tunnel.py. SERVER_ENV (DEV/UAT/PROD) now controls "
+            "how the public-facing URL is resolved: DEV starts an ngrok "
+            "tunnel, UAT uses DOMAIN_NAME_UAT, PROD uses DOMAIN_NAME_PROD. "
+            "Rewired main.py start_api() and start_server.sh to use "
+            "SERVER_ENV instead of NGROK_AUTHTOKEN presence check. "
+            "--ngrok flag kept as override. Updated .env.example and "
+            "slack_config.py docstring. 11 new tests, 2320 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
