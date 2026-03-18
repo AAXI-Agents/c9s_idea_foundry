@@ -1805,6 +1805,22 @@ _CODEX: list[CodexEntry] = [
             "slack_config.py docstring. 11 new tests, 2320 total."
         ),
     ),
+    CodexEntry(
+        "0.27.1",
+        date(2026, 3, 18),
+        (
+            "MongoDB database name fully environment-driven. "
+            "Removed stale legacy vars (MONGODB_URI, MONGODB_PORT, "
+            "MONGODB_USERNAME, MONGODB_PASSWORD) from .env.example and "
+            "README — only MONGODB_ATLAS_URI and MONGODB_DB remain. "
+            "migrate_to_atlas.py now imports DEFAULT_DB_NAME from "
+            "client.py instead of duplicating the fallback. "
+            "Updated .env.example, README, and obsidian docs "
+            "(Environment Variables, MongoDB Schema) to document "
+            "MONGODB_DB as the way to switch databases "
+            "(e.g. ideas_dev, ideas_uat, ideas_prod). 2320 tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

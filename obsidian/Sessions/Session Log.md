@@ -1162,3 +1162,27 @@ Wire `SERVER_ENV` (DEV/UAT/PROD) to control public URL resolution. Previously `.
 - 2320 passed
 
 ---
+
+## Session 021 — MongoDB Database Name Cleanup
+**Date**: 2026-03-18 | **Version**: 0.27.0 → 0.27.1
+
+### Goal
+Make the MongoDB database name fully environment-driven and remove stale legacy vars.
+
+### Changes
+1. **migrate_to_atlas.py** — replaced inline `"ideas"` fallback with import of `DEFAULT_DB_NAME` from `client.py`.
+2. **.env.example** — replaced stale MongoDB section (MONGODB_URI, MONGODB_PORT, MONGODB_USERNAME, MONGODB_PASSWORD) with `MONGODB_ATLAS_URI` + `MONGODB_DB` and docs for switching databases.
+3. **README.md** — replaced 5 stale MongoDB env var rows with 2 correct ones (`MONGODB_ATLAS_URI`, `MONGODB_DB`).
+4. **obsidian/Architecture/Environment Variables.md** — added guidance for switching DBs.
+5. **obsidian/Database/MongoDB Schema.md** — added `MONGODB_DB` reference to header.
+6. **obsidian/Changelog/Version History.md** — added v0.27.1.
+
+### Security Hardening (Session 020b)
+- Expanded .gitignore (4→40+ patterns: secrets, certs, Python artifacts, .bak, output/prds, obsidian/.obsidian, IDE).
+- Untracked 40 files from git index (9 .bak, 27 output/prds, 4 obsidian config).
+- Full secrets audit confirmed no real keys ever committed to git history.
+
+### Tests
+- 2320 passed
+
+---

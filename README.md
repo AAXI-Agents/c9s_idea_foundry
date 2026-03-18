@@ -252,11 +252,8 @@ Copy `.env.example` to `.env` and fill in real values. Required and optional var
 | `PRD_SECTION_MIN_ITERATIONS` | No | `2` | Minimum critique→refine iterations per PRD section |
 | `PRD_SECTION_MAX_ITERATIONS` | No | `10` | Maximum critique→refine iterations per PRD section |
 | `SERPER_API_KEY` | **Yes** | — | Google search via SerperDev for market research |
-| `MONGODB_URI` | No | `localhost` | MongoDB host |
-| `MONGODB_PORT` | No | `27017` | MongoDB port |
-| `MONGODB_DB` | No | `ideas` | MongoDB database name |
-| `MONGODB_USERNAME` | No | — | MongoDB auth username |
-| `MONGODB_PASSWORD` | No | — | MongoDB auth password |
+| `MONGODB_ATLAS_URI` | **Yes** | — | MongoDB Atlas connection string (`mongodb+srv://...`) |
+| `MONGODB_DB` | No | `ideas` | MongoDB database name (e.g. `ideas_dev`, `ideas_uat`, `ideas_prod`) |
 | `SLACK_SIGNING_SECRET` | **Yes**\* | — | HMAC-SHA256 signing secret for Slack request verification |
 | `SLACK_CLIENT_ID` | **Yes**\* | — | Slack app client ID (for OAuth) |
 | `SLACK_CLIENT_SECRET` | **Yes**\* | — | Slack app client secret (for OAuth) |

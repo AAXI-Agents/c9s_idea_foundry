@@ -56,7 +56,8 @@ def _get_atlas_uri() -> str:
 
 
 def _get_db_name() -> str:
-    return os.environ.get("MONGODB_DB", "").strip() or "ideas"
+    from crewai_productfeature_planner.mongodb.client import DEFAULT_DB_NAME
+    return os.environ.get("MONGODB_DB", "").strip() or DEFAULT_DB_NAME
 
 
 def _safe_host(uri: str) -> str:

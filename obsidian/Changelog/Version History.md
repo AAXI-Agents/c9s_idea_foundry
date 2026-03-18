@@ -5,8 +5,7 @@
 ## v0.27.x (2026-03-17)
 
 | Version | Summary |
-|---------|---------|
-| 0.27.0 | SERVER_ENV three-tier public URL resolution. get_server_env(), is_dev(), get_public_url() in ngrok_tunnel.py. DEV→ngrok, UAT→DOMAIN_NAME_UAT, PROD→DOMAIN_NAME_PROD. Rewired main.py and start_server.sh. 11 new tests, 2320 total |
+|---------|---------|| 0.27.1 | MongoDB database name fully environment-driven. Removed stale legacy vars from .env.example and README. migrate_to_atlas.py imports DEFAULT_DB_NAME. Updated docs for MONGODB_DB switching. 2320 tests || 0.27.0 | SERVER_ENV three-tier public URL resolution. get_server_env(), is_dev(), get_public_url() in ngrok_tunnel.py. DEV→ngrok, UAT→DOMAIN_NAME_UAT, PROD→DOMAIN_NAME_PROD. Rewired main.py and start_server.sh. 11 new tests, 2320 total |
 
 ## v0.26.x (2026-03-17)
 

@@ -39,7 +39,7 @@
 | Variable | Purpose |
 |----------|---------|
 | `MONGODB_ATLAS_URI` | MongoDB Atlas connection string (`mongodb+srv://...`) — **required** |
-| `MONGODB_DB` | Database name (default: `ideas`) |
+| `MONGODB_DB` | Database name (default: `ideas`). Change to target a different DB (e.g. `ideas_dev`, `ideas_uat`, `ideas_prod`) |
 
 ## Atlassian
 

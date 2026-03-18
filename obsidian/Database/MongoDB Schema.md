@@ -2,6 +2,8 @@
 
 > Collections, indexes, and document schemas.
 > Hosted on **MongoDB Atlas** — connection via `MONGODB_ATLAS_URI` env var.
+> Database name controlled by `MONGODB_DB` env var (default: `ideas`).
+> Change `MONGODB_DB` to target a different database (e.g. `ideas_dev`, `ideas_uat`, `ideas_prod`).
 
 ## Collections (8 total)
 
