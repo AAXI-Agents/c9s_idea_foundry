@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import contextvars
 import json
-import logging
 import os
 from typing import Any, Dict, List, Optional, Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Thread-local team context
@@ -66,7 +67,7 @@ def _get_slack_client(team_id: str | None = None):
 
     token = get_valid_token(resolved_team_id)
     if not token:
-        logger.warning("No Slack token available – Slack tools in dry-run mode")
+        logger.warning("[Slack] No token available team_id=%s — dry-run mode", resolved_team_id)
         return None
     try:
         from slack_sdk import WebClient
@@ -99,7 +100,7 @@ def _retry_on_token_error(exc: Exception, team_id: str | None = None):
         return None
 
     resolved_team_id = team_id or current_team_id.get()
-    logger.warning("Slack token error (%s), refreshing and retrying…", exc)
+    logger.warning("[Slack] Token error team_id=%s: %s — refreshing", resolved_team_id, exc)
 
     from crewai_productfeature_planner.tools.slack_token_manager import (
         get_valid_token,
@@ -212,7 +213,7 @@ class SlackSendMessageTool(BaseTool):
                     })
                 except Exception as retry_exc:
                     exc = retry_exc
-            logger.error("Slack send message failed: %s", exc)
+            logger.error("[Slack] Send failed channel=%s thread_ts=%s: %s", channel, thread_ts, exc)
             return json.dumps({"status": "error", "error": str(exc)})
 
 
@@ -249,8 +250,10 @@ class SlackReadMessagesTool(BaseTool):
                 try:
                     response = _do_read(client)
                 except Exception as retry_exc:
+                    logger.error("[Slack] Read failed channel=%s: %s", channel, retry_exc)
                     return json.dumps({"status": "error", "error": str(retry_exc)})
             else:
+                logger.error("[Slack] Read failed channel=%s: %s", channel, exc)
                 return json.dumps({"status": "error", "error": str(exc)})
 
         messages: List[Dict[str, Any]] = []
@@ -377,10 +380,10 @@ class SlackPostPRDResultTool(BaseTool):
                     }
                 except Exception as retry_exc:
                     exc = retry_exc
-                    logger.error("Slack post PRD result failed: %s", exc)
+                    logger.error("[Slack] Post PRD result failed channel=%s run_id=%s: %s", channel, run_id, exc)
                     return json.dumps({"status": "error", "error": str(exc)})
             else:
-                logger.error("Slack post PRD result failed: %s", exc)
+                logger.error("[Slack] Post PRD result failed channel=%s run_id=%s: %s", channel, run_id, exc)
                 return json.dumps({"status": "error", "error": str(exc)})
 
         # Upload the PRD markdown file to the thread
@@ -429,9 +432,9 @@ class SlackPostPRDResultTool(BaseTool):
                 upload_kwargs["thread_ts"] = thread_ts
 
             client.files_upload_v2(**upload_kwargs)
-            logger.info("PRD file uploaded to Slack: %s", path.name)
+            logger.info("[Slack] PRD file uploaded channel=%s file=%s", channel, path.name)
         except Exception as exc:
-            logger.warning("PRD file upload to Slack failed: %s", exc)
+            logger.warning("[Slack] PRD file upload failed channel=%s: %s", channel, exc)
 
 
 class SlackInterpretMessageTool(BaseTool):
@@ -451,6 +454,7 @@ class SlackInterpretMessageTool(BaseTool):
     ) -> str:
         from crewai_productfeature_planner.tools.gemini_chat import interpret_message
 
+        logger.info("[Slack] Interpreting message len=%d", len(text))
         history = None
         if conversation_history:
             try:
@@ -459,4 +463,5 @@ class SlackInterpretMessageTool(BaseTool):
                 pass
 
         result = interpret_message(text, history)
+        logger.info("[Slack] Interpreted intent=%s", result.get("intent", "unknown"))
         return json.dumps(result, ensure_ascii=False)

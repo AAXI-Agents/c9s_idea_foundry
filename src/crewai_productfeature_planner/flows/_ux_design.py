@@ -183,9 +183,25 @@ def run_ux_design(flow: PRDFlow) -> str:
         )
     elif error_match or skipped_match:
         reason = (error_match or skipped_match).group(1).strip()
-        flow.state.figma_design_status = "skipped"
-        _persist_figma_design(flow.state.run_id, status="skipped")
-        logger.warning("[UX Design] Skipped/error: %s", reason)
+        # Even with an error, the agent may have produced useful design
+        # content before/after the error marker.  Strip the error/skipped
+        # line and treat the remainder as a prompt so the user still gets
+        # UX design output in the PRD appendix.
+        remainder = _ERROR_PATTERN.sub("", raw_output)
+        remainder = _SKIPPED_PATTERN.sub("", remainder).strip()
+        if len(remainder) > 100:
+            flow.state.figma_design_prompt = remainder
+            flow.state.figma_design_status = "prompt_ready"
+            _persist_figma_design(flow.state.run_id, status="prompt_ready")
+            logger.warning(
+                "[UX Design] Figma error (%s) but recovered %d chars of "
+                "design content as prompt",
+                reason, len(remainder),
+            )
+        else:
+            flow.state.figma_design_status = "skipped"
+            _persist_figma_design(flow.state.run_id, status="skipped")
+            logger.warning("[UX Design] Skipped/error: %s", reason)
     else:
         # Agent output didn't match expected patterns — treat the
         # entire output as the prompt for manual use.
@@ -198,22 +214,52 @@ def run_ux_design(flow: PRDFlow) -> str:
         )
 
     # Persist the prompt to MongoDB iteration history.
+    effective_prompt = flow.state.figma_design_prompt or raw_output
     save_iteration(
         run_id=flow.state.run_id,
         idea=flow.state.original_idea or flow.state.idea,
         iteration=1,
-        draft={"ux_design_prompt": figma_prompt or raw_output},
+        draft={"ux_design_prompt": effective_prompt},
         step="ux_design",
         finalized_idea=flow.state.idea,
         section_key="ux_design",
         section_title="UX Design",
     )
 
+    # Write the UX design to a standalone markdown file so the user
+    # has an immediately usable artefact (even if the Figma API failed).
+    _save_ux_design_file(flow, effective_prompt, figma_url)
+
     flow.state.update_date = datetime.now(timezone.utc).isoformat()
     flow._notify_progress("ux_design_complete", {
         "figma_url": figma_url,
-        "has_prompt": bool(figma_prompt or raw_output),
+        "has_prompt": bool(effective_prompt),
         "status": flow.state.figma_design_status,
+        "prompt_preview": (effective_prompt)[:500] if effective_prompt else "",
     })
 
     return figma_url
+
+
+def _save_ux_design_file(flow: PRDFlow, prompt: str, figma_url: str) -> None:
+    """Write the UX design prompt to a standalone markdown file."""
+    if not prompt:
+        return
+    try:
+        from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
+
+        parts = ["# UX Design Specification\n"]
+        if figma_url:
+            parts.append(f"\n**Figma Prototype:** [{figma_url}]({figma_url})\n")
+        parts.append(f"\n{prompt}\n")
+
+        writer = PRDFileWriteTool()
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        result = writer._run(
+            content="".join(parts),
+            filename=f"ux_design_{ts}.md",
+            version=1,
+        )
+        logger.info("[UX Design] Saved standalone file: %s", result)
+    except Exception:  # noqa: BLE001
+        logger.debug("[UX Design] Could not save standalone file", exc_info=True)

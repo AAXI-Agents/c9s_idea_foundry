@@ -23,7 +23,6 @@ Environment variables:
 from __future__ import annotations
 
 import json
-import logging
 import os
 import ssl
 import time
@@ -35,7 +34,9 @@ from crewai_productfeature_planner.agents.gemini_utils import (
     ensure_gemini_env,
 )
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # System prompt (identical semantics to the old OpenAI version)
@@ -320,9 +321,10 @@ def interpret_message(
     """
     ensure_gemini_env()
 
+    logger.info("[Gemini] interpret_message called msg_len=%d", len(user_message))
     api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
     if not api_key:
-        logger.warning("GOOGLE_API_KEY not set – falling back to unknown intent")
+        logger.warning("[Gemini] GOOGLE_API_KEY not set — falling back to unknown intent")
         return _fallback()
 
     model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
@@ -391,18 +393,18 @@ def interpret_message(
                 body = exc.read().decode("utf-8", errors="replace")[:500]
             except Exception:
                 pass
-            logger.error("Gemini API HTTP error %s (attempt %d/%d): %s", exc.code, _attempt, _MAX_RETRIES, body)
+            logger.error("[Gemini] HTTP error %s attempt=%d/%d: %s", exc.code, _attempt, _MAX_RETRIES, body)
             if exc.code not in _RETRYABLE_STATUS_CODES or _attempt == _MAX_RETRIES:
                 return _fallback()
             _delay = 2 ** (_attempt - 1)  # 1s, 2s, 4s
             time.sleep(_delay)
         except urllib.error.URLError as exc:
-            logger.error("Gemini API connection error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc.reason)
+            logger.error("[Gemini] Connection error attempt=%d/%d: %s", _attempt, _MAX_RETRIES, exc.reason)
             if _attempt == _MAX_RETRIES:
                 return _fallback()
             time.sleep(2 ** (_attempt - 1))
         except Exception as exc:
-            logger.error("Gemini API unexpected error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc)
+            logger.error("[Gemini] Unexpected error attempt=%d/%d: %s", _attempt, _MAX_RETRIES, exc)
             if _attempt == _MAX_RETRIES:
                 return _fallback()
             time.sleep(2 ** (_attempt - 1))
@@ -420,11 +422,11 @@ def interpret_message(
             .strip()
         )
     except (IndexError, KeyError, TypeError):
-        logger.warning("Gemini returned unexpected response structure")
+        logger.warning("[Gemini] Unexpected response structure")
         return _fallback()
 
     if not content:
-        logger.warning("Gemini returned empty content")
+        logger.warning("[Gemini] Empty content in response")
         return _fallback()
 
     try:
@@ -437,21 +439,23 @@ def interpret_message(
             try:
                 result = json.loads(content[start : end + 1])
             except json.JSONDecodeError:
-                logger.warning("Could not parse Gemini response as JSON")
+                logger.warning("[Gemini] Could not parse response as JSON")
                 return _fallback()
         else:
-            logger.warning("Could not parse Gemini response as JSON")
+            logger.warning("[Gemini] Could not parse response as JSON")
             return _fallback()
 
     # Guard: LLM sometimes returns a JSON array instead of an object
     if isinstance(result, list):
         result = result[0] if result else {}
     if not isinstance(result, dict):
-        logger.warning("Gemini returned non-dict JSON: %s", type(result).__name__)
+        logger.warning("[Gemini] Non-dict JSON response: %s", type(result).__name__)
         return _fallback()
 
+    intent = result.get("intent", "unknown")
+    logger.info("[Gemini] Interpreted intent=%s model=%s", intent, model)
     return {
-        "intent": result.get("intent", "unknown"),
+        "intent": intent,
         "idea": result.get("idea") or None,
         "reply": result.get("reply", ""),
         "confluence_space_key": result.get("confluence_space_key") or None,

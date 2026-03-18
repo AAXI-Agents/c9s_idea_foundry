@@ -19,7 +19,6 @@ Sub-modules:
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any  # noqa: F401 — kept for downstream compatibility
 
 from crewai_productfeature_planner.apis.slack._handler_proxies import (
@@ -65,7 +64,9 @@ from crewai_productfeature_planner.apis.slack._thread_state import (
     get_thread_history,
 )
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------

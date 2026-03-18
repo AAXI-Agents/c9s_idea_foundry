@@ -4,7 +4,7 @@ Action endpoints (kickoff, approve, pause, resume) live in
 ``_route_actions.py`` and are included via ``action_router``.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from crewai_productfeature_planner.apis.prd.models import (
     ErrorResponse,
@@ -19,6 +19,7 @@ from crewai_productfeature_planner.apis.prd.models import (
 from crewai_productfeature_planner.apis.shared import (
     runs,
 )
+from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.mongodb.crew_jobs import (
     find_job,
     list_jobs,
@@ -32,7 +33,7 @@ from crewai_productfeature_planner.apis.prd._route_actions import (
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sso_user)])
 router.include_router(action_router)
 
 
@@ -58,7 +59,7 @@ router.include_router(action_router)
         **_ERROR_RESPONSES,
     },
 )
-async def get_run_status(run_id: str):
+async def get_run_status(run_id: str, user: dict = Depends(require_sso_user)):
     """Check the status of a flow run."""
     run = runs.get(run_id)
     if run is None:
@@ -94,8 +95,7 @@ async def get_run_status(run_id: str):
         **_ERROR_RESPONSES,
     },
 )
-async def list_runs():
-    """Return a summary of all in-memory runs."""
+async def list_runs(user: dict = Depends(require_sso_user)):
     result = []
     for run in runs.values():
         result.append({
@@ -124,8 +124,7 @@ async def list_runs():
         **_ERROR_RESPONSES,
     },
 )
-async def list_resumable_runs():
-    """List unfinalized working ideas that can be resumed."""
+async def list_resumable_runs(user: dict = Depends(require_sso_user)):
     from crewai_productfeature_planner.mongodb import find_unfinalized
 
     unfinalized = find_unfinalized()
@@ -192,6 +191,7 @@ async def list_all_jobs(
     status: str | None = None,
     flow_name: str | None = None,
     limit: int = 50,
+    user: dict = Depends(require_sso_user),
 ):
     """List persistent job records, optionally filtered."""
     docs = list_jobs(status=status, flow_name=flow_name, limit=limit)
@@ -214,7 +214,7 @@ async def list_all_jobs(
         **_ERROR_RESPONSES,
     },
 )
-async def get_job(job_id: str):
+async def get_job(job_id: str, user: dict = Depends(require_sso_user)):
     """Fetch a single persistent job record."""
     doc = find_job(job_id)
     if doc is None:

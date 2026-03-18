@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks import (
     make_slack_exec_summary_completion_callback,
     make_slack_exec_summary_feedback_callback,
@@ -26,7 +24,9 @@ from crewai_productfeature_planner.apis.slack.interactive_handlers._slack_helper
     _post_text,
 )
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def run_interactive_slack_flow(

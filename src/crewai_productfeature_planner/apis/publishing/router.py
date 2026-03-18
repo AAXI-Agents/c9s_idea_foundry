@@ -15,7 +15,7 @@ Endpoints:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from crewai_productfeature_planner.apis.publishing.models import (
     CombinedPublishResult,
@@ -28,11 +28,16 @@ from crewai_productfeature_planner.apis.publishing.models import (
     PublishingErrorResponse,
     WatcherStatusResponse,
 )
+from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/publishing", tags=["Publishing"])
+router = APIRouter(
+    prefix="/publishing",
+    tags=["Publishing"],
+    dependencies=[Depends(require_sso_user)],
+)
 
 # Standard error responses documented on every endpoint.
 _ERROR_RESPONSES: dict = {
@@ -59,7 +64,7 @@ _ERROR_RESPONSES: dict = {
     ),
     responses=_ERROR_RESPONSES,
 )
-async def list_pending():
+async def list_pending(user: dict = Depends(require_sso_user)):
     """Return all PRDs that need Confluence publish or Jira tickets."""
     from crewai_productfeature_planner.apis.publishing.service import (
         list_pending_prds,
@@ -89,7 +94,7 @@ async def list_pending():
     ),
     responses=_ERROR_RESPONSES,
 )
-async def publish_confluence_all_endpoint(background_tasks: BackgroundTasks):
+async def publish_confluence_all_endpoint(background_tasks: BackgroundTasks, user: dict = Depends(require_sso_user)):
     """Batch-publish all pending PRDs to Confluence."""
     from crewai_productfeature_planner.apis.publishing.service import (
         publish_confluence_all,
@@ -127,7 +132,7 @@ async def publish_confluence_all_endpoint(background_tasks: BackgroundTasks):
         **_ERROR_RESPONSES,
     },
 )
-async def publish_confluence_single_endpoint(run_id: str):
+async def publish_confluence_single_endpoint(run_id: str, user: dict = Depends(require_sso_user)):
     """Publish a single PRD to Confluence."""
     from crewai_productfeature_planner.apis.publishing.service import (
         publish_confluence_single,
@@ -162,7 +167,7 @@ async def publish_confluence_single_endpoint(run_id: str):
     ),
     responses=_ERROR_RESPONSES,
 )
-async def create_jira_all_endpoint(background_tasks: BackgroundTasks):
+async def create_jira_all_endpoint(background_tasks: BackgroundTasks, user: dict = Depends(require_sso_user)):
     """Batch-create Jira tickets for all pending deliveries."""
     from crewai_productfeature_planner.apis.publishing.service import (
         create_jira_all,
@@ -200,7 +205,7 @@ async def create_jira_all_endpoint(background_tasks: BackgroundTasks):
         **_ERROR_RESPONSES,
     },
 )
-async def create_jira_single_endpoint(run_id: str):
+async def create_jira_single_endpoint(run_id: str, user: dict = Depends(require_sso_user)):
     """Create Jira tickets for a single run."""
     from crewai_productfeature_planner.apis.publishing.service import (
         create_jira_single,
@@ -234,7 +239,7 @@ async def create_jira_single_endpoint(run_id: str):
     ),
     responses=_ERROR_RESPONSES,
 )
-async def publish_all_endpoint(background_tasks: BackgroundTasks):
+async def publish_all_endpoint(background_tasks: BackgroundTasks, user: dict = Depends(require_sso_user)):
     """Full batch: Confluence publish + Jira ticketing."""
     from crewai_productfeature_planner.apis.publishing.service import (
         publish_all_and_create_tickets,
@@ -271,7 +276,7 @@ async def publish_all_endpoint(background_tasks: BackgroundTasks):
         **_ERROR_RESPONSES,
     },
 )
-async def publish_single_all_endpoint(run_id: str):
+async def publish_single_all_endpoint(run_id: str, user: dict = Depends(require_sso_user)):
     """Full pipeline for a single run: Confluence + Jira."""
     from crewai_productfeature_planner.apis.publishing.service import (
         publish_and_create_tickets,
@@ -311,7 +316,7 @@ async def publish_single_all_endpoint(run_id: str):
         **_ERROR_RESPONSES,
     },
 )
-async def get_status_endpoint(run_id: str):
+async def get_status_endpoint(run_id: str, user: dict = Depends(require_sso_user)):
     """Return delivery status for a run."""
     from crewai_productfeature_planner.apis.publishing.service import (
         get_delivery_status,
@@ -341,7 +346,7 @@ async def get_status_endpoint(run_id: str):
     ),
     responses=_ERROR_RESPONSES,
 )
-async def get_automation_status():
+async def get_automation_status(user: dict = Depends(require_sso_user)):
     """Return the status of the file watcher and cron scheduler."""
     from crewai_productfeature_planner.apis.publishing.scheduler import (
         get_scheduler_status,

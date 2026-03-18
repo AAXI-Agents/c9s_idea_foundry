@@ -1461,7 +1461,7 @@ def test_section_iterates_min_before_auto_approve(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1516,7 +1516,7 @@ def test_section_force_approved_at_max(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1572,7 +1572,7 @@ def test_section_ready_before_min_keeps_iterating(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1625,7 +1625,7 @@ def test_section_saves_each_iteration_to_db(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1690,7 +1690,7 @@ def test_section_critique_updates_each_iteration(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1804,7 +1804,7 @@ def test_degenerate_output_exceeds_max_chars(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1858,7 +1858,7 @@ def test_degenerate_output_exceeds_growth_factor(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1918,7 +1918,7 @@ def test_degenerate_refine_retries_below_min_iter(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -1974,7 +1974,7 @@ def test_degenerate_refine_force_approves_at_min_iter(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -2034,7 +2034,7 @@ def test_normal_output_not_flagged_as_degenerate(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -2387,7 +2387,7 @@ def test_callback_true_continues_to_sections(
         },
         "refine_section_task": {
             "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -2515,7 +2515,7 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
         },
         "refine_section_task": {
             "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -2644,7 +2644,7 @@ def test_phase1_runs_when_below_threshold(
         },
         "refine_section_task": {
             "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -2767,7 +2767,7 @@ def test_resume_skips_draft_for_in_progress_section(
         },
         "refine_section_task": {
             "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -2885,7 +2885,7 @@ def test_resume_wipes_degenerate_restored_content(
         },
         "refine_section_task": {
             "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -3242,7 +3242,7 @@ def test_section_critique_failure_force_approves(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -3301,7 +3301,7 @@ def test_section_refine_failure_force_approves(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -3348,7 +3348,7 @@ def test_billing_error_still_propagates_from_critique(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -3453,7 +3453,7 @@ def test_section_critique_503_propagates(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -3512,7 +3512,7 @@ def test_section_refine_503_propagates(
         },
         "refine_section_task": {
             "description": "Refine {section_title}: {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -3634,7 +3634,7 @@ def test_skip_phase1_when_sections_have_content(
         },
         "refine_section_task": {
             "description": "Refine: {section_title} {section_content} critique: {critique_section_content} eps: {executive_product_summary} eng: {engineering_plan} approved: {approved_sections}",
-            "expected_output": "Refined {section_title} based on {critique_section_content}",
+            "expected_output": "Refined {section_title}",
         },
     }
 
@@ -3686,3 +3686,45 @@ def test_skip_phase1_when_sections_have_content(
         assert section.is_approved is True, (
             f"Section '{section.key}' was not approved"
         )
+
+
+# ── condensed_text helper ──────────────────────────────────
+
+def test_condensed_text_short_text_unchanged():
+    """Text shorter than char_limit should pass through unchanged."""
+    from crewai_productfeature_planner.apis.prd._domain import condensed_text
+    assert condensed_text("Hello world", char_limit=100) == "Hello world"
+
+
+def test_condensed_text_truncates_long_text():
+    """Text exceeding char_limit should be truncated with marker."""
+    from crewai_productfeature_planner.apis.prd._domain import condensed_text
+    result = condensed_text("A" * 2000, char_limit=500)
+    assert len(result) < 2000
+    assert result.startswith("A" * 500)
+    assert result.endswith("[...truncated]")
+
+
+def test_condensed_text_empty_string():
+    """Empty string should return empty."""
+    from crewai_productfeature_planner.apis.prd._domain import condensed_text
+    assert condensed_text("") == ""
+    assert condensed_text("", char_limit=10) == ""
+
+
+def test_condensed_text_exact_limit():
+    """Text exactly at char_limit should not be truncated."""
+    from crewai_productfeature_planner.apis.prd._domain import condensed_text
+    text = "X" * 1500
+    result = condensed_text(text, char_limit=1500)
+    assert result == text
+    assert "[...truncated]" not in result
+
+
+def test_condensed_text_default_limit():
+    """Default char_limit is 1500."""
+    from crewai_productfeature_planner.apis.prd._domain import condensed_text
+    short = "Y" * 1500
+    assert condensed_text(short) == short
+    long = "Z" * 1501
+    assert "[...truncated]" in condensed_text(long)

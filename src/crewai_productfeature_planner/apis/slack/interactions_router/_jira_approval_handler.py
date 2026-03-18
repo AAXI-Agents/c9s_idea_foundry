@@ -18,7 +18,6 @@ sub-task creation, and QA test sub-task creation:
 
 from __future__ import annotations
 
-import logging
 import threading
 
 from crewai_productfeature_planner.orchestrator._jira import _persist_jira_phase
@@ -27,7 +26,9 @@ from crewai_productfeature_planner.tools.slack_tools import (
     _get_slack_client,
 )
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _handle_jira_approval_action(

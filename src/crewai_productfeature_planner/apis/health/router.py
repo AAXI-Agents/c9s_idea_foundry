@@ -2,11 +2,14 @@
 
 from fastapi import APIRouter, HTTPException
 
+from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.version import (
     get_codex,
     get_latest_codex_entry,
     get_version,
 )
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -127,20 +130,26 @@ async def slack_token_status(team_id: str | None = None) -> dict:
         token_status,
     )
 
+    logger.info("[Health] GET /health/slack-token team_id=%s", team_id)
+
     if not team_id:
         teams = get_all_teams()
         if len(teams) == 1:
             team_id = teams[0]["team_id"]
         elif len(teams) == 0:
+            logger.info("[Health] No Slack teams installed")
             return {"installed": False, "message": "No teams installed"}
         else:
+            logger.info("[Health] Multiple teams installed: %s", [t["team_id"] for t in teams])
             return {
                 "installed": True,
                 "teams": [t["team_id"] for t in teams],
                 "message": "Multiple teams installed — pass team_id",
             }
 
-    return token_status(team_id)
+    status = token_status(team_id)
+    logger.info("[Health] Token status for team_id=%s: type=%s", team_id, status.get("token_type", "unknown"))
+    return status
 
 
 @router.post(
@@ -207,10 +216,13 @@ async def slack_token_exchange(team_id: str | None = None) -> dict:
                 detail="team_id is required (multiple or no teams installed)",
             )
 
+    logger.info("[Health] POST /health/slack-token/exchange team_id=%s", team_id)
+
     # Read the existing long-lived token from MongoDB for the exchange
     doc = get_team(team_id)
     existing_token = doc.get("access_token", "") if doc else ""
     if not existing_token:
+        logger.warning("[Health] No existing token for team_id=%s", team_id)
         raise HTTPException(
             status_code=400,
             detail=f"No existing token found for team {team_id}",
@@ -219,8 +231,10 @@ async def slack_token_exchange(team_id: str | None = None) -> dict:
     try:
         result = exchange_token(team_id, token=existing_token)
     except (ValueError, RuntimeError) as exc:
+        logger.error("[Health] Token exchange failed team_id=%s", team_id, exc_info=True)
         raise HTTPException(status_code=400, detail=str(exc))
 
+    logger.info("[Health] Token exchanged successfully team_id=%s", team_id)
     status = token_status(team_id)
     return {
         **status,
@@ -281,13 +295,16 @@ async def slack_token_refresh(team_id: str | None = None) -> dict:
                 detail="team_id is required (multiple or no teams installed)",
             )
 
+    logger.info("[Health] POST /health/slack-token/refresh team_id=%s", team_id)
     invalidate(team_id)
     token = get_valid_token(team_id)
     if not token:
+        logger.error("[Health] Token refresh failed team_id=%s", team_id)
         raise HTTPException(
             status_code=400,
             detail=f"Token refresh failed for team {team_id}",
         )
 
+    logger.info("[Health] Token refreshed successfully team_id=%s", team_id)
     status = token_status(team_id)
     return {"message": "Token refreshed successfully", **status}

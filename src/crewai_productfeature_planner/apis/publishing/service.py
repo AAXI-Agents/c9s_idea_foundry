@@ -7,10 +7,11 @@ API-callable interface.  Every public function returns plain dicts
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +74,7 @@ def list_pending_prds() -> list[dict[str, Any]]:
             rec = get_delivery_record(rid) if rid else None
             results.append(_prd_summary(item, delivery=rec))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("list_pending_prds: publishable discovery failed: %s", exc)
+        logger.warning("[Publishing] Publishable discovery failed: %s", exc)
 
     # Source 2 — pending deliveries (Jira)
     try:
@@ -85,8 +86,9 @@ def list_pending_prds() -> list[dict[str, Any]]:
             rec = get_delivery_record(rid) if rid else None
             results.append(_prd_summary(item, delivery=rec))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("list_pending_prds: delivery discovery failed: %s", exc)
+        logger.warning("[Publishing] Delivery discovery failed: %s", exc)
 
+    logger.info("[Publishing] list_pending_prds found %d items", len(results))
     return results
 
 
@@ -394,6 +396,7 @@ def publish_and_create_tickets(run_id: str) -> dict[str, Any]:
 
     Returns a combined summary dict.
     """
+    logger.info("[Publishing] publish_and_create_tickets run_id=%s", run_id)
     result: dict[str, Any] = {"run_id": run_id}
 
     # Step 1 — Confluence
@@ -426,6 +429,7 @@ def publish_all_and_create_tickets() -> dict[str, Any]:
 
     Returns a combined summary.
     """
+    logger.info("[Publishing] publish_all_and_create_tickets called")
     conf = publish_confluence_all()
     jira = create_jira_all()
     return {
@@ -441,12 +445,14 @@ def publish_all_and_create_tickets() -> dict[str, Any]:
 
 def get_delivery_status(run_id: str) -> dict[str, Any]:
     """Return the full delivery status for a ``run_id``."""
+    logger.info("[Publishing] get_delivery_status run_id=%s", run_id)
     from crewai_productfeature_planner.mongodb.product_requirements import (
         get_delivery_record,
     )
 
     rec = get_delivery_record(run_id)
     if rec is None:
+        logger.warning("[Publishing] No delivery record for run_id=%s", run_id)
         raise ValueError(f"No delivery record found for run_id={run_id}")
 
     # Remove MongoDB _id for JSON serialisation

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import logging
-
 from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state import (
     _lock,
     get_interactive_run,
 )
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _post_blocks(channel: str, thread_ts: str, blocks: list[dict], text: str = "") -> None:

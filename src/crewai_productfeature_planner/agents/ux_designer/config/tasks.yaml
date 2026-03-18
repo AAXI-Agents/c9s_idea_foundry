@@ -56,20 +56,25 @@ generate_figma_make_prompt_task:
     After generating the prompt, use the ``figma_make_design`` tool to
     submit the prompt to Figma Make and generate the design.
 
-    If Figma credentials are not available (tool returns FIGMA_SKIPPED),
-    output the prompt prefixed with ``FIGMA_PROMPT:`` so it can be
-    used manually later.
+    CRITICAL OUTPUT REQUIREMENT:
+    You MUST ALWAYS output your complete, structured design prompt
+    prefixed with ``FIGMA_PROMPT:`` — regardless of whether the tool
+    succeeds, fails, or is skipped.  The prompt itself is a valuable
+    UX specification that will be included in the PRD document as an
+    appendix and shared with the user.
 
-    If the tool returns a URL (``FIGMA_URL:...``), output the URL
-    prefixed with ``FIGMA_URL:`` so the system can capture it.
+    After the ``FIGMA_PROMPT:`` block, also include:
+    - ``FIGMA_URL:<url>`` if the tool returned a URL
+    - ``FIGMA_ERROR:<message>`` if the tool returned an error
 
   expected_output: >
-    Either:
-    - ``FIGMA_URL:<url>`` — the Figma file URL of the generated design
-    - ``FIGMA_PROMPT:<prompt>`` — the structured Figma Make prompt if
-      credentials were not available
-    - ``FIGMA_ERROR:<message>`` — if an error occurred
+    ALWAYS include ``FIGMA_PROMPT:<prompt>`` with the full structured
+    design specification.  Additionally include ONE of:
+    - ``FIGMA_URL:<url>`` — the Figma file URL (if tool succeeded)
+    - ``FIGMA_ERROR:<message>`` — error detail (if tool failed)
+    - ``FIGMA_SKIPPED:<reason>`` — reason (if tool was skipped)
 
-    The prompt/output should describe a complete design system with
-    reusable components, user flows, and page layouts.
+    The prompt MUST describe a complete design system with reusable
+    components, user flows, and page layouts — this content will be
+    included in the PRD document regardless of Figma API availability.
   agent: ux_designer

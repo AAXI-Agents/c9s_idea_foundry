@@ -13,14 +13,15 @@ Returns a dict with:
 from __future__ import annotations
 
 import json
-import logging
 import os
 import ssl
 import time
 import urllib.error
 import urllib.request
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -257,9 +258,10 @@ def interpret_message(
     conversation_history: list[dict] | None = None,
 ) -> dict:
     """Send *user_message* to OpenAI and return the structured interpretation."""
+    logger.info("[OpenAI] interpret_message called msg_len=%d", len(user_message))
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
-        logger.warning("OPENAI_API_KEY not set – falling back to unknown intent")
+        logger.warning("[OpenAI] OPENAI_API_KEY not set — falling back to unknown intent")
         return _fallback()
 
     model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
@@ -309,17 +311,17 @@ def interpret_message(
                 body = exc.read().decode("utf-8", errors="replace")[:500]
             except Exception:
                 pass
-            logger.error("OpenAI API HTTP error %s (attempt %d/%d): %s", exc.code, _attempt, _MAX_RETRIES, body)
+            logger.error("[OpenAI] HTTP error %s attempt=%d/%d: %s", exc.code, _attempt, _MAX_RETRIES, body)
             if exc.code not in _RETRYABLE_STATUS_CODES or _attempt == _MAX_RETRIES:
                 return _fallback()
             time.sleep(2 ** (_attempt - 1))
         except urllib.error.URLError as exc:
-            logger.error("OpenAI API connection error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc.reason)
+            logger.error("[OpenAI] Connection error attempt=%d/%d: %s", _attempt, _MAX_RETRIES, exc.reason)
             if _attempt == _MAX_RETRIES:
                 return _fallback()
             time.sleep(2 ** (_attempt - 1))
         except Exception as exc:
-            logger.error("OpenAI API unexpected error (attempt %d/%d): %s", _attempt, _MAX_RETRIES, exc)
+            logger.error("[OpenAI] Unexpected error attempt=%d/%d: %s", _attempt, _MAX_RETRIES, exc)
             if _attempt == _MAX_RETRIES:
                 return _fallback()
             time.sleep(2 ** (_attempt - 1))
@@ -334,7 +336,7 @@ def interpret_message(
         .strip()
     )
     if not content:
-        logger.warning("OpenAI returned empty content")
+        logger.warning("[OpenAI] Empty content in response")
         return _fallback()
 
     try:
@@ -346,21 +348,23 @@ def interpret_message(
             try:
                 result = json.loads(content[start : end + 1])
             except json.JSONDecodeError:
-                logger.warning("Could not parse OpenAI response as JSON")
+                logger.warning("[OpenAI] Could not parse response as JSON")
                 return _fallback()
         else:
-            logger.warning("Could not parse OpenAI response as JSON")
+            logger.warning("[OpenAI] Could not parse response as JSON")
             return _fallback()
 
     # Guard: LLM sometimes returns a JSON array instead of an object
     if isinstance(result, list):
         result = result[0] if result else {}
     if not isinstance(result, dict):
-        logger.warning("OpenAI returned non-dict JSON: %s", type(result).__name__)
+        logger.warning("[OpenAI] Non-dict JSON response: %s", type(result).__name__)
         return _fallback()
 
+    intent = result.get("intent", "unknown")
+    logger.info("[OpenAI] Interpreted intent=%s model=%s", intent, model)
     return {
-        "intent": result.get("intent", "unknown"),
+        "intent": intent,
         "idea": result.get("idea") or None,
         "reply": result.get("reply", ""),
         "confluence_space_key": result.get("confluence_space_key") or None,

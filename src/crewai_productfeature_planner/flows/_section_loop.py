@@ -169,15 +169,29 @@ def section_approval_loop(
             # the raw executive_summary for backward compat.
             _eps = flow.state.executive_product_summary or flow.state.executive_summary.latest_content or "(Not yet available)"
             _eng = flow.state.engineering_plan or "(Not yet available)"
+
+            # Build condensed variants for the critique task.  The
+            # critic only evaluates quality / consistency — it doesn't
+            # need the full verbatim text of every prior section or
+            # the full specialist outputs.  This reduces O(n) token
+            # growth substantially on later sections.
+            from crewai_productfeature_planner.apis.prd._domain import (
+                condensed_text,
+            )
+            _eps_short = condensed_text(_eps, char_limit=1500)
+            _eng_short = condensed_text(_eng, char_limit=1500)
+
             critique_task = Task(
                 description=task_configs["critique_section_task"][
                     "description"
                 ].format(
                     section_title=section.title,
                     critique_section_content=section.content,
-                    executive_product_summary=_eps,
-                    engineering_plan=_eng,
-                    approved_sections=flow.state.draft.approved_context(exclude_keys=_excl) or "(None yet)",
+                    executive_product_summary=_eps_short,
+                    engineering_plan=_eng_short,
+                    approved_sections=flow.state.draft.approved_context_condensed(
+                        exclude_keys=_excl, char_limit=300,
+                    ) or "(None yet)",
                 ),
                 expected_output=task_configs["critique_section_task"][
                     "expected_output"
@@ -280,7 +294,6 @@ def section_approval_loop(
                 "expected_output"
             ].format(
                 section_title=section.title,
-                critique_section_content=flow.state.critique,
             ),
             agent=pm,
         )

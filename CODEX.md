@@ -171,8 +171,45 @@ Enforced by 23 regression tests in `tests/flows/test_jira_approval_gate.py`.
 
 - Modular design: one concern per file, small functions, `__init__.py` re-exports
 - Log scanning: check `logs/crewai.log` after every change for `WARNING`/`ERROR`
-- API docs: update `docs/openapi/openapi.json` for every endpoint change
 - One-time fix scripts: create in `scripts/`, query→fix→verify→delete
+
+### Logging Standard (Required)
+
+Every module with business logic **must** use structured logging for
+incident tracking and troubleshooting. See full details in
+`obsidian/Architecture/Coding Standards.md` § 8.
+
+**Quick rules:**
+
+1. **Use `get_logger`** — always `from ...scripts.logging_config import get_logger`,
+   never bare `import logging` / `logging.getLogger(__name__)`.
+2. **Log at boundaries** — entry/exit of API endpoints, background tasks,
+   external calls (MongoDB, Slack, SSO, Confluence, Jira, Figma).
+3. **Include trace context** — every log message must include the relevant
+   identifiers: `run_id`, `job_id`, `user_id`, `channel`, `thread_ts`,
+   `team_id`, `project_id`, `action_id`, etc.
+4. **Log levels**:
+   - `DEBUG` — internal state, variable dumps (only visible when `CREWAI_DEBUG=true`)
+   - `INFO`  — normal operations (request received, task started/completed, record saved)
+   - `WARNING` — recoverable issues (missing optional config, retry, fallback used)
+   - `ERROR` — failures that affect the user (exceptions, API errors, bad responses)
+5. **Error logging** — always log `exc_info=True` on caught exceptions:
+   `logger.error("...", exc_info=True)`.
+6. **No sensitive data** — never log passwords, tokens, API keys, or PII
+   beyond user/slack IDs.
+
+### Documentation Updates (Required)
+
+Every code change **must** update the relevant documentation artifacts:
+
+| Trigger | Files to update |
+|---------|----------------|
+| New or changed API endpoint | `docs/openapi/openapi.json`, `docs/openapi/paths/` |
+| New or changed env var | `.env.example`, `obsidian/Architecture/Environment Variables.md` |
+| New feature or major change | `README.md` (feature list, usage, examples) |
+| New dependency added | `pyproject.toml`, `README.md` (prerequisites section) |
+| Schema / model change | `obsidian/Database/MongoDB Schema.md` |
+| Any code change | Affected Obsidian pages (see "When to Update Which Page" table above) |
 
 ---
 

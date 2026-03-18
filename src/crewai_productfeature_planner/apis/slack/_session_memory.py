@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import logging
-
 from ._session_reply import reply
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def handle_configure_memory(

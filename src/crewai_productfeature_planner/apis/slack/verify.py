@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import logging
 import os
 import time
 
 from fastapi import HTTPException, Request
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _SIGNING_SECRET_KEY = "SLACK_SIGNING_SECRET"
 _VERIFICATION_TOKEN_KEY = "SLACK_VERIFICATION_TOKEN"

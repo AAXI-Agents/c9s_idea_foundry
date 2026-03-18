@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 import re as _re
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Idea number extraction

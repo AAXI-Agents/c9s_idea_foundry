@@ -15,14 +15,15 @@ users move through the PRD flow without guessing what to do next.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import ssl
 import urllib.error
 import urllib.request
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Next-step system prompt

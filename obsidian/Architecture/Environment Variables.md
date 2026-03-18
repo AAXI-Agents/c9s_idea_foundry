@@ -85,6 +85,22 @@
 | `PRD_SECTION_MAX_ITERATIONS` | Max section refinement cycles |
 | `DEFAULT_MULTI_AGENTS` | Number of parallel agents (default: 1) |
 
+## SSO Authentication (v0.23.0)
+
+| Variable | Purpose |
+|----------|---------|
+| `SSO_ENABLED` | Enable SSO auth enforcement (`true`/`false`, default `false`) |
+| `SSO_BASE_URL` | SSO service base URL for remote introspection (default `http://localhost:8100`) |
+| `SSO_JWT_PUBLIC_KEY_PATH` | Path to RS256 public key PEM (for local JWT verification) |
+| `SSO_ISSUER` | Expected JWT issuer claim (default `c9s-sso`) |
+| `SSO_EXPECTED_APP_ID` | When set, only accept tokens with this `app_id` (Idea Foundry) |
+| `SSO_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying SSO webhook payloads |
+
+> **Application name**: "Idea Foundry" — registered as an OAuth client in
+> the SSO service's bootstrap. When `SSO_EXPECTED_APP_ID` is set, tokens
+> must be issued through the OAuth authorization-code flow for that
+> specific application.
+
 ---
 
 See also: [[Project Overview]], [[LLM Model Tiers]]

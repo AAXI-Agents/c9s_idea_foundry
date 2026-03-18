@@ -10,14 +10,15 @@ Handles:
 
 from __future__ import annotations
 
-import logging
 import threading
 import uuid
 from typing import Callable
 
 from crewai_productfeature_planner.apis.slack._thread_state import append_to_thread
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -225,10 +226,27 @@ def make_progress_poster(
         elif event_type == "ux_design_complete":
             figma_url = details.get("figma_url", "")
             status = details.get("status", "")
+            prompt_preview = details.get("prompt_preview", "")
             if figma_url:
                 msg = f":white_check_mark: *UX Design* complete! <{figma_url}|View in Figma>"
+                if prompt_preview:
+                    msg += (
+                        "\n\n_UX specification also saved as appendix in the PRD "
+                        "and as a standalone file._"
+                    )
             elif status == "prompt_ready":
-                msg = ":white_check_mark: *UX Design* complete — Figma prompt generated (no Figma credentials to submit)."
+                msg = (
+                    ":white_check_mark: *UX Design* complete — "
+                    "design specification generated.\n\n"
+                    "_Included as appendix in the PRD and saved as a "
+                    "standalone markdown file._"
+                )
+                if prompt_preview:
+                    # Truncate for Slack readability
+                    preview = prompt_preview[:300]
+                    if len(prompt_preview) > 300:
+                        preview += "…"
+                    msg += f"\n\n>>>_{preview}_"
             else:
                 msg = ":white_check_mark: *UX Design* complete."
 

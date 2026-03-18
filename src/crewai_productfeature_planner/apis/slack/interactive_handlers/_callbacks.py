@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state import (
     _lock,
     _manual_refinement_text,
@@ -15,7 +13,9 @@ from crewai_productfeature_planner.apis.slack.interactive_handlers._slack_helper
     _wait_for_decision,
 )
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------

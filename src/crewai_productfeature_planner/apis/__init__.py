@@ -21,16 +21,20 @@ Subpackages:
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from crewai_productfeature_planner.apis.health.router import router as health_router
+from crewai_productfeature_planner.apis.ideas.router import router as ideas_router
 from crewai_productfeature_planner.apis.prd.router import router as prd_router
+from crewai_productfeature_planner.apis.projects.router import router as projects_router
 from crewai_productfeature_planner.apis.publishing.router import router as publishing_router
 from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus  # noqa: F401 (re-export)
 from crewai_productfeature_planner.apis.slack.events_router import router as slack_events_router
 from crewai_productfeature_planner.apis.slack.interactions_router import router as slack_interactions_router
 from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
 from crewai_productfeature_planner.apis.slack.router import router as slack_router
+from crewai_productfeature_planner.apis.sso_webhooks import router as sso_webhooks_router
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.scripts.setup_mongodb import ensure_collections
@@ -259,7 +263,7 @@ async def _lifespan(application: FastAPI):
 
 
 app = FastAPI(
-    title="CrewAI Product Feature Planner API",
+    title="Idea Foundry — CrewAI Product Feature Planner API",
     version=get_version(),
     description="HTTP interface for triggering CrewAI flows.",
     lifespan=_lifespan,
@@ -331,6 +335,32 @@ app = FastAPI(
                 "and cron scheduler that automate delivery."
             ),
         },
+        {
+            "name": "SSO Webhooks",
+            "description": (
+                "Receives user lifecycle events from the C9 SSO service "
+                "(user.created, user.updated, user.deleted, login.success, "
+                "login.failed, token.revoked). "
+                "Payloads are verified with HMAC-SHA256 via the "
+                "X-Webhook-Signature header using SSO_WEBHOOK_SECRET."
+            ),
+        },
+        {
+            "name": "Projects",
+            "description": (
+                "CRUD operations for project configurations. "
+                "Create, read, update, delete, and list projects with "
+                "paginated results (10, 25, or 50 per page)."
+            ),
+        },
+        {
+            "name": "Ideas",
+            "description": (
+                "Browse and manage working ideas (PRD runs). "
+                "List ideas with paginated results, filter by project "
+                "or status, view details, and update status."
+            ),
+        },
     ],
 )
 
@@ -340,7 +370,26 @@ app.include_router(slack_router)
 app.include_router(slack_events_router)
 app.include_router(slack_interactions_router)
 app.include_router(slack_oauth_router)
+app.include_router(projects_router)
+app.include_router(ideas_router)
 app.include_router(publishing_router)
+app.include_router(sso_webhooks_router)
+
+# ── CORS — required for web-based SSO login flows ────────────
+import os as _os
+
+_cors_origins = [
+    o.strip()
+    for o in _os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Global exception handler ─────────────────────────────────

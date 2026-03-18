@@ -2,8 +2,9 @@
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
+from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.apis.prd.models import (
     ErrorResponse,
     PRDActionResponse,
@@ -102,9 +103,11 @@ action_router = APIRouter()
     },
 )
 async def kickoff_prd_flow(
-    request: PRDKickoffRequest, background_tasks: BackgroundTasks
+    request: PRDKickoffRequest, background_tasks: BackgroundTasks,
+    user: dict = Depends(require_sso_user),
 ):
     """Trigger the iterative PRD generation flow."""
+    logger.info("[API] PRD kickoff by user_id=%s", user.get("user_id"))
     # Enforce single active job — reject if one is already running
     active = find_active_job()
     if active is not None:
@@ -177,7 +180,7 @@ async def kickoff_prd_flow(
         **_ERROR_RESPONSES,
     },
 )
-async def approve_prd(request: PRDApproveRequest):
+async def approve_prd(request: PRDApproveRequest, user: dict = Depends(require_sso_user)):
     """Approve, continue refining, or provide critique feedback."""
     run = runs.get(request.run_id)
     if run is None:
@@ -270,7 +273,7 @@ async def approve_prd(request: PRDApproveRequest):
         **_ERROR_RESPONSES,
     },
 )
-async def pause_prd(request: PRDPauseRequest):
+async def pause_prd(request: PRDPauseRequest, user: dict = Depends(require_sso_user)):
     """Pause a running or awaiting-approval flow."""
     run = runs.get(request.run_id)
     if run is None:
@@ -355,7 +358,8 @@ async def pause_prd(request: PRDPauseRequest):
     },
 )
 async def resume_prd(
-    request: PRDResumeRequest, background_tasks: BackgroundTasks
+    request: PRDResumeRequest, background_tasks: BackgroundTasks,
+    user: dict = Depends(require_sso_user),
 ):
     """Resume a paused/unfinalized PRD flow from saved state."""
     existing = runs.get(request.run_id)

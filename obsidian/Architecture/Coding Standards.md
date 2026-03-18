@@ -16,12 +16,29 @@ After every code change — and during partial or full test runs:
 - Fix any regressions before moving on
 - Run tests with `-x` (fail-fast) and inspect output for unexpected warnings
 
-## 3. API Documentation
+## 3. Documentation Updates (Required)
 
+Every code change **must** update the relevant documentation:
+
+| Trigger | Files to update |
+|---------|----------------|
+| New or changed API endpoint | `docs/openapi/openapi.json`, `docs/openapi/paths/`, Swagger UI at `/docs` |
+| New or changed env var | `.env.example`, `obsidian/Architecture/Environment Variables.md` |
+| New feature or major change | `README.md` (feature list, usage, examples) |
+| New dependency added | `pyproject.toml`, `README.md` (prerequisites section) |
+| Schema / model change | `obsidian/Database/MongoDB Schema.md` |
+| Any code change | Affected Obsidian pages (see CODEX.md "When to Update Which Page" table) |
+
+### OpenAPI / Swagger
 - Maintain OpenAPI/Swagger docs in `docs/openapi/openapi.json`
 - Every new or changed endpoint must update the OpenAPI spec
-- Update `README.md` when adding new APIs, features, or setup steps
 - Verify changes reflected in Swagger UI at `/docs`
+
+### README
+- Update `README.md` when adding new APIs, features, or setup steps
+
+### .env.example
+- Every new environment variable must be added to `.env.example` with a descriptive comment
 
 ## 4. Session Management
 
@@ -100,6 +117,86 @@ records), fix it with a **one-time script** in `scripts/`:
 > **Rule**: Always delete the script after use. It documents the fix in
 > git history if committed before deletion, but must not remain in the
 > tree as a runnable artifact.
+
+## 8. Logging Standard (Required)
+
+Every module with business logic **must** include structured logging for
+incident tracking, troubleshooting, and trace-ability.
+
+### 8.1 Logger Import — Always Use `get_logger`
+
+```python
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
+```
+
+**Never** use bare `import logging` + `logging.getLogger(__name__)`.
+The project logger (`get_logger`) ensures all messages flow through the
+centralised root logger with daily file rotation, correct format, and
+consistent namespace prefix.
+
+### 8.2 What to Log
+
+| Event | Level | Example |
+|-------|-------|---------|
+| Request received (API endpoint) | `INFO` | `logger.info("GET /health called")` |
+| Task/operation started | `INFO` | `logger.info("[PRD] Starting flow run_id=%s", run_id)` |
+| Task/operation completed | `INFO` | `logger.info("[PRD] Flow completed run_id=%s", run_id)` |
+| External call sent/received | `INFO` | `logger.info("[Jira] Creating epic project=%s", key)` |
+| State transition (DB update) | `INFO` | `logger.info("[MongoDB] Job %s → %s", job_id, status)` |
+| Recoverable issue | `WARNING` | `logger.warning("[Slack] Retry posting to %s", channel)` |
+| Missing optional config | `WARNING` | `logger.warning("FIGMA_API_KEY not set — skipping UX")` |
+| Caught exception / failure | `ERROR` | `logger.error("[SSO] Token validation failed", exc_info=True)` |
+| Internal variable state | `DEBUG` | `logger.debug("Payload: %s", payload)` |
+
+### 8.3 Trace Context — Always Include Identifiers
+
+Every log message must include the relevant business identifiers so
+that logs can be correlated across modules during incident investigation:
+
+- **PRD flows**: `run_id`, `job_id`
+- **Slack events**: `channel`, `thread_ts`, `user` (Slack user ID), `team_id`
+- **API requests**: `user_id` (from SSO), endpoint path
+- **MongoDB operations**: collection name, document `_id` / `run_id`
+- **External integrations**: `project_key` (Jira), `space_key` (Confluence), `page_id`
+
+Example:
+```python
+logger.info(
+    "[Slack] app_mention channel=%s thread=%s user=%s",
+    channel, thread_ts, user,
+)
+```
+
+### 8.4 Error Logging — Always Include Stack Trace
+
+When catching exceptions, always use `exc_info=True` so the full
+stack trace is written to `logs/crewai.log`:
+
+```python
+try:
+    result = external_api_call()
+except Exception:
+    logger.error("External call failed for run_id=%s", run_id, exc_info=True)
+    raise
+```
+
+### 8.5 Security — No Sensitive Data
+
+Never log:
+- Passwords, password hashes, or API keys/secrets
+- Full JWT tokens (log only the `sub` claim or token prefix)
+- OAuth refresh tokens or client secrets
+- Personal data beyond user IDs and emails
+
+### 8.6 Modules Exempt From Logging
+
+The following file types do **not** require logging:
+- `__init__.py` re-export files (no business logic)
+- Pydantic model files (`models.py`, `_domain.py`, `_requests.py`, `_responses.py`)
+- Slack block builder files (`blocks/*.py`) — pure data construction
+- Constant/config files (`_constants.py`) — unless they run init logic
 
 ---
 

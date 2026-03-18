@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import logging
+from crewai_productfeature_planner.scripts.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _handle_flow_retry(

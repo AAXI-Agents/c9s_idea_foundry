@@ -14,10 +14,11 @@ Handles buttons from the product list (``list products`` intent):
 
 from __future__ import annotations
 
-import logging
 import threading
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _handle_product_list_action(
@@ -471,14 +472,23 @@ def _handle_manual_ux_design(
                 )
                 return
 
-            # Extract executive_product_summary
+            # Extract executive_product_summary (CEO review stores in
+            # section.executive_product_summary; older runs only have the
+            # top-level executive_summary array).
+            eps_content = ""
             eps_section = doc.get("section", {}).get(
                 "executive_product_summary", [],
             )
-            eps_content = ""
             if eps_section and isinstance(eps_section, list):
                 last = eps_section[-1] if eps_section else {}
-                eps_content = last.get("content", "")
+                eps_content = last.get("content", "") if isinstance(last, dict) else ""
+
+            if not eps_content:
+                # Fallback: top-level executive_summary (pre-CEO-review runs)
+                es_list = doc.get("executive_summary", [])
+                if es_list and isinstance(es_list, list):
+                    last = es_list[-1] if es_list else {}
+                    eps_content = last.get("content", "") if isinstance(last, dict) else ""
 
             # Extract ux_design section (prompt text from previous runs)
             ux_section = doc.get("section", {}).get("ux_design", [])

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state import (
     _interactive_runs,
     _lock,
@@ -11,7 +9,9 @@ from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state im
     get_interactive_run,
 )
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def resolve_interaction(run_id: str, action_id: str, user: str) -> bool:

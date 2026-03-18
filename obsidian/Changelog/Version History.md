@@ -2,10 +2,36 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.26.x (2026-03-17)
+
+| Version | Summary |
+|---------|---------|
+| 0.26.0 | Logging standard & incident-trace instrumentation. CODEX § Logging Standard + Coding Standards § 8. Converted 41 files to get_logger(). Added trace logging (run_id, user_id, channel, team_id) to health, projects, ideas, SSO, publishing, Slack tools, OpenAI/Gemini chat, document assembly. 2303 tests |
+
+## v0.25.x (2026-03-17)
+
+| Version | Summary |
+|---------|---------|
+| 0.25.0 | SSO-based user_id on all API endpoints. All auth via external SSO portal; no local user accounts in ideas DB. API endpoints receive user_id from SSO JWT sub claim. 2303 tests |
+
+## v0.24.x (2026-03-16)
+
+| Version | Summary |
+|---------|---------|
+| 0.24.0 | CRUD APIs with pagination for Projects and Ideas — GET/POST/PATCH/DELETE /projects; GET/PATCH /ideas with pagination (10/25/50), project_id & status filters. SSO-protected. 35 new tests, 2307 total |
+
+## v0.23.x (2026-03-16)
+
+| Version | Summary |
+|---------|---------|
+| 0.23.0 | SSO "Idea Foundry" application whitelisting — sso_auth.py rewritten for RS256 JWT (was HS256); app_id claim enforcement via SSO_EXPECTED_APP_ID; sso_webhooks.py handles all 6 SSO events; X-Webhook-Signature header (was X-SSO-Signature); .env.example SSO block; FastAPI title "Idea Foundry"; SSO bootstrap seeds Idea Foundry as registered OAuth app. 2272 tests |
+
 ## v0.22.x (2026-03-16)
 
 | Version | Summary |
 |---------|---------|
+| 0.22.3 | Fix UX Design task producing no user-visible output — task YAML mandates FIGMA_PROMPT always; error recovery; PRD appendix; standalone file; Slack preview. 2272 tests |
+| 0.22.2 | LLM token optimisation — critique task uses `approved_context_condensed(char_limit=300)` instead of full `approved_context()`; new `condensed_text()` truncates EPS/eng plan to 1500 chars for critique; removed redundant `critique_section_content` from refine expected_output. Manual UX Design button — product list offers `:page_facing_up: Manual UX Design` alongside API retry; uploads markdown file with EPS + ux_design section for Figma Make copy-paste. 2271 tests |
 | 0.22.1 | Project config wizard + Config button — expanded `_UPDATE_CONFIG_PHRASES` (12→21) with project config/configure/reconfigure/settings phrases; rewrote `handle_update_config` to launch 5-step setup wizard with pre-populated current values; added `:gear: Config` button to product list header; new `mark_pending_reconfig()` in session_manager; `product_config` dispatch → `_handle_product_config`; `project_name` as step 1 (skipped for new projects). 2260 tests |
 | 0.22.0 | Figma project config + OAuth + REST API — 5 Figma fields in `projectConfig` schema; `_api.py` REST client; project-level credential resolution (API key → OAuth → session); OAuth cookie injection in `_client.py`; dual-mode `login.py` (--oauth flag); setup wizard 2→4 steps; agent/flow pipeline wiring. 2253 tests |
 

@@ -29,8 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
@@ -78,7 +76,9 @@ from crewai_productfeature_planner.apis.slack._thread_state import (
 import crewai_productfeature_planner.apis.slack._thread_state as _ts
 from crewai_productfeature_planner.apis.slack.verify import verify_slack_request
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["Slack Events"])
 

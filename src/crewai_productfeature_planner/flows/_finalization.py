@@ -61,6 +61,17 @@ def save_progress(flow: PRDFlow) -> str:
         if section.content and section.key != "executive_summary":
             parts.append(f"## {section.title}\n\n{section.content}")
 
+    # UX Design appendix (prompt and/or Figma URL)
+    ux_prompt = getattr(flow.state, "figma_design_prompt", "")
+    ux_url = getattr(flow.state, "figma_design_url", "")
+    if ux_prompt or ux_url:
+        ux_parts = ["## Appendix: UX Design\n"]
+        if ux_url:
+            ux_parts.append(f"\n**Figma Prototype:** [{ux_url}]({ux_url})\n")
+        if ux_prompt:
+            ux_parts.append(f"\n{ux_prompt}")
+        parts.append("\n".join(ux_parts))
+
     if not parts:
         logger.info("[Progress] Nothing to save — no content produced yet")
         return ""
@@ -136,6 +147,23 @@ def finalize(flow: PRDFlow) -> str:
     """Assemble the final PRD from all approved sections and persist."""
     logger.info("[Step 4] Finalising PRD (total iterations=%d)", flow.state.iteration)
     flow.state.final_prd = flow.state.draft.assemble()
+
+    # Append UX Design appendix when a prompt was generated.
+    ux_prompt = getattr(flow.state, "figma_design_prompt", "")
+    ux_url = getattr(flow.state, "figma_design_url", "")
+    if ux_prompt or ux_url:
+        ux_parts = ["\n\n---\n\n## Appendix: UX Design\n"]
+        if ux_url:
+            ux_parts.append(
+                f"\n**Figma Prototype:** [{ux_url}]({ux_url})\n"
+            )
+        if ux_prompt:
+            ux_parts.append(f"\n{ux_prompt}\n")
+        flow.state.final_prd += "".join(ux_parts)
+        logger.info(
+            "[Step 4] Appended UX Design appendix (%d chars)",
+            len(ux_prompt or ux_url),
+        )
 
     # Save Markdown to file
     writer = PRDFileWriteTool()

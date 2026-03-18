@@ -1,8 +1,22 @@
 """Core domain models for PRD drafts and executive summary iterations."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 
 from ._sections import SECTION_ORDER
+
+
+def condensed_text(text: str, *, char_limit: int = 1500) -> str:
+    """Truncate *text* to *char_limit* chars for LLM context.
+
+    Used to shrink large specialist outputs (EPS, engineering plan)
+    when full verbatim text isn't needed — e.g. the critique task
+    only needs enough to judge consistency, not to write content.
+    """
+    if not text or len(text) <= char_limit:
+        return text
+    return text[:char_limit] + "\n[...truncated]"
 
 
 class ExecutiveSummaryIteration(BaseModel):

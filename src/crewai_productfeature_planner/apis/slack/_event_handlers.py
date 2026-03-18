@@ -16,11 +16,12 @@ resolved through ``sys.modules["...events_router"]`` at call-time so that
 
 from __future__ import annotations
 
-import logging
 import re
 import sys
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _ER_MODULE = "crewai_productfeature_planner.apis.slack.events_router"
 

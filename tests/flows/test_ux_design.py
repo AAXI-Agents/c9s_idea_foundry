@@ -102,6 +102,7 @@ class TestRunUxDesign:
             "figma_url": result,
             "has_prompt": True,
             "status": "completed",
+            "prompt_preview": "FIGMA_URL:https://www.figma.com/design/abc123"[:500],
         })
 
         # save_iteration called
@@ -151,7 +152,7 @@ class TestRunUxDesign:
     def test_handles_error_output(
         self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
     ):
-        """Agent returning FIGMA_ERROR: should set status to skipped."""
+        """Agent returning FIGMA_ERROR with short content should skip."""
         from crewai_productfeature_planner.flows._ux_design import run_ux_design
 
         flow = _make_flow()
@@ -171,6 +172,40 @@ class TestRunUxDesign:
 
         assert result == ""
         assert flow.state.figma_design_status == "skipped"
+
+    @patch(f"{_UX_MOD}.Crew")
+    @patch(f"{_UX_MOD}.Task")
+    @patch(f"{_UX_MOD}.save_iteration")
+    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
+    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
+    def test_error_with_long_content_recovers_prompt(
+        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
+    ):
+        """Agent returning FIGMA_ERROR alongside >100 chars of design content
+        should recover the content as prompt_ready."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        design_content = "Design a dark-themed dashboard with sidebar nav. " * 5
+        mock_result = MagicMock()
+        mock_result.raw = (
+            f"FIGMA_ERROR: HTTP 404 not found\n\n{design_content}"
+        )
+        mock_kickoff.return_value = mock_result
+
+        with patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
+        ) as mock_create, patch(
+            f"{_UX_MOD}._persist_figma_design",
+        ):
+            mock_create.return_value = MagicMock()
+            result = run_ux_design(flow)
+
+        assert result == ""
+        assert flow.state.figma_design_status == "prompt_ready"
+        assert "dashboard" in flow.state.figma_design_prompt
 
     @patch(f"{_UX_MOD}.Crew")
     @patch(f"{_UX_MOD}.Task")

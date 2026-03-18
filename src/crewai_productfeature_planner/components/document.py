@@ -8,12 +8,13 @@ from any context (CLI, API, background threads).
 from __future__ import annotations
 
 import json
-import logging
 import re
 
 from crewai_productfeature_planner.apis.prd.models import SECTION_ORDER
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _ITERATION_RE = re.compile(r"\s*\(Iteration\s+\d+\)", re.IGNORECASE)
 
@@ -131,6 +132,8 @@ def assemble_prd_from_doc(doc: dict) -> str:
     Mirrors the structure used by ``PRDDraft.assemble()`` but works
     directly from the raw MongoDB document.
     """
+    run_id = doc.get("run_id", "unknown")
+    logger.debug("[Document] Assembling PRD from doc run_id=%s", run_id)
     parts: list[str] = []
 
     # Executive summary — use the last iteration's content

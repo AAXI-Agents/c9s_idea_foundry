@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import logging
+from crewai_productfeature_planner.scripts.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def prompt_project_selection(channel: str, thread_ts: str, user: str) -> None:

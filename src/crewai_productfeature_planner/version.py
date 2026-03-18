@@ -1669,6 +1669,127 @@ _CODEX: list[CodexEntry] = [
             "_handle_product_config. 2260 tests."
         ),
     ),
+    CodexEntry(
+        "0.22.2",
+        date(2026, 3, 16),
+        (
+            "LLM token optimisation — critique task now uses "
+            "approved_context_condensed(char_limit=300) instead of "
+            "full approved_context; new condensed_text() helper "
+            "truncates EPS and engineering plan to 1500 chars for "
+            "critique calls; removed redundant critique_section_content "
+            "from refine expected_output format. Manual UX Design "
+            "button — product list shows :page_facing_up: Manual UX "
+            "Design alongside API retry; dispatches to "
+            "_handle_manual_ux_design which uploads a markdown file "
+            "with executive_product_summary + ux_design section for "
+            "copy-paste into Figma Make. 2271 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.22.3",
+        date(2026, 3, 16),
+        (
+            "Fix UX Design task producing no user-visible output. "
+            "(1) Task YAML now mandates agent ALWAYS outputs "
+            "FIGMA_PROMPT: with the full design spec regardless of "
+            "tool success/error/skip — previously agent only relayed "
+            "FIGMA_ERROR on API 404 (74 chars, no design content). "
+            "(2) _ux_design.py error path recovers design content "
+            "from agent output even when FIGMA_ERROR is present — "
+            "strips error markers and stores remainder as prompt when "
+            ">100 chars. (3) UX design prompt now appended as "
+            "'Appendix: UX Design' in both finalized PRD and "
+            "save_progress drafts. (4) Standalone ux_design_*.md "
+            "file written alongside PRD. (5) Slack ux_design_complete "
+            "notification includes prompt preview and tells user "
+            "where to find the full spec. 2272 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.23.0",
+        date(2026, 3, 16),
+        (
+            "SSO integration — 'Idea Foundry' application whitelisting. "
+            "(1) sso_auth.py rewritten for RS256 JWT validation using "
+            "the SSO public key (was HS256). Tokens verified locally "
+            "via SSO_JWT_PUBLIC_KEY_PATH or remotely via /sso/oauth/introspect. "
+            "(2) app_id claim enforcement: when SSO_EXPECTED_APP_ID is set, "
+            "only tokens issued for the Idea Foundry OAuth app are accepted. "
+            "(3) sso_webhooks.py updated to match actual SSO event types "
+            "(user.created/updated/deleted, login.success/failed, "
+            "token.revoked) with X-Webhook-Signature header (was X-SSO-Signature). "
+            "(4) FastAPI app title set to 'Idea Foundry'. "
+            "(5) .env.example includes full SSO configuration block. "
+            "(6) SSO bootstrap seeds 'Idea Foundry' as registered OAuth "
+            "application on startup. 2272 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.23.1",
+        date(2026, 3, 16),
+        (
+            "Fix 'No Executive Product Summary found' on Manual UX Design "
+            "for completed/published products. _handle_manual_ux_design() "
+            "only checked section.executive_product_summary (populated by "
+            "CEO Review in newer runs). Older completed products store the "
+            "EPS in the top-level executive_summary array. Fix adds "
+            "fallback: when section.executive_product_summary is empty, "
+            "reads from doc.executive_summary[-1].content. 2272 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.24.0",
+        date(2026, 3, 16),
+        (
+            "CRUD APIs with pagination for Projects and Ideas. "
+            "GET /projects (paginated 10/25/50), GET /projects/{id}, "
+            "POST /projects, PATCH /projects/{id}, DELETE /projects/{id}. "
+            "GET /ideas (paginated 10/25/50, filter by project_id & status), "
+            "GET /ideas/{run_id}, PATCH /ideas/{run_id}/status (archive/pause). "
+            "Both routers SSO-protected. 35 new tests, 2307 total."
+        ),
+    ),
+    CodexEntry(
+        "0.25.0",
+        date(2026, 3, 17),
+        (
+            "SSO-based user_id on all API endpoints. "
+            "All login and registration handled by the external SSO portal; "
+            "users are redirected back to Idea Foundry after successful auth. "
+            "No local user accounts stored in the ideas database. "
+            "(1) `require_sso_user` returns `user_id` from the SSO JWT `sub` "
+            "claim directly — no local DB provisioning. "
+            "(2) All API endpoints (Ideas, Projects, PRD, Publishing) receive "
+            "`user: dict = Depends(require_sso_user)` parameter with the "
+            "authenticated SSO `user_id`. "
+            "(3) Removed local `users` collection, `user_provisioning` module, "
+            "and Slack auto-provisioning calls. "
+            "2307 tests."
+        ),
+    ),
+    CodexEntry(
+        "0.26.0",
+        date(2026, 3, 17),
+        (
+            "Logging standard & incident-trace instrumentation. "
+            "(1) New CODEX § Logging Standard + Coding Standards § 8 require "
+            "all business logic modules to use `get_logger(__name__)`, log at "
+            "boundaries with trace identifiers (run_id, user_id, channel, "
+            "team_id, project_id), and `exc_info=True` on errors. "
+            "(2) Converted 41 files from bare `import logging` / "
+            "`logging.getLogger(__name__)` to unified `get_logger()` pattern. "
+            "(3) Added incident-trace logging to health router (token status, "
+            "exchange, refresh), projects CRUD (5 endpoints), ideas CRUD "
+            "(get, status update), SSO auth (auth boundary, token validation), "
+            "publishing service (list pending, publish+tickets, delivery status), "
+            "Slack tools (send/read/post/interpret with channel/run_id), "
+            "OpenAI chat (entry/exit with intent + model), "
+            "Gemini chat (entry/exit with intent + model), "
+            "document assembly (run_id context). "
+            "2303 tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

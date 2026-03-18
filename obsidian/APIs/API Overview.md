@@ -40,6 +40,43 @@
 |--------|------|---------|
 | Various | `/publishing/*` | 10 automation endpoints for Confluence/Jira delivery |
 
+## SSO Webhooks (v0.23.0)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/sso/webhooks/events` | Receive SSO lifecycle events (user.created/updated/deleted, login.success/failed, token.revoked) |
+
+## Projects (v0.24.0)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/projects` | List projects (paginated: 10, 25, 50) |
+| `GET` | `/projects/{project_id}` | Get project by ID |
+| `POST` | `/projects` | Create a new project |
+| `PATCH` | `/projects/{project_id}` | Update a project |
+| `DELETE` | `/projects/{project_id}` | Delete a project |
+
+## Ideas (v0.24.0)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/ideas` | List ideas (paginated: 10, 25, 50; filter by project_id, status) |
+| `GET` | `/ideas/{run_id}` | Get idea by run_id |
+| `PATCH` | `/ideas/{run_id}/status` | Update idea status (archive / pause) |
+
+> **Application name**: "Idea Foundry" — registered in SSO bootstrap. PRD and Publishing routers require a valid SSO Bearer token when `SSO_ENABLED=true`. Tokens are RS256-signed by the SSO service and verified locally (public key) or via `/sso/oauth/introspect`.
+
+## Authentication & User Provisioning (v0.24.0)
+
+All API endpoints (except Health and Slack webhooks) require SSO authentication via `require_sso_user` FastAPI dependency.
+
+**User auto-provisioning**: On every authenticated request, the system ensures a local `users` collection record exists for the caller:
+
+- **SSO callers**: Matched by SSO `sub` claim, then by email. Created from JWT claims if not found. `password_hash` is left empty for Slack-only users.
+- **Slack callers**: Matched by `slack_user_id`. Created from Slack profile (`users.info` API) if not found. `password_hash` is left empty so the user can set it on first web login.
+
+Each endpoint receives the provisioned `user_id` via the `user: dict = Depends(require_sso_user)` parameter.
+
 ## Documentation
 
 - OpenAPI spec: `docs/openapi/openapi.json`

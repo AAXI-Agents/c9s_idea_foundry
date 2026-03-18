@@ -916,3 +916,217 @@ Playwright `storage_state()` JSON file saved from one-time interactive login ses
 - 2260 passed in 41s (net +7 new tests)
 
 ---
+
+## Session 021 — 2026-03-16
+
+**Scope**: LLM Token Optimisation + Manual UX Design
+**Version**: v0.22.1 → v0.22.2
+
+### Work Done
+
+#### LLM Token Reduction
+- **Critique task**: Switched from `approved_context()` (full verbatim text of all approved sections) to `approved_context_condensed(char_limit=300)` — saves ~5,000–30,000 chars/call on later sections
+- **EPS/Eng Plan in critique**: New `condensed_text()` helper in `_domain.py` truncates to 1500 chars for critique calls (critic evaluates quality, doesn't write content — full text unnecessary)
+- **Refine expected_output**: Removed unused `critique_section_content` kwarg from `.format()` call — YAML template only uses `{section_title}`
+- **Estimated savings**: ~50-70% token reduction per critique call on later sections; ~20-30% overall LLM cost reduction across full PRD generation
+
+#### Manual UX Design
+- Added `:page_facing_up: Manual UX Design` button alongside existing UX design button in product list
+- Button appears whenever API UX design button appears (start or retry state)
+- New `_handle_manual_ux_design()` handler loads EPS + ux_design section from MongoDB, builds formatted markdown, uploads as Slack file snippet
+- Fallback to plain text if file upload fails
+
+### Files Modified
+- `src/.../apis/prd/_domain.py` — Added `condensed_text()` helper
+- `src/.../flows/_section_loop.py` — Critique uses condensed context, condensed EPS/eng plan; refine drops unused kwarg
+- `src/.../apis/slack/blocks/_product_list_blocks.py` — Manual UX Design button
+- `src/.../apis/slack/interactions_router/_dispatch.py` — `product_manual_ux_` prefix + ack label
+- `src/.../apis/slack/interactions_router/_product_list_handler.py` — `_handle_manual_ux_design()`
+- `src/.../agents/product_manager/config/tasks.yaml` — No changes (templates already clean)
+- `tests/flows/test_prd_flow.py` — 5 `condensed_text` tests; 21 test task_configs updated (removed `{critique_section_content}` from expected_output)
+- `tests/apis/slack/test_product_list.py` — Manual UX button tests, dispatch tests, handler tests
+- `src/.../version.py` — bumped to 0.22.2
+
+### Tests
+- 2271 passed in 37s (net +11 new tests)
+
+---
+
+## Session 014 — 2026-03-16
+
+**Scope**: Fix UX Design task generating no user-visible output
+**Version**: v0.22.2 → v0.22.3
+
+### Root Cause
+Two issues caused the UX Design Phase 1.5c to produce no value:
+
+1. **Agent didn't always output the prompt** — Task YAML only instructed agent to output `FIGMA_PROMPT:` when tool returned `FIGMA_SKIPPED`. When Figma API returned HTTP 404 (`FIGMA_ERROR`), the agent relayed only the 74-char error with zero design content (22:02 run on 2026-03-15). Status → `skipped`, nothing useful stored.
+2. **Even when prompt was generated, it was never delivered** — The first run (15:31) DID generate a 5096-char prompt stored as `prompt_ready`, but: SECTION_ORDER doesn't include `ux_design` → `assemble()` never includes it; Slack message just said "Figma prompt generated" without sharing content; no standalone file written; buried in MongoDB.
+
+### Fixes Applied
+1. **Task YAML** (`agents/ux_designer/config/tasks.yaml`) — Agent now MUST ALWAYS output `FIGMA_PROMPT:` with full design spec regardless of tool success/error/skip. The prompt is described as valuable UX spec included in the PRD.
+2. **Error recovery** (`flows/_ux_design.py`) — When `FIGMA_ERROR` is present but no `FIGMA_PROMPT`, strips error markers and stores remainder as prompt if >100 chars of design content exists. Previously marked as `skipped` and discarded everything.
+3. **PRD appendix** (`flows/_finalization.py`) — `finalize()` appends "Appendix: UX Design" section to assembled PRD with Figma URL (if any) and full prompt. `save_progress()` also includes it in draft files.
+4. **Standalone file** (`flows/_ux_design.py`) — New `_save_ux_design_file()` writes `ux_design_*.md` alongside PRDs in `output/prds/YYYY/MM/` when prompt is generated.
+5. **Slack notification** (`apis/slack/_flow_handlers.py`) — `ux_design_complete` handler now includes prompt preview (300 chars) and tells user the spec is in the PRD appendix and saved as standalone file. Progress event payload now includes `prompt_preview`.
+
+### Files Modified
+- `src/.../agents/ux_designer/config/tasks.yaml` — Mandatory FIGMA_PROMPT output
+- `src/.../flows/_ux_design.py` — Error recovery, standalone file write, prompt_preview in event
+- `src/.../flows/_finalization.py` — UX Design appendix in finalize() and save_progress()
+- `src/.../apis/slack/_flow_handlers.py` — Richer ux_design_complete notification
+- `tests/flows/test_ux_design.py` — Updated assertions for new payload, added error recovery test
+- `src/.../version.py` — Bumped to 0.22.3
+
+### Tests
+- 2272 passed (net +1 new test: `test_error_with_long_content_recovers_prompt`)
+
+---
+
+## Session 015 — SSO "Idea Foundry" Application Whitelisting
+**Date**: 2026-03-16 | **Version**: 0.22.3 → 0.23.0
+
+### Goal
+Register "Idea Foundry" as the application name in the SSO platform and update the PRD planner to validate tokens were issued for this application. Both sides must acknowledge the whitelisted application.
+
+### Changes
+
+#### SSO side (`c9s_singlesignon`)
+1. **`applications_repo.py`** — Added `find_app_by_name()` for case-insensitive app lookup by name.
+2. **`bootstrap.py`** — Seeds "Idea Foundry" as a registered OAuth application on startup with redirect URIs and OpenID scopes. Client ID/secret generated automatically and logged once.
+3. **`version.py`** — Bumped to 0.1.1.
+
+#### PRD Planner side (`crewai_productfeature_planner`)
+1. **`sso_auth.py`** — Full rewrite:
+   - RS256 JWT validation (was HS256) via `SSO_JWT_PUBLIC_KEY_PATH` or remote `/sso/oauth/introspect`.
+   - `APP_NAME = "Idea Foundry"` constant; `app_id` claim enforcement when `SSO_EXPECTED_APP_ID` is set.
+   - Webhook signature header changed to `X-Webhook-Signature` (was `X-SSO-Signature`) to match SSO service.
+   - Returns enriched user dict with `app_id`, `app_name`, `enterprise_id`, `organization_id`.
+2. **`sso_webhooks.py`** — Updated to handle all 6 SSO event types: `user.created`, `user.updated`, `user.deleted`, `login.success`, `login.failed`, `token.revoked`. Uses dispatch table pattern.
+3. **`apis/__init__.py`** — FastAPI app title set to "Idea Foundry — CrewAI Product Feature Planner API". SSO webhook tag description updated.
+4. **`.env.example`** — Full SSO configuration block: `SSO_ENABLED`, `SSO_BASE_URL`, `SSO_JWT_PUBLIC_KEY_PATH`, `SSO_ISSUER`, `SSO_EXPECTED_APP_ID`, `SSO_WEBHOOK_SECRET`.
+5. **`version.py`** — Bumped to 0.23.0.
+6. **`obsidian/Architecture/Environment Variables.md`** — Added SSO section.
+
+### Tests
+- 2272 passed (no regressions)
+
+---
+
+## Session 016 — CRUD APIs for Projects & Ideas
+**Date**: 2026-03-16 | **Version**: 0.23.1 → 0.24.0
+
+### Goal
+Create REST CRUD and paginated list APIs for Projects and Ideas.
+
+### Changes
+
+1. **`apis/projects/router.py`** (new) — Full CRUD: `GET /projects` (paginated 10/25/50), `GET /projects/{id}`, `POST /projects`, `PATCH /projects/{id}`, `DELETE /projects/{id}`. SSO-protected. Pydantic request/response models.
+2. **`apis/projects/__init__.py`** (new) — Package init with router re-export.
+3. **`apis/ideas/router.py`** (new) — `GET /ideas` (paginated 10/25/50, filter by `project_id` & `status`), `GET /ideas/{run_id}`, `PATCH /ideas/{run_id}/status` (archive/pause). SSO-protected.
+4. **`apis/ideas/__init__.py`** (new) — Package init with router re-export.
+5. **`apis/__init__.py`** — Wired projects_router and ideas_router. Added OpenAPI tags.
+6. **`version.py`** — Bumped to 0.24.0.
+7. **`obsidian/APIs/API Overview.md`** — Added Projects and Ideas endpoint tables.
+8. **`obsidian/Architecture/Module Map.md`** — Added projects/ and ideas/ entries.
+
+### Tests
+- 35 new tests (`tests/apis/projects/test_router.py`, `tests/apis/ideas/test_router.py`)
+- 2307 total passed (no regressions)
+
+---
+
+## Session 017 — User Provisioning & user_id on All APIs
+**Date**: 2026-03-17 | **Version**: 0.24.0 → 0.25.0
+
+### Goal
+Add user_id to all API endpoints for logged-in users. Auto-create user accounts from Slack profile when no existing account is found, leaving password empty for first web login.
+
+### Changes
+
+1. **mongodb/users/__init__.py** (new) — users MongoDB collection repository with CRUD operations.
+2. **apis/user_provisioning.py** (new) — ensure_user_from_sso() and ensure_user_from_slack() for auto-provisioning.
+3. **apis/sso_auth.py** — require_sso_user now calls ensure_user_from_sso(); returns DB user_id.
+4. **apis/ideas/router.py** — All endpoints receive user dependency parameter.
+5. **apis/projects/router.py** — All endpoints receive user dependency parameter.
+6. **apis/prd/router.py** — All endpoints receive user dependency parameter.
+7. **apis/prd/_route_actions.py** — All action endpoints receive user dependency.
+8. **apis/publishing/router.py** — All endpoints receive user dependency parameter.
+9. **apis/slack/_event_handlers.py** — app_mention and thread_message call ensure_user_from_slack().
+10. **apis/slack/interactions_router/_dispatch.py** — Interactive handler calls ensure_user_from_slack().
+11. **scripts/setup_mongodb.py** — Registered users collection with indexes.
+12. **mongodb/__init__.py** — Re-exports all users repository symbols.
+13. **tests/conftest.py** — Added users repo to mock DB patch targets.
+14. **tests/apis/slack/conftest.py** (new) — Patches ensure_user_from_slack for Slack tests.
+15. **tests/test_setup_mongodb.py** — Added users to expected collections set.
+16. **version.py** — Bumped to 0.25.0.
+
+### Tests
+- 2307 passed (no regressions)
+
+---
+
+## Session 018 — Revert Local User Storage (SSO-Only Auth)
+**Date**: 2026-03-17 | **Version**: 0.25.0 (corrected)
+
+### Goal
+User information must NOT be stored in the "ideas" database. All login/registration is handled by the external SSO portal. Users are redirected back to Idea Foundry after successful SSO auth. Reverted Session 017's local user provisioning system.
+
+### Changes
+
+1. **mongodb/users/__init__.py** (deleted) — Removed local users collection repository.
+2. **apis/user_provisioning.py** (deleted) — Removed auto-provisioning module.
+3. **tests/apis/slack/conftest.py** (deleted) — Removed provisioning mock fixture.
+4. **apis/sso_auth.py** — Reverted to use SSO JWT `sub` claim directly as `user_id`. No local DB calls.
+5. **apis/slack/_event_handlers.py** — Removed `ensure_user_from_slack` imports and calls from `_handle_app_mention` and `_handle_thread_message`.
+6. **apis/slack/interactions_router/_dispatch.py** — Removed user provisioning block from interactive handler.
+7. **mongodb/__init__.py** — Removed users imports, `USERS_COLLECTION`, and 8 user symbols from `__all__`.
+8. **scripts/setup_mongodb.py** — Removed `USERS_COLLECTION` import and index definitions.
+9. **tests/conftest.py** — Removed `_users_repo` import and patch target.
+10. **tests/test_setup_mongodb.py** — Removed `"users"` from expected collections set.
+11. **version.py** — Updated 0.25.0 codex entry to reflect SSO-only approach.
+12. **obsidian/Database/MongoDB Schema.md** — Removed `users` collection (back to 8 collections).
+13. **obsidian/Architecture/Module Map.md** — Removed `user_provisioning.py` entry.
+
+### Architecture Clarification
+- The "ideas" MongoDB database stores only application data (ideas, projects, sessions, jobs, etc.)
+- User accounts, authentication, passwords, and registration belong exclusively to the SSO service
+- API endpoints keep `user: dict = Depends(require_sso_user)` — identity comes from SSO JWT claims
+- Slack users are identified by their Slack user ID (already tracked in `userSession` and `agentInteraction`)
+
+### Tests
+- 2303 passed (4 deselected: pre-existing `test_billing_error_not_retried` retry test issue)
+
+---
+
+## Session 019 — Logging Standard & Incident-Trace Instrumentation
+**Date**: 2026-03-17 | **Version**: 0.25.0 → 0.26.0
+
+### Goal
+Establish a mandatory logging standard in the CODEX and implement it across all codebase modules, ensuring every business-logic file uses `get_logger(__name__)` and logs with trace identifiers for incident investigation.
+
+### Changes
+
+**Standards & Documentation:**
+1. **CODEX.md** — Added § Logging Standard (Required): must use `get_logger`, log at boundaries, include trace context, use proper levels, `exc_info=True` on errors, no sensitive data.
+2. **obsidian/Architecture/Coding Standards.md** — Added § 8 Logging Standard with 6 sub-sections: import pattern, what to log (table), trace context, error logging, security, exempt modules.
+
+**Logger Import Standardization (41 files):**
+3. Bulk-converted all `import logging` + `logging.getLogger(__name__)` to `from ...scripts.logging_config import get_logger` / `get_logger(__name__)` across: APIs (sso_auth, sso_webhooks, health, slack/*, publishing/*, ideas, projects), tools (slack_tools, slack_token_manager, openai_chat, gemini_chat), components (document), and all Slack interactive/session/interaction handlers.
+4. Removed stale `import logging` from `apis/slack/router.py`.
+
+**Incident-Trace Logging Added:**
+5. **apis/health/router.py** — Added logger + trace logging to slack_token_status (team_id), slack_token_exchange (team_id + error), slack_token_refresh (team_id + success/fail).
+6. **apis/projects/router.py** — Added logging to all 5 CRUD endpoints: get (project_id), create (name + project_id), update (project_id + fields), delete (project_id), with user_id on all.
+7. **apis/ideas/router.py** — Added logging to get_idea (run_id) and update_idea_status (run_id + new_status + user_id).
+8. **apis/sso_auth.py** — Added logging at auth boundary: bypass path, missing Bearer token, invalid/expired token, successful authentication (user_id + path).
+9. **apis/publishing/service.py** — Added logging to list_pending_prds (count), publish_and_create_tickets (run_id), publish_all_and_create_tickets, get_delivery_status (run_id + not-found).
+10. **tools/slack_tools.py** — Added channel/team_id/run_id to: token retrieval warning, token error refresh, send failure, read failure, post PRD result failure, file upload, interpret message entry/exit with intent.
+11. **tools/openai_chat.py** — Added entry log (msg_len), exit log (intent + model), prefix all warnings/errors with `[OpenAI]`.
+12. **tools/gemini_chat.py** — Added entry log (msg_len), exit log (intent + model), prefix all warnings/errors with `[Gemini]`.
+13. **components/document.py** — Added debug log to assemble_prd_from_doc (run_id).
+
+### Tests
+- 2303 passed (4 deselected: pre-existing retry test)
+
+---

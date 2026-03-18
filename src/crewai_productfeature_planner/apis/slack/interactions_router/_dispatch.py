@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from functools import partial
 from urllib.parse import parse_qs
 
@@ -12,7 +11,9 @@ from fastapi.responses import JSONResponse
 
 from crewai_productfeature_planner.apis.slack.verify import verify_slack_request
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["Slack Interactions"])
 

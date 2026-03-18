@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 import os
 import ssl
 import urllib.parse
@@ -22,7 +21,9 @@ import urllib.request
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-logger = logging.getLogger(__name__)
+from crewai_productfeature_planner.scripts.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["Slack OAuth"])
 

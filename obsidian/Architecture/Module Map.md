@@ -50,7 +50,11 @@
 | `prd/models.py` | Pydantic request/response schemas |
 | `prd/service.py` | Flow execution helpers (run, resume, restore state) |
 | `publishing/` | Publishing automation (router, service, watcher, scheduler) |
+| `projects/` | Projects CRUD router (list/get/create/update/delete with pagination) |
+| `ideas/` | Ideas CRUD router (paginated list, get, archive/pause with filters) |
 | `slack/` | Full Slack integration (see [[Slack Integration]]) |
+| `sso_auth.py` | SSO JWT validation + require_sso_user dependency |
+| `sso_webhooks.py` | SSO webhook receiver for user lifecycle events |
 
 ## Flows (`flows/`)
 
@@ -94,6 +98,7 @@
 | `project_memory/` | Project-level memory store |
 | `slack_oauth/` | Slack OAuth token persistence |
 | `user_session/` | User session management |
+| `users/` | Application user accounts (SSO + Slack provisioned) |
 
 ## Tools (`tools/`)
 
