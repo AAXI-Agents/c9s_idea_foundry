@@ -79,7 +79,7 @@ def _notify_terminated_flows(terminated: list[dict]) -> None:
                 ":octagonal_sign: *Server restarted.* "
                 f"PRD flow `{run_id}` was terminated to apply new changes.\n"
                 f"> _{idea}_\n"
-                "Say *create prd* to start a fresh run."
+                "You can start a fresh run by describing your idea again."
             )
             send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
         except Exception:  # noqa: BLE001

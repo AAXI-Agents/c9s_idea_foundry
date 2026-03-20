@@ -29,16 +29,22 @@ def _handle_restart_prd_action(
             user_id, run_id,
         )
         if client and channel:
+            from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+                restart_cancelled_buttons,
+            )
+            text = (
+                f"<@{user_id}> :no_entry_sign: Restart cancelled. "
+                "Your current PRD run is unchanged."
+            )
             try:
                 client.chat_postMessage(
                     channel=channel,
                     thread_ts=thread_ts,
-                    text=(
-                        f"<@{user_id}> :no_entry_sign: Restart cancelled. "
-                        "Your current PRD run is unchanged.\n"
-                        "Say *resume prd* to continue it, or tell me "
-                        "a new idea to start a separate flow."
-                    ),
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                        *restart_cancelled_buttons(),
+                    ],
+                    text=text,
                 )
             except Exception as exc:
                 logger.error("Restart cancel ack failed: %s", exc)

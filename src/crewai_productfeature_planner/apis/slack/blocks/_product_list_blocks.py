@@ -362,20 +362,10 @@ def product_list_blocks(
 
         blocks.append({"type": "divider"})
 
-    # Footer hint
-    blocks.append(
-        {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": (
-                        ":bulb: Say *list ideas* to see in-progress ideas, "
-                        "or describe a new idea to start fresh!"
-                    ),
-                }
-            ],
-        }
+    # Footer buttons
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        product_list_footer_buttons,
     )
+    blocks.extend(product_list_footer_buttons())
 
     return blocks

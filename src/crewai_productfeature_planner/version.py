@@ -1909,6 +1909,22 @@ _CODEX: list[CodexEntry] = [
             "5 new tests, 2340 total."
         ),
     ),
+    CodexEntry(
+        "0.30.0",
+        date(2026, 3, 20),
+        (
+            "All bot commands now clickable — replace every 'Say *command*' "
+            "text prompt with interactive Slack Block Kit buttons. "
+            "New _command_blocks.py module with 11 button constants and "
+            "10 composite block builders. New _command_handler.py with "
+            "cmd_* action dispatch wired into _dispatch.py. Replaced 18 "
+            "text-based command prompts across 12 files (session, memory, "
+            "retry, product list, flow handlers, message handler, restart, "
+            "router). Help intent now renders as Block Kit with action "
+            "buttons instead of plain text bullet list. "
+            "33 new tests, 2373 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

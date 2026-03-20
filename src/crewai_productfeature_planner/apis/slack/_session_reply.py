@@ -36,7 +36,7 @@ INTRO_MESSAGE = (
     ":three:  Drafts an executive summary and all PRD sections\n"
     ":four:  Posts a summary right here in this channel\n\n"
     "If I need more info, I'll ask you in a thread. :thread:\n\n"
-    "_Type_ `@crewai-prd-bot help` _anytime._"
+    "_Click *Help* anytime to see what I can do._"
 )
 
 

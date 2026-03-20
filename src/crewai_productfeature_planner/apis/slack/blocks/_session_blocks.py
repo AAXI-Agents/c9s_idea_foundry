@@ -250,6 +250,9 @@ def project_setup_complete_blocks(project_name: str, details: dict) -> list[dict
 
 def session_started_blocks(project_name: str) -> list[dict]:
     """Confirm that a project session has been activated."""
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        session_action_buttons,
+    )
     return [
         {
             "type": "section",
@@ -257,11 +260,11 @@ def session_started_blocks(project_name: str) -> list[dict]:
                 "type": "mrkdwn",
                 "text": (
                     f":white_check_mark: *Project session started:* {project_name}\n\n"
-                    "All PRD flows will be linked to this project. "
-                    "Say *switch project* or *end session* when you're done."
+                    "All PRD flows will be linked to this project."
                 ),
             },
         },
+        *session_action_buttons(),
     ]
 
 

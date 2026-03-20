@@ -68,8 +68,7 @@ def flow_paused_blocks(
                 {
                     "type": "mrkdwn",
                     "text": (
-                        "_Click Retry to resume from where it stopped, "
-                        "or say *resume prd flow*._"
+                        "_Click Retry to resume from where it stopped._"
                     ),
                 },
             ],

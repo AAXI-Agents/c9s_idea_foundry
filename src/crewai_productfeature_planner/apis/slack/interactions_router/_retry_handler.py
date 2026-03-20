@@ -56,7 +56,7 @@ def _handle_flow_retry(
                     thread_ts=thread_ts,
                     text=(
                         f":x: Failed to retry PRD flow: {exc}\n"
-                        "Please say *resume prd flow* to try again."
+                        "Please click Resume PRD to try again."
                     ),
                 )
         except Exception:  # noqa: BLE001

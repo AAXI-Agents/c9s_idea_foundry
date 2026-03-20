@@ -99,6 +99,9 @@ _DELIVERY_ACTIONS = frozenset({
     "delivery_create_jira",
 })
 
+# Command shortcut buttons (cmd_* action IDs)
+_CMD_PREFIX = "cmd_"
+
 
 def _extract_payload(body: bytes) -> dict | None:
     """Parse the ``payload`` field from a Slack interaction POST.
@@ -314,6 +317,36 @@ async def slack_interactions(request: Request) -> JSONResponse:
                     None,
                     partial(_with_team, _team_id, _post_ack, channel_id, thread_ts, ack_text),
                 )
+
+            return JSONResponse({"ok": True})
+
+        # ── Command shortcut buttons (cmd_*) ──
+        if action_id.startswith(_CMD_PREFIX):
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack command button: action=%s user=%s",
+                action_id, user_name,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack.interactions_router._command_handler import (
+                _handle_command_action,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    _handle_command_action,
+                    action_id, user_id, channel_id, thread_ts,
+                ),
+            )
 
             return JSONResponse({"ok": True})
 

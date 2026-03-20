@@ -39,12 +39,30 @@ def handle_list_products(
     products = find_completed_ideas_by_project(project_id, channel=channel)
 
     if not products:
-        reply(
-            channel, thread_ts,
-            f"<@{user}> :package: No completed products found for *{project_name}*.\n\n"
-            "Completed ideas will appear here once a PRD flow finishes.\n"
-            "Say *list ideas* to see ideas still in progress.",
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            no_products_buttons,
         )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        client = _get_slack_client()
+        text = (
+            f"<@{user}> :package: No completed products found for *{project_name}*.\n\n"
+            "Completed ideas will appear here once a PRD flow finishes."
+        )
+        blocks = [
+            {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+            *no_products_buttons(),
+        ]
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=blocks, text=text,
+                )
+            except Exception:
+                reply(channel, thread_ts, text)
+        else:
+            reply(channel, thread_ts, text)
         return
 
     # Enrich products that are missing a title

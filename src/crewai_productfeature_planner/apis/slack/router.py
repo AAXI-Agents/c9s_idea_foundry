@@ -322,7 +322,7 @@ def _run_slack_prd_flow(
                             channel=channel,
                             text=(
                                 f":pause_button: PRD flow paused (run_id: `{run_id}`). "
-                                "Say *resume prd flow* to retry."
+                                "Click Resume PRD to retry."
                             ),
                             thread_ts=thread_ts or "",
                         )
@@ -331,7 +331,7 @@ def _run_slack_prd_flow(
                         channel=channel,
                         text=(
                             f":pause_button: PRD flow paused (run_id: `{run_id}`). "
-                            "Say *resume prd flow* to retry."
+                            "Click Resume PRD to retry."
                         ),
                         thread_ts=thread_ts or "",
                     )

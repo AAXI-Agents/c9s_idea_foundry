@@ -1375,3 +1375,47 @@ which also didn't map it to `update_config`.
 - 2340 passed
 
 ---
+
+## Session 028 — 2026-03-20
+
+**Scope**: All Commands Clickable — Interactive Buttons
+**Date**: 2026-03-20 | **Version**: 0.29.2 → 0.30.0
+
+### Goal
+Replace all text-based "Say *command*" prompts with clickable Slack
+Block Kit buttons so users never need to type command text.
+
+### Changes
+1. **blocks/_command_blocks.py** (NEW) — 11 button constants
+   (BTN_LIST_IDEAS, BTN_LIST_PRODUCTS, BTN_CONFIGURE, etc.) and
+   10 composite block builders (help_blocks, session_action_buttons,
+   resume_prd_button, post_memory_saved_buttons, etc.)
+2. **interactions_router/_command_handler.py** (NEW) — CMD_ACTIONS
+   frozenset, _handle_command_action dispatcher routing cmd_* clicks
+   to existing session/flow handlers, _handle_help with Block Kit.
+3. **interactions_router/_dispatch.py** — Added _CMD_PREFIX and cmd_*
+   dispatch block between session and memory actions.
+4. **blocks/__init__.py** — Exported all new command block builders.
+5. **interactions_router/__init__.py** — Exported CMD_ACTIONS and
+   _handle_command_action.
+6. **18 text replacements across 12 files**:
+   - _session_blocks.py → session_action_buttons()
+   - _memory_blocks.py → post_memory_saved_buttons(), post_memory_view_buttons()
+   - _retry_blocks.py → removed "say resume prd flow" text
+   - _product_list_blocks.py → product_list_footer_buttons()
+   - _session_products.py → no_products_buttons()
+   - _flow_handlers.py → BTN_LIST_IDEAS button, plain text fallback updated
+   - _message_handler.py → help_blocks() with Block Kit
+   - _next_step_handler.py → missing_keys_buttons(), check_publish_buttons()
+   - _restart_handler.py → restart_cancelled_buttons()
+   - _retry_handler.py → "Click Resume PRD" text
+   - router.py → "Click Resume PRD" fallback text
+   - _session_reply.py → INTRO_MESSAGE updated
+   - apis/__init__.py → startup notification updated
+7. **Test updates**: Fixed 3 existing tests for new block structure.
+8. **33 new tests**: test_command_blocks.py (17), test_command_handler.py (16).
+
+### Tests
+- 2373 passed
+
+---

@@ -17,6 +17,7 @@ apis/slack/
     _idea_list_handler.py  Idea list buttons
     _delivery_action_handler.py  Publish/Jira buttons
     _archive_handler.py    Archive confirmation
+    _command_handler.py    cmd_* button dispatch (clickable shortcuts)
   interactive_handlers/    Interactive flow state (package)
     _run_state.py          Per-run state tracking
     _decisions.py          Decision resolution
@@ -40,6 +41,7 @@ apis/slack/
     _idea_list_blocks.py   Idea list with buttons
     _delivery_action_blocks.py  Delivery action buttons
     _product_list_blocks.py    Product list with delivery status
+    _command_blocks.py         Clickable command buttons (cmd_* shortcuts)
   oauth_router.py          /slack/oauth/callback (OAuth v2)
   verify.py                HMAC-SHA256 request verification
 ```

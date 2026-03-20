@@ -106,16 +106,50 @@ def _handle_next_step_feedback(
         from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
         handle_publish_intent(channel, thread_ts, user_id, SlackSendMessageTool())
     elif next_step == "configure_missing_keys":
-        _post(
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            missing_keys_buttons,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+        text = (
             ":key: Before publishing, you'll need to configure your "
-            "Confluence and Jira keys. Say *configure memory* or update "
-            "the project settings to add them."
+            "Confluence and Jira keys."
         )
+        client = _get_slack_client()
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                        *missing_keys_buttons(),
+                    ],
+                    text=text,
+                )
+            except Exception:
+                _post(text)
+        else:
+            _post(text)
     elif next_step == "review_prd":
-        _post(
-            ":mag: You have completed PRDs ready for review! Say "
-            "*check publish* to see what's pending."
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            check_publish_buttons,
         )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+        text = ":mag: You have completed PRDs ready for review!"
+        client = _get_slack_client()
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                        *check_publish_buttons(),
+                    ],
+                    text=text,
+                )
+            except Exception:
+                _post(text)
+        else:
+            _post(text)
     elif next_step in ("create_jira_skeleton", "create_jira"):
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
             handle_create_jira_intent,

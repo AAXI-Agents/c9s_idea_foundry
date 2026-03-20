@@ -99,6 +99,9 @@ def memory_saved_blocks(
     count: int,
 ) -> list[dict]:
     """Confirm that memory entries have been saved."""
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        post_memory_saved_buttons,
+    )
     return [
         {
             "type": "section",
@@ -107,12 +110,11 @@ def memory_saved_blocks(
                 "text": (
                     f":white_check_mark: Saved *{count}* "
                     f"{category_label} "
-                    f"{'entry' if count == 1 else 'entries'}.\n\n"
-                    "Say *configure memory* to add more, or start "
-                    "creating PRDs!"
+                    f"{'entry' if count == 1 else 'entries'}."
                 ),
             },
         },
+        *post_memory_saved_buttons(),
     ]
 
 
@@ -150,11 +152,8 @@ def memory_view_blocks(
     _section("Knowledge", ":books:", knowledge_entries)
     _section("Tools", ":wrench:", tools_entries)
 
-    blocks.append({
-        "type": "context",
-        "elements": [{
-            "type": "mrkdwn",
-            "text": "Say *configure memory* to update.",
-        }],
-    })
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        post_memory_view_buttons,
+    )
+    blocks.extend(post_memory_view_buttons())
     return blocks

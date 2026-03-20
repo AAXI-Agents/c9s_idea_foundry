@@ -52,6 +52,10 @@ from crewai_productfeature_planner.apis.slack.interactions_router._restart_handl
 from crewai_productfeature_planner.apis.slack.interactions_router._jira_approval_handler import (
     _handle_jira_approval_action,
 )
+from crewai_productfeature_planner.apis.slack.interactions_router._command_handler import (
+    CMD_ACTIONS,
+    _handle_command_action,
+)
 
 __all__ = [
     # Core
@@ -76,4 +80,6 @@ __all__ = [
     "_handle_archive_action",
     "_handle_idea_list_action",
     "_handle_jira_approval_action",
+    "CMD_ACTIONS",
+    "_handle_command_action",
 ]

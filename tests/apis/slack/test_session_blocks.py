@@ -113,9 +113,15 @@ class TestProjectCreatePromptBlocks:
 class TestSessionStartedBlocks:
     def test_includes_project_name(self):
         blocks = session_started_blocks("Acme Corp")
-        assert len(blocks) == 1
+        assert len(blocks) == 2  # section + action buttons
         assert "Acme Corp" in blocks[0]["text"]["text"]
-        assert "switch project" in blocks[0]["text"]["text"]
+
+    def test_includes_action_buttons(self):
+        blocks = session_started_blocks("Acme Corp")
+        assert blocks[1]["type"] == "actions"
+        action_ids = [e["action_id"] for e in blocks[1]["elements"]]
+        assert "cmd_switch_project" in action_ids
+        assert "cmd_end_session" in action_ids
 
 
 # ── session_ended_blocks ─────────────────────────────────────

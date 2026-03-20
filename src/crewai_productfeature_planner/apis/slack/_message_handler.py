@@ -317,36 +317,29 @@ def _interpret_and_act_inner(
 
     # ── Stateless intents (no project session required) ──
     if intent == "help":
-        help_msg = (
-            f"<@{user}> Here's what I can do:\n\n"
-            "*Project Management*\n"
-            "\u2022 Create a new project\n"
-            "\u2022 List / show available projects\n"
-            "\u2022 Switch to a different project\n"
-            "\u2022 Show current project\n"
-            "\u2022 End your session\n\n"
-            "*Idea Iteration & PRD Generation*\n"
-            "\u2022 Iterate on an idea — just describe your product idea\n"
-            "\u2022 List ideas for the current project\n"
-            "\u2022 List completed products & delivery status\n"
-            "\u2022 Publish PRDs to Confluence & create Jira tickets\n"
-            "\u2022 Check publishing status\n\n"
-            "*Configuration*\n"
-            "\u2022 Configure project memory\n\n"
-            "Just say what you need naturally — for example:\n"
-            ">  _\"Iterate an idea for a fitness tracking app\"_\n"
-            ">  _\"List my ideas\"_\n"
-            ">  _\"Show me available projects\"_\n"
-            ">  _\"Switch project\"_"
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            help_blocks,
         )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        help_text = f"<@{user}> Here's what I can do:"
         if not session_project_id:
-            help_msg += (
-                "\n\n:point_right: *To get started, select a project first* — "
-                "just say something and I'll prompt you to pick one."
-            )
-        send_tool.run(channel=channel, text=help_msg, thread_ts=thread_ts)
-        append_to_thread(channel, thread_ts, "assistant", help_msg)
-        tracked_response = help_msg
+            help_text += " To get started, select a project first."
+        blocks = help_blocks(user, has_project=bool(session_project_id))
+        client = _get_slack_client()
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=blocks, text=help_text,
+                )
+            except Exception:
+                # Fallback to plain text
+                send_tool.run(channel=channel, text=help_text, thread_ts=thread_ts)
+        else:
+            send_tool.run(channel=channel, text=help_text, thread_ts=thread_ts)
+        append_to_thread(channel, thread_ts, "assistant", help_text)
+        tracked_response = help_text
         log_tracked_interaction(
             log_interaction, "slack", clean_text, intent,
             tracked_response, idea, None, session_project_id,

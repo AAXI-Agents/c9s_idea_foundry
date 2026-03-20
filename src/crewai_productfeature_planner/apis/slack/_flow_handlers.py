@@ -64,15 +64,31 @@ def _resolve_idea_by_number(
         return None
 
     if idea_number < 1 or idea_number > len(ideas):
-        send_tool.run(
-            channel=channel,
-            text=(
-                f"<@{user}> :warning: Idea #{idea_number} is out of range. "
-                f"There are *{len(ideas)}* idea(s) available. "
-                "Say *list ideas* to see them."
-            ),
-            thread_ts=thread_ts,
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            BTN_LIST_IDEAS,
         )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        text = (
+            f"<@{user}> :warning: Idea #{idea_number} is out of range. "
+            f"There are *{len(ideas)}* idea(s) available."
+        )
+        client = _get_slack_client()
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                        {"type": "actions", "elements": [BTN_LIST_IDEAS]},
+                    ],
+                    text=text,
+                )
+            except Exception:
+                send_tool.run(channel=channel, text=text, thread_ts=thread_ts)
+        else:
+            send_tool.run(channel=channel, text=text, thread_ts=thread_ts)
         append_to_thread(channel, thread_ts, "assistant",
                          f"(idea #{idea_number} out of range)")
         return None
@@ -1190,7 +1206,7 @@ def handle_resume_prd(
                                 channel=channel,
                                 text=(
                                     f":pause_button: PRD flow paused again "
-                                    f"(run `{run_id}`). Say *resume prd flow* to retry."
+                                    f"(run `{run_id}`). Click Resume PRD to retry."
                                 ),
                                 thread_ts=thread_ts,
                             )
@@ -1199,7 +1215,7 @@ def handle_resume_prd(
                             channel=channel,
                             text=(
                                 f":pause_button: PRD flow paused again "
-                                f"(run `{run_id}`). Say *resume prd flow* to retry."
+                                f"(run `{run_id}`). Click Resume PRD to retry."
                             ),
                             thread_ts=thread_ts,
                         )

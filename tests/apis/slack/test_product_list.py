@@ -10,11 +10,14 @@ from crewai_productfeature_planner.apis.slack.blocks import product_list_blocks
 
 
 def _product_action_blocks(blocks: list[dict]) -> list[dict]:
-    """Return only per-product action blocks (exclude project-level Config)."""
+    """Return only per-product action blocks (exclude project-level and cmd_ buttons)."""
     return [
         b for b in blocks
         if b["type"] == "actions"
         and not b.get("block_id", "").startswith("product_project_actions_")
+        and not any(
+            e.get("action_id", "").startswith("cmd_") for e in b.get("elements", [])
+        )
     ]
 
 
@@ -170,11 +173,11 @@ class TestProductListBlocks:
         assert parts[2] == "run-p1"
 
     def test_empty_product_list(self):
-        """Empty product list should still produce header + context + footer."""
+        """Empty product list should still produce header + context + footer buttons."""
         blocks = product_list_blocks([], _USER, _PROJECT_NAME, _PROJECT_ID)
-        # header + context + divider + config actions + divider + footer
+        # header + context + divider + config actions + divider + footer buttons
         assert blocks[0]["type"] == "header"
-        assert blocks[-1]["type"] == "context"  # footer hint
+        assert blocks[-1]["type"] == "actions"  # footer command buttons
 
     def test_config_button_present(self):
         """Product list should include a project-level Config button."""
@@ -239,11 +242,12 @@ class TestProductListBlocks:
         assert "product_jira_skeleton_1" in action_ids
 
     def test_footer_hint_present(self):
-        """Footer should hint about list ideas."""
+        """Footer should have a List Ideas command button."""
         blocks = product_list_blocks(_PRODUCTS, _USER, _PROJECT_NAME, _PROJECT_ID)
         footer = blocks[-1]
-        assert footer["type"] == "context"
-        assert "list ideas" in footer["elements"][0]["text"].lower()
+        assert footer["type"] == "actions"
+        action_ids = [e["action_id"] for e in footer["elements"]]
+        assert "cmd_list_ideas" in action_ids
 
     def test_multiple_products_indexed_correctly(self):
         """Action IDs should use correct 1-based indices for multiple products."""
