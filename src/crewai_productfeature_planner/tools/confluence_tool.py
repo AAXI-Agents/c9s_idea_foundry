@@ -154,12 +154,17 @@ def _get_confluence_env(*, space_key: str | None = None) -> dict[str, str]:
 
 
 def _has_confluence_credentials() -> bool:
-    """Return ``True`` when all required Confluence env vars are set."""
-    try:
-        _get_confluence_env()
-        return True
-    except EnvironmentError:
-        return False
+    """Return ``True`` when Atlassian connection credentials are set.
+
+    Only checks the three connection-level env vars
+    (``ATLASSIAN_BASE_URL``, ``ATLASSIAN_USERNAME``, ``ATLASSIAN_API_TOKEN``).
+    ``CONFLUENCE_SPACE_KEY`` is intentionally excluded because it can be
+    supplied per-project via ``projectConfig`` at publish time.
+    """
+    base_url = os.environ.get("ATLASSIAN_BASE_URL", "")
+    username = os.environ.get("ATLASSIAN_USERNAME", "")
+    api_token = os.environ.get("ATLASSIAN_API_TOKEN", "")
+    return bool(base_url and username and api_token)
 
 
 def _build_auth_header(username: str, api_token: str) -> str:

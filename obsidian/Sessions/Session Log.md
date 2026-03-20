@@ -1204,3 +1204,33 @@ Replace `"PRD — {idea}"` Confluence/Jira page titles with the short-form idea 
 - 2328 passed
 
 ---
+
+## Session 023 — Confluence "Not Configured" Bug Fix
+**Date**: 2026-03-20 | **Version**: 0.28.0 → 0.28.1
+
+### Goal
+Fix false-negative "Confluence credentials are not configured" error when
+publishing from Slack, even when the channel's `projectConfig` has a valid
+`confluence_space_key`.
+
+### Root Cause
+`_has_confluence_credentials()` called `_get_confluence_env()` with no args,
+requiring all four env vars including `CONFLUENCE_SPACE_KEY`.  But space key
+is a per-project routing parameter stored in MongoDB `projectConfig` and
+resolved at publish time via `confluence_project_context` — not a global
+env var.  The credential check ran **before** project config was loaded,
+so it always failed when `CONFLUENCE_SPACE_KEY` wasn't in `.env`.
+
+### Changes
+1. **tools/confluence_tool.py** — rewrote `_has_confluence_credentials()` to
+   only check the three Atlassian connection env vars (`ATLASSIAN_BASE_URL`,
+   `ATLASSIAN_USERNAME`, `ATLASSIAN_API_TOKEN`).  `CONFLUENCE_SPACE_KEY` is
+   no longer required at the credential-check gate.
+2. **tests/orchestrator/test_helpers.py** — updated
+   `TestHasConfluenceCredentials`: removed `CONFLUENCE_SPACE_KEY` from
+   `test_all_set`, added `test_true_without_space_key` case.
+
+### Tests
+- 2329 passed
+
+---

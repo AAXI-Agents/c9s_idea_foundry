@@ -1836,6 +1836,19 @@ _CODEX: list[CodexEntry] = [
             "8 new make_page_title tests, 2328 total."
         ),
     ),
+    CodexEntry(
+        "0.28.1",
+        date(2026, 3, 20),
+        (
+            "Fix Confluence 'not configured' false negative. "
+            "_has_confluence_credentials() no longer requires "
+            "CONFLUENCE_SPACE_KEY env var — space key is a per-project "
+            "routing parameter resolved from projectConfig at publish "
+            "time. Only the three connection credentials "
+            "(ATLASSIAN_BASE_URL, ATLASSIAN_USERNAME, ATLASSIAN_API_TOKEN) "
+            "are checked. 2329 tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

@@ -46,7 +46,14 @@ class TestHasConfluenceCredentials:
 
     def test_all_set(self, monkeypatch):
         monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki")
-        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "PRD")
+        monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
+        monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
+        assert _has_confluence_credentials() is True
+
+    def test_true_without_space_key(self, monkeypatch):
+        """space_key is not required — it can come from projectConfig."""
+        monkeypatch.setenv("ATLASSIAN_BASE_URL", "https://example.atlassian.net/wiki")
+        monkeypatch.delenv("CONFLUENCE_SPACE_KEY", raising=False)
         monkeypatch.setenv("ATLASSIAN_USERNAME", "user@example.com")
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret")
         assert _has_confluence_credentials() is True
