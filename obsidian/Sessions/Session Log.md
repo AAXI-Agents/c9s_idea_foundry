@@ -1300,3 +1300,48 @@ command and responded with unrelated help text or silence.
 - 2329 passed
 
 ---
+
+## Session 026 — Fix Bot Not Engaging in Session Threads
+**Date**: 2026-03-20 | **Version**: 0.29.0 → 0.29.1
+
+### Goal
+Fix bot not responding when user talks in a Slack session thread.
+Expected outcome: bot should understand intent to start configuring
+the project even after in-memory thread cache expires.
+
+### Root Cause
+The `should_process` gate in `events_router.py` silently dropped
+thread messages when ALL 4 conditions were False:
+1. `has_conversation` — in-memory thread cache expired after 10-min TTL
+   or server restart
+2. `has_interactive` — no active PRD flow in `_interactive_runs`
+3. `has_pending` — no pending create/setup wizard
+4. `has_active_session` — no project selected yet
+   (`get_channel_project_id` returns None)
+
+This meant any thread where the user hadn't selected a project yet
+(wants to START configuring) became completely unresponsive after the
+10-minute thread cache TTL.
+
+### Changes
+1. **mongodb/agent_interactions/repository.py** — new
+   `has_bot_thread_history(channel, thread_ts)` checks
+   `agentInteraction` collection for prior bot participation via
+   `find_one({channel, thread_ts})`.
+2. **mongodb/agent_interactions/__init__.py** — re-exports
+   `has_bot_thread_history`.
+3. **apis/slack/events_router.py** — added 5th fallback condition
+   `has_thread_history` in `should_process` gate. Only checked when
+   all other 4 conditions are False. When True, also re-registers
+   the thread in the in-memory cache via `touch_thread()` to avoid
+   repeated DB lookups.
+4. **tests/apis/slack/test_dm_and_pending_routing.py** — 3 new tests
+   in `TestThreadHistoryFallback`: dispatches when history exists,
+   ignored when no history, re-registers in memory cache.
+5. **tests/mongodb/agent_interactions/test_repository.py** — 3 new
+   tests for `has_bot_thread_history`: found, not found, DB error.
+
+### Tests
+- 2335 passed
+
+---

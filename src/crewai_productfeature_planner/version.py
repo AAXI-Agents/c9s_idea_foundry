@@ -1876,6 +1876,24 @@ _CODEX: list[CodexEntry] = [
             "conftest.py for slack test isolation. 2329 tests."
         ),
     ),
+    CodexEntry(
+        "0.29.1",
+        date(2026, 3, 20),
+        (
+            "Fix bot not responding in Slack session threads after cache "
+            "expiry or server restart. Root cause: the should_process gate "
+            "in events_router.py silently dropped thread messages when the "
+            "in-memory thread cache expired (10-min TTL) and no project "
+            "was selected yet (e.g. user wants to START configuring). All "
+            "4 conditions were False: has_conversation, has_interactive, "
+            "has_pending, has_active_session. Fix: added a 5th fallback — "
+            "has_bot_thread_history() checks MongoDB agentInteraction for "
+            "prior bot participation in the thread. When found, the thread "
+            "is re-registered in the in-memory cache to avoid repeated DB "
+            "lookups. New has_bot_thread_history() in agent_interactions "
+            "repository. 6 new tests, 2335 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

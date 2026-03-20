@@ -272,6 +272,31 @@ def list_interactions(limit: int = 100) -> list[dict[str, Any]]:
         return []
 
 
+# ── thread participation check ────────────────────────────────
+
+
+def has_bot_thread_history(channel: str, thread_ts: str) -> bool:
+    """Return ``True`` if the bot previously interacted in a thread.
+
+    Checks the ``agentInteraction`` collection for any document with the
+    given *channel* and *thread_ts*.  Used as a persistent fallback when
+    the in-memory thread cache has expired.
+    """
+    try:
+        doc = get_db()[AGENT_INTERACTIONS_COLLECTION].find_one(
+            {"channel": channel, "thread_ts": thread_ts},
+            {"_id": 1},
+        )
+        return doc is not None
+    except PyMongoError as exc:
+        logger.error(
+            "[AgentInteraction] Failed to check thread history "
+            "channel=%s thread_ts=%s: %s",
+            channel, thread_ts, exc,
+        )
+        return False
+
+
 # ── next-step prediction tracking ─────────────────────────────
 
 

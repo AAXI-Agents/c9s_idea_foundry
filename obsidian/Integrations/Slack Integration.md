@@ -69,6 +69,19 @@ apis/slack/
 - 10-minute timeout per decision
 - Thread conversations: 10-minute TTL, 20-message rolling window
 
+### Thread Message Dispatch (`should_process` gate)
+
+Channel thread messages are processed when **any** of these conditions
+is true (checked in order, short-circuiting):
+
+1. **has_conversation** — in-memory thread cache (10-min TTL)
+2. **has_interactive** — active PRD flow in `_interactive_runs`
+3. **has_pending** — pending create/setup wizard
+4. **has_active_session** — MongoDB channel session with project_id
+5. **has_thread_history** — MongoDB `agentInteraction` with matching
+   `channel` + `thread_ts` (v0.29.1) — survives server restarts and
+   TTL expiry; re-registers thread in memory cache on hit
+
 ## Key Action IDs
 
 | Action ID | Purpose |

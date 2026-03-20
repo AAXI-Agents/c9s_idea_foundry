@@ -12,6 +12,7 @@ from crewai_productfeature_planner.mongodb.agent_interactions.repository import 
     find_interactions_by_intent,
     find_interactions_by_source,
     get_interaction,
+    has_bot_thread_history,
     list_interactions,
     log_interaction,
 )
@@ -409,3 +410,46 @@ def test_list_interactions_db_error(mock_get_db):
     mock_get_db.return_value = mock_db
 
     assert list_interactions() == []
+
+
+# ── has_bot_thread_history ────────────────────────────────────
+
+
+@patch("crewai_productfeature_planner.mongodb.agent_interactions.repository.get_db")
+def test_has_bot_thread_history_found(mock_get_db):
+    """Returns True when an interaction exists for the thread."""
+    mock_collection = MagicMock()
+    mock_collection.find_one.return_value = {"_id": "abc"}
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    assert has_bot_thread_history("C1", "1234.0") is True
+    mock_collection.find_one.assert_called_once_with(
+        {"channel": "C1", "thread_ts": "1234.0"},
+        {"_id": 1},
+    )
+
+
+@patch("crewai_productfeature_planner.mongodb.agent_interactions.repository.get_db")
+def test_has_bot_thread_history_not_found(mock_get_db):
+    """Returns False when no interaction exists for the thread."""
+    mock_collection = MagicMock()
+    mock_collection.find_one.return_value = None
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    assert has_bot_thread_history("C1", "1234.0") is False
+
+
+@patch("crewai_productfeature_planner.mongodb.agent_interactions.repository.get_db")
+def test_has_bot_thread_history_db_error(mock_get_db):
+    """Returns False on database error."""
+    mock_collection = MagicMock()
+    mock_collection.find_one.side_effect = ServerSelectionTimeoutError("timeout")
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    mock_get_db.return_value = mock_db
+
+    assert has_bot_thread_history("C1", "1234.0") is False

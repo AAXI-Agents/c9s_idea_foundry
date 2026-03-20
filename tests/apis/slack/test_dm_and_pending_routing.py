@@ -671,3 +671,98 @@ class TestMultipleUserSessions:
         # Should go to interpret (new session), NOT thread handler
         mock_interpret.assert_called_once()
         mock_thread.assert_not_called()
+
+
+# ======================================================================
+# Thread history fallback (agentInteraction-based)
+# ======================================================================
+
+
+_AI_MODULE = (
+    "crewai_productfeature_planner.mongodb.agent_interactions"
+)
+
+
+class TestThreadHistoryFallback:
+    """When the in-memory thread cache has expired and no project is
+    selected yet, the bot should still process thread messages if it
+    has previously responded in that thread (persisted in
+    ``agentInteraction``).
+    """
+
+    @pytest.mark.asyncio
+    async def test_dispatches_when_thread_history_exists(self):
+        """Thread with prior bot interaction → dispatched."""
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": "C_CHAN",
+                "user": "U_HIST",
+                "text": "configure the project",
+                "ts": "5555.1",
+                "thread_ts": "5555.0",
+            },
+            event_id="Ev_HIST1",
+        )
+        with patch(
+            f"{_AI_MODULE}.has_bot_thread_history", return_value=True,
+        ), patch(f"{_ER}._handle_thread_message") as mock_thread:
+            resp = await _post(payload)
+        assert resp.status_code == 200
+        mock_thread.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ignored_when_no_thread_history(self):
+        """No conversation, no interactive, no pending, no session,
+        no thread history → ignored.
+        """
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": "C_CHAN",
+                "user": "U_NOHIST",
+                "text": "random reply",
+                "ts": "6666.1",
+                "thread_ts": "6666.0",
+            },
+            event_id="Ev_HIST2",
+        )
+        with patch(
+            f"{_AI_MODULE}.has_bot_thread_history", return_value=False,
+        ), patch(f"{_ER}._handle_thread_message") as mock_thread:
+            resp = await _post(payload)
+        assert resp.status_code == 200
+        mock_thread.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_thread_history_re_registers_in_memory_cache(self):
+        """When thread history fallback fires, the thread is re-added
+        to the in-memory cache so subsequent messages skip the DB
+        lookup.
+        """
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        from crewai_productfeature_planner.apis.slack._thread_state import (
+            has_thread_conversation,
+        )
+
+        channel, thread_ts = "C_REREGISTER", "7777.0"
+        assert not has_thread_conversation(channel, thread_ts)
+
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": channel,
+                "user": "U_REREG",
+                "text": "hello again",
+                "ts": "7777.1",
+                "thread_ts": thread_ts,
+            },
+            event_id="Ev_HIST3",
+        )
+        with patch(
+            f"{_AI_MODULE}.has_bot_thread_history", return_value=True,
+        ), patch(f"{_ER}._handle_thread_message"):
+            await _post(payload)
+
+        # Thread should now be in the in-memory cache
+        assert has_thread_conversation(channel, thread_ts)

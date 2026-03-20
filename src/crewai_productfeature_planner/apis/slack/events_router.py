@@ -343,11 +343,31 @@ async def slack_events(request: Request) -> JSONResponse:
                         get_channel_project_id(channel)
                     )
 
+                # Last resort: check if the bot has ever replied in
+                # this thread (persisted in agentInteraction).  This
+                # covers threads where the user hasn't selected a
+                # project yet (e.g. wants to START configuring) and
+                # the in-memory cache has expired.
+                has_thread_history = False
+                if not (has_conversation or has_interactive
+                        or has_pending or has_active_session):
+                    from crewai_productfeature_planner.mongodb.agent_interactions import (
+                        has_bot_thread_history,
+                    )
+                    has_thread_history = has_bot_thread_history(
+                        channel, thread_ts,
+                    )
+                    if has_thread_history:
+                        # Re-register in the in-memory cache so
+                        # subsequent messages skip the DB lookup.
+                        touch_thread(channel, thread_ts)
+
                 should_process = (
                     has_conversation
                     or has_interactive
                     or has_pending
                     or has_active_session
+                    or has_thread_history
                 )
 
                 if should_process:
@@ -358,6 +378,11 @@ async def slack_events(request: Request) -> JSONResponse:
                         reason_parts.append("pending")
                     if has_active_session and not (has_conversation or has_interactive or has_pending):
                         reason_parts.append("active_session")
+                    if has_thread_history and not (
+                        has_conversation or has_interactive
+                        or has_pending or has_active_session
+                    ):
+                        reason_parts.append("thread_history")
                     reason = f" ({', '.join(reason_parts)})" if reason_parts else ""
                     logger.info(
                         "Thread follow-up in %s/%s from %s%s",
@@ -369,7 +394,7 @@ async def slack_events(request: Request) -> JSONResponse:
                     logger.debug(
                         "Ignoring thread message in %s/%s from %s "
                         "(no conversation, no interactive, no pending, "
-                        "no active session)",
+                        "no active session, no thread history)",
                         channel, thread_ts, user,
                     )
 
