@@ -238,32 +238,40 @@ def run_interactive_slack_flow(
 
             update_job_completed(run_id, status="completed")
 
-            if notify:
+            # When delivery is fully done (Confluence + Jira) the user
+            # already received granular progress messages for each step
+            # — skip the redundant "PRD Generation Complete" banner.
+            run = runs.get(run_id)
+            _conf_url = run.confluence_url if run else ""
+            _jira_out = run.jira_output if run else ""
+            fully_delivered = bool(_conf_url and _jira_out)
+
+            if notify and not fully_delivered:
                 post_tool = SlackPostPRDResultTool()
-                run = runs.get(run_id)
                 post_tool.run(
                     channel=channel,
                     idea=idea,
                     output_file=run.output_file if run else "",
-                    confluence_url=run.confluence_url if run else "",
-                    jira_output=run.jira_output if run else "",
+                    confluence_url=_conf_url,
+                    jira_output=_jira_out,
                     thread_ts=thread_ts,
                 )
             logger.info("Interactive Slack PRD flow %s completed", run_id)
 
             # Proactively suggest next step after PRD completion
-            try:
-                from crewai_productfeature_planner.apis.slack._next_step import (
-                    predict_and_post_next_step,
-                )
-                predict_and_post_next_step(
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    user=user,
-                    trigger_action="prd_completed",
-                )
-            except Exception as ns_exc:
-                logger.warning("Next-step after PRD completion failed: %s", ns_exc)
+            if not fully_delivered:
+                try:
+                    from crewai_productfeature_planner.apis.slack._next_step import (
+                        predict_and_post_next_step,
+                    )
+                    predict_and_post_next_step(
+                        channel=channel,
+                        thread_ts=thread_ts,
+                        user=user,
+                        trigger_action="prd_completed",
+                    )
+                except Exception as ns_exc:
+                    logger.warning("Next-step after PRD completion failed: %s", ns_exc)
 
         except IdeaFinalized:
             update_job_completed(run_id, status="completed")

@@ -8,6 +8,7 @@
 |---------|--------|
 | 0.28.0 | Confluence/Jira page titles use idea text instead of 'PRD —' prefix. New make_page_title() helper, 12 inline sites replaced across 9 files. 8 new tests, 2328 total |
 | 0.28.1 | Fix Confluence 'not configured' false negative. _has_confluence_credentials() no longer requires CONFLUENCE_SPACE_KEY env var — space key resolved per-project from projectConfig at publish time. 2329 tests |
+| 0.28.2 | Suppress redundant 'PRD Generation Complete' Slack notification when PRD is fully delivered. Granular progress messages suffice; summary banner and next-step skipped in all 3 flow completion paths. 2329 tests |
 
 ## v0.27.x (2026-03-17)
 

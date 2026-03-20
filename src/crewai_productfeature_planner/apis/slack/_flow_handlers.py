@@ -1154,16 +1154,21 @@ def handle_resume_prd(
 
                 run = runs.get(run_id)
                 if run and run.status == FlowStatus.COMPLETED:
-                    post_tool = SlackPostPRDResultTool()
-                    post_tool.run(
-                        channel=channel,
-                        idea=idea,
-                        output_file=run.output_file,
-                        confluence_url=run.confluence_url,
-                        jira_output=run.jira_output,
-                        thread_ts=thread_ts,
-                        run_id=run_id,
+                    # Skip redundant notification when fully delivered
+                    _fully_delivered = bool(
+                        run.confluence_url and run.jira_output
                     )
+                    if not _fully_delivered:
+                        post_tool = SlackPostPRDResultTool()
+                        post_tool.run(
+                            channel=channel,
+                            idea=idea,
+                            output_file=run.output_file,
+                            confluence_url=run.confluence_url,
+                            jira_output=run.jira_output,
+                            thread_ts=thread_ts,
+                            run_id=run_id,
+                        )
                 elif run and run.status == FlowStatus.PAUSED:
                     from crewai_productfeature_planner.apis.slack.blocks import flow_paused_blocks
                     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client

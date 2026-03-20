@@ -1234,3 +1234,31 @@ so it always failed when `CONFLUENCE_SPACE_KEY` wasn't in `.env`.
 - 2329 passed
 
 ---
+
+## Session 024 — Suppress Redundant Delivery Notification
+**Date**: 2026-03-20 | **Version**: 0.28.1 → 0.28.2
+
+### Goal
+Fix unwanted "PRD Generation Complete" Slack notification when PRD is
+fully delivered in the backend (Confluence + Jira both done).
+
+### Root Cause
+After the PRD flow finishes (including post-completion Confluence publish
+and all Jira phases), `SlackPostPRDResultTool` posts a "PRD Generation
+Complete" banner with ":white_check_mark: PRD has been generated
+successfully!" — redundant because the user already received granular
+progress messages for each delivery step (Confluence published, Jira
+phase messages). The `predict_and_post_next_step("prd_completed")`
+call fires immediately after, adding further noise.
+
+### Changes
+1. **interactive_handlers/_flow_runner.py** — skip `SlackPostPRDResultTool`
+   and `predict_and_post_next_step` when `confluence_url` AND `jira_output`
+   are both set (fully delivered).
+2. **_flow_handlers.py** — same guard on the resume path.
+3. **router.py** — same guard on the non-interactive flow path.
+
+### Tests
+- 2329 passed
+
+---

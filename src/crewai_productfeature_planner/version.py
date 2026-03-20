@@ -1849,6 +1849,19 @@ _CODEX: list[CodexEntry] = [
             "are checked. 2329 tests."
         ),
     ),
+    CodexEntry(
+        "0.28.2",
+        date(2026, 3, 20),
+        (
+            "Suppress redundant 'PRD Generation Complete' Slack notification "
+            "when PRD is fully delivered (Confluence + Jira already done). "
+            "User already receives granular progress messages for each "
+            "delivery step; the summary banner and next-step suggestion "
+            "are now skipped in the fully-delivered case across all 3 "
+            "Slack flow completion paths (_flow_runner.py, "
+            "_flow_handlers.py, router.py). 2329 tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

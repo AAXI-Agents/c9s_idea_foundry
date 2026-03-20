@@ -256,7 +256,11 @@ def _run_slack_prd_flow(
 
         run = runs.get(run_id)
         if run and run.status == FlowStatus.COMPLETED:
-            if notify:
+            # Skip redundant notification when fully delivered
+            _fully_delivered = bool(
+                run.confluence_url and run.jira_output
+            )
+            if notify and not _fully_delivered:
                 post_tool = SlackPostPRDResultTool()
                 post_tool.run(
                     channel=channel,
