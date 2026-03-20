@@ -12,6 +12,7 @@ from crewai_productfeature_planner.orchestrator._helpers import (
     _has_confluence_credentials,
     _has_gemini_credentials,
     logger,
+    make_page_title,
 )
 from crewai_productfeature_planner.orchestrator.orchestrator import (
     AgentStage,
@@ -65,8 +66,7 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
             publish_to_confluence,
         )
 
-        idea_preview = (flow.state.idea or "PRD")[:80].strip()
-        title = f"PRD — {idea_preview}"
+        title = make_page_title(flow.state.idea)
 
         # Resolve project-level keys (falls back to env vars if unset)
         pc = get_project_for_run(flow.state.run_id) or {}

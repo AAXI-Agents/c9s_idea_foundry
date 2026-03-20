@@ -59,7 +59,7 @@ class TestDiscoverPublishablePrds:
         assert len(items) == 1
         assert items[0]["run_id"] == "run-1"
         assert items[0]["source"] == "mongodb"
-        assert items[0]["title"] == "PRD — Feature A"
+        assert items[0]["title"] == "Feature A"
 
     @patch(_ASSEMBLE, return_value="")
     @patch(_FIND_NO_CONF)
@@ -113,7 +113,7 @@ class TestStartupMarkdownReviewStage:
         return_value=[
             {
                 "run_id": "r1",
-                "title": "PRD — Test",
+                "title": "Test",
                 "content": "# PRD",
                 "source": "mongodb",
                 "output_file": "",
@@ -135,7 +135,7 @@ class TestStartupMarkdownReviewStage:
         return_value=[
             {
                 "run_id": "r1",
-                "title": "PRD — Test",
+                "title": "Test",
                 "content": "# PRD content",
                 "source": "mongodb",
                 "output_file": "",
@@ -149,7 +149,7 @@ class TestStartupMarkdownReviewStage:
         result = stage.run()
 
         mock_pub.assert_called_once_with(
-            title="PRD — Test",
+            title="Test",
             markdown_content="# PRD content",
             run_id="r1",
         )
@@ -170,7 +170,7 @@ class TestStartupMarkdownReviewStage:
         return_value=[
             {
                 "run_id": "",
-                "title": "PRD — disk_file",
+                "title": "disk_file",
                 "content": "# Disk PRD",
                 "source": "disk",
                 "output_file": "/output/prds/test.md",
@@ -196,7 +196,7 @@ class TestStartupMarkdownReviewStage:
         return_value=[
             {
                 "run_id": "r1",
-                "title": "PRD — Fail",
+                "title": "Fail",
                 "content": "content",
                 "source": "mongodb",
                 "output_file": "",
@@ -220,14 +220,14 @@ class TestStartupMarkdownReviewStage:
         return_value=[
             {
                 "run_id": "r1",
-                "title": "PRD — A",
+                "title": "A",
                 "content": "# A",
                 "source": "mongodb",
                 "output_file": "",
             },
             {
                 "run_id": "r2",
-                "title": "PRD — B",
+                "title": "B",
                 "content": "# B",
                 "source": "mongodb",
                 "output_file": "",
@@ -286,7 +286,7 @@ class TestStartupPipeline:
         return_value=[
             {
                 "run_id": "r1",
-                "title": "PRD — Pipeline",
+                "title": "Pipeline",
                 "content": "# PRD",
                 "source": "mongodb",
                 "output_file": "",

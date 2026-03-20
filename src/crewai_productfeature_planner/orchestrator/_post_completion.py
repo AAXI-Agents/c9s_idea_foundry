@@ -15,6 +15,7 @@ from crewai_productfeature_planner.orchestrator._helpers import (
     _print_delivery_status,
     build_additional_prd_context_from_draft,
     logger,
+    make_page_title,
 )
 
 if TYPE_CHECKING:
@@ -75,8 +76,7 @@ def build_post_completion_crew(
     )
     from crewai_productfeature_planner.scripts.logging_config import is_verbose
 
-    idea_preview = (flow.state.idea or "PRD")[:80].strip()
-    page_title = f"PRD — {idea_preview}"
+    page_title = make_page_title(flow.state.idea)
     task_configs = get_task_configs()
 
     # ── Set project-level Jira key override (if configured) ────
@@ -175,8 +175,7 @@ def build_post_completion_crew(
         func_reqs = func_req_section.content if func_req_section else ""
         additional_ctx = build_additional_prd_context_from_draft(flow.state.draft)
 
-        idea_preview = (flow.state.idea or "PRD")[:80].strip()
-        skeleton_page_title = f"PRD — {idea_preview}"
+        skeleton_page_title = make_page_title(flow.state.idea)
 
         skeleton_task = Task(
             description=task_configs["generate_jira_skeleton_task"]["description"].format(

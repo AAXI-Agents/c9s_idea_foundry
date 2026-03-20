@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from crewai_productfeature_planner.orchestrator._helpers import make_page_title
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -140,8 +141,8 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
     if not content:
         raise ValueError(f"Could not assemble PRD content for run_id={run_id}")
 
-    idea = (target_doc.get("idea") or "PRD")[:80].strip()
-    title = f"PRD — {idea}"
+    idea = target_doc.get("idea")
+    title = make_page_title(idea)
 
     # Resolve project-level keys (falls back to env vars if unset)
     pc = get_project_for_run(run_id) or {}

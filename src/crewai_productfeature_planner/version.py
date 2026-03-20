@@ -1821,6 +1821,21 @@ _CODEX: list[CodexEntry] = [
             "(e.g. ideas_dev, ideas_uat, ideas_prod). 2320 tests."
         ),
     ),
+    CodexEntry(
+        "0.28.0",
+        date(2026, 3, 20),
+        (
+            "Confluence page titles use idea text instead of 'PRD' prefix. "
+            "New make_page_title() helper in orchestrator/_helpers.py "
+            "generates short-form titles from the raw idea text (truncated "
+            "to 80 chars with ellipsis). Replaced 12 inline 'PRD — {idea}' "
+            "title constructions across 8 files: _confluence.py, "
+            "_post_completion.py, _startup_delivery.py, _startup_review.py, "
+            "_jira.py, _cli_startup.py, publishing/service.py, "
+            "publishing/watcher.py, and components/startup.py. "
+            "8 new make_page_title tests, 2328 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

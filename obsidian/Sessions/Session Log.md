@@ -1186,3 +1186,21 @@ Make the MongoDB database name fully environment-driven and remove stale legacy 
 - 2320 passed
 
 ---
+
+## Session 022 — Confluence Title Cleanup
+**Date**: 2026-03-20 | **Version**: 0.27.1 → 0.28.0
+
+### Goal
+Replace `"PRD — {idea}"` Confluence/Jira page titles with the short-form idea text.
+
+### Changes
+1. **orchestrator/_helpers.py** — new `make_page_title(idea, fallback)` helper: strips, truncates to 80 chars with `…`, falls back to "Product Requirements".
+2. **12 inline title sites replaced** across 9 files: `_confluence.py`, `_post_completion.py` (×2), `_startup_delivery.py`, `_startup_review.py` (×2), `_jira.py` (×2), `_cli_startup.py`, `publishing/service.py`, `publishing/watcher.py`, `components/startup.py`.
+3. **publishing/models.py** — updated Field description example.
+4. **17 test assertions updated** across 5 test files to match new title format.
+5. **8 new tests** for `make_page_title` in `test_helpers.py`.
+
+### Tests
+- 2328 passed
+
+---

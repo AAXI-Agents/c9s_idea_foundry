@@ -9,6 +9,7 @@ from __future__ import annotations
 from crewai_productfeature_planner.orchestrator._helpers import (
     _has_confluence_credentials,
     logger,
+    make_page_title,
 )
 from crewai_productfeature_planner.orchestrator.orchestrator import (
     AgentOrchestrator,
@@ -53,13 +54,12 @@ def _discover_publishable_prds() -> list[dict]:
             content = assemble_prd_from_doc(doc)
             if not content:
                 continue
-            idea = (doc.get("idea") or "PRD")[:80].strip()
             output_file = doc.get("output_file", "")
             if output_file:
                 seen_files.add(output_file)
             items.append({
                 "run_id": run_id,
-                "title": f"PRD — {idea}",
+                "title": make_page_title(doc.get("idea")),
                 "content": content,
                 "source": "mongodb",
                 "output_file": output_file,
@@ -104,7 +104,7 @@ def _discover_publishable_prds() -> list[dict]:
 
                 items.append({
                     "run_id": "",
-                    "title": f"PRD — {md_file.stem}",
+                    "title": make_page_title(md_file.stem),
                     "content": content,
                     "source": "disk",
                     "output_file": abs_path,

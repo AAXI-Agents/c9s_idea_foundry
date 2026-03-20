@@ -13,6 +13,7 @@ from crewai_productfeature_planner.orchestrator._helpers import (
     _print_delivery_status,
     build_additional_prd_context_from_doc,
     logger,
+    make_page_title,
 )
 
 if TYPE_CHECKING:
@@ -257,8 +258,7 @@ def build_startup_delivery_crew(
     )
 
     run_id = item["run_id"]
-    idea_preview = (item["idea"] or "PRD")[:80].strip()
-    page_title = f"PRD — {idea_preview}"
+    page_title = make_page_title(item["idea"])
     task_configs = get_task_configs()
 
     # ── Set project-level Jira key override (if configured) ────

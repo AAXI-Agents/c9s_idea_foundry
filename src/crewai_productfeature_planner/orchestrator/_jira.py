@@ -26,6 +26,7 @@ from crewai_productfeature_planner.orchestrator._helpers import (
     _has_jira_credentials,
     build_additional_prd_context_from_draft,
     logger,
+    make_page_title,
 )
 from crewai_productfeature_planner.orchestrator.orchestrator import (
     AgentStage,
@@ -208,8 +209,7 @@ def build_jira_skeleton_stage(
         try:
             pm_agent = create_jira_product_manager_agent(project_id=project_id, run_id=flow.state.run_id)
 
-            idea_preview = (flow.state.idea or "PRD")[:80].strip()
-            page_title = f"PRD — {idea_preview}"
+            page_title = make_page_title(flow.state.idea)
             exec_summary = (
                 flow.state.executive_product_summary
                 or flow.state.finalized_idea
@@ -320,8 +320,7 @@ def build_jira_epics_stories_stage(
         try:
             pm_agent = create_jira_product_manager_agent(project_id=project_id, run_id=flow.state.run_id)
 
-            idea_preview = (flow.state.idea or "PRD")[:80].strip()
-            page_title = f"PRD — {idea_preview}"
+            page_title = make_page_title(flow.state.idea)
             exec_summary = (
                 flow.state.executive_product_summary
                 or flow.state.finalized_idea

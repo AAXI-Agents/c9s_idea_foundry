@@ -9,6 +9,7 @@ from crewai_productfeature_planner.orchestrator._helpers import (
     _print_delivery_status,
     build_additional_prd_context_from_doc,
     build_additional_prd_context_from_draft,
+    make_page_title,
 )
 
 
@@ -219,3 +220,37 @@ class TestBuildAdditionalPrdContextFromDoc:
             },
         }
         assert build_additional_prd_context_from_doc(doc) == ""
+
+
+# ── make_page_title ──────────────────────────────────────────────────
+
+
+class TestMakePageTitle:
+
+    def test_returns_idea_text(self):
+        assert make_page_title("Build a notification system") == "Build a notification system"
+
+    def test_strips_whitespace(self):
+        assert make_page_title("  Spaced idea  ") == "Spaced idea"
+
+    def test_truncates_long_ideas(self):
+        long_idea = "A" * 100
+        result = make_page_title(long_idea)
+        assert len(result) <= 81  # 80 chars + ellipsis
+        assert result.endswith("…")
+
+    def test_none_returns_fallback(self):
+        assert make_page_title(None) == "Product Requirements"
+
+    def test_empty_string_returns_fallback(self):
+        assert make_page_title("") == "Product Requirements"
+
+    def test_whitespace_only_returns_fallback(self):
+        assert make_page_title("   ") == "Product Requirements"
+
+    def test_custom_fallback(self):
+        assert make_page_title(None, fallback="Untitled") == "Untitled"
+
+    def test_exactly_80_chars_no_truncation(self):
+        idea = "A" * 80
+        assert make_page_title(idea) == idea

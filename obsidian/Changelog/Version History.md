@@ -2,6 +2,12 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.28.x (2026-03-20)
+
+| Version | Summary |
+|---------|--------|
+| 0.28.0 | Confluence/Jira page titles use idea text instead of 'PRD —' prefix. New make_page_title() helper, 12 inline sites replaced across 9 files. 8 new tests, 2328 total |
+
 ## v0.27.x (2026-03-17)
 
 | Version | Summary |

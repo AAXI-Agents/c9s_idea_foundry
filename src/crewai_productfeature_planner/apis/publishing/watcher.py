@@ -21,6 +21,7 @@ import threading
 import time
 from pathlib import Path
 
+from crewai_productfeature_planner.orchestrator._helpers import make_page_title
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -189,7 +190,7 @@ def _trigger_publish(md_file: Path) -> None:
             logger.debug("[FileWatcher] Empty file, skipping: %s", md_file)
             return
 
-        title = f"PRD — {md_file.stem}"
+        title = make_page_title(md_file.stem)
 
         from crewai_productfeature_planner.tools.confluence_tool import (
             publish_to_confluence,

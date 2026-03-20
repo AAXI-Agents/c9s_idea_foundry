@@ -29,7 +29,7 @@ class TestListPendingPrds:
     def test_deduplicates_by_run_id(self):
         item = {
             "run_id": "r1",
-            "title": "PRD — test",
+            "title": "test",
             "source": "mongodb",
             "output_file": "",
             "content": "# PRD",
@@ -57,14 +57,14 @@ class TestListPendingPrds:
     def test_combines_both_sources(self):
         pub_item = {
             "run_id": "r1",
-            "title": "PRD — alpha",
+            "title": "alpha",
             "source": "mongodb",
             "output_file": "",
             "content": "# PRD alpha",
         }
         del_item = {
             "run_id": "r2",
-            "title": "PRD — beta",
+            "title": "beta",
             "source": "mongodb",
             "output_file": "",
             "content": "# PRD beta",

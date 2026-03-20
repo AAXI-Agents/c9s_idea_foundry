@@ -242,7 +242,7 @@ class TestCreateJiraIssue:
         mock_request.return_value = {"key": "PRD-200", "id": "20200"}
 
         result = create_jira_issue(
-            summary="PRD — Dark Mode Feature",
+            summary="Dark Mode Feature",
             issue_type="Epic",
         )
 

@@ -140,7 +140,7 @@ class TestPublishPendingConfluence:
 
     def test_publishes_items(self):
         items = [
-            {"run_id": "r1", "title": "PRD — test", "content": "# PRD", "output_file": ""},
+            {"run_id": "r1", "title": "test", "content": "# PRD", "output_file": ""},
         ]
         with (
             patch(

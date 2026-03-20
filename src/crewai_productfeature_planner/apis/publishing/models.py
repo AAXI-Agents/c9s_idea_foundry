@@ -12,7 +12,7 @@ class PendingPRDItem(BaseModel):
     """A single PRD pending publishing or Jira ticketing."""
 
     run_id: str = Field(..., description="Unique flow run identifier.")
-    title: str = Field(..., description="PRD title (e.g. 'PRD — fitness app').")
+    title: str = Field(..., description="Page title (e.g. 'Fitness App Feature').")
     source: str = Field("mongodb", description="Discovery source: 'mongodb' or 'disk'.")
     output_file: str = Field("", description="Absolute path to the output markdown file.")
     confluence_published: bool = Field(False, description="Whether Confluence page exists.")

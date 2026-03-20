@@ -18,6 +18,25 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# ── Page title construction ───────────────────────────────────────────
+
+_MAX_TITLE_LEN = 80
+
+
+def make_page_title(idea: str | None, *, fallback: str = "Product Requirements") -> str:
+    """Build a short Confluence / Jira page title from the raw idea text.
+
+    Returns the idea text truncated to *_MAX_TITLE_LEN* characters.
+    Falls back to *fallback* when *idea* is empty or ``None``.
+    """
+    text = (idea or "").strip()
+    if not text:
+        return fallback
+    if len(text) > _MAX_TITLE_LEN:
+        text = text[:_MAX_TITLE_LEN].rstrip() + "…"
+    return text
+
+
 # ── Credential checks ────────────────────────────────────────────────
 
 

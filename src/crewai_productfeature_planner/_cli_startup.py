@@ -15,6 +15,7 @@ from crewai_productfeature_planner.mongodb import (
     save_output_file,
 )
 from crewai_productfeature_planner.apis.prd.models import SECTION_ORDER
+from crewai_productfeature_planner.orchestrator._helpers import make_page_title
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -431,8 +432,8 @@ def _publish_unpublished_prds() -> int:
                 )
                 continue
 
-            idea = (doc.get("idea") or "PRD")[:80].strip()
-            title = f"PRD — {idea}"
+            idea = doc.get("idea")
+            title = make_page_title(idea)
 
             result = publish_to_confluence(
                 title=title,

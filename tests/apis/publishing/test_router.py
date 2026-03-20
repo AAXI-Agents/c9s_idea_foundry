@@ -33,7 +33,7 @@ class TestListPending:
         items = [
             {
                 "run_id": "abc123",
-                "title": "PRD — fitness app",
+                "title": "fitness app",
                 "source": "mongodb",
                 "output_file": "",
                 "confluence_published": False,
@@ -73,7 +73,7 @@ class TestPublishConfluenceAll:
             "results": [
                 {
                     "run_id": "abc123",
-                    "title": "PRD — test",
+                    "title": "test",
                     "url": "https://example.atlassian.net/wiki/page/123",
                     "page_id": "123",
                     "action": "created",
@@ -106,7 +106,7 @@ class TestPublishConfluenceSingle:
     def test_success(self, client):
         result = {
             "run_id": "abc123",
-            "title": "PRD — test",
+            "title": "test",
             "url": "https://example.atlassian.net/wiki/page/123",
             "page_id": "123",
             "action": "created",
