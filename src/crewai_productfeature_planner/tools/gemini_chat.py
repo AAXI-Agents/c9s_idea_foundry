@@ -161,6 +161,7 @@ the word "project" does not appear.
   "jira key is MYPROJ"                    → update_config  (jira_project_key="MYPROJ")
   "update project config confluence XYZ jira ABC" → update_config
   "configure confluence key"              → update_config  (ask for value if missing)
+  "configure"                              → update_config
   "create a PRD for a fitness app"        → create_prd
   "plan a feature for user auth"          → create_prd
   "I have an idea for an AI chatbot"      → create_prd

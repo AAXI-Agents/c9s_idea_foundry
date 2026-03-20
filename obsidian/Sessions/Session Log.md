@@ -1345,3 +1345,33 @@ This meant any thread where the user hadn't selected a project yet
 - 2335 passed
 
 ---
+
+## Session 027 — Fix Bare 'configure' Intent Not Recognised
+**Date**: 2026-03-20 | **Version**: 0.29.1 → 0.29.2
+
+### Goal
+Fix bare "configure" not being recognised as project configuration
+intent. Admin types "configure" and expects the bot to start
+project configuration.
+
+### Root Cause
+`_UPDATE_CONFIG_PHRASES` required at least two words (e.g. "configure
+project", "project config"). The single word "configure" didn't match
+any phrase in either `_UPDATE_CONFIG_PHRASES` or
+`_CONFIGURE_MEMORY_PHRASES`, so it fell through to the LLM classifier
+which also didn't map it to `update_config`.
+
+### Changes
+1. **_intent_phrases.py** — added "configure" to `_UPDATE_CONFIG_PHRASES`
+2. **gemini_chat.py** — added `"configure" → update_config` example
+3. **openai_chat.py** — added `"configure" → update_config` example
+4. **tests/apis/slack/test_update_config_intent.py** — new test file
+   with 5 tests: phrase fallback for bare "configure", phrase fallback
+   for config phrases, "configure memory" still routes to
+   configure_memory, bare "configure" dispatches to update_config
+   handler, LLM update_config dispatches correctly.
+
+### Tests
+- 2340 passed
+
+---

@@ -1894,6 +1894,21 @@ _CODEX: list[CodexEntry] = [
             "repository. 6 new tests, 2335 total."
         ),
     ),
+    CodexEntry(
+        "0.29.2",
+        date(2026, 3, 20),
+        (
+            "Fix bare 'configure' not recognised as project config intent. "
+            "Root cause: _UPDATE_CONFIG_PHRASES required at least two words "
+            "(e.g. 'configure project', 'project config') so the single "
+            "word 'configure' failed both phrase matching and LLM "
+            "classification. Added 'configure' to _UPDATE_CONFIG_PHRASES "
+            "and 'configure' → update_config examples in Gemini/OpenAI LLM "
+            "prompt files. Dispatch guards (not has_memory_phrase) ensure "
+            "'configure memory' still routes correctly. "
+            "5 new tests, 2340 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@
 |---------|--------|
 | 0.29.0 | Route Slack thread replies to active PRD flow. Queued feedback mechanism so user replies during section drafting are acknowledged and injected into the next section-loop critique instead of falling through to LLM intent classifier. 2329 tests |
 | 0.29.1 | Fix bot not responding in Slack session threads after cache expiry or server restart. Added `has_bot_thread_history()` fallback checking MongoDB agentInteraction for prior bot participation. Re-registers thread in memory cache on hit. 6 new tests, 2335 total |
+| 0.29.2 | Fix bare 'configure' not recognised as project config intent. Added 'configure' to `_UPDATE_CONFIG_PHRASES` and LLM prompt examples. 5 new tests, 2340 total |
 
 ## v0.27.x (2026-03-17)
 

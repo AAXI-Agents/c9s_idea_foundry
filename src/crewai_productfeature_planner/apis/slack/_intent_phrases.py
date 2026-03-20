@@ -93,6 +93,7 @@ _UPDATE_CONFIG_PHRASES = (
     "edit config", "edit project config", "change config",
     "reconfigure", "reconfigure project", "update project config",
     "project settings", "edit settings",
+    "configure",
 )
 _RESUME_PRD_PHRASES = (
     "resume prd", "resume prd flow", "resume flow",
