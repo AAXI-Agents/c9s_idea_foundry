@@ -12,8 +12,11 @@ from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state im
     _interactive_runs,
     _lock,
     _manual_refinement_text,
+    _queued_feedback,
     cleanup_interactive_run,
+    drain_queued_feedback,
     get_interactive_run,
+    queue_feedback,
     register_interactive_run,
 )
 
@@ -53,11 +56,14 @@ __all__ = [
     "_lock",
     "_interactive_runs",
     "_manual_refinement_text",
+    "_queued_feedback",
     "_INTERACTIVE_TTL_SECONDS",
     "_expire_stale",
     "register_interactive_run",
     "get_interactive_run",
     "cleanup_interactive_run",
+    "queue_feedback",
+    "drain_queued_feedback",
     # decisions
     "resolve_interaction",
     "submit_manual_refinement",

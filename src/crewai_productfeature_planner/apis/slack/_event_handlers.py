@@ -51,6 +51,25 @@ def _safe_error_reply(
         logger.debug("_safe_error_reply itself failed", exc_info=True)
 
 
+def _safe_ack_reply(
+    channel: str, thread_ts: str, user: str, text: str,
+) -> None:
+    """Best-effort acknowledgement reply to the user — never raises."""
+    try:
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+        client = _get_slack_client()
+        if client:
+            msg = f"<@{user}> {text}"
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=msg,
+            )
+            _er().append_to_thread(channel, thread_ts, "assistant", msg)
+    except Exception:
+        logger.debug("_safe_ack_reply itself failed", exc_info=True)
+
+
 def _handle_app_mention(event: dict) -> None:
     from crewai_productfeature_planner.apis.slack.session_manager import (
         has_pending_state,
@@ -250,18 +269,38 @@ def _handle_thread_message_inner(
     from crewai_productfeature_planner.apis.slack.interactive_handlers import (
         _interactive_runs,
         _lock as _ih_lock,
+        queue_feedback,
         submit_manual_refinement,
     )
+    _matched_run_id: str | None = None
+    _matched_pending: str | None = None
     with _ih_lock:
         for run_id, info in _interactive_runs.items():
             if (
                 info.get("channel") == channel
                 and info.get("thread_ts") == thread_ts
-                and info.get("pending_action") in _THREAD_REPLY_ACTIONS
             ):
-                submit_manual_refinement(run_id, clean_text)
-                er.append_to_thread(channel, thread_ts, "user", clean_text)
-                return
+                _matched_run_id = run_id
+                _matched_pending = info.get("pending_action")
+                break
+
+    if _matched_run_id is not None:
+        if _matched_pending in _THREAD_REPLY_ACTIONS:
+            # Flow is blocking on a gate — deliver feedback directly
+            submit_manual_refinement(_matched_run_id, clean_text)
+            er.append_to_thread(channel, thread_ts, "user", clean_text)
+            return
+        # Flow is running but not at a gate (e.g. section drafting).
+        # Queue the feedback for the section loop to pick up and
+        # acknowledge so the user isn't left with silence.
+        queue_feedback(_matched_run_id, clean_text)
+        er.append_to_thread(channel, thread_ts, "user", clean_text)
+        _safe_ack_reply(
+            channel, thread_ts, user,
+            ":memo: Got it! I'll incorporate your feedback "
+            "into the next section iteration\u2026",
+        )
+        return
 
     # Check non-interactive exec summary feedback gate — thread replies
     # are treated as user critique / iteration feedback.

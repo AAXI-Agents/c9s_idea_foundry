@@ -76,6 +76,27 @@ def section_approval_loop(
         user_feedback: str | None = None
         available = list(section.agent_results.keys()) or list(agents.keys())
 
+        # ── Drain queued Slack feedback (if any) ──────────
+        # When a user replies in a Slack thread while section drafting
+        # is in progress (no explicit gate), the feedback is queued in
+        # _queued_feedback.  Drain it here so it replaces the AI critic.
+        run_id = getattr(flow.state, "run_id", "") or ""
+        if run_id:
+            try:
+                from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state import (
+                    drain_queued_feedback,
+                )
+                queued = drain_queued_feedback(run_id)
+                if queued:
+                    user_feedback = queued
+                    logger.info(
+                        "[SectionLoop] Using queued Slack feedback for "
+                        "section '%s' run_id=%s (%d chars)",
+                        section.title, run_id, len(queued),
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
         # ── Optional user gate (callback) ─────────────────
         if flow.approval_callback is not None:
             decision = flow.approval_callback(

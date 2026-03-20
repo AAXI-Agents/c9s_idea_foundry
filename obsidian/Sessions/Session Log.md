@@ -1262,3 +1262,41 @@ call fires immediately after, adding further noise.
 - 2329 passed
 
 ---
+
+## Session 025 — Route Feedback to Active PRD Flow
+**Date**: 2026-03-20 | **Version**: 0.28.2 → 0.29.0
+
+### Goal
+Fix no response from orchestrator when user gives feedback during an
+active PRD flow (e.g. "remove the avatar video references and focus
+only on the compliances").
+
+### Root Cause
+`_handle_thread_message_inner` only routed thread replies to the active
+flow when `pending_action` was in `_THREAD_REPLY_ACTIONS` (manual_refinement,
+exec_summary_pre_feedback, exec_summary_feedback). During section
+drafting, `pending_action` is `None` — so user feedback fell through to
+`_interpret_and_act` (LLM intent classifier), which treated it as a new
+command and responded with unrelated help text or silence.
+
+### Changes
+1. **interactive_handlers/_run_state.py** — new `_queued_feedback` dict,
+   `queue_feedback(run_id, text)` and `drain_queued_feedback(run_id)`.
+2. **_event_handlers.py** — restructured thread-reply matching: first
+   checks if `pending_action` is in `_THREAD_REPLY_ACTIONS` (gate mode),
+   then falls back to `queue_feedback` for any active run with
+   `pending_action=None` (section drafting). Acknowledges with
+   ":memo: Got it! I'll incorporate your feedback…".
+3. **_event_handlers.py** — new `_safe_ack_reply` helper.
+4. **flows/_section_loop.py** — at the top of each iteration, drains
+   queued feedback and uses it as `user_feedback` (replaces AI critique).
+5. **interactive_handlers/__init__.py** — exports `_queued_feedback`,
+   `queue_feedback`, `drain_queued_feedback`.
+6. **tests/apis/slack/conftest.py** — new autouse fixture to clear
+   `_interactive_runs`, `_manual_refinement_text`, `_queued_feedback`
+   between tests.
+
+### Tests
+- 2329 passed
+
+---

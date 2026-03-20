@@ -1862,6 +1862,20 @@ _CODEX: list[CodexEntry] = [
             "_flow_handlers.py, router.py). 2329 tests."
         ),
     ),
+    CodexEntry(
+        "0.29.0",
+        date(2026, 3, 20),
+        (
+            "Route Slack thread replies to active PRD flow instead of LLM "
+            "intent classifier. When a user sends feedback during section "
+            "drafting (no explicit approval gate), the message is now "
+            "queued, acknowledged in Slack, and injected into the next "
+            "section-loop critique. New _queued_feedback store in "
+            "_run_state.py, drain_queued_feedback() consumed in "
+            "_section_loop.py. Added _safe_ack_reply helper and "
+            "conftest.py for slack test isolation. 2329 tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
