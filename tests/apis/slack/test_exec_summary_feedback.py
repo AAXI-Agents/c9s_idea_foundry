@@ -81,7 +81,7 @@ class TestExecSummaryFeedbackBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_feedback_blocks,
         )
-        blocks = exec_summary_feedback_blocks("run_1", "Summary content", 1)
+        blocks, _ = exec_summary_feedback_blocks("run_1", "Summary content", 1)
         assert isinstance(blocks, list)
         assert len(blocks) >= 4
 
@@ -89,7 +89,7 @@ class TestExecSummaryFeedbackBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_feedback_blocks,
         )
-        blocks = exec_summary_feedback_blocks("run_1", "content", 2)
+        blocks, _ = exec_summary_feedback_blocks("run_1", "content", 2)
         actions = [b for b in blocks if b.get("type") == "actions"]
         assert len(actions) == 1
         action_ids = {e["action_id"] for e in actions[0]["elements"]}
@@ -99,7 +99,7 @@ class TestExecSummaryFeedbackBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_feedback_blocks,
         )
-        blocks = exec_summary_feedback_blocks("run_1", "content", 1)
+        blocks, _ = exec_summary_feedback_blocks("run_1", "content", 1)
         actions = [b for b in blocks if b.get("type") == "actions"]
         action_ids = {e["action_id"] for e in actions[0]["elements"]}
         assert "flow_cancel" in action_ids
@@ -108,7 +108,7 @@ class TestExecSummaryFeedbackBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_feedback_blocks,
         )
-        blocks = exec_summary_feedback_blocks("run_1", "content", 3)
+        blocks, _ = exec_summary_feedback_blocks("run_1", "content", 3)
         header = [b for b in blocks if b.get("type") == "header"][0]
         assert "3" in header["text"]["text"]
 
@@ -117,7 +117,8 @@ class TestExecSummaryFeedbackBlocks:
             exec_summary_feedback_blocks,
         )
         long_content = "y" * 5000
-        blocks = exec_summary_feedback_blocks("r1", long_content, 1)
+        blocks, was_truncated = exec_summary_feedback_blocks("r1", long_content, 1)
+        assert was_truncated is True
         section = [b for b in blocks if b.get("type") == "section"][0]
         assert len(section["text"]["text"]) <= 3000
 
@@ -125,7 +126,7 @@ class TestExecSummaryFeedbackBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_feedback_blocks,
         )
-        blocks = exec_summary_feedback_blocks("run_42", "content", 1)
+        blocks, _ = exec_summary_feedback_blocks("run_42", "content", 1)
         actions = [b for b in blocks if b.get("type") == "actions"]
         assert all(
             e["value"] == "run_42"

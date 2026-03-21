@@ -415,7 +415,7 @@ def make_exec_summary_gate(
             exec_summary_feedback_blocks,
         )
 
-        blocks = exec_summary_feedback_blocks(cb_run_id, content, iteration)
+        blocks, was_truncated = exec_summary_feedback_blocks(cb_run_id, content, iteration)
         try:
             from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
             client = _get_slack_client()
@@ -428,6 +428,16 @@ def make_exec_summary_gate(
                 )
         except Exception:  # noqa: BLE001
             logger.debug("Failed to post exec summary feedback blocks", exc_info=True)
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                channel, thread_ts, content,
+                f"executive_summary_iter{iteration}_{cb_run_id[:8]}.md",
+                f"Executive Summary — Iteration {iteration}",
+            )
 
         # Register the pending gate
         gate_event = threading.Event()
@@ -559,7 +569,7 @@ def make_exec_summary_completion_gate(
             exec_summary_completion_blocks,
         )
 
-        blocks = exec_summary_completion_blocks(
+        blocks, was_truncated = exec_summary_completion_blocks(
             cb_run_id, executive_summary, total_iterations,
         )
         try:
@@ -574,6 +584,16 @@ def make_exec_summary_completion_gate(
                 )
         except Exception:  # noqa: BLE001
             logger.debug("Failed to post exec summary completion blocks", exc_info=True)
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                channel, thread_ts, executive_summary,
+                f"executive_summary_final_{cb_run_id[:8]}.md",
+                "Executive Summary — Finalized",
+            )
 
         # Register the pending gate
         gate_event = threading.Event()
@@ -690,7 +710,7 @@ def make_requirements_approval_gate(
             requirements_approval_blocks,
         )
 
-        blocks = requirements_approval_blocks(
+        blocks, was_truncated = requirements_approval_blocks(
             cb_run_id, requirements, iteration_count,
         )
         try:
@@ -706,6 +726,16 @@ def make_requirements_approval_gate(
         except Exception:  # noqa: BLE001
             logger.debug(
                 "Failed to post requirements approval blocks", exc_info=True,
+            )
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                channel, thread_ts, requirements,
+                f"requirements_{cb_run_id[:8]}.md",
+                "Requirements Breakdown",
             )
 
         # Register the pending gate

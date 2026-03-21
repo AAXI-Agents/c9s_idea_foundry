@@ -33,6 +33,7 @@
 |---------|---------|
 | 0.31.0 | Interaction-first rule for ALL prompts: replaced every 'type skip', 'say *command*', 'just tell me' text with clickable Block Kit buttons. Setup wizard Skip button, setup-complete/next-step/greeting/idea-list/empty-ideas all use action buttons. _SETUP_ACTIONS dispatch routing. Interaction-First Testing section in CODEX.md. 26 new tests, 2425 total |
 | 0.31.1 | Fix 'configure tools' misrouted to project config. Added tools phrases to _CONFIGURE_MEMORY_PHRASES and both LLM prompts. Guarded update_config dispatch so memory/tool phrases prevent update_config catch. 4 new tests, 2429 total |
+| 0.31.2 | Slack file-upload fallback for truncated content. When block text exceeds 2800 chars, inline preview truncated and full content uploaded as downloadable text file in thread. All 5 rendered sections: idea approval, manual refinement, requirements breakdown, exec summary feedback, exec summary completion. New _slack_file_helper module. 18 new tests, 2447 total |
 
 ## v0.27.x (2026-03-17)
 

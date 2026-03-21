@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
+from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+    truncate_with_file_hint,
+)
+
 
 def exec_summary_completion_blocks(
     run_id: str,
     content: str,
     total_iterations: int,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Show the finalized executive summary and ask for approval to continue.
 
-    Displayed after all executive-summary iterations complete (either
-    READY_FOR_DEV or max iterations reached) to give the user a final
-    review gate before proceeding to section-level PRD drafting.
+    Returns ``(blocks, was_truncated)``.  When *was_truncated* is True the
+    caller should upload the full content as a file attachment.
     """
-    # Slack has a 3000-char limit per text block
-    if len(content) > 2800:
-        content_preview = content[:2800] + f"\n\n_… ({len(content) - 2800} more chars)_"
-    else:
-        content_preview = content
+    content_preview, was_truncated = truncate_with_file_hint(content)
 
-    return [
+    blocks = [
         {
             "type": "header",
             "text": {
@@ -89,6 +88,8 @@ def exec_summary_completion_blocks(
         },
     ]
 
+    return blocks, was_truncated
+
 
 def exec_summary_pre_feedback_blocks(run_id: str, idea: str) -> list[dict]:
     """Ask the user if they want to provide initial guidance before the exec summary draft.
@@ -150,18 +151,15 @@ def exec_summary_feedback_blocks(
     run_id: str,
     content: str,
     iteration: int,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Show the current executive summary and ask for feedback.
 
-    Shown after each executive summary iteration completes.
+    Returns ``(blocks, was_truncated)``.  When *was_truncated* is True the
+    caller should upload the full content as a file attachment.
     """
-    # Slack has a 3000-char limit per text block
-    if len(content) > 2800:
-        content_preview = content[:2800] + f"\n\n_… ({len(content) - 2800} more chars)_"
-    else:
-        content_preview = content
+    content_preview, was_truncated = truncate_with_file_hint(content)
 
-    return [
+    blocks = [
         {
             "type": "header",
             "text": {
@@ -224,3 +222,5 @@ def exec_summary_feedback_blocks(
             }],
         },
     ]
+
+    return blocks, was_truncated

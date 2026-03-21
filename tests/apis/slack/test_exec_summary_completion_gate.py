@@ -52,7 +52,7 @@ class TestExecSummaryCompletionBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_completion_blocks,
         )
-        blocks = exec_summary_completion_blocks("run_1", "Summary content", 3)
+        blocks, _ = exec_summary_completion_blocks("run_1", "Summary content", 3)
         assert isinstance(blocks, list)
         assert len(blocks) >= 4
 
@@ -60,7 +60,7 @@ class TestExecSummaryCompletionBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_completion_blocks,
         )
-        blocks = exec_summary_completion_blocks("run_1", "content", 2)
+        blocks, _ = exec_summary_completion_blocks("run_1", "content", 2)
         actions = [b for b in blocks if b.get("type") == "actions"]
         assert len(actions) == 1
         action_ids = {e["action_id"] for e in actions[0]["elements"]}
@@ -70,7 +70,7 @@ class TestExecSummaryCompletionBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_completion_blocks,
         )
-        blocks = exec_summary_completion_blocks("run_1", "content", 2)
+        blocks, _ = exec_summary_completion_blocks("run_1", "content", 2)
         actions = [b for b in blocks if b.get("type") == "actions"]
         action_ids = {e["action_id"] for e in actions[0]["elements"]}
         assert "exec_summary_stop" in action_ids
@@ -79,7 +79,7 @@ class TestExecSummaryCompletionBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_completion_blocks,
         )
-        blocks = exec_summary_completion_blocks("test_run_99", "content", 1)
+        blocks, _ = exec_summary_completion_blocks("test_run_99", "content", 1)
         actions = [b for b in blocks if b.get("type") == "actions"]
         assert all(
             e["value"] == "test_run_99"
@@ -91,7 +91,8 @@ class TestExecSummaryCompletionBlocks:
             exec_summary_completion_blocks,
         )
         long_content = "x" * 3500
-        blocks = exec_summary_completion_blocks("r1", long_content, 3)
+        blocks, was_truncated = exec_summary_completion_blocks("r1", long_content, 3)
+        assert was_truncated is True
         section = [b for b in blocks if b.get("type") == "section"][0]
         # The full content should NOT appear verbatim (truncated to 2800)
         assert long_content not in section["text"]["text"]
@@ -101,7 +102,7 @@ class TestExecSummaryCompletionBlocks:
         from crewai_productfeature_planner.apis.slack.blocks import (
             exec_summary_completion_blocks,
         )
-        blocks = exec_summary_completion_blocks("r1", "Summary", 5)
+        blocks, _ = exec_summary_completion_blocks("r1", "Summary", 5)
         section = [b for b in blocks if b.get("type") == "section"][0]
         assert "5" in section["text"]["text"]
 

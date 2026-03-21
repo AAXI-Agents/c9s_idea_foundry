@@ -214,7 +214,7 @@ def test_refinement_mode_blocks():
 def test_idea_approval_blocks():
     from crewai_productfeature_planner.apis.slack.blocks import idea_approval_blocks
 
-    blocks = idea_approval_blocks("run_b", "Refined idea text", "Original idea")
+    blocks, _ = idea_approval_blocks("run_b", "Refined idea text", "Original idea")
     actions = [b for b in blocks if b.get("type") == "actions"]
     assert len(actions) == 1
     action_ids = {e["action_id"] for e in actions[0]["elements"]}
@@ -225,7 +225,7 @@ def test_idea_approval_blocks():
 def test_requirements_approval_blocks():
     from crewai_productfeature_planner.apis.slack.blocks import requirements_approval_blocks
 
-    blocks = requirements_approval_blocks("run_b", "Requirements text", 3)
+    blocks, _ = requirements_approval_blocks("run_b", "Requirements text", 3)
     actions = [b for b in blocks if b.get("type") == "actions"]
     assert len(actions) == 1
     action_ids = {e["action_id"] for e in actions[0]["elements"]}
@@ -250,7 +250,7 @@ def test_flow_cancelled_blocks():
 def test_manual_refinement_prompt_blocks():
     from crewai_productfeature_planner.apis.slack.blocks import manual_refinement_prompt_blocks
 
-    blocks = manual_refinement_prompt_blocks("run_b", "My idea", 2)
+    blocks, _ = manual_refinement_prompt_blocks("run_b", "My idea", 2)
     actions = [b for b in blocks if b.get("type") == "actions"]
     assert len(actions) == 1
     action_ids = {e["action_id"] for e in actions[0]["elements"]}
@@ -266,14 +266,14 @@ def test_blocks_truncate_long_text():
     )
 
     long_text = "x" * 5000
-    idea_blocks = idea_approval_blocks("run_t", long_text, "original")
+    idea_blocks, _ = idea_approval_blocks("run_t", long_text, "original")
     # The section block text should be truncated
     section_texts = [
         b["text"]["text"] for b in idea_blocks if b.get("type") == "section"
     ]
     assert all(len(t) <= 2100 for t in section_texts)
 
-    req_blocks = requirements_approval_blocks("run_t", long_text, 1)
+    req_blocks, _ = requirements_approval_blocks("run_t", long_text, 1)
     section_texts = [
         b["text"]["text"] for b in req_blocks if b.get("type") == "section"
     ]

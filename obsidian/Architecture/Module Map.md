@@ -53,6 +53,7 @@
 | `projects/` | Projects CRUD router (list/get/create/update/delete with pagination) |
 | `ideas/` | Ideas CRUD router (paginated list, get, archive/pause with filters) |
 | `slack/` | Full Slack integration (see [[Slack Integration]]) |
+| `slack/_slack_file_helper.py` | Truncation + file upload for long Slack content (v0.31.2) |
 | `sso_auth.py` | SSO JWT validation + require_sso_user dependency |
 | `sso_webhooks.py` | SSO webhook receiver for user lifecycle events |
 

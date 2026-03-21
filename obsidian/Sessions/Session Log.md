@@ -1575,4 +1575,34 @@ the message handler's `update_config` condition caught it first because:
 
 ---
 
+## Session 034 — 2026-03-21
+
+**Scope**: Slack File Upload Fallback for Truncated Content
+**Date**: 2026-03-21 | **Version**: 0.31.1 → 0.31.2
+
+### Problem
+Slack Block Kit has a 3000-char limit per section text field. Long content
+(idea refinements, exec summaries, requirements breakdowns) was silently
+truncated at 2800 chars with only a "… (N more chars)" hint. Users could
+not read the full output.
+
+### Changes
+1. **NEW `_slack_file_helper.py`** — shared utility module:
+   - `truncate_with_file_hint(content, limit)` → `(preview, was_truncated)`
+   - `upload_content_file(channel, thread_ts, content, filename, title)` → bool
+2. **5 block builders** return `tuple[list[dict], bool]` instead of `list[dict]`:
+   - `idea_approval_blocks`, `manual_refinement_prompt_blocks`,
+     `requirements_approval_blocks`, `exec_summary_feedback_blocks`,
+     `exec_summary_completion_blocks`
+3. **8 caller sites** updated in `_flow_handlers.py` (3) and `_callbacks.py` (5)
+   to unpack tuple and call `upload_content_file()` when truncated
+4. **All test files** updated for tuple unpacking
+
+### Tests
+- 18 new tests in `test_slack_file_helper.py`
+  (truncation helper, upload helper, was_truncated flag for all 5 builders)
+- 2447 total tests
+
+---
+
 ---

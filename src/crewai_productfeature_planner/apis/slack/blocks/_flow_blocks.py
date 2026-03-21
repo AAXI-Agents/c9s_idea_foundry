@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+    truncate_with_file_hint,
+)
+
 
 def refinement_mode_blocks(run_id: str, idea: str) -> list[dict]:
     """Ask the user how they want to refine the idea before PRD generation.
@@ -69,12 +73,13 @@ def idea_approval_blocks(
     run_id: str,
     refined_idea: str,
     original_idea: str,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Show the refined idea and let the user approve or cancel.
 
-    Mirrors the CLI ``_approve_refined_idea()`` prompt.
+    Returns ``(blocks, was_truncated)``.  When *was_truncated* is True the
+    caller should upload the full content as a file attachment.
     """
-    refined_preview = refined_idea[:2000] + ("…" if len(refined_idea) > 2000 else "")
+    refined_preview, was_truncated = truncate_with_file_hint(refined_idea, 2000)
     header_text = ":bulb: Idea Refinement Complete"
     size_note = ""
     if original_idea:
@@ -135,25 +140,22 @@ def idea_approval_blocks(
             ],
         },
     ]
-    return blocks
+    return blocks, was_truncated
 
 
 def requirements_approval_blocks(
     run_id: str,
     requirements: str,
     iteration_count: int = 0,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Show the requirements breakdown and let the user approve or cancel.
 
-    Mirrors the CLI ``_approve_requirements()`` prompt.
+    Returns ``(blocks, was_truncated)``.  When *was_truncated* is True the
+    caller should upload the full content as a file attachment.
     """
-    # Slack has a 3000-char limit per text block
-    if len(requirements) > 2800:
-        requirements_preview = requirements[:2800] + f"\n\n_… ({len(requirements) - 2800} more chars)_"
-    else:
-        requirements_preview = requirements
+    requirements_preview, was_truncated = truncate_with_file_hint(requirements)
 
-    return [
+    blocks = [
         {
             "type": "header",
             "text": {
@@ -215,6 +217,8 @@ def requirements_approval_blocks(
         },
     ]
 
+    return blocks, was_truncated
+
 
 def flow_started_blocks(run_id: str, idea: str) -> list[dict]:
     """Acknowledge that a PRD flow has been kicked off."""
@@ -250,13 +254,14 @@ def flow_cancelled_blocks(run_id: str, stage: str) -> list[dict]:
     ]
 
 
-def manual_refinement_prompt_blocks(run_id: str, current_idea: str, iteration: int) -> list[dict]:
+def manual_refinement_prompt_blocks(run_id: str, current_idea: str, iteration: int) -> tuple[list[dict], bool]:
     """Prompt the user to refine the idea or approve it (manual mode).
 
-    Sent in a thread for multi-turn manual refinement.
+    Returns ``(blocks, was_truncated)``.  When *was_truncated* is True the
+    caller should upload the full content as a file attachment.
     """
-    idea_preview = current_idea[:2000] + ("…" if len(current_idea) > 2000 else "")
-    return [
+    idea_preview, was_truncated = truncate_with_file_hint(current_idea, 2000)
+    blocks = [
         {
             "type": "header",
             "text": {
@@ -302,3 +307,5 @@ def manual_refinement_prompt_blocks(run_id: str, current_idea: str, iteration: i
             ],
         },
     ]
+
+    return blocks, was_truncated

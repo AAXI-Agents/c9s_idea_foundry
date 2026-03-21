@@ -77,11 +77,21 @@ def run_manual_refinement(run_id: str) -> tuple[str, list[dict]]:
 
     while True:
         iteration += 1
-        blocks = manual_refinement_prompt_blocks(run_id, current_idea, iteration)
+        blocks, was_truncated = manual_refinement_prompt_blocks(run_id, current_idea, iteration)
         _post_blocks(
             info["channel"], info["thread_ts"], blocks,
             text=f"Idea Refinement — Iteration {iteration}",
         )
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                info["channel"], info["thread_ts"], current_idea,
+                f"idea_refinement_iter{iteration}_{run_id[:8]}.md",
+                f"Idea Refinement — Iteration {iteration}",
+            )
 
         # Wait for either a button click or a thread reply
         with _lock:
@@ -145,11 +155,21 @@ def make_slack_idea_callback(run_id: str):
         if not info:
             return False  # continue (auto-approve if no interactive run)
 
-        blocks = idea_approval_blocks(run_id, refined_idea, original_idea)
+        blocks, was_truncated = idea_approval_blocks(run_id, refined_idea, original_idea)
         _post_blocks(
             info["channel"], info["thread_ts"], blocks,
             text="Idea Refinement Complete — approve or cancel?",
         )
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                info["channel"], info["thread_ts"], refined_idea,
+                f"refined_idea_{run_id[:8]}.md",
+                "Refined Idea",
+            )
 
         decision = _wait_for_decision(run_id, "idea_approval")
 
@@ -190,11 +210,18 @@ def make_slack_requirements_callback(run_id: str):
             return False  # auto-approve
 
         iteration_count = len(breakdown_history) if breakdown_history else 0
-        blocks = requirements_approval_blocks(run_id, requirements, iteration_count)
+        blocks, was_truncated = requirements_approval_blocks(run_id, requirements, iteration_count)
         _post_blocks(
             info["channel"], info["thread_ts"], blocks,
             text="Requirements Breakdown Complete — approve or cancel?",
         )
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import upload_content_file
+            upload_content_file(
+                info["channel"], info["thread_ts"], requirements,
+                filename=f"requirements_{run_id}.md",
+                title="Full Requirements Breakdown",
+            )
 
         decision = _wait_for_decision(run_id, "requirements_approval")
 
@@ -259,11 +286,21 @@ def make_slack_exec_summary_feedback_callback(run_id: str):
             )
         else:
             # ── Post-iteration: show summary, approve or feedback ──
-            blocks = exec_summary_feedback_blocks(run_id, content, iteration)
+            blocks, was_truncated = exec_summary_feedback_blocks(run_id, content, iteration)
             _post_blocks(
                 channel, thread_ts, blocks,
                 text=f"Executive Summary — Iteration {iteration}",
             )
+
+            if was_truncated:
+                from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                    upload_content_file,
+                )
+                upload_content_file(
+                    channel, thread_ts, content,
+                    f"executive_summary_iter{iteration}_{run_id[:8]}.md",
+                    f"Executive Summary — Iteration {iteration}",
+                )
 
         # Wait for either a button click or a thread reply
         action_type = (
@@ -364,13 +401,20 @@ def make_slack_exec_summary_completion_callback(run_id: str):
         thread_ts = info["thread_ts"]
         total_iterations = len(iterations)
 
-        blocks = exec_summary_completion_blocks(
+        blocks, was_truncated = exec_summary_completion_blocks(
             run_id, executive_summary, total_iterations,
         )
         _post_blocks(
             channel, thread_ts, blocks,
             text="Executive Summary — Finalized — awaiting your review",
         )
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import upload_content_file
+            upload_content_file(
+                channel, thread_ts, executive_summary,
+                filename=f"executive_summary_final_{run_id}.md",
+                title="Full Executive Summary (Finalized)",
+            )
 
         decision = _wait_for_decision(run_id, "exec_summary_completion")
 

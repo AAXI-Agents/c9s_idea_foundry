@@ -1993,6 +1993,21 @@ _CODEX: list[CodexEntry] = [
             "phrases. 4 new tests, 2429 total."
         ),
     ),
+    CodexEntry(
+        "0.31.2",
+        date(2026, 3, 21),
+        (
+            "Slack file-upload fallback for truncated content. When "
+            "block text exceeds 2800 chars, the inline preview is "
+            "truncated and the full content is uploaded as a "
+            "downloadable text file in the thread. Applies to all "
+            "5 rendered sections: idea approval, manual refinement, "
+            "requirements breakdown, exec summary feedback, and "
+            "exec summary completion. New _slack_file_helper module "
+            "with truncate_with_file_hint() and upload_content_file(). "
+            "18 new tests, 2447 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

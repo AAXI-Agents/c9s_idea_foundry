@@ -111,6 +111,19 @@ Classified via LLM + phrase-based fallback:
 - Persists to `.slack_tokens.json` + MongoDB
 - Health endpoints: `GET /health/slack-token`, `POST /exchange`, `POST /refresh`
 
+## Content Truncation & File Upload (v0.31.2)
+
+Slack Block Kit has a 3000-char limit per section text field. When rendered
+content (idea, exec summary, requirements) exceeds 2800 chars:
+
+1. Inline preview is truncated at 2800 chars with a hint: "see attached file"
+2. Full content is uploaded as a downloadable `.md` file in the thread
+3. Applies to all 5 block builders: `idea_approval_blocks`,
+   `manual_refinement_prompt_blocks`, `requirements_approval_blocks`,
+   `exec_summary_feedback_blocks`, `exec_summary_completion_blocks`
+4. Helper module: `_slack_file_helper.py` — `truncate_with_file_hint()`,
+   `upload_content_file()`
+
 ---
 
 See also: [[Jira Integration]], [[Confluence Integration]], [[PRD Flow]]
