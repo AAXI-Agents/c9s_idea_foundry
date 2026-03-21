@@ -1486,3 +1486,58 @@ buttons should be hidden from non-admin users in the help menu.
 - 2398 passed (18 new: 12 admin gate, 4 help blocks role, 2 next-step)
 
 ---
+
+## Session 031 — 2026-03-21
+
+**Scope**: Defense-in-Depth Admin Gates
+**Date**: 2026-03-21 | **Version**: 0.30.2 → 0.30.3
+
+### Goal
+Add handler-level admin gates so non-admins are blocked regardless of
+which caller invokes the handler (not just at the button dispatch level).
+
+### Changes
+- Added `can_manage_memory()` checks directly inside
+  `handle_update_config`, `handle_configure_memory`,
+  `handle_project_name_reply`, and `handle_project_setup_reply`.
+
+### Tests
+- 2398 passed
+
+---
+
+## Session 032 — 2026-03-21
+
+**Scope**: Interaction-First Rule for ALL Slack Prompts
+**Date**: 2026-03-21 | **Version**: 0.30.3 → 0.31.0
+
+### Goal
+Replace every instance where the bot tells users to "type", "say", or
+"tell me" something with clickable Block Kit buttons. No user should
+ever need to type to navigate the bot.
+
+### Changes
+1. **blocks/_session_blocks.py** — Setup wizard: added Skip button
+   (`setup_skip` action) on all 5 steps. Setup-complete: replaced
+   "just say" text with BTN_NEW_IDEA + BTN_CONFIGURE_MEMORY + BTN_HELP.
+   Removed misleading "Type project name to search" text.
+2. **blocks/_idea_list_blocks.py** — Footer: replaced context text
+   "describe a new idea" with BTN_NEW_IDEA actions block.
+3. **_session_ideas.py** — Empty ideas: replaced plain text with Block
+   Kit message containing BTN_NEW_IDEA.
+4. **interactions_router/_next_step_handler.py** — Added `_post_blocks()`
+   helper. All accepted next-step suggestions now post action buttons
+   (BTN_CONFIGURE, BTN_NEW_IDEA, BTN_HELP) instead of text.
+5. **_message_handler.py** — Greeting posts Block Kit with BTN_NEW_IDEA +
+   BTN_HELP instead of plain text.
+6. **interactions_router/_dispatch.py** — Added `_SETUP_ACTIONS` frozenset
+   with `setup_skip` routing to `handle_project_setup_reply`.
+7. **CODEX.md** — Added "Interaction-First Testing" section with Block Kit
+   testing methodology, checklist, and quick-check commands.
+
+### Tests
+- 26 new tests in `test_interaction_first_rule.py`
+- Updated `test_idea_list.py` action block count assertions (+1 for footer)
+- 2425 total tests
+
+---

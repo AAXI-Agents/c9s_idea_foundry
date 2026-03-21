@@ -25,6 +25,13 @@
 | 0.30.0 | All bot commands clickable — replaced every 'Say *command*' text prompt with interactive Slack Block Kit buttons. New `_command_blocks.py` (11 button constants, 10 composite builders), new `_command_handler.py` (cmd_* dispatch). 18 text prompts replaced across 12 files. Help intent now renders Block Kit with action buttons. 33 new tests, 2373 total |
 | 0.30.1 | Complete intent-to-button coverage: added 5 missing cmd_* buttons (publish, create_jira, restart_prd, current_project, create_prd). 16 total button constants. Codified Slack Interaction-First Rule in CODEX.md § Slack Interaction-First Rule and Coding Standards § 9. Unknown-intent fallback now shows New Idea + Help buttons. 7 new tests, 2380 total |
 | 0.30.2 | Admin-gated project configuration: non-admin channel users blocked from configure/switch/create project buttons and update_config text intent. Role-aware help_blocks() hides admin-only buttons for non-admins. Admin gate on configure_memory next-step accept. 18 new tests, 2398 total |
+| 0.30.3 | Defense-in-depth admin gates in handlers: can_manage_memory checks inside handle_update_config, handle_configure_memory, handle_project_name_reply, handle_project_setup_reply. Blocks non-admins at handler level regardless of caller. |
+
+## v0.31.x (2026-03-21)
+
+| Version | Summary |
+|---------|---------|
+| 0.31.0 | Interaction-first rule for ALL prompts: replaced every 'type skip', 'say *command*', 'just tell me' text with clickable Block Kit buttons. Setup wizard Skip button, setup-complete/next-step/greeting/idea-list/empty-ideas all use action buttons. _SETUP_ACTIONS dispatch routing. Interaction-First Testing section in CODEX.md. 26 new tests, 2425 total |
 
 ## v0.27.x (2026-03-17)
 
