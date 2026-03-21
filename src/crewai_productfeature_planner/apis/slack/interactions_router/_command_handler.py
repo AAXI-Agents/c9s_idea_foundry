@@ -23,6 +23,11 @@ CMD_ACTIONS = frozenset({
     "cmd_list_projects",
     "cmd_help",
     "cmd_check_publish",
+    "cmd_publish",
+    "cmd_create_jira",
+    "cmd_restart_prd",
+    "cmd_current_project",
+    "cmd_create_prd",
 })
 
 
@@ -108,6 +113,45 @@ def _handle_command_action(
         )
         from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
         handle_check_publish_intent(channel, thread_ts, user_id, SlackSendMessageTool())
+
+    elif action_id == "cmd_publish":
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            handle_publish_intent,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        handle_publish_intent(channel, thread_ts, user_id, SlackSendMessageTool())
+
+    elif action_id == "cmd_create_jira":
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            handle_create_jira_intent,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        handle_create_jira_intent(channel, thread_ts, user_id, SlackSendMessageTool())
+
+    elif action_id == "cmd_restart_prd":
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            handle_restart_prd,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        handle_restart_prd(
+            channel, thread_ts, user_id, SlackSendMessageTool(),
+            event_ts=thread_ts,
+            project_id=session.get("project_id") if session else None,
+        )
+
+    elif action_id == "cmd_current_project":
+        from crewai_productfeature_planner.apis.slack._session_project import (
+            handle_current_project,
+        )
+        handle_current_project(channel, thread_ts, user_id, session)
+
+    elif action_id == "cmd_create_prd":
+        from crewai_productfeature_planner.apis.slack._session_reply import reply
+        reply(
+            channel, thread_ts,
+            f"<@{user_id}> :bulb: What product or feature idea would you "
+            "like to work on? Describe it and I'll start an interactive PRD flow.",
+        )
 
     else:
         logger.warning("Unknown command action: %s", action_id)

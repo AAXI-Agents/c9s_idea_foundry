@@ -173,6 +173,35 @@ Enforced by 23 regression tests in `tests/flows/test_jira_approval_gate.py`.
 - Log scanning: check `logs/crewai.log` after every change for `WARNING`/`ERROR`
 - One-time fix scripts: create in `scripts/`, query→fix→verify→delete
 
+### Slack Interaction-First Rule (Required)
+
+Every Slack intent that a user can trigger **must** have a clickable
+Block Kit button — users should never need to type a command.
+
+**Invariants:**
+
+1. **Every new intent** must have a corresponding `BTN_*` constant in
+   `blocks/_command_blocks.py` and a `cmd_<intent>` dispatch branch in
+   `interactions_router/_command_handler.py`.
+2. **No "Say *command*" text** — never instruct the user to type a
+   command. Use button blocks from `_command_blocks.py` instead.
+3. **Help must show all actions** — the `help_blocks()` builder must
+   include every actionable intent as a clickable button.
+4. **Naming convention** — button action IDs follow `cmd_<intent>` where
+   `<intent>` matches the LLM intent string (e.g. `cmd_publish`,
+   `cmd_create_jira`, `cmd_restart_prd`).
+5. **Add to CMD_ACTIONS** — register every new `cmd_*` action ID in the
+   `CMD_ACTIONS` frozenset in `_command_handler.py`.
+
+| Checklist for new intents | File(s) to update |
+|--------------------------|-------------------|
+| New `BTN_*` constant | `blocks/_command_blocks.py` |
+| New dispatch branch | `interactions_router/_command_handler.py` |
+| Register in `CMD_ACTIONS` | `interactions_router/_command_handler.py` |
+| Export in `__init__.py` | `blocks/__init__.py` |
+| Include in `help_blocks()` | `blocks/_command_blocks.py` |
+| Add test | `tests/apis/slack/test_command_handler.py` |
+
 ### Logging Standard (Required)
 
 Every module with business logic **must** use structured logging for

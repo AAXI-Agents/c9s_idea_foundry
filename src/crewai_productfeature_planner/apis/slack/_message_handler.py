@@ -505,18 +505,38 @@ def _interpret_and_act_inner(
         tracked_response = "(check_publish status reported)"
 
     else:
-        fallback = reply_text or (
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            BTN_HELP,
+            BTN_NEW_IDEA,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        fallback_text = reply_text or (
             f"<@{user}> I'm not sure what you'd like me to do. "
             ":thinking_face:\n\n"
             "Try mentioning me with a product idea to create a PRD, like:\n"
-            ">  `@crewai-prd-bot iterate an idea for a mobile app`\n\n"
-            "Or type `help` for more options."
+            ">  _\"iterate an idea for a mobile app\"_"
         )
-        if not fallback.startswith(f"<@{user}>"):
-            fallback = f"<@{user}> {fallback}"
-        send_tool.run(channel=channel, text=fallback, thread_ts=thread_ts)
-        append_to_thread(channel, thread_ts, "assistant", fallback)
-        tracked_response = fallback
+        if not fallback_text.startswith(f"<@{user}>"):
+            fallback_text = f"<@{user}> {fallback_text}"
+        client = _get_slack_client()
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": fallback_text}},
+                        {"type": "actions", "elements": [BTN_NEW_IDEA, BTN_HELP]},
+                    ],
+                    text=fallback_text,
+                )
+            except Exception:
+                send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+        else:
+            send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+        append_to_thread(channel, thread_ts, "assistant", fallback_text)
+        tracked_response = fallback_text
 
     # ── Track this interaction for fine-tuning data ──
     interaction_id = log_tracked_interaction(

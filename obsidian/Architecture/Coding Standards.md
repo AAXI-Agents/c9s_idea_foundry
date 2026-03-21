@@ -200,4 +200,36 @@ The following file types do **not** require logging:
 
 ---
 
+## 9. Slack Interaction-First Rule (Required)
+
+Every Slack intent that a user can trigger **must** have a clickable
+Block Kit button. Users should never need to type a command — all
+navigation must be available as button interactions.
+
+### 9.1 Required for Every New Intent
+
+| Artifact | Location |
+|----------|----------|
+| `BTN_*` constant | `blocks/_command_blocks.py` |
+| `cmd_<intent>` dispatch | `interactions_router/_command_handler.py` |
+| Register in `CMD_ACTIONS` | `interactions_router/_command_handler.py` |
+| Export in `__init__.py` | `blocks/__init__.py` |
+| Include in `help_blocks()` | `blocks/_command_blocks.py` |
+| Test dispatch | `tests/apis/slack/test_command_handler.py` |
+
+### 9.2 Naming Convention
+
+- Action IDs: `cmd_<intent>` where `<intent>` matches the LLM intent
+  string (e.g. `cmd_publish`, `cmd_create_jira`).
+- Button constants: `BTN_<UPPER_INTENT>` (e.g. `BTN_PUBLISH`,
+  `BTN_CREATE_JIRA`).
+
+### 9.3 Forbidden Patterns
+
+- Never use "Say *command*" or "Type *command*" in any Slack message.
+- Never instruct users to type text when a button can do the same.
+- All fallback / error messages should include relevant action buttons.
+
+---
+
 See also: [[Testing Guide]], [[Project Overview]]

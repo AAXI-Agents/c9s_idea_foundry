@@ -1925,6 +1925,21 @@ _CODEX: list[CodexEntry] = [
             "33 new tests, 2373 total."
         ),
     ),
+    CodexEntry(
+        "0.30.1",
+        date(2026, 3, 21),
+        (
+            "Complete intent-to-button coverage: added 5 missing cmd_* "
+            "buttons (publish, create_jira, restart_prd, current_project, "
+            "create_prd). All 16 LLM-recognised actionable intents now "
+            "have clickable Block Kit buttons. Updated help_blocks() with "
+            "4 action rows covering all intents. Added Slack "
+            "Interaction-First Rule to CODEX.md and Coding Standards — "
+            "every future intent must have a button. Replaced fallback "
+            "unknown-intent text with buttons. "
+            "7 new tests, 2380 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

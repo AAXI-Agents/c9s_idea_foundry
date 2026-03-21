@@ -28,7 +28,7 @@ class TestCMDActions:
             assert action.startswith("cmd_")
 
     def test_expected_count(self):
-        assert len(CMD_ACTIONS) == 11
+        assert len(CMD_ACTIONS) == 16
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +119,45 @@ class TestDispatchRouting:
     def test_unknown_action_logs_warning(self):
         """Unknown cmd_ action should not raise — just log."""
         _handle_command_action("cmd_nonexistent", "U1", "C1", "T1")
+
+    def test_publish(self):
+        with patch(
+            "crewai_productfeature_planner.apis.slack._flow_handlers.handle_publish_intent"
+        ) as mock:
+            _handle_command_action("cmd_publish", "U1", "C1", "T1")
+            mock.assert_called_once()
+            assert mock.call_args[0][:3] == ("C1", "T1", "U1")
+
+    def test_create_jira(self):
+        with patch(
+            "crewai_productfeature_planner.apis.slack._flow_handlers.handle_create_jira_intent"
+        ) as mock:
+            _handle_command_action("cmd_create_jira", "U1", "C1", "T1")
+            mock.assert_called_once()
+            assert mock.call_args[0][:3] == ("C1", "T1", "U1")
+
+    def test_restart_prd(self):
+        with patch(
+            "crewai_productfeature_planner.apis.slack._flow_handlers.handle_restart_prd"
+        ) as mock:
+            _handle_command_action("cmd_restart_prd", "U1", "C1", "T1")
+            mock.assert_called_once()
+            assert mock.call_args[0][:3] == ("C1", "T1", "U1")
+
+    def test_current_project(self):
+        with patch(
+            "crewai_productfeature_planner.apis.slack._session_project.handle_current_project"
+        ) as mock:
+            _handle_command_action("cmd_current_project", "U1", "C1", "T1")
+            mock.assert_called_once_with("C1", "T1", "U1", None)
+
+    def test_create_prd(self):
+        with patch(
+            "crewai_productfeature_planner.apis.slack._session_reply.reply"
+        ) as mock:
+            _handle_command_action("cmd_create_prd", "U1", "C1", "T1")
+            mock.assert_called_once()
+            assert "idea" in mock.call_args[0][2].lower()
 
 
 # ---------------------------------------------------------------------------

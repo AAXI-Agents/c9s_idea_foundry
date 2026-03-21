@@ -23,6 +23,7 @@
 | Version | Summary |
 |---------|---------|
 | 0.30.0 | All bot commands clickable — replaced every 'Say *command*' text prompt with interactive Slack Block Kit buttons. New `_command_blocks.py` (11 button constants, 10 composite builders), new `_command_handler.py` (cmd_* dispatch). 18 text prompts replaced across 12 files. Help intent now renders Block Kit with action buttons. 33 new tests, 2373 total |
+| 0.30.1 | Complete intent-to-button coverage: added 5 missing cmd_* buttons (publish, create_jira, restart_prd, current_project, create_prd). 16 total button constants. Codified Slack Interaction-First Rule in CODEX.md § Slack Interaction-First Rule and Coding Standards § 9. Unknown-intent fallback now shows New Idea + Help buttons. 7 new tests, 2380 total |
 
 ## v0.27.x (2026-03-17)
 

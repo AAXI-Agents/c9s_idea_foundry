@@ -1419,3 +1419,41 @@ Block Kit buttons so users never need to type command text.
 - 2373 passed
 
 ---
+
+## Session 029 — 2026-03-21
+
+**Scope**: Complete Intent Button Coverage & Interaction-First Rule
+**Date**: 2026-03-21 | **Version**: 0.30.0 → 0.30.1
+
+### Goal
+Audit all Slack intents and ensure every actionable one has a `cmd_*`
+button. Codify the Interaction-First Rule so all future intents must
+have clickable buttons.
+
+### Audit Results
+- 19 total LLM-recognised intents
+- 11 already had buttons (from session 028)
+- 5 actionable intents were missing buttons: `publish`, `create_jira`,
+  `restart_prd`, `current_project`, `create_prd`
+- 3 non-actionable intents (`greeting`, `general_question`, `unknown`)
+  correctly excluded
+
+### Changes
+1. **blocks/_command_blocks.py** — Added 5 new button constants:
+   BTN_PUBLISH, BTN_CREATE_JIRA, BTN_RESTART_PRD, BTN_CURRENT_PROJECT,
+   BTN_NEW_IDEA. Updated help_blocks() from 2 to 4 action rows.
+2. **interactions_router/_command_handler.py** — Added 5 new dispatch
+   branches + updated CMD_ACTIONS (11 → 16).
+3. **blocks/__init__.py** — Exported 5 new BTN_* constants.
+4. **_message_handler.py** — Replaced fallback unknown-intent text
+   ("type help for options") with New Idea + Help buttons.
+5. **CODEX.md** — Added "Slack Interaction-First Rule" section with
+   invariants, naming conventions, and checklist table.
+6. **obsidian/Architecture/Coding Standards.md** — Added § 9 "Slack
+   Interaction-First Rule" with required artifacts, naming convention,
+   and forbidden patterns.
+
+### Tests
+- 2380 passed (7 new)
+
+---
