@@ -1952,6 +1952,19 @@ _CODEX: list[CodexEntry] = [
             "18 new tests, 2398 total."
         ),
     ),
+    CodexEntry(
+        "0.30.3",
+        date(2026, 3, 21),
+        (
+            "Defense-in-depth admin gates: added can_manage_memory checks "
+            "directly in handle_update_config, handle_configure_memory, "
+            "handle_project_name_reply, and handle_project_setup_reply. "
+            "Non-admins in channels are blocked at the handler level "
+            "regardless of which caller invokes them. Fixes bypass where "
+            "'configure' text was consumed as a project name by a stale "
+            "pending_create state from the pre-gated setup wizard."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

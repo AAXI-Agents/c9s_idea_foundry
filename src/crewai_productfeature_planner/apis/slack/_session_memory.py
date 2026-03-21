@@ -17,8 +17,18 @@ def handle_configure_memory(
 ) -> None:
     """Show the project memory configuration menu."""
     from crewai_productfeature_planner.apis.slack.blocks import memory_configure_blocks
+    from crewai_productfeature_planner.apis.slack.session_manager import can_manage_memory
     from crewai_productfeature_planner.mongodb.project_memory import upsert_project_memory
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    # Admin gate — non-admins in channels cannot configure memory
+    if not can_manage_memory(user, channel):
+        reply(
+            channel, thread_ts,
+            f"<@{user}> :lock: Only workspace admins can configure "
+            "project memory in a channel. Please ask an admin.",
+        )
+        return
 
     client = _get_slack_client()
     if not client:
@@ -132,9 +142,19 @@ def handle_update_config(
     )
     from crewai_productfeature_planner.apis.slack.session_manager import (
         _SETUP_STEPS,
+        can_manage_memory,
         mark_pending_reconfig,
     )
     from crewai_productfeature_planner.mongodb.project_config import get_project
+
+    # Admin gate — non-admins in channels cannot configure project settings
+    if not can_manage_memory(user, channel):
+        reply(
+            channel, thread_ts,
+            f"<@{user}> :lock: Only workspace admins can configure "
+            "project settings in a channel. Please ask an admin.",
+        )
+        return
 
     project_id = session.get("project_id") if session else None
     project_name = session.get("project_name", "your project") if session else None

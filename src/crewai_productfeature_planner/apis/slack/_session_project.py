@@ -190,6 +190,8 @@ def handle_project_name_reply(
         project_setup_step_blocks,
     )
     from crewai_productfeature_planner.apis.slack.session_manager import (
+        can_manage_memory,
+        is_dm,
         mark_pending_setup,
     )
     from crewai_productfeature_planner.mongodb.project_config import create_project
@@ -197,6 +199,20 @@ def handle_project_name_reply(
 
     client = _get_slack_client()
     if not client:
+        return
+
+    # Admin gate — non-admins in channels cannot create projects
+    if not is_dm(channel) and not can_manage_memory(user, channel):
+        try:
+            client.chat_postMessage(
+                channel=channel, thread_ts=thread_ts,
+                text=(
+                    f"<@{user}> :lock: Only workspace admins can create "
+                    "a project for this channel. Please ask an admin."
+                ),
+            )
+        except Exception as exc:
+            logger.error("Failed to post admin-required notice: %s", exc)
         return
 
     project_id = create_project(name=project_name)
@@ -240,6 +256,7 @@ def handle_project_setup_reply(
         activate_channel_project,
         activate_project,
         advance_pending_setup,
+        can_manage_memory,
         get_pending_setup,
         is_dm,
     )
@@ -248,6 +265,20 @@ def handle_project_setup_reply(
 
     client = _get_slack_client()
     if not client:
+        return
+
+    # Admin gate — non-admins in channels cannot configure projects
+    if not is_dm(channel) and not can_manage_memory(user, channel):
+        try:
+            client.chat_postMessage(
+                channel=channel, thread_ts=thread_ts,
+                text=(
+                    f"<@{user}> :lock: Only workspace admins can configure "
+                    "project settings in a channel. Please ask an admin."
+                ),
+            )
+        except Exception as exc:
+            logger.error("Failed to post admin-required notice: %s", exc)
         return
 
     # "skip" / "s" / empty -> store as empty string (keep existing for project_name)
