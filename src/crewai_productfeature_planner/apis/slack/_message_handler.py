@@ -362,9 +362,15 @@ def _interpret_and_act_inner(
         return
 
     if intent == "greeting":
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            BTN_HELP,
+            BTN_NEW_IDEA,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
         greeting = reply_text or (
             f"<@{user}> Hey there! :wave: I'm ready to help you iterate "
-            "on a product idea. Just describe your idea and I'll get started!"
+            "on a product idea."
         )
         if not greeting.startswith(f"<@{user}>"):
             greeting = f"<@{user}> {greeting}"
@@ -373,7 +379,23 @@ def _interpret_and_act_inner(
                 "\n\n:point_right: *First, let's pick a project* — "
                 "mention me with any request and I'll show you the project picker."
             )
-        send_tool.run(channel=channel, text=greeting, thread_ts=thread_ts)
+        # Post with action buttons
+        client = _get_slack_client()
+        if client:
+            try:
+                buttons = [BTN_NEW_IDEA, BTN_HELP]
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": greeting}},
+                        {"type": "actions", "elements": buttons},
+                    ],
+                    text=greeting,
+                )
+            except Exception:
+                send_tool.run(channel=channel, text=greeting, thread_ts=thread_ts)
+        else:
+            send_tool.run(channel=channel, text=greeting, thread_ts=thread_ts)
         append_to_thread(channel, thread_ts, "assistant", greeting)
         tracked_response = greeting
         log_tracked_interaction(

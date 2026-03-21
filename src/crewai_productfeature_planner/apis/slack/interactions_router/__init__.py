@@ -68,6 +68,7 @@ __all__ = [
     "_RESTART_PRD_ACTIONS",
     "_ARCHIVE_ACTIONS",
     "_JIRA_APPROVAL_ACTIONS",
+    "_SETUP_ACTIONS",
     "_extract_payload",
     "_with_team",
     "_ack_action",

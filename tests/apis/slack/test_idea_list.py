@@ -80,7 +80,8 @@ class TestIdeaListBlocks:
         """Paused ideas should offer Resume, Restart, and Archive buttons."""
         blocks = idea_list_blocks(_IDEAS[:1], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        assert len(action_blocks) == 1
+        # 1 idea actions row + 1 footer New Idea row
+        assert len(action_blocks) == 2
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "idea_resume_1" in action_ids
@@ -92,7 +93,7 @@ class TestIdeaListBlocks:
         ideas = [_IDEAS[1]]  # inprogress
         blocks = idea_list_blocks(ideas, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        assert len(action_blocks) == 1
+        assert len(action_blocks) == 2
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "idea_resume_1" in action_ids
@@ -104,7 +105,7 @@ class TestIdeaListBlocks:
         ideas = [_IDEAS[2]]  # completed
         blocks = idea_list_blocks(ideas, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        assert len(action_blocks) == 1
+        assert len(action_blocks) == 2
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "idea_resume_1" in action_ids
@@ -116,7 +117,7 @@ class TestIdeaListBlocks:
         ideas = [_IDEAS[3]]  # failed
         blocks = idea_list_blocks(ideas, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        assert len(action_blocks) == 1
+        assert len(action_blocks) == 2
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "idea_resume_1" in action_ids
@@ -127,7 +128,8 @@ class TestIdeaListBlocks:
         """Button values should encode project_id|idea_number."""
         blocks = idea_list_blocks(_IDEAS[:2], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        assert len(action_blocks) == 2
+        # 2 idea rows + 1 footer row
+        assert len(action_blocks) == 3
         # First idea
         first_vals = [e["value"] for e in action_blocks[0]["elements"]]
         assert all(v == f"{_PROJECT_ID}|1" for v in first_vals)
@@ -150,19 +152,21 @@ class TestIdeaListBlocks:
         text = section_blocks[0]["text"]["text"]
         assert "…" in text
 
-    def test_footer_context_present(self):
-        """Should end with a context block hint."""
+    def test_footer_has_new_idea_button(self):
+        """Footer should have a New Idea button instead of text hint."""
         blocks = idea_list_blocks(_IDEAS[:1], _USER, _PROJECT_NAME, _PROJECT_ID)
-        assert blocks[-1]["type"] == "context"
-        ctx_text = blocks[-1]["elements"][0]["text"]
-        assert "new idea" in ctx_text.lower()
+        footer = blocks[-1]
+        assert footer["type"] == "actions"
+        action_ids = [e["action_id"] for e in footer["elements"]]
+        assert "cmd_create_prd" in action_ids
 
     def test_rescan_button_label(self):
         """Rescan buttons should use 'Rescan' label."""
         blocks = idea_list_blocks(_IDEAS[:1], _USER, _PROJECT_NAME, _PROJECT_ID)
-        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        # Idea action blocks (exclude footer)
+        idea_action_blocks = [b for b in blocks if b["type"] == "actions" and b.get("block_id", "").startswith("idea_actions_")]
         restart_btn = [
-            e for e in action_blocks[0]["elements"]
+            e for e in idea_action_blocks[0]["elements"]
             if e["action_id"].startswith("idea_restart_")
         ]
         assert len(restart_btn) == 1
@@ -197,10 +201,12 @@ class TestIdeaListBlocks:
         """Each idea should get uniquely numbered action IDs."""
         blocks = idea_list_blocks(_IDEAS, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        # All 4 ideas now get buttons
-        assert len(action_blocks) == 4
+        # 4 idea rows + 1 footer row
+        assert len(action_blocks) == 5
+        # Exclude the footer (last)
+        idea_action_blocks = action_blocks[:-1]
         all_action_ids = []
-        for ab in action_blocks:
+        for ab in idea_action_blocks:
             all_action_ids.extend(e["action_id"] for e in ab["elements"])
         # Each action_id should be unique
         assert len(all_action_ids) == len(set(all_action_ids))
@@ -531,7 +537,8 @@ class TestIdeaListArchiveButton:
         """Each idea should have an Archive button."""
         blocks = idea_list_blocks(_IDEAS[:1], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        assert len(action_blocks) == 1
+        # 1 idea row + 1 footer New Idea row
+        assert len(action_blocks) == 2
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "idea_archive_1" in action_ids
@@ -561,8 +568,9 @@ class TestIdeaListArchiveButton:
         """Every idea should have its own archive button."""
         blocks = idea_list_blocks(_IDEAS, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = [b for b in blocks if b["type"] == "actions"]
-        assert len(action_blocks) == len(_IDEAS)
-        for idx, ab in enumerate(action_blocks, 1):
+        # 4 idea rows + 1 footer
+        assert len(action_blocks) == len(_IDEAS) + 1
+        for idx, ab in enumerate(action_blocks[:len(_IDEAS)], 1):
             archive_ids = [
                 e["action_id"] for e in ab["elements"]
                 if e["action_id"].startswith("idea_archive_")

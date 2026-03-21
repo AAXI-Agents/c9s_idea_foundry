@@ -72,12 +72,24 @@ def handle_list_ideas(
     products = find_completed_ideas_by_project(project_id, channel=channel)
 
     if not ideas and not products:
-        reply(
-            channel, thread_ts,
-            f"<@{user}> :page_facing_up: No ideas found for *{project_name}*.\n\n"
-            "Would you like to *iterate on a new idea*? Just describe your "
-            "product or feature concept and I'll get started!",
-        )
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import BTN_NEW_IDEA
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+        client = _get_slack_client()
+        text = f"<@{user}> :page_facing_up: No ideas found for *{project_name}*."
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                        {"type": "actions", "elements": [BTN_NEW_IDEA]},
+                    ],
+                    text=text,
+                )
+            except Exception:
+                reply(channel, thread_ts, text)
+        else:
+            reply(channel, thread_ts, text)
         return
 
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client

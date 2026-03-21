@@ -1965,6 +1965,22 @@ _CODEX: list[CodexEntry] = [
             "pending_create state from the pre-gated setup wizard."
         ),
     ),
+    CodexEntry(
+        "0.31.0",
+        date(2026, 3, 21),
+        (
+            "Interaction-first rule for ALL prompts: replaced every "
+            "'type skip', 'say *command*', 'just tell me' text with "
+            "clickable Block Kit buttons across the entire Slack UX. "
+            "Setup wizard steps now have a Skip button (setup_skip "
+            "action). Setup completion, next-step handler, greeting, "
+            "idea list footer, and empty-ideas state all post action "
+            "buttons. Added _SETUP_ACTIONS dispatch routing. "
+            "26 new interaction-first regression tests. "
+            "Added Interaction-First Testing section to CODEX.md. "
+            "2425 total tests."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

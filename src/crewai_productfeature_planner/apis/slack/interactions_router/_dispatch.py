@@ -99,6 +99,11 @@ _DELIVERY_ACTIONS = frozenset({
     "delivery_create_jira",
 })
 
+# Setup wizard skip button
+_SETUP_ACTIONS = frozenset({
+    "setup_skip",
+})
+
 # Command shortcut buttons (cmd_* action IDs)
 _CMD_PREFIX = "cmd_"
 
@@ -158,6 +163,7 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "jira_subtask_reject": ":arrows_counterclockwise: Regenerating Jira sub-tasks",
         "delivery_publish": ":outbox_tray: Publishing to Confluence",
         "delivery_create_jira": ":jira: Creating Jira skeleton",
+        "setup_skip": ":fast_forward: Skipped",
     }
     label = labels.get(action_id, action_id)
     # Dynamic action IDs for idea list buttons
@@ -682,6 +688,43 @@ async def slack_interactions(request: Request) -> JSONResponse:
                     _with_team, _team_id,
                     _handle_delivery_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                ),
+            )
+
+            if channel_id:
+                ack_text = _ack_action(action_id, user_name)
+                loop.run_in_executor(
+                    None,
+                    partial(_with_team, _team_id, _post_ack, channel_id, thread_ts, ack_text),
+                )
+
+            return JSONResponse({"ok": True})
+
+        # ── Setup wizard skip button ──
+        if action_id in _SETUP_ACTIONS:
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack setup action: action=%s user=%s",
+                action_id, user_name,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack._session_handlers import (
+                handle_project_setup_reply,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _with_team, _team_id,
+                    handle_project_setup_reply,
+                    channel_id, thread_ts, user_id, "skip",
                 ),
             )
 

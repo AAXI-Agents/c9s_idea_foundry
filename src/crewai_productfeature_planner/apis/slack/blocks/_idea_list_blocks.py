@@ -93,16 +93,12 @@ def idea_list_blocks(
 
         blocks.append({"type": "divider"})
 
-    # Footer hint
+    # Footer — New Idea button
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import BTN_NEW_IDEA
     blocks.append(
         {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": "Or just describe a new idea to start fresh!",
-                }
-            ],
+            "type": "actions",
+            "elements": [BTN_NEW_IDEA],
         }
     )
 

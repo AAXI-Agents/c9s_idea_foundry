@@ -67,8 +67,7 @@ def project_selection_blocks(
             "type": "context",
             "elements": [{
                 "type": "mrkdwn",
-                "text": f"_Showing 5 of {len(projects)} projects. "
-                        "Type the project name to search._",
+                "text": f"_Showing first 5 of {len(projects)} projects._",
             }],
         })
 
@@ -155,20 +154,20 @@ def project_setup_step_blocks(
     _STEP_LABELS = {
         "project_name": (
             ":pencil: *Project Name*\n\n"
-            "Enter the name for this project.\n\n"
-            "_Type `skip` to keep the current name._"
+            "Enter the name for this project, or click *Skip* to "
+            "keep the current name."
         ),
         "confluence_space_key": (
             ":confluence: *Confluence Space Key*\n\n"
             "Enter the Confluence space key for this project "
             "(e.g. `ENG`, `PROD`).  This is used when publishing PRDs.\n\n"
-            "_Type `skip` to leave blank and use the default._"
+            "_Or click *Skip* to leave blank and use the default._"
         ),
         "jira_project_key": (
             ":jira2: *Jira Project Key*\n\n"
             "Enter the Jira project key (e.g. `MYPROJ`, `FEAT`).  "
             "This is used when creating Jira tickets for PRDs.\n\n"
-            "_Type `skip` to leave blank and use the default._"
+            "_Or click *Skip* to leave blank and use the default._"
         ),
         "figma_api_key": (
             ":art: *Figma API Key*\n\n"
@@ -177,7 +176,7 @@ def project_setup_step_blocks(
             "Personal access tokens*.\n\n"
             "This enables Figma project lookups and file management "
             "via the REST API.\n\n"
-            "_Type `skip` to leave blank — Playwright session login "
+            "_Or click *Skip* — Playwright session login "
             "will be used instead._"
         ),
         "figma_team_id": (
@@ -186,7 +185,7 @@ def project_setup_step_blocks(
             "`figma.com/files/team/<TEAM_ID>/...`).\n\n"
             "This is used to list and create Figma projects for "
             "your ideas.\n\n"
-            "_Type `skip` to leave blank._"
+            "_Or click *Skip* to leave blank._"
         ),
     }
     label = _STEP_LABELS.get(step, f"*{step}*")
@@ -207,6 +206,17 @@ def project_setup_step_blocks(
                     f"{label}{current_hint}"
                 ),
             },
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": ":fast_forward: Skip", "emoji": True},
+                    "action_id": "setup_skip",
+                    "value": step,
+                },
+            ],
         },
     ]
 
@@ -234,8 +244,12 @@ def project_setup_complete_blocks(project_name: str, details: dict) -> list[dict
     if not (csk or jpk or cpid or fak or ftid):
         lines.append("_No extra keys configured — defaults will be used._")
     lines.append(
-        "\nYou can now start iterating ideas!  Just say something like "
-        "`iterate an idea` or `create a PRD for ...`."
+        "\nYou can now start iterating ideas!"
+    )
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        BTN_CONFIGURE_MEMORY,
+        BTN_HELP,
+        BTN_NEW_IDEA,
     )
     return [
         {
@@ -244,6 +258,10 @@ def project_setup_complete_blocks(project_name: str, details: dict) -> list[dict
                 "type": "mrkdwn",
                 "text": "\n".join(lines),
             },
+        },
+        {
+            "type": "actions",
+            "elements": [BTN_NEW_IDEA, BTN_CONFIGURE_MEMORY, BTN_HELP],
         },
     ]
 

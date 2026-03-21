@@ -69,6 +69,23 @@ def _handle_next_step_feedback(
             except Exception as exc:
                 logger.error("Next-step accept post failed: %s", exc)
 
+    def _post_blocks(text: str, buttons: list[dict]) -> None:
+        """Post text with action buttons."""
+        if client and channel:
+            try:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                        {"type": "actions", "elements": buttons},
+                    ],
+                    text=text,
+                )
+            except Exception as exc:
+                logger.error("Next-step accept post failed: %s", exc)
+                _post(text)
+
     from crewai_productfeature_planner.apis.slack.session_manager import (
         get_context_session,
     )
@@ -76,14 +93,22 @@ def _handle_next_step_feedback(
     session = get_context_session(user_id, channel)
 
     if next_step == "configure_confluence":
-        _post(
-            ":confluence: To configure the Confluence space key, say "
-            "*configure memory* or update the project settings."
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            BTN_CONFIGURE,
+        )
+        _post_blocks(
+            ":confluence: To set the Confluence space key, configure "
+            "the project settings.",
+            [BTN_CONFIGURE],
         )
     elif next_step == "configure_jira":
-        _post(
-            ":jira2: To configure the Jira project key, say "
-            "*configure memory* or update the project settings."
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            BTN_CONFIGURE,
+        )
+        _post_blocks(
+            ":jira2: To set the Jira project key, configure "
+            "the project settings.",
+            [BTN_CONFIGURE],
         )
     elif next_step == "configure_memory":
         from crewai_productfeature_planner.apis.slack.session_manager import (
@@ -102,10 +127,13 @@ def _handle_next_step_feedback(
         else:
             _post(":warning: No active project session. Please select a project first.")
     elif next_step == "create_prd":
-        _post(
-            ":rocket: Great! Just tell me your product or feature idea "
-            "and I'll start planning it. For example:\n"
-            ">  _Create a PRD for a mobile fitness tracking app_"
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            BTN_NEW_IDEA,
+        )
+        _post_blocks(
+            ":rocket: Great! Click below to start a new idea, or "
+            "describe your product/feature concept directly.",
+            [BTN_NEW_IDEA],
         )
     elif next_step == "publish":
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
@@ -165,7 +193,11 @@ def _handle_next_step_feedback(
         from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
         handle_create_jira_intent(channel, thread_ts, user_id, SlackSendMessageTool())
     else:
-        _post(
-            f":bulb: To proceed with _{next_step}_, just tell me "
-            "what you'd like to do!"
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+            BTN_HELP,
+        )
+        _post_blocks(
+            f":bulb: Ready to proceed with _{next_step}_? "
+            "Click Help to see available actions.",
+            [BTN_HELP],
         )

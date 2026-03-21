@@ -22,7 +22,7 @@
 | **MongoDB** | `src/.../mongodb/` | DB client, repositories (working_ideas, crew_jobs, agent_interactions, etc.) |
 | **Tools** | `src/.../tools/` | CrewAI tools (confluence, jira, file I/O, search, slack) |
 | **Scripts** | `src/.../scripts/` | Logging, preflight checks, retry, ngrok tunnel, slack config, MongoDB setup |
-| **Tests** | `tests/` | Mirror of `src/` layout; pytest (2175+ tests) |
+| **Tests** | `tests/` | Mirror of `src/` layout; pytest (2425+ tests) |
 
 → Full module map: `obsidian/Architecture/Module Map.md`
 
@@ -201,6 +201,38 @@ Block Kit button — users should never need to type a command.
 | Export in `__init__.py` | `blocks/__init__.py` |
 | Include in `help_blocks()` | `blocks/_command_blocks.py` |
 | Add test | `tests/apis/slack/test_command_handler.py` |
+
+### Interaction-First Testing (Required)
+
+After any change to Slack Block Kit builders or handlers, verify the
+**interaction-first rule** is not violated. The canonical regression
+tests live in `tests/apis/slack/test_interaction_first_rule.py`.
+
+**How to test Block Kit output:**
+
+1. **Call the builder directly** — block builders are pure functions.
+   Call them in tests and inspect the returned `list[dict]`.
+2. **Count action blocks** — filter for `b["type"] == "actions"` and
+   assert the expected count. Every UI response should have ≥ 1 actions
+   block (no text-only outputs).
+3. **Assert action IDs** — extract `e["action_id"]` from action block
+   elements and verify the expected button IDs are present.
+4. **No forbidden text** — scan all text blocks for phrases like
+   "type `…`", "say *…*", "just tell me" using the `_FORBIDDEN_RE`
+   pattern in `test_interaction_first_rule.py`.
+5. **Test footer blocks** — when adding a footer button to an existing
+   builder, update all tests that count action blocks (`+1` for the new
+   footer) and any tests that assert on `blocks[-1]`.
+
+**Quick checklist after UI changes:**
+
+| Check | Command |
+|-------|---------|
+| Interaction-first tests | `pytest tests/apis/slack/test_interaction_first_rule.py -x -q` |
+| Idea list tests | `pytest tests/apis/slack/test_idea_list.py -x -q` |
+| Session block tests | `pytest tests/apis/slack/test_session_blocks.py -x -q` |
+| Command handler tests | `pytest tests/apis/slack/test_command_handler.py -x -q` |
+| Full Slack tests | `pytest tests/apis/slack/ -x -q` |
 
 ### Logging Standard (Required)
 
