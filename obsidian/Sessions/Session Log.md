@@ -1605,4 +1605,41 @@ not read the full output.
 
 ---
 
+## Session 035 — 2026-03-21
+
+**Scope**: Bot Only Responds When @Mentioned in Threads
+**Date**: 2026-03-21 | **Version**: 0.31.2 → 0.32.0
+
+### Problem
+Bot was responding to all messages in threads where it had an active
+session or thread history, even when the user did not @mention the bot.
+Log showed user `U0AK24AU0F3` typing "configure" in a thread without
+tagging the bot, and the bot classified it as `update_config` and
+responded with the project setup wizard.
+
+### Root Cause
+The `events_router.py` thread follow-up logic had 5 conditions for
+processing a message. The fallback conditions (`has_active_session` and
+`has_thread_history`) were too permissive — they didn't require an
+@mention. `has_active_session` is channel-level, not thread-level.
+
+### Fix
+Added `_bot_mentioned` check in events_router: fallback conditions
+(`has_active_session`, `has_thread_history`) now require the bot to be
+@mentioned in the message text. Active workflow conditions
+(`has_interactive`, `has_pending`, `has_conversation`) remain
+unrestricted since the user is replying to bot prompts.
+
+When `bot_id` is unknown (e.g. no Slack client), the mention gate is
+skipped to avoid breaking functionality.
+
+### Tests
+- 6 new tests in `test_dm_and_pending_routing.py`:
+  - `TestMentionGateActiveSession` (no mention → ignored, with mention → dispatched)
+  - `TestMentionGateThreadHistory` (no mention → ignored, with mention → dispatched)
+  - `TestNoMentionGateForActiveWorkflows` (interactive + pending → dispatched without mention)
+- 2453 total tests
+
+---
+
 ---

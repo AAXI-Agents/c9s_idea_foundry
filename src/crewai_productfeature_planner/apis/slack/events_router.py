@@ -331,36 +331,45 @@ async def slack_events(request: Request) -> JSONResponse:
                 )
                 has_pending = has_pending_state(user)
 
+                # Check if the bot is @mentioned in this message.
+                # Fallback conditions (active_session, thread_history)
+                # require a mention — the bot should not respond to
+                # threads where it wasn't tagged for that message.
+                # When bot_id is unknown, skip the mention gate
+                # (can't check what we don't know).
+                _bot_mentioned = (
+                    not bot_id  # unknown → can't gate
+                    or f"<@{bot_id}>" in event.get("text", "")
+                )
+
                 # Fallback: if the channel has an active project
-                # session (persisted in MongoDB), keep listening.
-                # This covers server restarts and TTL expiry.
+                # session (persisted in MongoDB), keep listening —
+                # but only when the bot is @mentioned.
                 has_active_session = False
                 if not (has_conversation or has_interactive or has_pending):
                     from crewai_productfeature_planner.apis.slack.session_manager import (
                         get_channel_project_id,
                     )
-                    has_active_session = bool(
-                        get_channel_project_id(channel)
-                    )
+                    if _bot_mentioned and get_channel_project_id(channel):
+                        has_active_session = True
 
                 # Last resort: check if the bot has ever replied in
-                # this thread (persisted in agentInteraction).  This
-                # covers threads where the user hasn't selected a
-                # project yet (e.g. wants to START configuring) and
-                # the in-memory cache has expired.
+                # this thread (persisted in agentInteraction) — but
+                # only when the bot is @mentioned.
                 has_thread_history = False
                 if not (has_conversation or has_interactive
                         or has_pending or has_active_session):
-                    from crewai_productfeature_planner.mongodb.agent_interactions import (
-                        has_bot_thread_history,
-                    )
-                    has_thread_history = has_bot_thread_history(
-                        channel, thread_ts,
-                    )
-                    if has_thread_history:
-                        # Re-register in the in-memory cache so
-                        # subsequent messages skip the DB lookup.
-                        touch_thread(channel, thread_ts)
+                    if _bot_mentioned:
+                        from crewai_productfeature_planner.mongodb.agent_interactions import (
+                            has_bot_thread_history,
+                        )
+                        has_thread_history = has_bot_thread_history(
+                            channel, thread_ts,
+                        )
+                        if has_thread_history:
+                            # Re-register in the in-memory cache so
+                            # subsequent messages skip the DB lookup.
+                            touch_thread(channel, thread_ts)
 
                 should_process = (
                     has_conversation

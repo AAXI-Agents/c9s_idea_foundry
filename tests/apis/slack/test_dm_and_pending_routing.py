@@ -766,3 +766,191 @@ class TestThreadHistoryFallback:
 
         # Thread should now be in the in-memory cache
         assert has_thread_conversation(channel, thread_ts)
+
+
+# ======================================================================
+# Bot mention gating on fallback conditions (v0.32.0)
+# ======================================================================
+
+
+_BOT_ID = "U_BOT_123"
+
+
+class TestMentionGateActiveSession:
+    """When the only reason to process is ``active_session``, the bot
+    must be @mentioned in the message text.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_mention_ignores(self):
+        """No @mention + active_session → ignored."""
+        import crewai_productfeature_planner.apis.slack._thread_state as ts
+
+        ts._bot_user_id = _BOT_ID
+
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": "C_GATE",
+                "user": "U_NOBOT",
+                "text": "configure",
+                "ts": "8001.1",
+                "thread_ts": "8001.0",
+            },
+            event_id="Ev_GATE1",
+        )
+        with patch(
+            f"{_SM}.get_channel_project_id", return_value="proj_123",
+        ), patch(f"{_ER}._handle_thread_message") as mock_thread:
+            resp = await _post(payload)
+        assert resp.status_code == 200
+        mock_thread.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_with_mention_dispatches(self):
+        """@mention + active_session → dispatched."""
+        import crewai_productfeature_planner.apis.slack._thread_state as ts
+
+        ts._bot_user_id = _BOT_ID
+
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": "C_GATE",
+                "user": "U_NOBOT",
+                "text": f"<@{_BOT_ID}> configure",
+                "ts": "8002.1",
+                "thread_ts": "8002.0",
+            },
+            event_id="Ev_GATE2",
+        )
+        with patch(
+            f"{_SM}.get_channel_project_id", return_value="proj_123",
+        ), patch(f"{_ER}._handle_thread_message") as mock_thread:
+            resp = await _post(payload)
+        assert resp.status_code == 200
+        mock_thread.assert_called_once()
+
+
+class TestMentionGateThreadHistory:
+    """When the only reason to process is ``thread_history``, the bot
+    must be @mentioned in the message text.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_mention_ignores(self):
+        """No @mention + thread_history → ignored."""
+        import crewai_productfeature_planner.apis.slack._thread_state as ts
+
+        ts._bot_user_id = _BOT_ID
+
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": "C_GATE2",
+                "user": "U_NOBOT",
+                "text": "list of ideas",
+                "ts": "9001.1",
+                "thread_ts": "9001.0",
+            },
+            event_id="Ev_GATE3",
+        )
+        with patch(
+            f"{_AI_MODULE}.has_bot_thread_history", return_value=True,
+        ), patch(f"{_ER}._handle_thread_message") as mock_thread:
+            resp = await _post(payload)
+        assert resp.status_code == 200
+        mock_thread.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_with_mention_dispatches(self):
+        """@mention + thread_history → dispatched."""
+        import crewai_productfeature_planner.apis.slack._thread_state as ts
+
+        ts._bot_user_id = _BOT_ID
+
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": "C_GATE2",
+                "user": "U_NOBOT",
+                "text": f"<@{_BOT_ID}> list of ideas",
+                "ts": "9002.1",
+                "thread_ts": "9002.0",
+            },
+            event_id="Ev_GATE4",
+        )
+        with patch(
+            f"{_AI_MODULE}.has_bot_thread_history", return_value=True,
+        ), patch(f"{_ER}._handle_thread_message") as mock_thread:
+            resp = await _post(payload)
+        assert resp.status_code == 200
+        mock_thread.assert_called_once()
+
+
+class TestNoMentionGateForActiveWorkflows:
+    """Active workflows (interactive, pending, conversation) do NOT
+    require a mention — the user is replying to a bot prompt.
+    """
+
+    @pytest.mark.asyncio
+    async def test_interactive_no_mention_still_dispatches(self):
+        """has_interactive=True → dispatched even without mention."""
+        import crewai_productfeature_planner.apis.slack._thread_state as ts
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            _interactive_runs,
+            _lock as _ih_lock,
+        )
+
+        ts._bot_user_id = _BOT_ID
+
+        with _ih_lock:
+            _interactive_runs["run_gate"] = {
+                "channel": "C_GATE3",
+                "thread_ts": "10001.0",
+            }
+
+        try:
+            payload = _event_payload(
+                {
+                    "type": "message",
+                    "channel": "C_GATE3",
+                    "user": "U_NOBOT",
+                    "text": "approve",
+                    "ts": "10001.1",
+                    "thread_ts": "10001.0",
+                },
+                event_id="Ev_GATE5",
+            )
+            with patch(f"{_ER}._handle_thread_message") as mock_thread:
+                resp = await _post(payload)
+            assert resp.status_code == 200
+            mock_thread.assert_called_once()
+        finally:
+            with _ih_lock:
+                _interactive_runs.pop("run_gate", None)
+
+    @pytest.mark.asyncio
+    async def test_pending_no_mention_still_dispatches(self):
+        """has_pending=True → dispatched even without mention."""
+        import crewai_productfeature_planner.apis.slack._thread_state as ts
+
+        ts._bot_user_id = _BOT_ID
+
+        payload = _event_payload(
+            {
+                "type": "message",
+                "channel": "C_GATE4",
+                "user": "U_PENDING",
+                "text": "My Project Name",
+                "ts": "11001.1",
+                "thread_ts": "11001.0",
+            },
+            event_id="Ev_GATE6",
+        )
+        with patch(
+            f"{_SM}.has_pending_state", return_value=True,
+        ), patch(f"{_ER}._handle_thread_message") as mock_thread:
+            resp = await _post(payload)
+        assert resp.status_code == 200
+        mock_thread.assert_called_once()

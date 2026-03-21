@@ -124,6 +124,21 @@ content (idea, exec summary, requirements) exceeds 2800 chars:
 4. Helper module: `_slack_file_helper.py` — `truncate_with_file_hint()`,
    `upload_content_file()`
 
+## Thread Mention Gating (v0.32.0)
+
+The bot only responds to channel thread messages when @mentioned, **unless**
+an active workflow is in progress (interactive PRD flow, pending user input,
+or cached conversation). This prevents the bot from jumping into threads
+where it was not tagged.
+
+| Condition | Mention required? | Reason |
+|-----------|:-:|---|
+| `has_interactive` | No | User is answering PRD flow prompts |
+| `has_pending` | No | User is replying to setup/config wizard |
+| `has_conversation` | No | Bot is in active recent conversation (10-min TTL) |
+| `has_active_session` | **Yes** | Channel has project but no active workflow |
+| `has_thread_history` | **Yes** | Bot was in thread before but no active workflow |
+
 ---
 
 See also: [[Jira Integration]], [[Confluence Integration]], [[PRD Flow]]

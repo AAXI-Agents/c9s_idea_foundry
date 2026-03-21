@@ -2008,6 +2008,19 @@ _CODEX: list[CodexEntry] = [
             "18 new tests, 2447 total."
         ),
     ),
+    CodexEntry(
+        "0.32.0",
+        date(2026, 3, 21),
+        (
+            "Bot only responds in threads where it is @mentioned. "
+            "Fallback conditions (active_session, thread_history) in "
+            "events_router now require the bot to be @mentioned in "
+            "the message text before processing. Active workflow "
+            "conditions (interactive, pending, conversation) remain "
+            "unrestricted — the user is replying to bot prompts. "
+            "6 new tests, 2453 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

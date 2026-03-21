@@ -35,6 +35,12 @@
 | 0.31.1 | Fix 'configure tools' misrouted to project config. Added tools phrases to _CONFIGURE_MEMORY_PHRASES and both LLM prompts. Guarded update_config dispatch so memory/tool phrases prevent update_config catch. 4 new tests, 2429 total |
 | 0.31.2 | Slack file-upload fallback for truncated content. When block text exceeds 2800 chars, inline preview truncated and full content uploaded as downloadable text file in thread. All 5 rendered sections: idea approval, manual refinement, requirements breakdown, exec summary feedback, exec summary completion. New _slack_file_helper module. 18 new tests, 2447 total |
 
+## v0.32.x (2026-03-21)
+
+| Version | Summary |
+|---------|--------|
+| 0.32.0 | Bot only responds in threads where it is @mentioned. Fallback conditions (active_session, thread_history) in events_router now require @mention. Active workflow conditions (interactive, pending, conversation) remain unrestricted. 6 new tests, 2453 total |
+
 ## v0.27.x (2026-03-17)
 
 | Version | Summary |
