@@ -1981,6 +1981,18 @@ _CODEX: list[CodexEntry] = [
             "2425 total tests."
         ),
     ),
+    CodexEntry(
+        "0.31.1",
+        date(2026, 3, 21),
+        (
+            "Fix 'configure tools' misrouted to project config. Added "
+            "tools phrases (configure tools, add tools, manage tools, "
+            "etc.) to _CONFIGURE_MEMORY_PHRASES and both LLM prompts. "
+            "Guarded update_config dispatch so has_memory_phrase prevents "
+            "LLM-classified update_config from catching memory/tool "
+            "phrases. 4 new tests, 2429 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

@@ -283,7 +283,7 @@ def _interpret_and_act_inner(
         )
         return
 
-    if intent == "update_config" or (not has_idea_phrase and not has_memory_phrase and has_config_phrase):
+    if not has_memory_phrase and (intent == "update_config" or (not has_idea_phrase and has_config_phrase)):
         if not can_manage_memory(user, channel):
             _reply(
                 channel, thread_ts,

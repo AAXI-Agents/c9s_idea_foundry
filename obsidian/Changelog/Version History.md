@@ -32,6 +32,7 @@
 | Version | Summary |
 |---------|---------|
 | 0.31.0 | Interaction-first rule for ALL prompts: replaced every 'type skip', 'say *command*', 'just tell me' text with clickable Block Kit buttons. Setup wizard Skip button, setup-complete/next-step/greeting/idea-list/empty-ideas all use action buttons. _SETUP_ACTIONS dispatch routing. Interaction-First Testing section in CODEX.md. 26 new tests, 2425 total |
+| 0.31.1 | Fix 'configure tools' misrouted to project config. Added tools phrases to _CONFIGURE_MEMORY_PHRASES and both LLM prompts. Guarded update_config dispatch so memory/tool phrases prevent update_config catch. 4 new tests, 2429 total |
 
 ## v0.27.x (2026-03-17)
 

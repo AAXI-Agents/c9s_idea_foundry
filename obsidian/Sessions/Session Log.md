@@ -1541,3 +1541,38 @@ ever need to type to navigate the bot.
 - 2425 total tests
 
 ---
+
+## Session 033 — 2026-03-21
+
+**Scope**: Fix "configure tools" Misrouted to Project Config
+**Date**: 2026-03-21 | **Version**: 0.31.0 → 0.31.1
+
+### Problem
+User typed "configure tools" expecting to manage the tools category in
+project memory. Gemini correctly classified as `configure_memory`, but
+the message handler's `update_config` condition caught it first because:
+1. "configure" (bare) was in `_UPDATE_CONFIG_PHRASES` → `has_config_phrase` = True
+2. No "tools" phrases existed in `_CONFIGURE_MEMORY_PHRASES` → `has_memory_phrase` = False
+3. The `update_config` check `intent == "update_config" or (... and has_config_phrase)` fired first
+
+### Changes
+1. **`_intent_phrases.py`** — Added 15 "tools" phrases to
+   `_CONFIGURE_MEMORY_PHRASES` (configure tools, add tools, manage tools,
+   show tools, edit tools, etc.)
+2. **`gemini_chat.py`** — Added 8 "tools" → configure_memory examples
+   and added "tools" to the configure_memory description keywords
+3. **`openai_chat.py`** — Same additions for parity
+4. **`_message_handler.py`** — Changed update_config guard from
+   `intent == "update_config" or (... and not has_memory_phrase ...)`
+   to `not has_memory_phrase and (intent == "update_config" or ...)`
+   so memory/tool phrases always override update_config, even when the
+   LLM explicitly returns update_config
+
+### Tests
+- 4 new tests in `test_configure_memory_intent.py`
+  (phrase fallback, correct dispatch, LLM override, negative check)
+- 2429 total tests
+
+---
+
+---

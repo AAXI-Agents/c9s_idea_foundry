@@ -82,6 +82,12 @@ _CONFIGURE_MEMORY_PHRASES = (
     "edit knowledge", "update knowledge", "view knowledge",
     "show knowledge", "add knowledge", "add more knowledge",
     "manage knowledge", "knowledge configuration",
+    "configure tools", "configure more tools",
+    "project tools", "setup tools",
+    "set up tools", "tools settings", "tools config",
+    "edit tools", "update tools", "view tools",
+    "show tools", "add tools", "add more tools",
+    "manage tools", "tools configuration",
 )
 _UPDATE_CONFIG_PHRASES = (
     "confluence key", "confluence space key", "jira key",

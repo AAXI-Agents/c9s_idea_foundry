@@ -483,3 +483,112 @@ class TestPendingMemoryCommandDetection:
         # which is excluded from the cancel check — stays in memory mode
         mock_mem_reply.assert_called_once()
         mock_interpret.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# "configure tools" phrases → configure_memory
+# ---------------------------------------------------------------------------
+
+
+class TestConfigureToolsPhraseDetection:
+    """Verify 'configure tools' and variants match configure_memory intent."""
+
+    def test_phrase_fallback_returns_configure_memory_for_tools_phrases(self):
+        from crewai_productfeature_planner.apis.slack._intent_phrases import (
+            _phrase_fallback,
+        )
+
+        for phrase in (
+            "configure tools", "configure more tools",
+            "project tools", "setup tools", "tools config",
+            "edit tools", "update tools", "view tools",
+            "show tools", "add tools", "manage tools",
+        ):
+            result = _phrase_fallback(phrase)
+            assert result["intent"] == "configure_memory", (
+                f"Phrase '{phrase}' should match configure_memory, "
+                f"got {result['intent']}"
+            )
+
+
+class TestConfigureToolsRouting:
+    """Verify 'configure tools' routes to configure_memory handler, not update_config."""
+
+    @patch(f"{_EVENTS_MODULE}._handle_configure_memory")
+    def test_configure_tools_dispatches_to_configure_memory(self, mock_handler):
+        """'configure tools' should trigger memory handler, not project config."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        # Simulate: LLM returns configure_memory (correct)
+        mock_interpret, mock_send = _make_mocks("configure_memory")
+
+        with (
+            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
+                  return_value=mock_interpret),
+            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
+                  return_value=mock_send),
+            patch(
+                "crewai_productfeature_planner.mongodb.agent_interactions"
+                ".repository.log_interaction",
+                MagicMock(),
+            ),
+            patch(f"{_SESSION_MODULE}.get_context_session",
+                  return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.can_manage_memory", return_value=True),
+        ):
+            er._interpret_and_act("C1", "T1", "U1", "configure tools", "E1")
+
+        mock_handler.assert_called_once()
+
+    @patch(f"{_EVENTS_MODULE}._handle_configure_memory")
+    def test_configure_tools_overrides_llm_update_config(self, mock_handler):
+        """Even if LLM misclassifies as update_config, phrase override should fix it."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        # LLM incorrectly returns update_config for "configure tools"
+        mock_interpret, mock_send = _make_mocks("update_config")
+
+        with (
+            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
+                  return_value=mock_interpret),
+            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
+                  return_value=mock_send),
+            patch(
+                "crewai_productfeature_planner.mongodb.agent_interactions"
+                ".repository.log_interaction",
+                MagicMock(),
+            ),
+            patch(f"{_SESSION_MODULE}.get_context_session",
+                  return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.can_manage_memory", return_value=True),
+        ):
+            er._interpret_and_act("C1", "T1", "U1", "configure tools", "E1")
+
+        mock_handler.assert_called_once()
+
+    @patch(f"{_EVENTS_MODULE}._handle_update_config")
+    def test_configure_tools_does_not_dispatch_to_update_config(self, mock_handler):
+        """'configure tools' must NOT trigger the update_config handler."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+
+        # Even if LLM returns update_config, phrase guard prevents it
+        mock_interpret, mock_send = _make_mocks("update_config")
+
+        with (
+            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
+                  return_value=mock_interpret),
+            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
+                  return_value=mock_send),
+            patch(
+                "crewai_productfeature_planner.mongodb.agent_interactions"
+                ".repository.log_interaction",
+                MagicMock(),
+            ),
+            patch(f"{_SESSION_MODULE}.get_context_session",
+                  return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.can_manage_memory", return_value=True),
+            patch(f"{_EVENTS_MODULE}._handle_configure_memory"),
+        ):
+            er._interpret_and_act("C1", "T1", "U1", "configure tools", "E1")
+
+        mock_handler.assert_not_called()

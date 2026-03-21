@@ -128,6 +128,14 @@ the word "project" does not appear.
   "manage knowledge"                      → configure_memory
   "show knowledge"                        → configure_memory
   "view knowledge"                        → configure_memory
+  "configure tools"                        → configure_memory
+  "add tools"                              → configure_memory
+  "manage tools"                           → configure_memory
+  "show tools"                             → configure_memory
+  "edit tools"                             → configure_memory
+  "view tools"                             → configure_memory
+  "project tools"                          → configure_memory
+  "setup tools"                            → configure_memory
   "add confluence key ABC"                 → update_config  (confluence_space_key="ABC")
   "set jira project key PROJ"             → update_config  (jira_project_key="PROJ")
   "confluence space key is XYZ"           → update_config  (confluence_space_key="XYZ")
@@ -188,11 +196,15 @@ paused or unfinished PRD generation run.
   "I'm done", "goodbye", "quit".
 - Intent "configure_memory" means the user wants to VIEW or EDIT the \
   project's memory configuration (guardrails, knowledge, tools).  \
-  Keywords: "memory", "knowledge", "configure memory", "setup memory", \
-  "edit memory", "view memory", "show memory", "project memory", \
-  "update knowledge", "configure knowledge", "project knowledge", \
-  "add knowledge", "edit knowledge", "manage knowledge", \
-  "show knowledge".  "knowledge" and "memory" are synonyms here.
+  Keywords: "memory", "knowledge", "tools", "configure memory", \
+  "setup memory", "edit memory", "view memory", "show memory", \
+  "project memory", "update knowledge", "configure knowledge", \
+  "project knowledge", "add knowledge", "edit knowledge", \
+  "manage knowledge", "show knowledge", "configure tools", \
+  "add tools", "manage tools", "show tools", "edit tools", \
+  "project tools", "setup tools".  \
+  "knowledge", "memory", and "tools" are synonyms here — they all \
+  refer to different categories of the project memory system.
 - Intent "update_config" means the user wants to SET, ADD, or UPDATE \
   specific project configuration keys — Confluence space key or Jira \
   project key.  The user may provide one \
