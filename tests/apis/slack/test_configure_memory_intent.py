@@ -192,6 +192,7 @@ class TestUpdateConfigPhraseOverride:
             ),
             patch(f"{_SESSION_MODULE}.get_context_session",
                   return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.can_manage_memory", return_value=True),
         ):
             er._interpret_and_act(
                 "C1", "T1", "U1", "set confluence key", "E1",
@@ -218,6 +219,7 @@ class TestUpdateConfigPhraseOverride:
             ),
             patch(f"{_SESSION_MODULE}.get_context_session",
                   return_value=_ACTIVE_SESSION),
+            patch(f"{_SESSION_MODULE}.can_manage_memory", return_value=True),
         ):
             er._interpret_and_act(
                 "C1", "T1", "U1", "project config", "E1",

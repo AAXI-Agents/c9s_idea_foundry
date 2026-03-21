@@ -1940,6 +1940,18 @@ _CODEX: list[CodexEntry] = [
             "7 new tests, 2380 total."
         ),
     ),
+    CodexEntry(
+        "0.30.2",
+        date(2026, 3, 21),
+        (
+            "Admin-gated project configuration: non-admin channel users "
+            "blocked from configure/switch/create project buttons and "
+            "update_config text intent. Role-aware help_blocks() hides "
+            "admin-only buttons for non-admins. Added admin gate to "
+            "configure_memory next-step accept path. "
+            "18 new tests, 2398 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

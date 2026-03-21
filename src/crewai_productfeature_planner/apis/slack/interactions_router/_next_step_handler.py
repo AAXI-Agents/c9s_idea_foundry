@@ -86,7 +86,15 @@ def _handle_next_step_feedback(
             "*configure memory* or update the project settings."
         )
     elif next_step == "configure_memory":
-        if session and session.get("project_id"):
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            can_manage_memory,
+        )
+        if not can_manage_memory(user_id, channel):
+            _post(
+                ":lock: Only workspace admins can configure project "
+                "memory in a channel. Please ask an admin.",
+            )
+        elif session and session.get("project_id"):
             from crewai_productfeature_planner.apis.slack._session_handlers import (
                 handle_configure_memory,
             )

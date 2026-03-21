@@ -96,6 +96,47 @@ class TestHelpBlocks:
         action_blocks = [b for b in blocks if b["type"] == "actions"]
         assert len(action_blocks) >= 2
 
+    def test_admin_sees_all_buttons(self):
+        blocks = help_blocks("U123", is_admin=True)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        all_ids = {
+            e["action_id"]
+            for b in action_blocks
+            for e in b["elements"]
+        }
+        # Admin-only buttons should be present
+        assert "cmd_configure_project" in all_ids
+        assert "cmd_configure_memory" in all_ids
+        assert "cmd_switch_project" in all_ids
+        assert "cmd_create_project" in all_ids
+        assert len(action_blocks) == 4  # 4 action rows for admin
+
+    def test_non_admin_hides_admin_buttons(self):
+        blocks = help_blocks("U123", is_admin=False)
+        action_blocks = [b for b in blocks if b["type"] == "actions"]
+        all_ids = {
+            e["action_id"]
+            for b in action_blocks
+            for e in b["elements"]
+        }
+        # Admin-only buttons should NOT be present
+        assert "cmd_configure_project" not in all_ids
+        assert "cmd_configure_memory" not in all_ids
+        assert "cmd_switch_project" not in all_ids
+        assert "cmd_create_project" not in all_ids
+        # But non-admin buttons should still be there
+        assert "cmd_list_ideas" in all_ids
+        assert "cmd_list_products" in all_ids
+        assert "cmd_list_projects" in all_ids
+        assert "cmd_end_session" in all_ids
+        assert len(action_blocks) == 3  # 3 action rows for non-admin
+
+    def test_non_admin_no_project_management_section(self):
+        blocks = help_blocks("U123", is_admin=False)
+        section_blocks = [b for b in blocks if b["type"] == "section"]
+        text = " ".join(b["text"]["text"] for b in section_blocks)
+        assert "Project Management" not in text
+
 
 class TestSessionActionButtons:
     def test_contains_switch_and_end(self):

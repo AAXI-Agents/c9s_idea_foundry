@@ -49,32 +49,40 @@ BTN_NEW_IDEA = _btn(":sparkles: New Idea", "cmd_create_prd")
 # Composite block builders
 # ---------------------------------------------------------------------------
 
-def help_blocks(user: str, has_project: bool = False) -> list[dict]:
-    """Build the help response as Block Kit with clickable buttons."""
+def help_blocks(
+    user: str, has_project: bool = False, is_admin: bool = True,
+) -> list[dict]:
+    """Build the help response as Block Kit with clickable buttons.
+
+    When *is_admin* is ``False`` the admin-only buttons (Configure
+    Project, Configure Memory, Switch Project, Create Project) are
+    hidden so non-admin channel users only see actions they can perform.
+    """
+    desc_lines = (
+        "*Idea Iteration & PRD Generation*\n"
+        "\u2022 Describe a product idea to start a PRD flow\n"
+        "\u2022 List ideas, products & delivery status\n"
+        "\u2022 Publish PRDs to Confluence & create Jira tickets"
+    )
+    if is_admin:
+        desc_lines = (
+            "*Project Management*\n"
+            "\u2022 Create or switch projects\n"
+            "\u2022 Configure project settings & memory\n\n"
+            + desc_lines
+        )
+
     blocks: list[dict] = [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": (
-                    f"<@{user}> Here's what I can do:"
-                ),
+                "text": f"<@{user}> Here's what I can do:",
             },
         },
         {
             "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    "*Project Management*\n"
-                    "\u2022 Create or switch projects\n"
-                    "\u2022 Configure project settings & memory\n\n"
-                    "*Idea Iteration & PRD Generation*\n"
-                    "\u2022 Describe a product idea to start a PRD flow\n"
-                    "\u2022 List ideas, products & delivery status\n"
-                    "\u2022 Publish PRDs to Confluence & create Jira tickets"
-                ),
-            },
+            "text": {"type": "mrkdwn", "text": desc_lines},
         },
         {"type": "divider"},
         {
@@ -95,7 +103,11 @@ def help_blocks(user: str, has_project: bool = False) -> list[dict]:
                 BTN_RESTART_PRD,
             ],
         },
-        {
+    ]
+
+    # Project management row — admin-only buttons conditionally included
+    if is_admin:
+        blocks.append({
             "type": "actions",
             "elements": [
                 BTN_CREATE_PROJECT,
@@ -103,16 +115,25 @@ def help_blocks(user: str, has_project: bool = False) -> list[dict]:
                 BTN_SWITCH_PROJECT,
                 BTN_CURRENT_PROJECT,
             ],
-        },
-        {
+        })
+        blocks.append({
             "type": "actions",
             "elements": [
                 BTN_CONFIGURE,
                 BTN_CONFIGURE_MEMORY,
                 BTN_END_SESSION,
             ],
-        },
-    ]
+        })
+    else:
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                BTN_LIST_PROJECTS,
+                BTN_CURRENT_PROJECT,
+                BTN_END_SESSION,
+            ],
+        })
+
     if not has_project:
         blocks.append({
             "type": "context",

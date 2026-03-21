@@ -10,6 +10,14 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Admin-only actions (channel context only — DMs are always allowed).
+_ADMIN_ACTIONS = frozenset({
+    "cmd_configure_project",
+    "cmd_configure_memory",
+    "cmd_switch_project",
+    "cmd_create_project",
+})
+
 # All cmd_* action IDs recognised by this handler.
 CMD_ACTIONS = frozenset({
     "cmd_list_ideas",
@@ -44,10 +52,16 @@ def _handle_command_action(
     )
 
     from crewai_productfeature_planner.apis.slack.session_manager import (
+        can_manage_memory,
         get_context_session,
     )
 
     session = get_context_session(user_id, channel)
+
+    # Admin-only actions in channels
+    if action_id in _ADMIN_ACTIONS and not can_manage_memory(user_id, channel):
+        _deny_non_admin(channel, thread_ts, user_id)
+        return
 
     if action_id == "cmd_list_ideas":
         from crewai_productfeature_planner.apis.slack._session_handlers import (
@@ -157,6 +171,17 @@ def _handle_command_action(
         logger.warning("Unknown command action: %s", action_id)
 
 
+def _deny_non_admin(channel: str, thread_ts: str, user_id: str) -> None:
+    """Post an ephemeral-style denial message for non-admin users."""
+    from crewai_productfeature_planner.apis.slack._session_reply import reply
+
+    reply(
+        channel, thread_ts,
+        f"<@{user_id}> :lock: Only workspace admins can manage project "
+        "settings in a channel. Please ask an admin.",
+    )
+
+
 def _handle_help(
     channel: str,
     thread_ts: str,
@@ -167,10 +192,14 @@ def _handle_help(
     from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
         help_blocks,
     )
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        can_manage_memory,
+    )
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
     has_project = bool(session and session.get("project_id"))
-    blocks = help_blocks(user_id, has_project=has_project)
+    is_admin = can_manage_memory(user_id, channel)
+    blocks = help_blocks(user_id, has_project=has_project, is_admin=is_admin)
 
     client = _get_slack_client()
     if client:

@@ -284,6 +284,19 @@ def _interpret_and_act_inner(
         return
 
     if intent == "update_config" or (not has_idea_phrase and not has_memory_phrase and has_config_phrase):
+        if not can_manage_memory(user, channel):
+            _reply(
+                channel, thread_ts,
+                ":lock: Only workspace admins can configure project "
+                "settings in a channel. Please ask an admin.",
+            )
+            tracked_response = "(admin required)"
+            log_tracked_interaction(
+                log_interaction, "slack", clean_text, "update_config",
+                tracked_response, None, None, session_project_id,
+                channel, thread_ts, user, history,
+            )
+            return
         _handle_update_config(
             channel, thread_ts, user, session,
             confluence_space_key=interpretation.get("confluence_space_key"),
@@ -325,7 +338,8 @@ def _interpret_and_act_inner(
         help_text = f"<@{user}> Here's what I can do:"
         if not session_project_id:
             help_text += " To get started, select a project first."
-        blocks = help_blocks(user, has_project=bool(session_project_id))
+        is_admin = can_manage_memory(user, channel)
+        blocks = help_blocks(user, has_project=bool(session_project_id), is_admin=is_admin)
         client = _get_slack_client()
         if client:
             try:

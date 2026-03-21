@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from crewai_productfeature_planner.apis.slack.interactions_router._command_handler import (
+    _ADMIN_ACTIONS,
     CMD_ACTIONS,
     _handle_command_action,
 )
@@ -17,8 +18,11 @@ _SESSION_MOD = "crewai_productfeature_planner.apis.slack.session_manager"
 
 @pytest.fixture(autouse=True)
 def _stub_session():
-    """Stub get_context_session so no MongoDB is needed."""
-    with patch(f"{_SESSION_MOD}.get_context_session", return_value=None):
+    """Stub get_context_session and can_manage_memory so no MongoDB/Slack API is needed."""
+    with (
+        patch(f"{_SESSION_MOD}.get_context_session", return_value=None),
+        patch(f"{_SESSION_MOD}.can_manage_memory", return_value=True),
+    ):
         yield
 
 
@@ -191,3 +195,69 @@ class TestHandleHelp:
             patch(f"{_SESSION_MOD}.get_context_session", return_value=None),
         ):
             _handle_command_action("cmd_help", "U1", "C1", "T1")
+
+
+# ---------------------------------------------------------------------------
+# Admin gate
+# ---------------------------------------------------------------------------
+
+
+class TestAdminGate:
+    """Admin-only actions should be blocked for non-admin users in channels."""
+
+    @pytest.mark.parametrize("action_id", sorted(_ADMIN_ACTIONS))
+    def test_admin_action_blocked_for_non_admin(self, action_id):
+        """Non-admin users get a denial message instead of the handler."""
+        with (
+            patch(f"{_SESSION_MOD}.get_context_session", return_value=None),
+            patch(f"{_SESSION_MOD}.can_manage_memory", return_value=False),
+            patch(f"{_MOD}._deny_non_admin") as mock_deny,
+        ):
+            _handle_command_action(action_id, "U1", "C1", "T1")
+            mock_deny.assert_called_once_with("C1", "T1", "U1")
+
+    @pytest.mark.parametrize("action_id", sorted(_ADMIN_ACTIONS))
+    def test_admin_action_allowed_for_admin(self, action_id):
+        """Admin users can use admin-only actions without denial."""
+        with (
+            patch(f"{_SESSION_MOD}.get_context_session", return_value=None),
+            patch(f"{_SESSION_MOD}.can_manage_memory", return_value=True),
+            patch(f"{_MOD}._deny_non_admin") as mock_deny,
+        ):
+            handler_map = {
+                "cmd_configure_project": "crewai_productfeature_planner.apis.slack._session_handlers.handle_update_config",
+                "cmd_configure_memory": "crewai_productfeature_planner.apis.slack._session_handlers.handle_configure_memory",
+                "cmd_switch_project": "crewai_productfeature_planner.apis.slack._session_handlers.handle_switch_project",
+                "cmd_create_project": "crewai_productfeature_planner.apis.slack._session_handlers.handle_create_project_intent",
+            }
+            with patch(handler_map[action_id]):
+                _handle_command_action(action_id, "U1", "C1", "T1")
+            mock_deny.assert_not_called()
+
+    @pytest.mark.parametrize("action_id", [
+        "cmd_list_ideas", "cmd_list_products", "cmd_resume_prd",
+        "cmd_help", "cmd_check_publish", "cmd_publish",
+    ])
+    def test_non_admin_actions_always_allowed(self, action_id):
+        """Non-admin-gated actions should work for any user."""
+        with (
+            patch(f"{_SESSION_MOD}.get_context_session", return_value=None),
+            patch(f"{_SESSION_MOD}.can_manage_memory", return_value=False),
+            patch(f"{_MOD}._deny_non_admin") as mock_deny,
+        ):
+            patches = [
+                patch("crewai_productfeature_planner.apis.slack._session_handlers.handle_list_ideas"),
+                patch("crewai_productfeature_planner.apis.slack._session_handlers.handle_list_products"),
+                patch("crewai_productfeature_planner.apis.slack._flow_handlers.handle_resume_prd"),
+                patch("crewai_productfeature_planner.apis.slack._flow_handlers.handle_check_publish_intent"),
+                patch("crewai_productfeature_planner.apis.slack._flow_handlers.handle_publish_intent"),
+                patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client", return_value=None),
+            ]
+            for p in patches:
+                p.start()
+            try:
+                _handle_command_action(action_id, "U1", "C1", "T1")
+            finally:
+                for p in patches:
+                    p.stop()
+            mock_deny.assert_not_called()

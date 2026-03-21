@@ -1457,3 +1457,32 @@ have clickable buttons.
 - 2380 passed (7 new)
 
 ---
+
+## Session 030 — 2026-03-21
+
+**Scope**: Admin-Gated Project Configuration & Role-Aware Buttons
+**Date**: 2026-03-21 | **Version**: 0.30.1 → 0.30.2
+
+### Goal
+Non-admin channel users should not be able to configure project settings,
+switch projects, create projects, or configure knowledge/memory. Admin-only
+buttons should be hidden from non-admin users in the help menu.
+
+### Changes
+1. **interactions_router/_command_handler.py** — Added `_ADMIN_ACTIONS`
+   frozenset (cmd_configure_project, cmd_configure_memory,
+   cmd_switch_project, cmd_create_project). Admin gate at top of
+   `_handle_command_action()`. `_deny_non_admin()` helper.
+   `_handle_help()` passes `is_admin` to `help_blocks()`.
+2. **blocks/_command_blocks.py** — `help_blocks()` now accepts
+   `is_admin` parameter. Admin-only buttons hidden for non-admins
+   (4 action rows for admin, 3 for non-admin).
+3. **_message_handler.py** — Added `can_manage_memory` gate before
+   `update_config` intent handler. Help intent passes `is_admin`.
+4. **interactions_router/_next_step_handler.py** — Added admin gate
+   for `configure_memory` next-step accept path.
+
+### Tests
+- 2398 passed (18 new: 12 admin gate, 4 help blocks role, 2 next-step)
+
+---
