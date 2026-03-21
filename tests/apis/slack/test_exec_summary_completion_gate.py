@@ -94,9 +94,11 @@ class TestExecSummaryCompletionBlocks:
         blocks, was_truncated = exec_summary_completion_blocks("r1", long_content, 3)
         assert was_truncated is True
         section = [b for b in blocks if b.get("type") == "section"][0]
-        # The full content should NOT appear verbatim (truncated to 2800)
+        # The full content should NOT appear verbatim (truncated to 2700)
         assert long_content not in section["text"]["text"]
         assert "more chars" in section["text"]["text"]
+        # Combined text (prefix + preview) must stay under 3000
+        assert len(section["text"]["text"]) <= 3000
 
     def test_iteration_count_in_text(self):
         from crewai_productfeature_planner.apis.slack.blocks import (

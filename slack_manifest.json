@@ -36,7 +36,13 @@
         "app_mentions:read",
         "reactions:write",
         "reactions:read",
-        "users:read"
+        "users:read",
+        "files:write",
+        "files:read",
+        "pins:read",
+        "assistant:write",
+        "calls:read",
+        "calls:write"
       ]
     },
     "token_management_enabled": true

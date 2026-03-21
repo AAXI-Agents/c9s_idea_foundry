@@ -40,6 +40,7 @@
 | Version | Summary |
 |---------|--------|
 | 0.32.0 | Bot only responds in threads where it is @mentioned. Fallback conditions (active_session, thread_history) in events_router now require @mention. Active workflow conditions (interactive, pending, conversation) remain unrestricted. 6 new tests, 2453 total |
+| 0.32.1 | Fix files:write scope missing from Slack manifest (file uploads failed). Admin cache now has 5-min TTL so role changes detected without restart. exec_summary_completion truncation limit lowered to 2700. 3 new tests, 2456 total |
 
 ## v0.27.x (2026-03-17)
 

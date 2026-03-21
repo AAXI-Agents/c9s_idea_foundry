@@ -70,9 +70,11 @@ _pending_project_setup: dict[str, dict[str, str]] = {}
 #                  "project_id": ...}
 _pending_memory_entries: dict[str, dict[str, str]] = {}
 
-# Cache for Slack admin status checks (user_id → bool).
-# Avoids repeated API calls during a session.
-_admin_cache: dict[str, bool] = {}
+# Cache for Slack admin status checks (user_id → (is_admin, timestamp)).
+# TTL-based: entries expire after _ADMIN_CACHE_TTL_SECONDS so role
+# changes are picked up without a server restart.
+_ADMIN_CACHE_TTL_SECONDS = 300  # 5 minutes
+_admin_cache: dict[str, tuple[bool, float]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -188,10 +190,16 @@ def is_channel_admin(user_id: str) -> bool:
     Results are cached for the lifetime of the process so subsequent
     calls avoid hitting the Slack API.
     """
+    import time as _time
+
     with _lock:
         cached = _admin_cache.get(user_id)
     if cached is not None:
-        return cached
+        is_admin_cached, cached_at = cached
+        if _time.time() - cached_at < _ADMIN_CACHE_TTL_SECONDS:
+            return is_admin_cached
+        # TTL expired — fall through to re-check
+        logger.debug("[SessionManager] Admin cache expired for %s — re-checking", user_id)
 
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
@@ -206,7 +214,7 @@ def is_channel_admin(user_id: str) -> bool:
             user_data = resp.get("user", {})
             result = bool(user_data.get("is_admin") or user_data.get("is_owner"))
             with _lock:
-                _admin_cache[user_id] = result
+                _admin_cache[user_id] = (result, _time.time())
             logger.debug("[SessionManager] Admin check user=%s → %s", user_id, result)
             return result
     except Exception as exc:

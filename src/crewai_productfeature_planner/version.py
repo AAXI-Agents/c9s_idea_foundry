@@ -2021,6 +2021,22 @@ _CODEX: list[CodexEntry] = [
             "6 new tests, 2453 total."
         ),
     ),
+    CodexEntry(
+        "0.32.1",
+        date(2026, 3, 22),
+        (
+            "Fix two production bugs: (1) files:write scope added to "
+            "Slack manifest — file uploads for truncated content were "
+            "failing with missing_scope error. Also added files:read, "
+            "pins:read, assistant:write, calls:read, calls:write "
+            "scopes. Lowered exec_summary_completion_blocks truncation "
+            "limit from 2800 to 2700 to account for prefix text. "
+            "(2) Admin cache TTL — _admin_cache now uses 5-minute TTL "
+            "instead of process-lifetime cache, so user role changes "
+            "(member → admin) are detected without server restart. "
+            "3 new tests, 2456 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

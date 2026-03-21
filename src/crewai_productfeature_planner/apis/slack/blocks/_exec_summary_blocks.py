@@ -17,7 +17,8 @@ def exec_summary_completion_blocks(
     Returns ``(blocks, was_truncated)``.  When *was_truncated* is True the
     caller should upload the full content as a file attachment.
     """
-    content_preview, was_truncated = truncate_with_file_hint(content)
+    # Leave room for the prefix text that wraps content_preview (~100 chars).
+    content_preview, was_truncated = truncate_with_file_hint(content, 2700)
 
     blocks = [
         {

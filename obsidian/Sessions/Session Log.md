@@ -1642,4 +1642,40 @@ skipped to avoid breaking functionality.
 
 ---
 
+## Session 036 — 2026-03-22
+
+**Scope**: Fix File Upload Scope + Admin Cache TTL
+**Date**: 2026-03-22 | **Version**: 0.32.0 → 0.32.1
+
+### Problems
+1. **File upload failing**: `files:write` scope missing from Slack manifest.
+   Log showed: `missing_scope, needed: files:write`. The v0.31.2
+   truncation+upload feature couldn't work in production.
+2. **Admin status stale**: `_admin_cache` had no TTL (process-lifetime).
+   User promoted from member to workspace admin was still blocked from
+   configure actions. Log showed: `Admin check user=U0AK24AU0F3 → False`.
+3. **Truncation overflow**: `exec_summary_completion_blocks` wraps preview
+   in ~85-char prefix but used 2800 limit, risking overflow past 3000.
+
+### Changes
+1. **`slack_manifest.json`** — Added `files:write`, `files:read`,
+   `pins:read`, `assistant:write`, `calls:read`, `calls:write` scopes
+   (matching what the Slack app already has installed).
+2. **`session_manager.py`** — Admin cache changed from `dict[str, bool]`
+   to `dict[str, tuple[bool, float]]` with 5-minute TTL. Expired entries
+   trigger a fresh Slack API call. `import time` added inside function.
+3. **`_exec_summary_blocks.py`** — `exec_summary_completion_blocks` uses
+   `truncate_with_file_hint(content, 2700)` instead of default 2800.
+
+### Tests
+- 3 new tests in `test_session_context.py`:
+  - Cache TTL expired → re-checks Slack API
+  - Cache TTL not expired → uses cached value
+  - Role upgrade detected after TTL expires
+- 1 updated assertion in `test_exec_summary_completion_gate.py`:
+  combined section text <= 3000
+- 2456 total tests
+
+---
+
 ---

@@ -114,8 +114,58 @@ class TestIsChannelAdmin:
 
     def test_cached_result(self):
         """Cached admin status is returned without Slack call."""
-        _admin_cache["U6"] = True
+        import time
+        _admin_cache["U6"] = (True, time.time())
         assert is_channel_admin("U6") is True
+
+    @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")
+    def test_cache_ttl_expired_re_checks(self, mock_client_fn):
+        """Expired cache entry triggers a fresh Slack API call."""
+        import time
+        # Seed cache with a stale entry (non-admin, 10 minutes ago)
+        _admin_cache["U7"] = (False, time.time() - 600)
+
+        client = MagicMock()
+        client.users_info.return_value = {
+            "ok": True,
+            "user": {"is_admin": True, "is_owner": False},
+        }
+        mock_client_fn.return_value = client
+
+        # Should re-check and return the fresh admin=True result
+        assert is_channel_admin("U7") is True
+        client.users_info.assert_called_once_with(user="U7")
+
+    @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")
+    def test_cache_ttl_not_expired_uses_cache(self, mock_client_fn):
+        """Non-expired cache entry skips the Slack API call."""
+        import time
+        _admin_cache["U8"] = (False, time.time())
+
+        client = MagicMock()
+        mock_client_fn.return_value = client
+
+        assert is_channel_admin("U8") is False
+        client.users_info.assert_not_called()
+
+    @patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client")
+    def test_role_upgrade_detected_after_ttl(self, mock_client_fn):
+        """User promoted from member to admin is detected after TTL expires."""
+        import time
+        # Initially cached as non-admin
+        _admin_cache["U9"] = (False, time.time() - 400)
+
+        client = MagicMock()
+        client.users_info.return_value = {
+            "ok": True,
+            "user": {"is_admin": True, "is_owner": False},
+        }
+        mock_client_fn.return_value = client
+
+        assert is_channel_admin("U9") is True
+        # Verify cache was updated
+        cached_result, _ = _admin_cache["U9"]
+        assert cached_result is True
 
 
 # ── can_manage_memory ─────────────────────────────────────────
