@@ -2037,6 +2037,46 @@ _CODEX: list[CodexEntry] = [
             "3 new tests, 2456 total."
         ),
     ),
+    CodexEntry(
+        "0.33.0",
+        date(2026, 3, 22),
+        (
+            "Output file reorganisation & UX design file fix: "
+            "(1) UX design markdown files are now only generated when "
+            "Figma successfully produces a design (URL available), not "
+            "on every prompt or error fallback — prevents duplicate files. "
+            "(2) PRD and UX output files are now stored in project-based "
+            "directories: output/{project_id}/product requirement documents/ "
+            "and output/{project_id}/ux design/. Added ux_output_file field "
+            "to MongoDB workingIdeas for tracking UX file paths with "
+            "cleanup-on-replace logic. Startup disk scanner now scans both "
+            "legacy output/prds/ and project-based directories. "
+            "(3) One-time migration script scripts/migrate_output_dirs.py "
+            "moves existing files and updates MongoDB references. "
+            "7 new tests, 2463 total."
+        ),
+    ),
+    CodexEntry(
+        "0.34.0",
+        date(2026, 3, 22),
+        (
+            "Project knowledge base — Obsidian-style knowledge folders for "
+            "agent learning: "
+            "(1) New scripts/project_knowledge.py module generates an "
+            "Obsidian-structured projects/ folder per project with overview "
+            "pages (config, memory, tools, reference URLs) and completed "
+            "idea pages (YAML frontmatter, wikilinks, full PRD sections). "
+            "(2) Hooked into create_project() — new projects automatically "
+            "bootstrap a knowledge folder on creation. "
+            "(3) Hooked into finalize() — completed ideas generate an "
+            "Obsidian idea page and refresh the project overview. "
+            "(4) Integrated load_completed_ideas_context() into "
+            "enrich_backstory() in memory_loader.py — agents now receive "
+            "completed idea summaries in their backstory to avoid "
+            "duplication and create synergy with existing work. "
+            "34 new tests, 2496 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

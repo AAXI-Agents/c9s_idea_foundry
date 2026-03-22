@@ -43,7 +43,7 @@ Status flow: `queued` → `running` → `completed` | `failed` | `awaiting_appro
 
 In-progress PRD persistence. Each iteration saved to MongoDB.
 
-Key fields: `run_id`, `idea`, `original_idea`, `finalized_idea`, `status`, `project_id`, `slack_channel`, `slack_thread_ts`, `executive_summary`, `sections`, `jira_phase`, `jira_skeleton`, `jira_epics_stories_output`
+Key fields: `run_id`, `idea`, `original_idea`, `finalized_idea`, `status`, `project_id`, `slack_channel`, `slack_thread_ts`, `executive_summary`, `sections`, `jira_phase`, `jira_skeleton`, `jira_epics_stories_output`, `output_file`, `ux_output_file`, `figma_design_url`, `figma_design_status`
 
 Sub-modules: `_iterations.py`, `_finalization.py`, `_queries.py`, `_status.py`
 
@@ -87,6 +87,8 @@ Slack OAuth token persistence (per-team tokens).
 - `find_unfinalized()`, `find_ideas_by_project()`, `find_completed_ideas_by_project()`
 - `save_slack_context()`, `save_project_ref()`, `mark_completed()`, `mark_paused()`, `mark_archived()`
 - `save_jira_phase()`, `save_jira_skeleton()`, `get_jira_skeleton()`, `save_jira_epics_stories_output()`, `get_jira_epics_stories_output()`
+- `save_output_file()`, `get_output_file()`, `save_ux_output_file()`, `get_ux_output_file()`
+- `save_figma_design()`
 
 ---
 

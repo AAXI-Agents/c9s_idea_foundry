@@ -17,6 +17,7 @@ from crewai_productfeature_planner.mongodb import (
 )
 from crewai_productfeature_planner.scripts.confluence_xhtml import md_to_confluence_xhtml
 from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.scripts.memory_loader import resolve_project_id
 from crewai_productfeature_planner.scripts.retry import (
     BillingError,
     ModelBusyError,
@@ -86,7 +87,14 @@ def save_progress(flow: PRDFlow) -> str:
     )
     content = header + "\n\n---\n\n".join(parts)
 
-    writer = PRDFileWriteTool(output_dir="output/prds/_drafts")
+    # Resolve project_id for project-specific output directory.
+    project_id = resolve_project_id(flow.state.run_id)
+    if project_id:
+        drafts_dir = f"output/{project_id}/product requirement documents/_drafts"
+    else:
+        drafts_dir = "output/prds/_drafts"
+
+    writer = PRDFileWriteTool(output_dir=drafts_dir)
     save_result = writer._run(
         content=content,
         filename="",
@@ -166,7 +174,12 @@ def finalize(flow: PRDFlow) -> str:
         )
 
     # Save Markdown to file
-    writer = PRDFileWriteTool()
+    project_id = resolve_project_id(flow.state.run_id)
+    if project_id:
+        prd_dir = f"output/{project_id}/product requirement documents"
+    else:
+        prd_dir = "output/prds"
+    writer = PRDFileWriteTool(output_dir=prd_dir)
     save_result = writer._run(
         content=flow.state.final_prd,
         filename="",
@@ -184,6 +197,18 @@ def finalize(flow: PRDFlow) -> str:
 
     # Mark working-idea document as completed
     mark_completed(flow.state.run_id)
+
+    # Generate project knowledge base page for the completed idea
+    try:
+        from crewai_productfeature_planner.scripts.project_knowledge import (
+            sync_completed_idea,
+        )
+        sync_completed_idea(flow.state.run_id)
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "[Step 4] Could not sync project knowledge for run_id=%s",
+            flow.state.run_id, exc_info=True,
+        )
 
     flow.state.is_ready = True
     flow.state.status = "completed"

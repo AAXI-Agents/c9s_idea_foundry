@@ -228,6 +228,61 @@ def save_output_file(run_id: str, output_file: str) -> bool:
         return False
 
 
+def get_ux_output_file(run_id: str) -> str | None:
+    """Return the current ``ux_output_file`` path for *run_id*, or ``None``."""
+    try:
+        db = _common.get_db()
+        doc = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id},
+            {"ux_output_file": 1, "_id": 0},
+        )
+        if doc:
+            return doc.get("ux_output_file") or None
+        return None
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to get ux_output_file for run_id=%s: %s",
+            run_id, exc,
+        )
+        return None
+
+
+def save_ux_output_file(run_id: str, ux_output_file: str) -> bool:
+    """Store the UX design markdown file path on the working-idea document.
+
+    Args:
+        run_id: The run identifier.
+        ux_output_file: Path to the generated UX design markdown file.
+
+    Returns:
+        ``True`` if the document was updated, ``False`` otherwise.
+    """
+    now = _now_iso()
+    try:
+        db = _common.get_db()
+        result = db[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    "ux_output_file": ux_output_file,
+                    "update_date": now,
+                },
+            },
+        )
+        updated = result.modified_count > 0
+        logger.info(
+            "[MongoDB] Saved ux_output_file for run_id=%s: %s (matched=%d)",
+            run_id, ux_output_file, result.modified_count,
+        )
+        return updated
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save ux_output_file for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Metadata persistence
 # ---------------------------------------------------------------------------

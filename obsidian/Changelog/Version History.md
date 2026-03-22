@@ -42,6 +42,18 @@
 | 0.32.0 | Bot only responds in threads where it is @mentioned. Fallback conditions (active_session, thread_history) in events_router now require @mention. Active workflow conditions (interactive, pending, conversation) remain unrestricted. 6 new tests, 2453 total |
 | 0.32.1 | Fix files:write scope missing from Slack manifest (file uploads failed). Admin cache now has 5-min TTL so role changes detected without restart. exec_summary_completion truncation limit lowered to 2700. 3 new tests, 2456 total |
 
+## v0.33.x (2026-03-22)
+
+| Version | Summary |
+|---------|--------|
+| 0.33.0 | Output file reorganisation & UX design file fix. UX markdown only generated on successful Figma design (URL available). PRD/UX files now saved under output/{project_id}/product requirement documents/ and output/{project_id}/ux design/. Added ux_output_file MongoDB field. Startup disk scanner covers both legacy and project dirs. Migration script: scripts/migrate_output_dirs.py. 7 new tests, 2463 total |
+
+## v0.34.x (2026-03-22)
+
+| Version | Summary |
+|---------|--------|
+| 0.34.0 | Project knowledge base — Obsidian-style knowledge folders for agent learning. New scripts/project_knowledge.py generates projects/ folders with overview pages (config, memory, tools, references) and completed idea pages (YAML frontmatter, wikilinks, PRD sections). Hooked into create_project() and finalize(). Integrated load_completed_ideas_context() into enrich_backstory() so agents receive completed idea summaries. 34 new tests, 2496 total |
+
 ## v0.27.x (2026-03-17)
 
 | Version | Summary |

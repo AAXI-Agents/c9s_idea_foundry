@@ -203,10 +203,26 @@ def enrich_backstory(backstory: str, project_id: str | None) -> str:
         return backstory
 
     context = load_project_memory_context(project_id)
-    if not context:
-        return backstory
+    if context:
+        backstory = f"{backstory}\n{context}"
 
-    return f"{backstory}\n{context}"
+    # Append completed-idea summaries so agents avoid duplication
+    try:
+        from crewai_productfeature_planner.scripts.project_knowledge import (
+            load_completed_ideas_context,
+        )
+        ideas_ctx = load_completed_ideas_context(project_id)
+        if ideas_ctx:
+            backstory = f"{backstory}\n{ideas_ctx}"
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "[MemoryLoader] Could not load completed ideas for "
+            "project_id=%s",
+            project_id,
+            exc_info=True,
+        )
+
+    return backstory
 
 
 def enrich_backstory_for_run(backstory: str, run_id: str) -> str:

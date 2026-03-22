@@ -69,14 +69,29 @@ def _discover_publishable_prds() -> list[dict]:
             "[StartupMarkdownReview] Failed to query MongoDB: %s", exc,
         )
 
-    # ── Source 2: Disk — output/prds/ ──────────────────────────
+    # ── Source 2: Disk — output/prds/ and output/{project_id}/ ──
     try:
         from pathlib import Path
 
-        prds_dir = Path(__file__).resolve().parents[2] / "output" / "prds"
-        drafts_dir = prds_dir / "_drafts"
-        if prds_dir.exists():
-            for md_file in sorted(prds_dir.rglob("*.md")):
+        output_root = Path(__file__).resolve().parents[2] / "output"
+
+        # Collect all directories that may contain PRD markdown files:
+        # the legacy output/prds/ and any project-specific
+        # output/{project_id}/product requirement documents/ dirs.
+        prd_dirs: list[tuple[Path, Path]] = []  # (scan_dir, drafts_dir)
+        legacy_prds = output_root / "prds"
+        if legacy_prds.exists():
+            prd_dirs.append((legacy_prds, legacy_prds / "_drafts"))
+
+        if output_root.exists():
+            for child in output_root.iterdir():
+                if child.is_dir() and child.name != "prds":
+                    proj_prd = child / "product requirement documents"
+                    if proj_prd.exists():
+                        prd_dirs.append((proj_prd, proj_prd / "_drafts"))
+
+        for scan_dir, drafts_dir in prd_dirs:
+            for md_file in sorted(scan_dir.rglob("*.md")):
                 abs_path = str(md_file)
 
                 # Skip files inside the _drafts/ directory — those are
@@ -111,7 +126,7 @@ def _discover_publishable_prds() -> list[dict]:
                 })
     except Exception as exc:
         logger.warning(
-            "[StartupMarkdownReview] Failed to scan output/prds/: %s",
+            "[StartupMarkdownReview] Failed to scan output directories: %s",
             exc,
         )
 

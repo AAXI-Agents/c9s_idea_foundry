@@ -130,6 +130,8 @@
 | `memory_loader.py` | Project memory resolution |
 | `confluence_xhtml.py` | Markdown → Confluence XHTML converter |
 | `knowledge_sources.py` | Knowledge file loading and caching |
+| `project_knowledge.py` | Obsidian-style project knowledge base builder (project pages, completed idea pages, agent context) |
+| `migrate_output_dirs.py` | One-time script: migrate output files to project-based directories (delete after use) |
 
 ## Components (`components/`)
 

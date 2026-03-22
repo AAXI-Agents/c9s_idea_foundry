@@ -113,6 +113,21 @@ def create_project(
             project_id,
             name,
         )
+
+        # Bootstrap the Obsidian project knowledge folder
+        try:
+            from crewai_productfeature_planner.scripts.project_knowledge import (
+                sync_project_knowledge,
+            )
+            sync_project_knowledge(project_id)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "[MongoDB] Could not sync project knowledge for "
+                "project_id=%s",
+                project_id,
+                exc_info=True,
+            )
+
         return project_id
     except PyMongoError as exc:
         logger.error(

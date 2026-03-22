@@ -226,9 +226,10 @@ def run_ux_design(flow: PRDFlow) -> str:
         section_title="UX Design",
     )
 
-    # Write the UX design to a standalone markdown file so the user
-    # has an immediately usable artefact (even if the Figma API failed).
-    _save_ux_design_file(flow, effective_prompt, figma_url)
+    # Write the UX design to a standalone markdown file only when
+    # Figma successfully generated a design (URL is available).
+    if figma_url:
+        _save_ux_design_file(flow, effective_prompt, figma_url, project_id)
 
     flow.state.update_date = datetime.now(timezone.utc).isoformat()
     flow._notify_progress("ux_design_complete", {
@@ -241,11 +242,26 @@ def run_ux_design(flow: PRDFlow) -> str:
     return figma_url
 
 
-def _save_ux_design_file(flow: PRDFlow, prompt: str, figma_url: str) -> None:
-    """Write the UX design prompt to a standalone markdown file."""
+def _save_ux_design_file(
+    flow: PRDFlow,
+    prompt: str,
+    figma_url: str,
+    project_id: str | None = None,
+) -> None:
+    """Write the UX design to a standalone markdown file.
+
+    Only called when Figma design was successfully generated (URL exists).
+    Persists the file path to MongoDB and cleans up any previous file.
+    """
     if not prompt:
         return
     try:
+        from pathlib import Path
+
+        from crewai_productfeature_planner.mongodb.working_ideas._status import (
+            get_ux_output_file,
+            save_ux_output_file,
+        )
         from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 
         parts = ["# UX Design Specification\n"]
@@ -253,7 +269,13 @@ def _save_ux_design_file(flow: PRDFlow, prompt: str, figma_url: str) -> None:
             parts.append(f"\n**Figma Prototype:** [{figma_url}]({figma_url})\n")
         parts.append(f"\n{prompt}\n")
 
-        writer = PRDFileWriteTool()
+        # Use project-specific output directory when project_id is available.
+        if project_id:
+            output_dir = f"output/{project_id}/ux design"
+        else:
+            output_dir = "output/prds"
+
+        writer = PRDFileWriteTool(output_dir=output_dir)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         result = writer._run(
             content="".join(parts),
@@ -261,5 +283,27 @@ def _save_ux_design_file(flow: PRDFlow, prompt: str, figma_url: str) -> None:
             version=1,
         )
         logger.info("[UX Design] Saved standalone file: %s", result)
+
+        # Extract file path and persist to MongoDB.
+        prefix = "PRD saved to "
+        new_path = result[len(prefix):] if result.startswith(prefix) else result
+
+        # Delete the previous UX output file before saving the new ref.
+        old_path = get_ux_output_file(flow.state.run_id)
+        if old_path and old_path != new_path:
+            try:
+                p = Path(old_path)
+                if p.is_file():
+                    p.unlink()
+                    logger.info(
+                        "[UX Cleanup] Deleted previous UX file: %s", old_path,
+                    )
+            except OSError as exc:
+                logger.warning(
+                    "[UX Cleanup] Could not delete previous UX file %s: %s",
+                    old_path, exc,
+                )
+
+        save_ux_output_file(flow.state.run_id, new_path)
     except Exception:  # noqa: BLE001
         logger.debug("[UX Design] Could not save standalone file", exc_info=True)

@@ -1678,4 +1678,111 @@ skipped to avoid breaking functionality.
 
 ---
 
+## Session 031 — 2026-03-22
+
+**Scope**: Output file reorganisation & UX design file fix
+**Version**: v0.32.1 → v0.33.0
+
+### Problem
+1. UX design markdown files were generated on every `run_ux_design()` call regardless of whether Figma actually produced a design — causing duplicate files.
+2. All PRD and UX output files were stored in a flat `output/prds/YYYY/MM/` structure with no separation by project.
+
+### Work Done
+1. **UX file gating** (`flows/_ux_design.py`):
+   - `_save_ux_design_file()` is now only called when `figma_url` is non-empty (Figma design successful).
+   - Previously called unconditionally for every prompt/error/fallback output.
+
+2. **Project-based output directories** (`flows/_finalization.py`, `flows/_ux_design.py`):
+   - `finalize()` now saves PRDs to `output/{project_id}/product requirement documents/`
+   - `save_progress()` uses `output/{project_id}/product requirement documents/_drafts/`
+   - `_save_ux_design_file()` saves to `output/{project_id}/ux design/`
+   - Falls back to legacy `output/prds/` when `project_id` is unavailable.
+
+3. **`ux_output_file` MongoDB field** (`mongodb/working_ideas/_status.py`):
+   - Added `get_ux_output_file()` and `save_ux_output_file()` functions.
+   - UX file path is persisted with cleanup-on-replace logic (old file deleted when new one saved).
+   - Exported via `repository.py` and `mongodb/__init__.py`.
+
+4. **Startup disk scanner** (`orchestrator/_startup_review.py`):
+   - `_discover_publishable_prds()` now scans both legacy `output/prds/` and `output/{project_id}/product requirement documents/` directories.
+
+5. **Migration script** (`scripts/migrate_output_dirs.py`):
+   - Queries workingIdeas documents with `output_file` or `ux_output_file` and `project_id`.
+   - Moves files on disk and updates MongoDB references.
+   - Supports `--dry-run` mode for preview.
+   - Delete after running per project convention.
+
+### Tests
+- 7 new tests:
+  - `test_file_saved_when_figma_url_present` — confirms file saved on successful Figma
+  - `test_file_not_saved_when_prompt_only` — confirms no file for prompt-only
+  - `test_file_not_saved_when_error_skipped` — confirms no file on skip/error
+  - `test_file_uses_project_dir_when_available` — project_id passed to save function
+  - `test_finalize_uses_project_dir_when_project_id_available` — PRD uses project dir
+  - `test_save_progress_uses_project_dir_when_project_id_available` — drafts use project dir
+  - (7th implicit: existing tests all updated with `resolve_project_id` patch)
+- All existing tests updated to patch `resolve_project_id` in finalization module.
+- 2463 total tests, all passing.
+
+### Files Modified
+- `src/.../flows/_ux_design.py` — Gate file generation, project-aware paths
+- `src/.../flows/_finalization.py` — Project-aware output directories
+- `src/.../mongodb/working_ideas/_status.py` — `get_ux_output_file`, `save_ux_output_file`
+- `src/.../mongodb/working_ideas/repository.py` — Export new functions
+- `src/.../mongodb/__init__.py` — Export new functions
+- `src/.../orchestrator/_startup_review.py` — Scan project-based dirs
+- `src/.../version.py` — v0.33.0
+- `scripts/migrate_output_dirs.py` — NEW one-time migration script
+- `tests/flows/test_ux_design.py` — 4 new tests
+- `tests/flows/test_prd_flow.py` — 2 new tests + 7 updated tests
+- `obsidian/Database/MongoDB Schema.md` — Added new fields
+- `obsidian/Architecture/Module Map.md` — Added migration script
+- `obsidian/Changelog/Version History.md` — v0.33.0 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session — 2026-03-22
+
+**Scope**: Project Knowledge Base — Obsidian-style knowledge folders for agent learning
+**Version**: v0.33.0 → v0.34.0
+
+### Changes
+
+1. **New module** (`scripts/project_knowledge.py`):
+   - Generates `projects/{name}/{name}.md` overview pages with config, memory, tools, reference URLs, and wikilinks to completed ideas.
+   - Generates `projects/{name}/ideas/{idea}.md` pages from workingIdeas docs with YAML frontmatter, full PRD sections in Obsidian format.
+   - `load_completed_ideas_context()` queries MongoDB for completed ideas and formats summaries for agent backstory enrichment.
+   - `sync_project_knowledge()` and `sync_completed_idea()` orchestrate page generation.
+
+2. **Hooked into project creation** (`mongodb/project_config/repository.py`):
+   - `create_project()` now calls `sync_project_knowledge()` after successful insert to bootstrap the project knowledge folder.
+
+3. **Hooked into finalization** (`flows/_finalization.py`):
+   - `finalize()` calls `sync_completed_idea()` after `mark_completed()` to generate the idea page and refresh the project overview.
+
+4. **Integrated with memory loader** (`scripts/memory_loader.py`):
+   - `enrich_backstory()` now also calls `load_completed_ideas_context()` so agents receive completed idea summaries in their backstory, avoiding duplication and creating synergy.
+
+### Tests Added (34 new, 2496 total)
+- `tests/test_project_knowledge.py` — 34 tests covering:
+  - `_safe_dirname`, `_safe_filename`, `_truncate`, `_idea_title_from_doc` helpers
+  - `generate_project_page` (basic, memory, URLs, ideas subdir, wikilinks)
+  - `generate_idea_page` (basic, sections, Figma, delivery, original vs refined)
+  - `load_completed_ideas_context` (with docs, no docs, empty ID, DB error)
+  - `sync_project_knowledge` (creates page, no config)
+  - `sync_completed_idea` (creates page, no doc, no project_id)
+  - `enrich_backstory` integration (includes ideas, no ideas)
+
+### Files Modified
+- `src/.../scripts/project_knowledge.py` — NEW: Obsidian knowledge base builder
+- `src/.../mongodb/project_config/repository.py` — Hook sync_project_knowledge into create_project
+- `src/.../flows/_finalization.py` — Hook sync_completed_idea into finalize
+- `src/.../scripts/memory_loader.py` — Integrate completed ideas into enrich_backstory
+- `src/.../version.py` — v0.34.0
+- `tests/test_project_knowledge.py` — NEW: 34 tests
+- `obsidian/Architecture/Module Map.md` — Added project_knowledge.py
+- `obsidian/Changelog/Version History.md` — v0.34.0 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
 ---

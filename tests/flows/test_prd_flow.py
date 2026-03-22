@@ -292,7 +292,8 @@ def test_section_approval_loop_raises_pause(monkeypatch):
 @patch("crewai_productfeature_planner.flows._finalization.mark_completed")
 @patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
 @patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
-def test_finalize_saves_prd(_mock_post, mock_writer_cls, mock_mark_completed, mock_save_output, _mock_get_output):
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value=None)
+def test_finalize_saves_prd(_mock_proj, _mock_post, mock_writer_cls, mock_mark_completed, mock_save_output, _mock_get_output):
     """finalize() should persist the assembled PRD via file and mark completed."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/prd_v1.md"
@@ -331,7 +332,8 @@ def test_finalize_saves_prd(_mock_post, mock_writer_cls, mock_mark_completed, mo
 @patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
 @patch("crewai_productfeature_planner.flows._finalization.save_output_file")
 @patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
-def test_save_progress_with_idea_and_requirements(mock_writer_cls, mock_save_output, _mock_get_output, mock_mark_paused):
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value=None)
+def test_save_progress_with_idea_and_requirements(_mock_proj, mock_writer_cls, mock_save_output, _mock_get_output, mock_mark_paused):
     """save_progress() should write a progress markdown with refined idea & requirements."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/_drafts/2026/02/prd_v1.md"
@@ -371,7 +373,8 @@ def test_save_progress_with_idea_and_requirements(mock_writer_cls, mock_save_out
 @patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
 @patch("crewai_productfeature_planner.flows._finalization.save_output_file")
 @patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
-def test_save_progress_uses_final_header_when_all_approved(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value=None)
+def test_save_progress_uses_final_header_when_all_approved(_mock_proj, mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should NOT include '(In Progress)' when all sections are approved."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/2026/02/prd_v10.md"
@@ -404,7 +407,8 @@ def test_save_progress_uses_final_header_when_all_approved(mock_writer_cls, mock
 @patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
 @patch("crewai_productfeature_planner.flows._finalization.save_output_file")
 @patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
-def test_save_progress_includes_executive_summary(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value=None)
+def test_save_progress_includes_executive_summary(_mock_proj, mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should include executive summary if available."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved to output/prds/2026/02/prd_v3.md"
@@ -433,7 +437,8 @@ def test_save_progress_includes_executive_summary(mock_writer_cls, mock_save_out
 @patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
 @patch("crewai_productfeature_planner.flows._finalization.save_output_file")
 @patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
-def test_save_progress_includes_drafted_sections(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value=None)
+def test_save_progress_includes_drafted_sections(_mock_proj, mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should include any sections that have content."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved"
@@ -473,7 +478,8 @@ def test_save_progress_returns_empty_when_no_content():
 @patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
 @patch("crewai_productfeature_planner.flows._finalization.save_output_file")
 @patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
-def test_save_progress_uses_finalized_idea_over_raw(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value=None)
+def test_save_progress_uses_finalized_idea_over_raw(_mock_proj, mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should prefer finalized_idea over raw idea."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved"
@@ -495,7 +501,8 @@ def test_save_progress_uses_finalized_idea_over_raw(mock_writer_cls, mock_save_o
 @patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
 @patch("crewai_productfeature_planner.flows._finalization.save_output_file")
 @patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
-def test_save_progress_version_defaults_to_one(mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value=None)
+def test_save_progress_version_defaults_to_one(_mock_proj, mock_writer_cls, mock_save_output, _mock_get_output, _mock_mark_paused):
     """save_progress() should use version=1 when iteration is 0."""
     mock_writer = MagicMock()
     mock_writer._run.return_value = "PRD saved"
@@ -572,6 +579,62 @@ def test_persist_output_path_handles_missing_old_file(mock_get_output, mock_save
 
     # Should still succeed
     mock_save_output.assert_called_once_with("run-gone", new_path)
+
+
+# ── Project-based output directories ────────────────────────
+
+
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.mark_completed")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value="proj-abc")
+def test_finalize_uses_project_dir_when_project_id_available(
+    _mock_proj, _mock_post, mock_writer_cls, mock_mark, mock_save, _mock_get,
+):
+    """finalize() should use output/{project_id}/product requirement documents/ when project_id exists."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved to output/proj-abc/product requirement documents/prd_v1.md"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    for section in flow.state.draft.sections:
+        section.content = f"Content for {section.title}"
+        section.is_approved = True
+    flow.state.iteration = 5
+    flow.state.idea = "Test"
+    flow.state.run_id = "run-proj"
+
+    flow.finalize()
+
+    mock_writer_cls.assert_called_once_with(
+        output_dir="output/proj-abc/product requirement documents",
+    )
+
+
+@patch("crewai_productfeature_planner.flows._finalization.mark_paused")
+@patch("crewai_productfeature_planner.flows._finalization.get_output_file", return_value=None)
+@patch("crewai_productfeature_planner.flows._finalization.save_output_file")
+@patch("crewai_productfeature_planner.flows._finalization.PRDFileWriteTool")
+@patch("crewai_productfeature_planner.flows._finalization.resolve_project_id", return_value="proj-xyz")
+def test_save_progress_uses_project_dir_when_project_id_available(
+    _mock_proj, mock_writer_cls, mock_save, _mock_get, _mock_pause,
+):
+    """save_progress() should use output/{project_id}/product requirement documents/_drafts/ when project_id exists."""
+    mock_writer = MagicMock()
+    mock_writer._run.return_value = "PRD saved to output/proj-xyz/product requirement documents/_drafts/prd_v1.md"
+    mock_writer_cls.return_value = mock_writer
+
+    flow = PRDFlow()
+    flow.state.idea = "Test idea"
+    flow.state.run_id = "run-proj-draft"
+
+    flow.save_progress()
+
+    mock_writer_cls.assert_called_once_with(
+        output_dir="output/proj-xyz/product requirement documents/_drafts",
+    )
 
 
 # ── Multi-agent helpers ──────────────────────────────────────
