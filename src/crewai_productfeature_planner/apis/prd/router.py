@@ -127,7 +127,11 @@ async def list_runs(user: dict = Depends(require_sso_user)):
 async def list_resumable_runs(user: dict = Depends(require_sso_user)):
     from crewai_productfeature_planner.mongodb import find_unfinalized
 
-    unfinalized = find_unfinalized()
+    try:
+        unfinalized = find_unfinalized()
+    except Exception as exc:
+        logger.error("[PRD] Failed to query resumable runs: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to query resumable runs") from exc
     items = []
     for r in unfinalized:
         created = r.get("created_at")
@@ -194,7 +198,11 @@ async def list_all_jobs(
     user: dict = Depends(require_sso_user),
 ):
     """List persistent job records, optionally filtered."""
-    docs = list_jobs(status=status, flow_name=flow_name, limit=limit)
+    try:
+        docs = list_jobs(status=status, flow_name=flow_name, limit=limit)
+    except Exception as exc:
+        logger.error("[PRD] Failed to list jobs: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list jobs") from exc
     items = [_job_doc_to_detail(d) for d in docs]
     return JobListResponse(count=len(items), jobs=items)
 
@@ -216,7 +224,11 @@ async def list_all_jobs(
 )
 async def get_job(job_id: str, user: dict = Depends(require_sso_user)):
     """Fetch a single persistent job record."""
-    doc = find_job(job_id)
+    try:
+        doc = find_job(job_id)
+    except Exception as exc:
+        logger.error("[PRD] Failed to find job %s: %s", job_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to find job") from exc
     if doc is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_doc_to_detail(doc)

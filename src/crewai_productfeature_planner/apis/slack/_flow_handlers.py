@@ -202,10 +202,20 @@ def make_progress_poster(
         elif event_type == "exec_summary_iteration":
             iteration = details.get("iteration", 0)
             max_iter = details.get("max_iterations", 0)
+            critique_summary = details.get("critique_summary", "")
             msg = (
                 f":writing_hand: Refining *Executive Summary*… "
                 f"(iteration {iteration}/{max_iter})"
             )
+            if critique_summary:
+                preview = critique_summary[:300]
+                if len(critique_summary) > 300:
+                    preview += "…"
+                msg += f"\n\n*What I'm working on:*\n>{preview}"
+                msg += (
+                    "\n\n_Reply in this thread if you'd like to "
+                    "adjust the direction._"
+                )
 
         elif event_type == "executive_summary_complete":
             iters = details.get("iterations", 0)
@@ -281,6 +291,7 @@ def make_progress_poster(
             total = details.get("total_sections", 0)
             iteration = details.get("iteration", 0)
             max_iter = details.get("max_iterations", 0)
+            critique_summary = details.get("critique_summary", "")
             emoji = _SECTION_EMOJIS.get(
                 details.get("section_key", ""), ":writing_hand:",
             )
@@ -288,6 +299,16 @@ def make_progress_poster(
                 f"{emoji} [{step}/{total}] Refining _{title}_… "
                 f"(iteration {iteration}/{max_iter})"
             )
+            if critique_summary:
+                # Truncate for Slack readability
+                preview = critique_summary[:300]
+                if len(critique_summary) > 300:
+                    preview += "…"
+                msg += f"\n\n*What I'm working on:*\n>{preview}"
+                msg += (
+                    "\n\n_Reply in this thread if you'd like to "
+                    "adjust the direction._"
+                )
 
         elif event_type == "section_complete":
             title = details.get("section_title", "")
@@ -383,6 +404,140 @@ def resolve_exec_feedback(run_id: str, action: str, feedback_text: str | None = 
         info["feedback"] = feedback_text
         info["event"].set()
         return True
+
+
+# ---------------------------------------------------------------------------
+# Auto-mode gate factories (non-blocking, post summaries only)
+# ---------------------------------------------------------------------------
+
+
+def make_auto_exec_summary_gate(
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str, str, int], tuple[str, str | None]]":
+    """Return an auto-mode exec summary gate that never blocks.
+
+    Posts a brief summary of each iteration for user visibility, drains
+    any queued feedback from thread replies, and auto-approves otherwise.
+    """
+
+    def _callback(
+        content: str,
+        idea: str,
+        cb_run_id: str,
+        iteration: int,
+    ) -> tuple[str, str | None]:
+        if iteration == 0:
+            return ("skip", None)
+
+        # Check for any user feedback queued via thread replies
+        effective_run_id = cb_run_id or run_id
+        if effective_run_id:
+            try:
+                from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state import (
+                    drain_queued_feedback,
+                )
+                queued = drain_queued_feedback(effective_run_id)
+                if queued:
+                    logger.info(
+                        "[AutoExecGate] Using queued feedback at iteration %d "
+                        "for run_id=%s (%d chars)",
+                        iteration, effective_run_id, len(queued),
+                    )
+                    try:
+                        send_tool.run(
+                            channel=channel,
+                            text=(
+                                ":memo: Got your feedback! Incorporating it "
+                                "into the next iteration\u2026"
+                            ),
+                            thread_ts=thread_ts,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return ("feedback", queued)
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Auto-skip — continue with AI critique
+        return ("skip", None)
+
+    return _callback
+
+
+def make_auto_exec_completion_gate(
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str, str, list[dict]], bool]":
+    """Return an auto-mode exec completion gate that never blocks.
+
+    Posts a brief note and auto-continues to section drafting.
+    """
+
+    def _callback(
+        executive_summary: str,
+        idea: str,
+        cb_run_id: str,
+        iterations: list[dict],
+    ) -> bool:
+        total_iterations = len(iterations)
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    f":white_check_mark: Executive Summary finalized after "
+                    f"{total_iterations} iteration(s). Auto-continuing to "
+                    f"section-level PRD drafting\u2026"
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return True  # continue to section drafting
+
+    return _callback
+
+
+def make_auto_requirements_gate(
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str, str, list[dict] | None], bool]":
+    """Return an auto-mode requirements gate that never blocks.
+
+    Posts a brief note and auto-approves requirements.
+    """
+
+    def _callback(
+        requirements: str,
+        idea: str,
+        cb_run_id: str,
+        breakdown_history: list[dict] | None = None,
+    ) -> bool:
+        iteration_count = len(breakdown_history) if breakdown_history else 0
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    f":white_check_mark: Requirements breakdown complete "
+                    f"({iteration_count} iteration(s)). Auto-continuing to "
+                    f"executive summary\u2026"
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return False  # False = approved, continue
+
+    return _callback
 
 
 def make_exec_summary_gate(
@@ -801,23 +956,24 @@ def make_requirements_approval_gate(
 
 
 def handle_publish_intent(channel: str, thread_ts: str, user: str, send_tool) -> None:
-    """Publish all pending PRDs to Confluence and create Jira tickets."""
+    """Publish all pending PRDs to Confluence (user-triggered only).
+
+    Jira tickets are NOT created here.  After Confluence is published,
+    the user is offered a "Create Jira Skeleton" button as the next step.
+    """
     ack = (
-        f"<@{user}> :gear: Publishing all pending PRDs to Confluence and "
-        "creating Jira tickets… I'll post the results shortly."
+        f"<@{user}> :gear: Publishing all pending PRDs to Confluence… "
+        "I'll post the results shortly."
     )
     send_tool.run(channel=channel, text=ack, thread_ts=thread_ts)
     append_to_thread(channel, thread_ts, "assistant", ack)
 
     try:
         from crewai_productfeature_planner.apis.publishing.service import (
-            publish_all_and_create_tickets,
+            publish_confluence_all,
         )
 
-        result = publish_all_and_create_tickets()
-
-        conf = result.get("confluence", {})
-        jira = result.get("jira", {})
+        conf = publish_confluence_all()
 
         lines = [f"<@{user}> :white_check_mark: *Publishing complete!*\n"]
 
@@ -832,50 +988,34 @@ def handle_publish_intent(channel: str, thread_ts: str, user: str, send_tool) ->
             msg = conf.get("message", "No pending PRDs to publish")
             lines.append(f"*Confluence:* {msg}")
 
-        # Jira summary
-        jira_count = jira.get("completed", 0)
-        jira_fail = jira.get("failed", 0)
-        if jira_count or jira_fail:
-            lines.append(f"*Jira:* {jira_count} completed, {jira_fail} failed")
-            for r in jira.get("results", []):
-                keys = r.get("ticket_keys", [])
-                if keys:
-                    lines.append(f"  • run `{r.get('run_id', '')[:8]}…` → {', '.join(keys)}")
-        else:
-            msg = jira.get("message", "No pending Jira deliveries")
-            lines.append(f"*Jira:* {msg}")
-
-        # Next-step: offer Jira button when Confluence was published
-        # but no Jira tickets were created.
-        if pub_count and not jira_count:
-            # Find a run_id from the just-published results
-            published_results = conf.get("results", [])
-            button_run_id = ""
-            if published_results:
-                button_run_id = published_results[0].get("run_id", "")
-
-            if button_run_id:
-                from crewai_productfeature_planner.apis.slack.blocks import (
-                    jira_only_blocks,
-                )
-                from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
-
-                jira_blocks = jira_only_blocks(button_run_id)
-                client = _get_slack_client()
-                if client and jira_blocks:
-                    try:
-                        client.chat_postMessage(
-                            channel=channel,
-                            thread_ts=thread_ts,
-                            blocks=jira_blocks,
-                            text="Create Jira Skeleton",
-                        )
-                    except Exception as exc:
-                        logger.debug("Jira next-step button post failed: %s", exc)
-
         summary = "\n".join(lines)
         send_tool.run(channel=channel, text=summary, thread_ts=thread_ts)
         append_to_thread(channel, thread_ts, "assistant", summary)
+
+        # Next-step: offer Jira button for each published PRD
+        if pub_count:
+            published_results = conf.get("results", [])
+            for r in published_results:
+                button_run_id = r.get("run_id", "")
+                if button_run_id:
+                    from crewai_productfeature_planner.apis.slack.blocks import (
+                        jira_only_blocks,
+                    )
+                    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+                    jira_blocks = jira_only_blocks(button_run_id)
+                    client = _get_slack_client()
+                    if client and jira_blocks:
+                        try:
+                            client.chat_postMessage(
+                                channel=channel,
+                                thread_ts=thread_ts,
+                                blocks=jira_blocks,
+                                text="Create Jira Skeleton",
+                            )
+                        except Exception as exc:
+                            logger.debug("Jira next-step button post failed: %s", exc)
+                    break  # Only show one Jira button
 
     except Exception as exc:
         err_msg = f"<@{user}> :x: Publishing failed: {exc}"
@@ -957,6 +1097,9 @@ def handle_create_jira_intent(
 ) -> None:
     """Find the latest completed PRD and kick off the Jira skeleton phase.
 
+    Requires Confluence to be published first.  If not published,
+    guides the user to publish to Confluence instead.
+
     When the user types "create jira" in Slack (text intent), there is
     no ``run_id`` attached.  We resolve it by looking for the most recent
     completed product in the active project, or — if no project session
@@ -1008,6 +1151,49 @@ def handle_create_jira_intent(
             append_to_thread(
                 channel, thread_ts, "assistant", "(no completed PRD for Jira)"
             )
+            return
+
+        # ── Check Confluence prerequisite ─────────────────────
+        from crewai_productfeature_planner.mongodb.product_requirements import (
+            get_delivery_record,
+        )
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_run_any_status,
+        )
+
+        doc = find_run_any_status(run_id)
+        record = get_delivery_record(run_id)
+        confluence_url = (
+            (record.get("confluence_url") if record else "")
+            or (doc.get("confluence_url") if doc else "")
+        )
+        if not confluence_url:
+            from crewai_productfeature_planner.apis.slack.blocks import (
+                publish_only_blocks,
+            )
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+            msg = (
+                f"<@{user}> :warning: Confluence must be published before "
+                "creating Jira tickets. Please publish to Confluence first."
+            )
+            client = _get_slack_client()
+            if client:
+                pub_blocks = publish_only_blocks(run_id)
+                try:
+                    client.chat_postMessage(
+                        channel=channel, thread_ts=thread_ts,
+                        blocks=[
+                            {"type": "section", "text": {"type": "mrkdwn", "text": msg}},
+                            *pub_blocks,
+                        ],
+                        text=msg,
+                    )
+                except Exception:
+                    send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
+            else:
+                send_tool.run(channel=channel, text=msg, thread_ts=thread_ts)
+            append_to_thread(channel, thread_ts, "assistant", msg)
             return
 
         # Delegate to the delivery action handler
@@ -1712,19 +1898,40 @@ def execute_archive_idea(
             logger.debug("Could not archive crewJob for %s", run_id, exc_info=True)
 
         idea_preview = idea[:500] + "\u2026" if len(idea) > 500 else idea
-        send_tool = SlackSendMessageTool()
-        send_tool.run(
-            channel=channel,
-            text=(
-                f"<@{user}> :white_check_mark: Archived run `{run_id}`.\n"
-                f"> _{idea_preview}_\n"
-                "The idea has been removed from your active list."
-            ),
-            thread_ts=thread_ts,
+
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        client = _get_slack_client()
+
+        success_text = (
+            f"<@{user}> :white_check_mark: Archived run `{run_id}`.\n"
+            f"> _{idea_preview}_\n"
+            "The idea has been removed from your active list."
         )
+
+        # Post the success message
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=success_text,
+                )
+            except Exception:
+                send_tool = SlackSendMessageTool()
+                send_tool.run(channel=channel, text=success_text, thread_ts=thread_ts)
+        else:
+            send_tool = SlackSendMessageTool()
+            send_tool.run(channel=channel, text=success_text, thread_ts=thread_ts)
+
         append_to_thread(channel, thread_ts, "assistant",
                          f"(archived {run_id})")
         logger.info("Archived idea run_id=%s by user=%s", run_id, user)
+
+        # Post the refreshed idea list (or a "New Idea" prompt)
+        _post_refreshed_idea_list(
+            doc, channel, thread_ts, user, client,
+        )
 
     except Exception as exc:
         logger.error("execute_archive_idea failed for %s: %s", run_id, exc)
@@ -1737,6 +1944,74 @@ def execute_archive_idea(
             )
         except Exception:
             pass
+
+
+def _post_refreshed_idea_list(
+    archived_doc: dict,
+    channel: str,
+    thread_ts: str,
+    user: str,
+    client,
+) -> None:
+    """Post the remaining idea list after an archive, or a 'New Idea' button."""
+    try:
+        project_id = archived_doc.get("project_id") or ""
+        if not project_id:
+            return
+
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_ideas_by_project,
+        )
+
+        remaining = find_ideas_by_project(project_id, channel=channel)
+
+        if not client:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+        if not client:
+            return
+
+        if remaining:
+            from crewai_productfeature_planner.apis.slack._session_ideas import (
+                _backfill_missing_idea_titles,
+            )
+            from crewai_productfeature_planner.apis.slack.blocks import idea_list_blocks
+            from crewai_productfeature_planner.mongodb.project_config import get_project
+
+            proj = get_project(project_id)
+            project_name = (proj or {}).get("name", "your project")
+
+            _backfill_missing_idea_titles(remaining)
+            blocks = idea_list_blocks(remaining, user, project_name, project_id)
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                blocks=blocks,
+                text=f"Remaining ideas for {project_name}",
+            )
+        else:
+            from crewai_productfeature_planner.apis.slack.blocks._command_blocks import BTN_NEW_IDEA
+
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"<@{user}> :sparkles: No more active ideas. Ready to start a new one?",
+                        },
+                    },
+                    {"type": "actions", "elements": [BTN_NEW_IDEA]},
+                ],
+                text="No more active ideas. Ready to start a new one?",
+            )
+    except Exception as exc:
+        logger.debug(
+            "Failed to post refreshed idea list after archive: %s",
+            exc, exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------

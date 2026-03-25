@@ -4,6 +4,105 @@
 
 ---
 
+## Session — 2026-03-25 (v0.40.0)
+
+**Scope**: Engagement Manager Project Knowledge Awareness
+**Version**: v0.39.0 → v0.40.0
+
+### Work Done
+1. **_build_project_tools()** — New function in agent.py builds FileReadTool + DirectoryReadTool scoped to a project's knowledge folder (`src/projects/{name}/`). Loads completed-ideas context from MongoDB via `load_completed_ideas_context()`. Returns `(tools, ideas_context)` tuple; graceful fallback on DB/filesystem errors.
+
+2. **create_engagement_manager(project_id)** — Now accepts optional `project_id`. When provided, agent receives file-reading tools and ideas context is appended to backstory, enabling holistic project knowledge queries.
+
+3. **handle_unknown_intent(project_id)** — Now accepts optional `project_id`, builds `{project_knowledge}` template variable from completed ideas, passes to task description.
+
+4. **engagement_response_task rewrite** — Task now classifies user messages into: (A) Knowledge question — summarize/compare ideas, detect duplication/synergies using file tools; (B) Action intent — recommend button clicks; (C) Idea feedback/steering. New `{project_knowledge}` template variable.
+
+5. **agent.yaml backstory update** — Added "Project Knowledge & Idea Awareness" section describing file-reading capabilities, idea comparison, and duplication detection.
+
+6. **_message_handler.py** — `handle_unknown_intent()` call now passes `project_id=session_project_id`.
+
+### Files Modified
+- `src/.../agents/engagement_manager/agent.py` — new `_build_project_tools()`, updated `create_engagement_manager()` + `handle_unknown_intent()`
+- `src/.../agents/engagement_manager/config/tasks.yaml` — engagement_response_task rewritten
+- `src/.../agents/engagement_manager/config/agent.yaml` — backstory expanded
+- `src/.../apis/slack/_message_handler.py` — project_id passthrough
+- `src/.../version.py` — v0.40.0 CodexEntry
+- `tests/agents/test_engagement_manager.py` — 12 new tests (59 total)
+- `obsidian/Sessions/Session Log.md` — v0.40.0 entry
+- `obsidian/Changelog/Version History.md` — v0.40.0 entry
+
+### Tests
+- 59 engagement manager tests passing (12 new: 4 _build_project_tools, 3 create with project, 4 handle_unknown_intent with project, 1 YAML placeholder)
+- 2614 total tests passing
+
+---
+
+## Session — 2026-03-24 (v0.39.0)
+
+**Scope**: Engagement Manager PRD Orchestrator — Heartbeats, Steering, Session Isolation
+**Version**: v0.38.0 → v0.39.0
+
+### Work Done
+1. **agent.yaml rewrite** — Expanded role to "Engagement Manager, PRD Orchestrator & Navigation Guide". Full backstory with agent team knowledge, 2-step orchestration strategy (Step 1 sequential: Idea Refinement → Exec Summary; Step 2 parallel/coordinated: remaining agents), heartbeat protocol, user steering detection, session isolation.
+
+2. **3 new tasks in tasks.yaml** — `idea_to_prd_orchestration_task` (full lifecycle orchestration plan with template variables for idea, user, run, phase, history, steering), `heartbeat_update_task` (emoji-prefixed status updates), `user_steering_detection_task` (IGNORE/STEERING/QUESTION/FEEDBACK/UNRELATED classification with session isolation fast-path).
+
+3. **5 new functions in agent.py** — `generate_heartbeat()` (template-based instant heartbeats, no LLM), `make_heartbeat_progress_callback()` (wraps PRD flow progress events into user-friendly messages via _PROGRESS_EVENT_MAP), `detect_user_steering()` (LLM-powered classification with fast-path session isolation for non-initiator messages), `_parse_steering_result()` (JSON/keyword parser), `orchestrate_idea_to_prd()` (wraps run_prd_flow with heartbeat callbacks and session isolation).
+
+4. **.gitignore** — Changed `output/prds/` to `output/` to ignore entire output folder.
+
+5. **conftest.py fix** — Raised recursion limit to 5000 for crewai 1.9.x + starlette/pydantic compatibility (model_rebuild exceeds default 1000 limit).
+
+### Files Modified
+- `.gitignore` — output/ folder fully ignored
+- `src/.../agents/engagement_manager/config/agent.yaml` — complete rewrite
+- `src/.../agents/engagement_manager/config/tasks.yaml` — 3 new tasks added
+- `src/.../agents/engagement_manager/agent.py` — 5 new functions, expanded imports
+- `src/.../agents/engagement_manager/__init__.py` — 4 new exports
+- `src/.../version.py` — v0.39.0 CodexEntry
+- `tests/conftest.py` — recursion limit fix
+- `tests/agents/test_engagement_manager.py` — 32 new tests (47 total)
+- `obsidian/Changelog/Version History.md` — v0.39.0 entry
+- `obsidian/Agents/Agent Roles.md` — expanded Engagement Manager section
+- `obsidian/Architecture/Module Map.md` — updated engagement_manager description
+
+### Tests
+- 47 engagement manager tests passing (32 new: 3 YAML config, 7 heartbeat, 4 progress callback, 3 steering detection, 4 steering parser, 6 orchestration, 2 progress event map + 15 existing)
+
+---
+
+## Session — 2026-03-24 (v0.38.0)
+
+**Scope**: Publication Safety Overhaul — User-Triggered Publishing Only
+**Version**: v0.37.1 → v0.38.0
+
+### Work Done
+1. **Duplicate Confluence fix** — `publish_to_confluence()` now accepts `page_id` parameter; when stored `confluence_page_id` exists in delivery record, page is updated by ID instead of creating duplicates. Added `_get_page_by_id()` to `confluence_tool.py`. Orchestrator `_confluence.py` and publishing service pass stored page_id.
+
+2. **Auto-publish removal** — `_run_auto_post_completion()` gutted to log + notify only (no crew kickoff). `_run_phased_post_completion()` requires Confluence already published before starting Jira. Startup functions (`_cli_startup`, `components/startup`) now discovery-only. File watcher disabled. `build_startup_markdown_review_stage()` always skips.
+
+3. **Confluence prerequisite for Jira** — All Jira creation paths (`_delivery_action_handler`, `_product_list_handler`, `_flow_handlers`) check for `confluence_url` before allowing Jira. User guided to publish Confluence first with interactive button. Removed `require_confluence=False` overrides.
+
+### Files Modified
+- `src/.../tools/confluence_tool.py` — added `_get_page_by_id()`, `page_id` param to `publish_to_confluence()`
+- `src/.../orchestrator/_confluence.py` — pass stored page_id for updates
+- `src/.../apis/publishing/service.py` — pass stored page_id in `publish_confluence_single/all()`
+- `src/.../flows/_finalization.py` — gutted auto-publish, Confluence prerequisite in phased
+- `src/.../orchestrator/_startup_review.py` — always-skip discovery-only
+- `src/.../components/startup.py` — discovery-only
+- `src/.../_cli_startup.py` — discovery-only
+- `src/.../apis/publishing/watcher.py` — disabled
+- `src/.../apis/slack/_flow_handlers.py` — Confluence-only publish, Jira button after
+- `src/.../apis/slack/interactions_router/_delivery_action_handler.py` — Confluence prerequisite check
+- `src/.../apis/slack/interactions_router/_product_list_handler.py` — Confluence prerequisite check
+- `tests/` — 23 tests updated across 5 test files
+
+### Test Results
+- 2571 passed, 0 failed
+
+---
+
 ## Session 001 — 2026-03-08
 
 **Scope**: Obsidian Knowledge Base Setup
@@ -1784,5 +1883,192 @@ skipped to avoid breaking functionality.
 - `obsidian/Architecture/Module Map.md` — Added project_knowledge.py
 - `obsidian/Changelog/Version History.md` — v0.34.0 entry
 - `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session 055 — 2026-03-22
+
+**Scope**: Engagement Manager Agent
+**Version**: v0.34.0 → v0.35.0
+
+### Work Done
+- Created new CrewAI agent: **Engagement Manager** (`agents/engagement_manager/`)
+  - YAML config: role, goal, backstory defining a navigation guide for unknown intents
+  - Task config: engagement_response_task with template variables for user message, conversation history, active context, and available system actions
+  - Python factory: `create_engagement_manager()` + `handle_unknown_intent()` runner
+  - Uses `GEMINI_MODEL` (basic tier) — lightweight conversational routing, not deep reasoning
+  - Override via `ENGAGEMENT_MANAGER_MODEL` env var
+- Integrated into Slack message handler:
+  - `unknown` intents now routed through the engagement manager agent instead of static fallback
+  - Agent receives user message, conversation history, and active project context
+  - Produces context-aware response with relevant action button suggestions
+  - Graceful fallback to static help message if agent fails
+  - `general_question` intents still use the LLM reply directly (kept separate)
+  - Context-aware buttons: shows New Idea + Help (no project) or New Idea + List Ideas + Resume PRD + Help (with project)
+- Added autouse mock fixture in `tests/apis/slack/conftest.py` to prevent real LLM calls in Slack tests
+- Updated agents `conftest.py` to mock engagement manager LLM builder
+
+### Tests Added (16 new, 2512 total)
+- `tests/agents/test_engagement_manager.py`:
+  - Factory: credentials required, accepts API key, accepts project, role content, no tools, no delegation, respects context window
+  - LLM config: default model, ENGAGEMENT_MANAGER_MODEL override, GEMINI_MODEL fallback
+  - YAML: agent.yaml loads with expected keys, tasks.yaml loads with template placeholders
+  - Runner: returns response, passes history, includes context, propagates exceptions
+
+### Files Modified
+- `src/.../agents/engagement_manager/` — NEW: agent.py, __init__.py, config/agent.yaml, config/tasks.yaml
+- `src/.../apis/slack/_message_handler.py` — Added `_handle_engagement_manager()`, `general_question` handler, replaced static fallback
+- `src/.../version.py` — v0.35.0
+- `tests/agents/test_engagement_manager.py` — NEW: 16 tests
+- `tests/agents/conftest.py` — Added engagement manager LLM mock
+- `tests/apis/slack/conftest.py` — Added engagement manager autouse mock
+- `obsidian/Agents/Agent Roles.md` — Engagement Manager section
+- `obsidian/Agents/LLM Model Tiers.md` — Added to Basic tier table
+- `obsidian/Architecture/Module Map.md` — Added engagement_manager/ entry
+- `obsidian/Architecture/Environment Variables.md` — Added ENGAGEMENT_MANAGER_MODEL
+- `obsidian/Changelog/Version History.md` — v0.35.0 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session 056 — 2026-03-23
+
+**Scope**: Fully Automated PRD Flow + Active-Flow Config Guard
+**Version**: v0.35.0 → v0.36.0
+
+### Work Done
+
+**Feature 1 — Active-Flow Config Guard:**
+- New `has_active_idea_flow(project_id)` MongoDB query in `_queries.py` — checks if any working idea with status "inprogress" exists for the project
+- Guard in `_message_handler.py` — blocks `update_config` and `configure_memory` intents when an idea flow is active
+- Guard in `_command_handler.py` — blocks `cmd_configure_project` and `cmd_configure_memory` button clicks during active flows
+- Both guards post a denial message explaining the restriction with a View Ideas button
+
+**Feature 2 — Fully Automated Flow:**
+- Default mode switched from interactive to automated — keywords "interactive", "step-by-step", "manual", "walk me through" opt-in to interactive mode
+- Three auto-mode gate factories in `_flow_handlers.py`:
+  - `make_auto_exec_summary_gate()` — drains queued feedback, auto-approves
+  - `make_auto_exec_completion_gate()` — posts note, returns True (continue)
+  - `make_auto_requirements_gate()` — posts note, returns False (approved)
+- Router branches on `auto_approve` to wire auto vs blocking gates
+- Enhanced progress summaries — `section_iteration` and `exec_summary_iteration` events include `critique_summary` showing what the agent is working on
+- Progress poster renders critique summaries as "What I'm working on:" blocks with feedback invitation
+
+**Feature 3 — Auto-Resume on Server Restart:**
+- New `find_resumable_on_startup()` in `_queries.py` — partitions unfinalized ideas into resumable (has Slack context) vs failed (no context)
+- Startup lifespan in `apis/__init__.py` replaced `fail_unfinalized_on_startup()` with `find_resumable_on_startup()` + `_auto_resume_flows()`
+- New `_run_slack_resume_flow()` in `router.py` — builds auto-mode callbacks, calls `resume_prd_flow`, posts completion/pause/error to original Slack thread
+
+### Tests Added (29 new, 2541 total)
+- `tests/apis/slack/test_active_flow_guard.py` — 13 tests
+- `tests/apis/slack/test_automated_flow.py` — 16 tests
+- Updated `test_exec_summary_completion_gate.py` — fixed regression + added auto-mode test
+- Updated `test_interactive_default.py` — inverted defaults to match new automated-first behavior
+
+### Files Modified
+- `src/.../mongodb/working_ideas/_queries.py` — `has_active_idea_flow()`, `find_resumable_on_startup()`
+- `src/.../mongodb/working_ideas/repository.py` — Exported new functions
+- `src/.../apis/slack/_message_handler.py` — Flow guard, default mode switch
+- `src/.../apis/slack/interactions_router/_command_handler.py` — Flow guard for config actions
+- `src/.../apis/slack/_flow_handlers.py` — Auto-mode gate factories, enhanced progress
+- `src/.../apis/slack/router.py` — Auto vs blocking gate branching, `_run_slack_resume_flow()`
+- `src/.../flows/_executive_summary.py` — critique_summary in progress notification
+- `src/.../flows/_section_loop.py` — critique_summary in progress notification
+- `src/.../apis/__init__.py` — Auto-resume startup logic
+- `src/.../version.py` — v0.36.0
+- `tests/apis/slack/test_active_flow_guard.py` — NEW: 13 tests
+- `tests/apis/slack/test_automated_flow.py` — NEW: 16 tests
+- `tests/apis/slack/test_exec_summary_completion_gate.py` — Updated + 1 new test
+- `tests/apis/slack/test_interactive_default.py` — Inverted default behavior tests
+- `obsidian/Changelog/Version History.md` — v0.36.0 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session 057 — 2026-03-23
+
+**Scope**: Server Crash-Prevention Hardening
+**Version**: v0.36.0 → v0.37.0
+
+### Work Done
+
+**Comprehensive Reliability Audit:**
+- Three sub-agent audits identified 26+ crash vectors across APIs, webhooks, tools
+- Handler-level audit found 7/11 interaction handlers with no top-level protection
+
+**_safe_handler() Wrapper (core pattern):**
+- New `_safe_handler()` in `_dispatch.py` — wraps handler with team-id injection + try/except
+- On exception: logs ERROR with `exc_info=True`, posts `:x: Something went wrong` to Slack channel/thread
+- Swallows exception to keep thread pool healthy
+- Replaced all 13 interaction handler dispatch calls from `_with_team` to `_safe_handler`
+
+**Endpoint Protection:**
+- Global exception handler enhanced with `exc_info=True` for full tracebacks
+- PRD router: `list_resumable_runs`, `list_all_jobs`, `get_job` wrapped → HTTPException(500)
+- PRD kickoff: `find_active_job()` wrapped → HTTPException(500)
+- OAuth router: `_exchange_code` and `_apply_tokens` wrapped with catch-all handlers
+- SSO webhooks: handler dispatch wrapped in try/except with traceback logging
+
+**Tool-Level Fixes:**
+- Jira `_http.py`: `json.JSONDecodeError` caught → `RuntimeError("Jira API returned invalid JSON")`
+- Confluence `confluence_tool.py`: same pattern for invalid JSON responses
+
+### Tests Added (14 new, 2560 total)
+- `tests/apis/test_crash_prevention.py` — NEW: 14 tests covering _safe_handler, global exception handler, Jira/Confluence JSON decode, PRD router MongoDB failures
+
+### Files Modified
+- `src/.../apis/__init__.py` — `exc_info=True` in global exception handler
+- `src/.../apis/slack/interactions_router/_dispatch.py` — `_safe_handler()` + 13 dispatch replacements
+- `src/.../apis/sso_webhooks.py` — Handler dispatch wrapped
+- `src/.../apis/slack/oauth_router.py` — _exchange_code and _apply_tokens hardened
+- `src/.../apis/prd/router.py` — 3 MongoDB query endpoints protected
+- `src/.../apis/prd/_route_actions.py` — kickoff find_active_job wrapped
+- `src/.../tools/jira/_http.py` — JSONDecodeError catch
+- `src/.../tools/confluence_tool.py` — JSONDecodeError catch
+- `src/.../version.py` — v0.37.0
+- `tests/apis/test_crash_prevention.py` — NEW: 14 tests
+- `obsidian/Changelog/Version History.md` — v0.37.0 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session — 2026-03-24
+
+**Scope**: Slack thread recovery & flow-aware summaries
+**Version**: v0.37.0 → v0.37.1
+
+### Bugs Fixed
+
+**Issue #1 — Thread messages silently dropped after cache expiry**
+- Auto-mode flows (default since v0.36.0) don't register in `_interactive_runs`
+- After the 30-min in-memory cache TTL expires, thread messages were silently
+  dropped at events_router.py line 404
+- **Fix**: Added `find_idea_by_thread()` MongoDB query as a final fallback before
+  dropping the message. Queries `workingIdeas` by `slack_channel` +
+  `slack_thread_ts`. On match, re-registers the thread in cache via `touch_thread()`.
+
+**Issue #2 — "Give me a summary" gets generic help instead of flow status**
+- LLM classifier doesn't know about flow context, so "Give me a summary of the
+  refined idea" → `general_question` → generic help text
+- **Fix**: Added `_is_summary_request()` phrase detector (14 phrases) and
+  `_build_flow_summary()` builder. When `general_question` + summary phrase +
+  flow doc found → posts structured flow status with emoji, sections done/total,
+  idea text, and section names.
+
+### Files Modified
+- `src/.../mongodb/working_ideas/_queries.py` — `find_idea_by_thread()` function
+- `src/.../mongodb/working_ideas/repository.py` — export `find_idea_by_thread`
+- `src/.../apis/slack/events_router.py` — `has_flow_thread` fallback check
+- `src/.../apis/slack/_message_handler.py` — `_SUMMARY_PHRASES`, `_is_summary_request()`,
+  `_build_flow_summary()`, flow-aware `general_question` handler
+- `tests/apis/slack/test_flow_thread_routing.py` — NEW: 16 tests
+- `src/.../version.py` — v0.37.1
+
+### Tests
+- 16 new tests (4 thread recovery, 2 phrase detection, 4 summary builder,
+  3 integration, 3 MongoDB query)
+- 2571 total (all passing, 0 failures)
+
+---
 
 ---

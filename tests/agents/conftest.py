@@ -29,5 +29,9 @@ def _mock_agent_llm_builders():
             "crewai_productfeature_planner.agents.requirements_breakdown.agent._build_breakdown_llm",
             return_value="gemini/gemini-3-flash-preview",
         ),
+        patch(
+            "crewai_productfeature_planner.agents.engagement_manager.agent._build_engagement_llm",
+            return_value="gemini/gemini-3-flash-preview",
+        ),
     ):
         yield

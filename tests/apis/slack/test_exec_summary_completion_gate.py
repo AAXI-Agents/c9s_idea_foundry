@@ -400,10 +400,48 @@ class TestSlackPrdFlowCompletionGateWiring:
         with patch(
             "crewai_productfeature_planner.mongodb.working_ideas.repository.save_slack_context",
         ):
-            _run_slack_prd_flow("run_X", "my idea", "C1", "T1")
+            _run_slack_prd_flow(
+                "run_X", "my idea", "C1", "T1", auto_approve=False,
+            )
 
         # Verify run_prd_flow was called with executive_summary_callback
         mock_run_prd.assert_called_once()
         call_kwargs = mock_run_prd.call_args[1]
         assert "executive_summary_callback" in call_kwargs
         assert call_kwargs["executive_summary_callback"] is mock_completion_gate.return_value
+
+    @patch(f"{_FH}.make_auto_exec_completion_gate")
+    @patch(f"{_FH}.make_auto_exec_summary_gate")
+    @patch(f"{_FH}.make_auto_requirements_gate")
+    @patch(f"{_FH}.make_progress_poster")
+    @patch(f"{_SLACK_TOOLS}.SlackSendMessageTool")
+    @patch(f"{_SLACK_TOOLS}.SlackPostPRDResultTool")
+    @patch(f"{_SERVICE}.run_prd_flow")
+    @patch("crewai_productfeature_planner.mongodb.crew_jobs.repository.create_job")
+    def test_auto_completion_gate_used_when_auto_approve(
+        self,
+        _mock_create_job,
+        mock_run_prd,
+        _mock_post_tool,
+        _mock_send_cls,
+        _mock_progress,
+        _mock_auto_req,
+        _mock_auto_exec,
+        mock_auto_completion,
+    ):
+        """When auto_approve=True (default), auto-mode gates are wired."""
+        from crewai_productfeature_planner.apis.slack.router import (
+            _run_slack_prd_flow,
+        )
+
+        mock_auto_completion.return_value = MagicMock()
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas.repository.save_slack_context",
+        ):
+            _run_slack_prd_flow("run_Y", "my idea", "C2", "T2")
+
+        mock_run_prd.assert_called_once()
+        call_kwargs = mock_run_prd.call_args[1]
+        assert "executive_summary_callback" in call_kwargs
+        assert call_kwargs["executive_summary_callback"] is mock_auto_completion.return_value

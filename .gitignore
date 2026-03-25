@@ -33,7 +33,7 @@ logs/
 *.old
 
 # ── Generated output ─────────────────────────────────────────
-output/prds/
+output/
 src/output/
 
 # ── Obsidian local config ────────────────────────────────────

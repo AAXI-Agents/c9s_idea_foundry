@@ -2077,6 +2077,187 @@ _CODEX: list[CodexEntry] = [
             "34 new tests, 2496 total."
         ),
     ),
+    CodexEntry(
+        "0.35.0",
+        date(2026, 3, 22),
+        (
+            "Engagement Manager agent — new CrewAI agent for unknown intent "
+            "handling: "
+            "(1) New agents/engagement_manager/ module with YAML config, "
+            "Python factory, and handle_unknown_intent() runner. "
+            "(2) Uses GEMINI_MODEL (basic tier) for lightweight "
+            "conversational routing — analyses user message + conversation "
+            "history + active project context to suggest the right action. "
+            "(3) Integrated into Slack message handler — unknown intents "
+            "now routed through the engagement manager instead of static "
+            "fallback text. General questions still use LLM reply directly. "
+            "(4) Graceful fallback — if agent fails, falls back to static "
+            "help message with action buttons. "
+            "(5) Context-aware button suggestions — shows relevant buttons "
+            "based on whether user has an active project. "
+            "16 new tests, 2512 total."
+        ),
+    ),
+    CodexEntry(
+        "0.36.0",
+        date(2026, 3, 23),
+        (
+            "Fully automated PRD flow + active-flow config guard: "
+            "(1) Default mode switched from interactive to automated — all "
+            "approval gates (exec summary, completion, requirements) now "
+            "auto-approve with progress summaries posted to Slack. Users "
+            "opt-in to interactive mode with keywords ('interactive', "
+            "'step-by-step', 'manual', 'walk me through'). "
+            "(2) Enhanced progress summaries — section_iteration and "
+            "exec_summary_iteration events now include critique_summary "
+            "showing what the agent is working on; Slack messages invite "
+            "thread replies to steer direction. "
+            "(3) Auto-resume on server restart — startup lifespan uses new "
+            "find_resumable_on_startup() to partition unfinalized ideas "
+            "into resumable (has Slack context) vs failed (no context). "
+            "Resumable flows auto-resume in background threads via "
+            "_run_slack_resume_flow(). "
+            "(4) Config guard — project configuration (update_config, "
+            "configure_memory, cmd_configure_project, cmd_configure_memory) "
+            "blocked when an idea flow is in-progress for the active "
+            "project. Uses new has_active_idea_flow() MongoDB query. "
+            "29 new tests, 2541 total."
+        ),
+    ),
+    CodexEntry(
+        "0.37.0",
+        date(2026, 3, 23),
+        (
+            "Server crash-prevention hardening for 99.99% uptime: "
+            "(1) _safe_handler() wrapper — all 13 Slack interaction "
+            "handler dispatch calls now wrapped with crash protection; "
+            "exceptions are caught, logged with full tracebacks, and a "
+            "user-visible ':x: Something went wrong' message posted to "
+            "the Slack thread. Thread pool stays healthy. "
+            "(2) Global exception handler enhanced — exc_info=True added "
+            "for full tracebacks on unhandled errors. "
+            "(3) PRD router MongoDB protection — list_resumable, "
+            "list_jobs, get_job endpoints wrapped in try/except returning "
+            "HTTPException(500) on database failures. "
+            "(4) PRD kickoff find_active_job guard — MongoDB failure "
+            "during active-job check no longer crashes the endpoint. "
+            "(5) OAuth router hardened — _exchange_code and _apply_tokens "
+            "wrapped with catch-all exception handlers. "
+            "(6) SSO webhooks handler protected — dispatch wrapped in "
+            "try/except with traceback logging. "
+            "(7) Jira & Confluence JSON decode protection — "
+            "json.JSONDecodeError now caught and raised as RuntimeError "
+            "instead of propagating as unhandled exception. "
+            "14 new crash-prevention tests, 2560 total."
+        ),
+    ),
+    CodexEntry(
+        "0.37.1",
+        date(2026, 3, 24),
+        (
+            "Slack thread recovery & flow-aware summaries: "
+            "(1) Flow thread recovery — thread messages no longer silently "
+            "dropped when the in-memory cache expires for auto-mode flows. "
+            "New find_idea_by_thread() MongoDB query checks workingIdeas "
+            "by slack_channel + slack_thread_ts as a final fallback "
+            "before ignoring the message. Matching threads re-register in "
+            "cache via touch_thread(). "
+            "(2) Flow-aware summary responses — 'Give me a summary / "
+            "status / progress' requests in flow threads now return a "
+            "structured flow status (emoji status label, sections "
+            "done/total, idea text, completed & remaining section names) "
+            "instead of a generic LLM-generated help reply. "
+            "New _is_summary_request() phrase detector and "
+            "_build_flow_summary() builder in _message_handler.py. "
+            "16 new tests (4 thread recovery, 8 summary/phrase, "
+            "3 integration, 3 MongoDB query), 2587 total."
+        ),
+    ),
+    CodexEntry(
+        "0.38.0",
+        date(2026, 3, 24),
+        (
+            "Publication safety overhaul — user-triggered publishing only: "
+            "(1) Duplicate Confluence fix — publish_to_confluence() now "
+            "accepts page_id parameter; when a stored confluence_page_id "
+            "exists in the delivery record, the page is updated by ID "
+            "instead of creating a new one. Added _get_page_by_id() to "
+            "confluence_tool.py. Orchestrator _confluence.py and "
+            "publishing service pass stored page_id to prevent duplicates. "
+            "(2) Auto-publish removal — _run_auto_post_completion() no "
+            "longer calls any delivery crew; it only logs and notifies "
+            "prd_ready_for_publish. _run_phased_post_completion() requires "
+            "Confluence to be already published before starting Jira. "
+            "Startup functions (_cli_startup, components/startup) now only "
+            "discover and log pending items (discovery-only, no auto-publish). "
+            "File watcher (publishing/watcher.py) disabled — always returns "
+            "False. build_startup_markdown_review_stage() always skips. "
+            "(3) Confluence prerequisite for Jira — all Jira creation paths "
+            "(delivery_action_handler, product_list_handler, flow_handlers) "
+            "now check for confluence_url before allowing Jira creation. "
+            "If not published, user is guided to publish Confluence first "
+            "with an interactive button. Removed require_confluence=False "
+            "overrides from all Jira stage builders. "
+            "23 tests updated to match new behavior, 2571 total."
+        ),
+    ),
+    CodexEntry(
+        "0.39.0",
+        date(2026, 3, 24),
+        (
+            "Engagement Manager PRD orchestrator: "
+            "(1) agent.yaml rewritten — role expanded to 'Engagement Manager, "
+            "PRD Orchestrator & Navigation Guide' with full agent team "
+            "knowledge, 2-step orchestration strategy, heartbeat protocol, "
+            "user steering detection, and session isolation. "
+            "(2) tasks.yaml — 3 new tasks: idea_to_prd_orchestration_task "
+            "(full lifecycle plan with Step 1 sequential/Step 2 parallel), "
+            "heartbeat_update_task (emoji-prefixed status updates), "
+            "user_steering_detection_task (IGNORE/STEERING/QUESTION/"
+            "FEEDBACK/UNRELATED classification with session isolation). "
+            "(3) agent.py — 5 new functions: generate_heartbeat() "
+            "(template-based instant heartbeats), "
+            "make_heartbeat_progress_callback() (wraps PRD flow progress "
+            "events into user-friendly messages), detect_user_steering() "
+            "(LLM-powered message classification with fast-path session "
+            "isolation), _parse_steering_result() (JSON/keyword parser), "
+            "orchestrate_idea_to_prd() (wraps run_prd_flow with heartbeat "
+            "callbacks, session isolation, and progress tracking). "
+            "(4) .gitignore — output/ folder now fully ignored. "
+            "(5) conftest.py — recursion limit raised to 5000 for "
+            "crewai 1.9.x pydantic compatibility. "
+            "32 new tests (3 YAML config, 7 heartbeat, 4 progress callback, "
+            "3 steering detection, 4 steering parser, 6 orchestration, "
+            "2 progress event map), 47 engagement manager tests total."
+        ),
+    ),
+    CodexEntry(
+        "0.40.0",
+        date(2026, 3, 25),
+        (
+            "Engagement Manager project knowledge awareness: "
+            "(1) agent.py — new _build_project_tools(project_id) function "
+            "builds FileReadTool + DirectoryReadTool scoped to project's "
+            "knowledge folder and loads completed-ideas context from MongoDB; "
+            "create_engagement_manager() now accepts optional project_id and "
+            "appends ideas context to backstory; handle_unknown_intent() now "
+            "accepts project_id and passes {project_knowledge} to task "
+            "template. "
+            "(2) tasks.yaml — engagement_response_task rewritten with A/B/C "
+            "classification (knowledge question / action intent / steering), "
+            "new {project_knowledge} template variable, instructions for "
+            "using file tools to summarize/compare ideas and detect "
+            "duplication/synergies. "
+            "(3) agent.yaml — backstory expanded with 'Project Knowledge & "
+            "Idea Awareness' section describing file-reading capabilities, "
+            "idea comparison, and duplication detection. "
+            "(4) _message_handler.py — handle_unknown_intent() call now "
+            "passes project_id=session_project_id to enable project context. "
+            "12 new tests (4 _build_project_tools, 3 create_engagement_manager "
+            "with project, 4 handle_unknown_intent with project, 1 YAML "
+            "placeholder), 59 engagement manager tests, 2614 total."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,16 @@ safety-net fixtures:
 
 Individual tests that need finer-grained control can shadow
 these fixtures with their own patches.
+
+.. note::
+   CrewAI 1.9.x + newer starlette/sse-starlette versions produce
+   deeply-nested pydantic model hierarchies that exceed the default
+   recursion limit (1000) during ``model_rebuild``.  We raise it at
+   import time so every test (and the conftest import chain) succeeds.
 """
+
+import sys as _sys
+_sys.setrecursionlimit(max(_sys.getrecursionlimit(), 5000))
 
 import logging
 from logging.handlers import TimedRotatingFileHandler

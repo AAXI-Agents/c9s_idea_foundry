@@ -94,6 +94,112 @@ def _notify_terminated_flows(terminated: list[dict]) -> None:
     )
 
 
+def _auto_resume_flows(resumable: list[dict]) -> None:
+    """Auto-resume PRD flows that were interrupted by a server restart.
+
+    For each resumable run, posts a notification to the original Slack
+    thread and spawns a background thread to resume the PRD flow from
+    where it left off.
+
+    Args:
+        resumable: List of dicts from ``find_resumable_on_startup``,
+            each containing ``run_id``, ``idea``, ``slack_channel``,
+            ``slack_thread_ts``, ``project_id``.
+    """
+    if not resumable:
+        return
+
+    import threading
+
+    try:
+        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        send_tool = SlackSendMessageTool()
+    except Exception:  # noqa: BLE001
+        _logger.debug("Could not create SlackSendMessageTool for auto-resume")
+        return
+
+    for run_info in resumable:
+        run_id = run_info["run_id"]
+        channel = run_info.get("slack_channel", "")
+        thread_ts = run_info.get("slack_thread_ts", "")
+        idea = run_info.get("idea", "")
+        project_id = run_info.get("project_id")
+
+        if not channel or not thread_ts:
+            continue
+
+        # Notify the user that we're resuming
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    ":arrows_counterclockwise: *Server restarted.* "
+                    f"Auto-resuming PRD flow for:\n> _{idea}_\n"
+                    "I'll continue from where I left off."
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            _logger.debug(
+                "Could not notify Slack about resumed flow %s", run_id,
+                exc_info=True,
+            )
+
+        # Spawn background thread for resume
+        t = threading.Thread(
+            target=_resume_flow_background,
+            args=(run_id, channel, thread_ts, project_id),
+            name=f"auto-resume-{run_id[:8]}",
+            daemon=True,
+        )
+        t.start()
+        _logger.info(
+            "Startup auto-resume: launched thread for run_id=%s", run_id,
+        )
+
+    _logger.info(
+        "Startup: auto-resuming %d flow(s)", len(resumable),
+    )
+
+
+def _resume_flow_background(
+    run_id: str,
+    channel: str,
+    thread_ts: str,
+    project_id: str | None,
+) -> None:
+    """Background thread target: resume a single PRD flow."""
+    try:
+        from crewai_productfeature_planner.apis.slack.router import (
+            _run_slack_resume_flow,
+        )
+        _run_slack_resume_flow(
+            run_id=run_id,
+            channel=channel,
+            thread_ts=thread_ts,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        _logger.error(
+            "Auto-resume failed for run_id=%s: %s", run_id, exc,
+            exc_info=True,
+        )
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+            send_tool = SlackSendMessageTool()
+            send_tool.run(
+                channel=channel,
+                text=(
+                    f":x: Auto-resume failed for this PRD flow. "
+                    f"Error: {exc}\n"
+                    "You can start a fresh run by describing your idea again."
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     """Startup / shutdown lifecycle hook.
@@ -146,18 +252,28 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Startup recovery (fail incomplete jobs) failed: %s", exc)
 
-    # 2b. Fail unfinalized working ideas so old runs are not resumed
+    # 2b. Partition unfinalized working ideas into resumable vs failed.
+    #     Resumable ideas (with Slack context) will be auto-resumed
+    #     after startup completes.  Others are marked failed.
+    resumable_ideas: list[dict] = []
     terminated_ideas: list[dict] = []
     try:
-        from crewai_productfeature_planner.mongodb.working_ideas import fail_unfinalized_on_startup
-        terminated_ideas = fail_unfinalized_on_startup()
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_resumable_on_startup,
+        )
+        resumable_ideas, terminated_ideas = find_resumable_on_startup()
+        if resumable_ideas:
+            _logger.info(
+                "Startup: %d idea(s) will be auto-resumed",
+                len(resumable_ideas),
+            )
         if terminated_ideas:
             _logger.info(
                 "Startup recovery: %d unfinalized idea(s) marked as failed",
                 len(terminated_ideas),
             )
     except Exception as exc:
-        _logger.warning("Startup recovery (fail unfinalized ideas) failed: %s", exc)
+        _logger.warning("Startup recovery (partition unfinalized ideas) failed: %s", exc)
 
     # 3. Generate missing output files
     try:
@@ -221,11 +337,17 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Publish scheduler failed to start: %s", exc)
 
-    # 8. Notify Slack threads about terminated flows (no auto-resume)
+    # 8. Notify Slack threads about terminated flows
     try:
         _notify_terminated_flows(terminated_ideas)
     except Exception as exc:
         _logger.warning("Startup Slack termination notices failed: %s", exc)
+
+    # 8b. Auto-resume flows that have Slack context
+    try:
+        _auto_resume_flows(resumable_ideas)
+    except Exception as exc:
+        _logger.warning("Startup auto-resume failed: %s", exc)
 
     # 9. Install a safety-net threading.excepthook so uncaught exceptions
     #    in background threads (e.g. CrewAI subprocess crashes) are logged
@@ -420,8 +542,11 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
         status_code = 500
         error_code = "INTERNAL_ERROR"
 
-    _logger.error("Unhandled %s in %s %s: %s",
-                  error_code, request.method, request.url.path, exc)
+    _logger.error(
+        "Unhandled %s in %s %s: %s",
+        error_code, request.method, request.url.path, exc,
+        exc_info=True,
+    )
 
     return JSONResponse(
         status_code=status_code,

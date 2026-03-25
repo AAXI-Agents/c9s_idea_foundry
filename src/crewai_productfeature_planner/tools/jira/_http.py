@@ -56,7 +56,16 @@ def _jira_request(
             raw = resp.read().decode()
             if not raw.strip():
                 return {}
-            return json.loads(raw)
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError as jde:
+                logger.error(
+                    "[Jira] %s %s — invalid JSON response: %s",
+                    method, url, raw[:200],
+                )
+                raise RuntimeError(
+                    f"Jira API returned invalid JSON: {raw[:200]}"
+                ) from jde
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode() if exc.fp else ""
         logger.error(

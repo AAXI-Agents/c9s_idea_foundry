@@ -137,18 +137,16 @@ def _discover_publishable_prds() -> list[dict]:
 
 
 def build_startup_markdown_review_stage() -> AgentStage:
-    """Create an :class:`AgentStage` that reviews and publishes
-    unpublished PRD markdown files to Confluence.
+    """Create an :class:`AgentStage` that discovers unpublished PRD
+    markdown files and **logs** them for user-triggered publishing.
 
     **Stage 1** of the startup pipeline.  Operates independently of
     any :class:`PRDFlow` — it scans all completed runs and disk files.
 
-    Workflow:
-
-    1. Verify Confluence credentials are configured.
-    2. Discover publishable PRDs from MongoDB and ``output/prds/``.
-    3. Publish each to Confluence (create or update).
-    4. Record the ``confluence_url`` back in MongoDB.
+    .. versionchanged:: 0.38.0
+       No longer auto-publishes to Confluence.  Only discovers and logs
+       pending PRDs.  Users must explicitly trigger publishing via Slack
+       or API.
     """
     # Shared mutable state between should_skip → run
     _ctx: dict = {"items": []}
@@ -169,11 +167,11 @@ def build_startup_markdown_review_stage() -> AgentStage:
             return True
         _ctx["items"] = items
         logger.info(
-            "[StartupMarkdownReview] Found %d unpublished PRD(s) to "
-            "review",
+            "[StartupMarkdownReview] Found %d unpublished PRD(s) — "
+            "awaiting user-triggered publish",
             len(items),
         )
-        return False
+        return True  # Always skip execution — discovery is logged only
 
     def _run() -> StageResult:
         from crewai_productfeature_planner.tools.confluence_tool import (

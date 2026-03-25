@@ -3016,98 +3016,82 @@ def test_resume_wipes_degenerate_restored_content(
 
 
 class TestRunPostCompletion:
-    """Tests for PRDFlow._run_post_completion."""
+    """Tests for PRDFlow._run_post_completion.
 
-    @patch(
-        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry"
-    )
+    As of v0.38.0, the auto-approve path no longer calls any delivery
+    crew.  It just notifies that the PRD is ready for user-triggered
+    publishing.
+    """
+
     @patch(
         "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
     )
-    def test_calls_post_completion_crew(self, mock_build, mock_kickoff):
-        mock_crew = MagicMock()
-        mock_build.return_value = mock_crew
-        mock_result = MagicMock()
-        mock_result.raw = "Assessment complete."
-        mock_kickoff.return_value = mock_result
-
+    def test_does_not_call_crew_on_auto_path(self, mock_build):
+        """Auto-approve path must NOT call build_post_completion_crew."""
         flow = PRDFlow()
         flow.state.final_prd = "# PRD Content"
         flow.state.run_id = "test-run"
         flow._run_post_completion()
 
-        # Auto-approve path always uses confluence_only=True
-        mock_build.assert_called_once_with(flow, confluence_only=True)
-        mock_kickoff.assert_called_once_with(mock_crew, step_label="post_completion")
+        mock_build.assert_not_called()
 
-    @patch(
-        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
-    )
-    def test_skips_when_crew_is_none(self, mock_build):
-        """When no delivery steps needed, crew returns None — should skip."""
-        mock_build.return_value = None
-
+    def test_completes_without_error(self):
+        """Auto path should complete without raising."""
         flow = PRDFlow()
         flow.state.final_prd = "# PRD Content"
-        flow._run_post_completion()
-
-        mock_build.assert_called_once_with(flow, confluence_only=True)
-
-    @patch(
-        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
-    )
-    def test_swallows_exceptions(self, mock_build):
-        """Crew errors should be logged but not raised."""
-        mock_build.side_effect = RuntimeError("Confluence down")
-
-        flow = PRDFlow()
-        flow.state.final_prd = "# PRD Content"
+        flow.state.run_id = "test-run"
         # Should not raise
         flow._run_post_completion()
 
-    @patch(
-        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
-    )
-    def test_shutdown_error_propagates(self, mock_build):
+    def test_swallows_exceptions(self):
+        """Exceptions from _run_auto_post_completion should be swallowed."""
+        with patch(
+            "crewai_productfeature_planner.flows._finalization._run_auto_post_completion",
+            side_effect=RuntimeError("boom"),
+        ):
+            flow = PRDFlow()
+            flow.state.final_prd = "# PRD Content"
+            # Should not raise
+            flow._run_post_completion()
+
+    def test_shutdown_error_propagates(self):
         """ShutdownError must propagate — not be swallowed."""
         from crewai_productfeature_planner.scripts.retry import ShutdownError
 
-        mock_build.side_effect = ShutdownError(
-            "cannot schedule new futures after shutdown"
-        )
+        with patch(
+            "crewai_productfeature_planner.flows._finalization._run_auto_post_completion",
+            side_effect=ShutdownError("cannot schedule new futures"),
+        ):
+            flow = PRDFlow()
+            flow.state.final_prd = "# PRD Content"
+            with pytest.raises(ShutdownError):
+                flow._run_post_completion()
 
-        flow = PRDFlow()
-        flow.state.final_prd = "# PRD Content"
-        with pytest.raises(ShutdownError):
-            flow._run_post_completion()
-
-    @patch(
-        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
-    )
-    def test_billing_error_propagates(self, mock_build):
+    def test_billing_error_propagates(self):
         """BillingError must propagate — not be swallowed."""
         from crewai_productfeature_planner.scripts.retry import BillingError
 
-        mock_build.side_effect = BillingError("insufficient_quota")
+        with patch(
+            "crewai_productfeature_planner.flows._finalization._run_auto_post_completion",
+            side_effect=BillingError("insufficient_quota"),
+        ):
+            flow = PRDFlow()
+            flow.state.final_prd = "# PRD Content"
+            with pytest.raises(BillingError):
+                flow._run_post_completion()
 
-        flow = PRDFlow()
-        flow.state.final_prd = "# PRD Content"
-        with pytest.raises(BillingError):
-            flow._run_post_completion()
-
-    @patch(
-        "crewai_productfeature_planner.orchestrator.build_post_completion_crew"
-    )
-    def test_model_busy_error_propagates(self, mock_build):
+    def test_model_busy_error_propagates(self):
         """ModelBusyError must propagate — not be swallowed."""
         from crewai_productfeature_planner.scripts.retry import ModelBusyError
 
-        mock_build.side_effect = ModelBusyError("model is overloaded")
-
-        flow = PRDFlow()
-        flow.state.final_prd = "# PRD Content"
-        with pytest.raises(ModelBusyError):
-            flow._run_post_completion()
+        with patch(
+            "crewai_productfeature_planner.flows._finalization._run_auto_post_completion",
+            side_effect=ModelBusyError("model is overloaded"),
+        ):
+            flow = PRDFlow()
+            flow.state.final_prd = "# PRD Content"
+            with pytest.raises(ModelBusyError):
+                flow._run_post_completion()
 
 
 class TestPersistPostCompletion:
@@ -3249,6 +3233,7 @@ class TestPhasedJiraMarksComplete:
         flow.state.run_id = "phased-test-1"
         flow.state.jira_output = "Epic: PRD-1\nStories: PRD-2"
         flow.state.jira_phase = "qa_test_done"
+        flow.state.confluence_url = "https://wiki.test.com/page/1"
         flow.jira_skeleton_approval_callback = MagicMock()
 
         # Make all stages report "should skip" (phases already done)

@@ -458,6 +458,7 @@ def iterate_executive_summary(
             "iteration": iteration,
             "max_iterations": max_iter,
             "chars": len(current_content),
+            "critique_summary": (critique_text or "")[:500],
         })
 
         # ── Post-iteration user feedback (optional) ──────

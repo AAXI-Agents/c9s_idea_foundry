@@ -11,6 +11,7 @@ Fast, lightweight models for orchestration and user interactions.
 | Gemini intent classifier | `tools/gemini_chat.py` | Classify Slack message intent |
 | OpenAI intent classifier | `tools/openai_chat.py` | Classify Slack message intent (fallback) |
 | Next-step predictor | `apis/slack/_next_step.py` | Predict next user action |
+| Engagement Manager | `agents/engagement_manager/agent.py` | Handle unknown intents, guide user navigation (v0.35.0) |
 
 ## Research Models (`GEMINI_RESEARCH_MODEL` / `OPENAI_RESEARCH_MODEL`)
 

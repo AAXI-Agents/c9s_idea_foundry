@@ -109,46 +109,21 @@ def _kill_stale_crew_processes() -> int:
 
 
 def _run_startup_delivery() -> int:
-    """Autonomously deliver completed PRDs via CrewAI crew collaboration.
+    """Log completed PRDs that still need delivery (Confluence / Jira).
 
-    Scans ``workingIdeas`` for completed runs, checks each against the
-    ``productRequirements`` collection, and uses a **CrewAI Crew** with
-    sequential process and agent collaboration to execute the delivery
-    pipeline (Confluence publish + Jira ticketing).
-
-    The crew comprises two agents:
-
-    * **Delivery Manager** — coordinates the lifecycle, decides which
-      steps are needed.  ``allow_delegation=True`` lets it hand off
-      tool-bearing work.
-    * **Orchestrator** — the specialist equipped with Confluence and
-      Jira tools.
-
-    Uses ``productRequirements`` to persist per-run delivery state so
-    the agent can resume where it left off on subsequent restarts.
-
-    Prints user-facing progress messages prefixed with ``[Orchestrator]``
-    so the user can see what the agent is doing before the interactive
-    CLI takes over.
-
-    This is fully autonomous — no user involvement required.
+    .. versionchanged:: 0.38.0
+       No longer auto-publishes to Confluence or creates Jira tickets.
+       Only discovers and logs pending items.  Users must explicitly
+       trigger publishing via Slack button or API.
 
     Returns:
-        The number of runs that were fully delivered (Confluence + Jira).
+        Always returns 0 (no autonomous delivery).
     """
-    from crewai_productfeature_planner.mongodb.product_requirements import (
-        get_delivery_record,
-        upsert_delivery_record,
-    )
     from crewai_productfeature_planner.orchestrator.stages import (
         _discover_pending_deliveries,
         _has_confluence_credentials,
         _has_jira_credentials,
         _print_delivery_status,
-        build_startup_delivery_crew,
-    )
-    from crewai_productfeature_planner.scripts.retry import (
-        crew_kickoff_with_retry,
     )
 
     if not (_has_confluence_credentials() or _has_jira_credentials()):
@@ -170,100 +145,24 @@ def _run_startup_delivery() -> int:
         return 0
 
     _print_delivery_status(
-        f"Found {len(items)} completed PRD(s) pending delivery"
+        f"Found {len(items)} completed PRD(s) pending delivery — "
+        "awaiting user-triggered publish"
     )
 
-    delivered = 0
     for item in items:
-        run_id = item["run_id"]
         idea_preview = (item["idea"] or "PRD")[:60].strip()
-
-        # --- Print what we're about to do ---
         pending_parts = []
         if not item["confluence_done"]:
             pending_parts.append("Confluence publish")
         if not item["jira_done"] and _has_jira_credentials():
             pending_parts.append("Jira ticketing")
         steps_label = " + ".join(pending_parts) or "finalising record"
-
-        _print_delivery_status(
-            f"Processing \"{idea_preview}\" — {steps_label}"
-        )
-
-        # Seed delivery record so we can resume on crash
-        record = get_delivery_record(run_id)
-        if not record:
-            upsert_delivery_record(
-                run_id,
-                confluence_published=item["confluence_done"],
-                jira_completed=item["jira_done"],
-            )
-
-        try:
-            # Build the CrewAI crew with sequential process & collaboration
-            crew = build_startup_delivery_crew(
-                item,
-                progress_callback=_print_delivery_status,
-                confluence_only=True,
-            )
-
-            _print_delivery_status(
-                f"Crew assembled — {len(crew.tasks)} task(s), "
-                f"{len(crew.agents)} agent(s) collaborating"
-            )
-
-            # Kick off the crew (with retry for transient LLM failures)
-            result = crew_kickoff_with_retry(
-                crew, step_label=f"startup_delivery_{run_id}",
-            )
-
-            # Parse result to determine what was accomplished
-            raw_output = result.raw if hasattr(result, "raw") else str(result)
-
-            # Update delivery record from crew output —
-            # only Confluence status, never Jira (approval gate).
-            new_conf_done = item["confluence_done"] or _confluence_completed_in_output(raw_output)
-
-            upsert_delivery_record(
-                run_id,
-                confluence_published=new_conf_done,
-                confluence_url=_extract_confluence_url(raw_output) or item.get("confluence_url", ""),
-                error=None,
-            )
-
-            if new_conf_done:
-                delivered += 1
-                _print_delivery_status(
-                    f"✓ Published \"{idea_preview}\" to Confluence"
-                )
-            else:
-                _print_delivery_status(
-                    f"Delivery for \"{idea_preview}\" — awaiting next restart"
-                )
-
-            logger.info(
-                "[StartupDelivery] Delivery crew completed for "
-                "run_id=%s (confluence=%s)",
-                run_id,
-                "done" if new_conf_done else "pending",
-            )
-        except Exception as exc:
-            logger.warning(
-                "[StartupDelivery] Delivery crew failed for "
-                "run_id=%s: %s",
-                run_id, exc,
-            )
-            upsert_delivery_record(run_id, error=str(exc))
-            _print_delivery_status(
-                f"✗ Delivery failed for \"{idea_preview}\": {exc}"
-            )
-
-    if delivered:
         logger.info(
-            "[StartupDelivery] Fully delivered %d PRD(s) on startup",
-            delivered,
+            "[StartupDelivery] Pending: \"%s\" — %s (run_id=%s)",
+            idea_preview, steps_label, item["run_id"],
         )
-    return delivered
+
+    return 0
 
 
 def _confluence_completed_in_output(output: str) -> bool:
@@ -382,21 +281,17 @@ def _generate_missing_outputs() -> int:
 
 
 def _publish_unpublished_prds() -> int:
-    """Publish completed PRDs to Confluence that haven't been published yet.
+    """Log completed PRDs that haven't been published to Confluence yet.
 
-    Scans MongoDB for completed working ideas whose ``confluence_url``
-    field is missing or empty.  For each, assembles the PRD from the
-    stored sections and publishes it to Confluence.
-
-    Called on server startup and after each completed flow.
+    .. versionchanged:: 0.38.0
+       No longer auto-publishes.  Only discovers and logs pending PRDs.
+       Users must explicitly trigger publishing via Slack button or API.
 
     Returns:
-        Number of PRDs successfully published.
+        Always returns 0 (no autonomous publishing).
     """
-    from crewai_productfeature_planner._cli_state import _assemble_prd_from_doc
     from crewai_productfeature_planner.tools.confluence_tool import (
         _has_confluence_credentials,
-        publish_to_confluence,
     )
 
     if not _has_confluence_credentials():
@@ -406,9 +301,6 @@ def _publish_unpublished_prds() -> int:
         from crewai_productfeature_planner.mongodb import (
             find_completed_without_confluence,
         )
-        from crewai_productfeature_planner.mongodb.product_requirements import (
-            upsert_delivery_record,
-        )
         docs = find_completed_without_confluence()
     except Exception as exc:
         logger.debug(
@@ -416,55 +308,14 @@ def _publish_unpublished_prds() -> int:
         )
         return 0
 
-    if not docs:
-        return 0
-
-    published = 0
-    for doc in docs:
-        run_id = doc.get("run_id", "unknown")
-        try:
-            content = _assemble_prd_from_doc(doc)
-            if not content:
-                logger.debug(
-                    "[StartupRecovery] Skipping Confluence publish for "
-                    "run_id=%s — no content",
-                    run_id,
-                )
-                continue
-
-            idea = doc.get("idea")
-            title = make_page_title(idea)
-
-            result = publish_to_confluence(
-                title=title,
-                markdown_content=content,
-                run_id=run_id,
-            )
-            upsert_delivery_record(
-                run_id=run_id,
-                confluence_published=True,
-                confluence_url=result["url"],
-                confluence_page_id=result["page_id"],
-            )
-            published += 1
-            logger.info(
-                "[StartupRecovery] Published PRD to Confluence for "
-                "run_id=%s: %s",
-                run_id, result["url"],
-            )
-        except Exception as exc:
-            logger.warning(
-                "[StartupRecovery] Failed to publish PRD for "
-                "run_id=%s: %s",
-                run_id, exc,
-            )
-
-    if published:
+    if docs:
         logger.info(
-            "[StartupRecovery] Published %d PRD(s) to Confluence",
-            published,
+            "[StartupRecovery] Found %d PRD(s) awaiting Confluence "
+            "publish — user must trigger via Slack or API",
+            len(docs),
         )
-    return published
+
+    return 0
 
 
 def _run_startup_delivery_background() -> None:

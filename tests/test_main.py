@@ -1255,10 +1255,10 @@ class TestPublishUnpublishedPrds:
         "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
         return_value=True,
     )
-    def test_publishes_unpublished_prds(
+    def test_does_not_publish_automatically(
         self, mock_has_cred, mock_publish, mock_get_db,
     ):
-        """Should publish each completed doc that hasn't been published."""
+        """v0.38.0: discovery-only — never actually publishes."""
         docs = [
             {
                 "run_id": "run-1",
@@ -1290,8 +1290,9 @@ class TestPublishUnpublishedPrds:
 
         count = _publish_unpublished_prds()
 
-        assert count == 1
-        mock_publish.assert_called_once()
+        # v0.38.0: always returns 0 (no auto-publish)
+        assert count == 0
+        mock_publish.assert_not_called()
 
     @patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db")
     @patch(
@@ -1322,10 +1323,10 @@ class TestPublishUnpublishedPrds:
         "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
         return_value=True,
     )
-    def test_continues_on_individual_failure(
+    def test_does_not_publish_on_individual_failure(
         self, mock_has_cred, mock_publish, mock_get_db,
     ):
-        """Should continue when one publish fails."""
+        """v0.38.0: discovery-only — never actually publishes."""
         docs = [
             {
                 "run_id": "run-bad",
@@ -1362,8 +1363,9 @@ class TestPublishUnpublishedPrds:
 
         count = _publish_unpublished_prds()
 
-        assert count == 1
-        assert mock_publish.call_count == 2
+        # v0.38.0: always returns 0 (no auto-publish)
+        assert count == 0
+        mock_publish.assert_not_called()
 
     @patch(
         "crewai_productfeature_planner.tools.confluence_tool._has_confluence_credentials",
@@ -1422,11 +1424,11 @@ class TestRunStartupDelivery:
     @patch(_DISCOVER)
     @patch(_CONF, return_value=True)
     @patch(_JIRA, return_value=True)
-    def test_runs_crew_for_pending_delivery(
+    def test_does_not_run_crew_for_pending_delivery(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
         _rec, _ups, _status,
     ):
-        """Should build a CrewAI crew and kickoff for each pending item."""
+        """v0.38.0: discovery-only — never kicks off delivery crews."""
         mock_disc.return_value = [
             {
                 "run_id": "r1",
@@ -1452,12 +1454,10 @@ class TestRunStartupDelivery:
 
         result = _run_startup_delivery()
 
-        mock_build.assert_called_once()
-        mock_kickoff.assert_called_once_with(
-            mock_crew, step_label="startup_delivery_r1",
-        )
-        # Should have upserted delivery record
-        assert _ups.call_count >= 1
+        # v0.38.0: no crew is built or kicked off
+        assert result == 0
+        mock_build.assert_not_called()
+        mock_kickoff.assert_not_called()
 
     # ── autonomous path must NOT persist Jira tickets ──────────
 
@@ -1516,11 +1516,11 @@ class TestRunStartupDelivery:
     @patch(_DISCOVER)
     @patch(_CONF, return_value=True)
     @patch(_JIRA, return_value=True)
-    def test_records_error_on_crew_failure(
+    def test_does_not_run_crew_on_failure_path(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
         _rec, mock_upsert, _status,
     ):
-        """Should record error in productRequirements when crew fails."""
+        """v0.38.0: discovery-only — no crew is kicked off, so no error to record."""
         mock_disc.return_value = [
             {
                 "run_id": "r1",
@@ -1542,9 +1542,9 @@ class TestRunStartupDelivery:
         result = _run_startup_delivery()
 
         assert result == 0
-        # Should have called upsert with error
-        last_call = mock_upsert.call_args_list[-1]
-        assert "LLM timeout" in str(last_call)
+        # v0.38.0: no crew built, no kickoff, no upsert
+        mock_build.assert_not_called()
+        mock_kickoff.assert_not_called()
 
     # ── prints status messages ────────────────────────────────
 
@@ -1658,15 +1658,14 @@ class TestRunStartupDelivery:
     @patch(_DISCOVER)
     @patch(_CONF, return_value=True)
     @patch(_JIRA, return_value=True)
-    def test_no_jira_data_in_delivery_record_on_autonomous_path(
+    def test_no_delivery_on_autonomous_path(
         self, _j, _c, mock_disc, mock_build, mock_kickoff,
         _rec, mock_upsert, _status, fresh_mock_db,
     ):
-        """Autonomous delivery must not persist jira_output or jira_completed.
+        """v0.38.0: Autonomous delivery is discovery-only — no crew, no upsert.
 
         Jira data should only be set by the interactive phased flow.
-        The autonomous path passes confluence_only=True and must not
-        touch any Jira fields in the delivery record (v0.15.11).
+        The autonomous startup path no longer kicks off any crews.
         """
         mock_disc.return_value = [
             {
@@ -1690,8 +1689,11 @@ class TestRunStartupDelivery:
 
         _run_startup_delivery()
 
-        # Verify upsert was called but without any Jira fields
-        mock_upsert.assert_called()
+        # v0.38.0: no crew is built or kicked off
+        mock_build.assert_not_called()
+        mock_kickoff.assert_not_called()
+        # No upsert should happen
+        mock_upsert.assert_not_called()
         for call in mock_upsert.call_args_list:
             kwargs = call[1] if call[1] else {}
             assert "jira_output" not in kwargs, (

@@ -371,12 +371,32 @@ async def slack_events(request: Request) -> JSONResponse:
                             # subsequent messages skip the DB lookup.
                             touch_thread(channel, thread_ts)
 
+                # Final fallback: check if a working-idea flow document
+                # is linked to this thread (via slack_channel +
+                # slack_thread_ts).  This catches auto-mode flows and
+                # threads where the in-memory cache has expired.
+                # No @mention required — the thread is already an
+                # established flow conversation.
+                has_flow_thread = False
+                if not (has_conversation or has_interactive
+                        or has_pending or has_active_session
+                        or has_thread_history):
+                    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                        find_idea_by_thread,
+                    )
+                    doc = find_idea_by_thread(channel, thread_ts)
+                    if doc:
+                        has_flow_thread = True
+                        # Re-register so subsequent messages skip DB.
+                        touch_thread(channel, thread_ts)
+
                 should_process = (
                     has_conversation
                     or has_interactive
                     or has_pending
                     or has_active_session
                     or has_thread_history
+                    or has_flow_thread
                 )
 
                 if should_process:
@@ -392,6 +412,12 @@ async def slack_events(request: Request) -> JSONResponse:
                         or has_pending or has_active_session
                     ):
                         reason_parts.append("thread_history")
+                    if has_flow_thread and not (
+                        has_conversation or has_interactive
+                        or has_pending or has_active_session
+                        or has_thread_history
+                    ):
+                        reason_parts.append("flow_thread")
                     reason = f" ({', '.join(reason_parts)})" if reason_parts else ""
                     logger.info(
                         "Thread follow-up in %s/%s from %s%s",
@@ -403,7 +429,8 @@ async def slack_events(request: Request) -> JSONResponse:
                     logger.debug(
                         "Ignoring thread message in %s/%s from %s "
                         "(no conversation, no interactive, no pending, "
-                        "no active session, no thread history)",
+                        "no active session, no thread history, "
+                        "no flow thread)",
                         channel, thread_ts, user,
                     )
 

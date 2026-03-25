@@ -30,23 +30,20 @@ _AGENTS = "crewai_productfeature_planner.agents.orchestrator.agent"
 # ====================================================================
 
 class TestAutoPostCompletionAlwaysConfluenceOnly:
-    """_run_auto_post_completion must NEVER create Jira tasks."""
+    """_run_auto_post_completion must NEVER create Jira tasks.
 
-    @patch(f"{_RETRY}.crew_kickoff_with_retry")
+    As of v0.38.0, the auto path no longer calls any crew at all —
+    it just notifies that the PRD is ready for user-triggered publish.
+    """
+
     @patch(f"{_ORCH}.build_post_completion_crew")
-    def test_auto_post_completion_passes_confluence_only(
-        self, mock_build, mock_kickoff,
+    def test_auto_post_completion_does_not_call_crew(
+        self, mock_build,
     ):
-        """The auto-approve path must always pass confluence_only=True."""
+        """The auto-approve path must NOT call any delivery crew."""
         from crewai_productfeature_planner.flows._finalization import (
             _run_auto_post_completion,
         )
-
-        mock_crew = MagicMock()
-        mock_build.return_value = mock_crew
-        mock_result = MagicMock()
-        mock_result.raw = "Published."
-        mock_kickoff.return_value = mock_result
 
         flow = PRDFlow()
         flow.state.final_prd = "# PRD"
@@ -54,25 +51,19 @@ class TestAutoPostCompletionAlwaysConfluenceOnly:
 
         _run_auto_post_completion(flow)
 
-        mock_build.assert_called_once_with(flow, confluence_only=True)
+        mock_build.assert_not_called()
 
-    @patch(f"{_RETRY}.crew_kickoff_with_retry")
     @patch(f"{_ORCH}.build_post_completion_crew")
     def test_auto_post_completion_via_flow_method(
-        self, mock_build, mock_kickoff,
+        self, mock_build,
     ):
-        """PRDFlow._run_post_completion() without jira callback → confluence_only."""
-        mock_build.return_value = MagicMock()
-        mock_result = MagicMock()
-        mock_result.raw = "Done."
-        mock_kickoff.return_value = mock_result
-
+        """PRDFlow._run_post_completion() without jira callback → no crew."""
         flow = PRDFlow()
         flow.state.final_prd = "# PRD"
         # No jira_skeleton_approval_callback set → auto path
         flow._run_post_completion()
 
-        mock_build.assert_called_once_with(flow, confluence_only=True)
+        mock_build.assert_not_called()
 
 
 # ====================================================================
@@ -133,45 +124,30 @@ class TestPostCompletionRouting:
 # ====================================================================
 
 class TestPhasedPostCompletionConfluenceStep:
-    """Phased path must use confluence_only=True for the Confluence crew."""
+    """Phased path must NOT auto-publish Confluence.
 
-    @patch(
-        f"{_ORCH}._jira._check_jira_prerequisites",
-        return_value="No Jira creds",
-    )
-    @patch(
-        f"{_ORCH}._helpers._has_confluence_credentials",
-        return_value=True,
-    )
-    @patch(
-        f"{_ORCH}._helpers._has_gemini_credentials",
-        return_value=True,
-    )
-    @patch(f"{_RETRY}.crew_kickoff_with_retry")
+    As of v0.38.0, _run_phased_post_completion requires Confluence
+    to already be published before starting Jira phases.
+    """
+
     @patch(f"{_ORCH}.build_post_completion_crew")
-    def test_phased_confluence_uses_confluence_only(
-        self, mock_build, mock_kickoff,
-        _gem, _conf, _prereqs,
+    def test_phased_does_not_auto_publish_confluence(
+        self, mock_build,
     ):
-        """Phased path's Confluence step must use confluence_only=True."""
+        """Phased path must NOT call build_post_completion_crew."""
         from crewai_productfeature_planner.flows._finalization import (
             _run_phased_post_completion,
         )
-
-        mock_crew = MagicMock()
-        mock_build.return_value = mock_crew
-        mock_result = MagicMock()
-        mock_result.raw = "Published."
-        mock_kickoff.return_value = mock_result
 
         flow = PRDFlow()
         flow.state.final_prd = "# PRD Content"
         flow.state.run_id = "phased-test"
         flow.jira_skeleton_approval_callback = MagicMock()
+        # No confluence_url → should return early
 
         _run_phased_post_completion(flow)
 
-        mock_build.assert_called_once_with(flow, confluence_only=True)
+        mock_build.assert_not_called()
 
 
 # ====================================================================
@@ -620,41 +596,45 @@ class TestJiraDetectedInOutput:
 # 9. Startup callers must use confluence_only=True
 # ====================================================================
 
-class TestStartupCallersConfluenceOnly:
-    """CLI and server startup paths must use confluence_only=True."""
+class TestStartupCallersNoAutoPublish:
+    """CLI and server startup paths must NOT auto-publish.
 
-    def test_cli_startup_passes_confluence_only(self):
-        """_cli_startup.py must pass confluence_only=True."""
+    As of v0.38.0, startup functions only discover pending items and
+    log them — they never trigger publishing or Jira creation.
+    """
+
+    def test_cli_startup_does_not_auto_deliver(self):
+        """_cli_startup.py must not call build_startup_delivery_crew."""
         import inspect
         from crewai_productfeature_planner import _cli_startup
 
         source = inspect.getsource(_cli_startup)
-        # The call to build_startup_delivery_crew should include confluence_only=True
-        assert "confluence_only=True" in source, (
-            "_cli_startup.py must pass confluence_only=True to "
-            "build_startup_delivery_crew to prevent autonomous Jira creation"
+        # The startup functions should not call crew builders
+        assert "build_startup_delivery_crew" not in source or "no auto-publish" in source.lower() or "discovery-only" in source.lower(), (
+            "_cli_startup.py must not auto-deliver — "
+            "publishing requires explicit user action"
         )
 
-    def test_component_startup_passes_confluence_only(self):
-        """components/startup.py must pass confluence_only=True."""
+    def test_component_startup_does_not_auto_deliver(self):
+        """components/startup.py must not call build_startup_delivery_crew."""
         import inspect
         from crewai_productfeature_planner.components import startup
 
         source = inspect.getsource(startup)
-        assert "confluence_only=True" in source, (
-            "components/startup.py must pass confluence_only=True to "
-            "build_startup_delivery_crew to prevent autonomous Jira creation"
+        assert "build_startup_delivery_crew" not in source or "no auto-publish" in source.lower() or "discovery-only" in source.lower(), (
+            "components/startup.py must not auto-deliver — "
+            "publishing requires explicit user action"
         )
 
-    def test_auto_post_completion_uses_confluence_only(self):
-        """_finalization._run_auto_post_completion must use confluence_only."""
+    def test_auto_post_completion_does_not_publish(self):
+        """_finalization._run_auto_post_completion must not auto-publish."""
         import inspect
         from crewai_productfeature_planner.flows import _finalization
 
         source = inspect.getsource(_finalization._run_auto_post_completion)
-        assert "confluence_only=True" in source, (
-            "_run_auto_post_completion must pass confluence_only=True to "
-            "build_post_completion_crew — Jira requires user approval"
+        assert "build_post_completion_crew" not in source, (
+            "_run_auto_post_completion must not call build_post_completion_crew "
+            "— all publishing requires user approval"
         )
 
 
@@ -665,19 +645,15 @@ class TestStartupCallersConfluenceOnly:
 class TestApiPathNoJira:
     """The API prd/service.py path must not auto-create Jira tickets."""
 
-    @patch(f"{_RETRY}.crew_kickoff_with_retry")
     @patch(f"{_ORCH}.build_post_completion_crew")
-    def test_api_run_prd_flow_uses_confluence_only(
-        self, mock_build, mock_kickoff,
+    def test_api_run_prd_flow_does_not_auto_publish(
+        self, mock_build,
     ):
         """run_prd_flow (API path) has no Jira callbacks → auto path →
-        confluence_only=True."""
+        no crew call (v0.38.0: all publishing is user-triggered)."""
         from crewai_productfeature_planner.flows._finalization import (
             run_post_completion,
         )
-
-        mock_build.return_value = MagicMock()
-        mock_kickoff.return_value = MagicMock(raw="Published.")
 
         # Simulate API path: flow without any callbacks
         flow = PRDFlow()
@@ -686,7 +662,7 @@ class TestApiPathNoJira:
 
         run_post_completion(flow)
 
-        mock_build.assert_called_once_with(flow, confluence_only=True)
+        mock_build.assert_not_called()
 
 
 # ====================================================================

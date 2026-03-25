@@ -58,6 +58,9 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
         return False
 
     def _run() -> StageResult:
+        from crewai_productfeature_planner.mongodb.product_requirements import (
+            get_delivery_record,
+        )
         from crewai_productfeature_planner.mongodb.project_config import (
             get_project_for_run,
         )
@@ -73,11 +76,18 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
         ctx_space = pc.get("confluence_space_key", "")
         ctx_parent = pc.get("confluence_parent_id", "")
 
+        # Look up existing page_id to update instead of creating a duplicate
+        existing_page_id = ""
+        record = get_delivery_record(flow.state.run_id)
+        if record:
+            existing_page_id = record.get("confluence_page_id", "") or ""
+
         logger.info(
             "[ConfluencePublish] Publishing PRD to Confluence: '%s'"
-            " (project space_key=%s)",
+            " (project space_key=%s, existing_page_id=%s)",
             title,
             ctx_space or "<env>",
+            existing_page_id or "<new>",
         )
         with confluence_project_context(
             space_key=ctx_space, parent_id=ctx_parent,
@@ -86,6 +96,7 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
                 title=title,
                 markdown_content=flow.state.final_prd,
                 run_id=flow.state.run_id,
+                page_id=existing_page_id or None,
             )
         return StageResult(
             output=f"{result['action']}|{result['page_id']}|{result['url']}",

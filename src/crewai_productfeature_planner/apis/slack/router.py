@@ -156,6 +156,9 @@ def _run_slack_prd_flow(
         SlackSendMessageTool,
     )
     from crewai_productfeature_planner.apis.slack._flow_handlers import (
+        make_auto_exec_completion_gate,
+        make_auto_exec_summary_gate,
+        make_auto_requirements_gate,
         make_exec_summary_completion_gate,
         make_exec_summary_gate,
         make_progress_poster,
@@ -173,33 +176,50 @@ def _run_slack_prd_flow(
         run_id=run_id,
     )
 
-    # Build exec summary user feedback gate so the user can iterate
-    exec_summary_cb = make_exec_summary_gate(
-        channel=channel,
-        thread_ts=thread_ts or "",
-        user="",
-        send_tool=send_tool,
-        run_id=run_id,
-    )
-
-    # Build exec summary completion gate (Phase 1 → Phase 2 pause)
-    exec_completion_cb = make_exec_summary_completion_gate(
-        channel=channel,
-        thread_ts=thread_ts or "",
-        user="",
-        send_tool=send_tool,
-        run_id=run_id,
-    )
-
-    # Build requirements approval gate so the user can review
-    # the requirements breakdown before proceeding.
-    requirements_cb = make_requirements_approval_gate(
-        channel=channel,
-        thread_ts=thread_ts or "",
-        user="",
-        send_tool=send_tool,
-        run_id=run_id,
-    )
+    # Choose gate factories: auto-mode (non-blocking) vs blocking
+    if auto_approve:
+        # Fully automated — gates post summaries but never block
+        exec_summary_cb = make_auto_exec_summary_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+        exec_completion_cb = make_auto_exec_completion_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+        requirements_cb = make_auto_requirements_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+    else:
+        # Blocking gates — user must click Approve/Feedback
+        exec_summary_cb = make_exec_summary_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            user="",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+        exec_completion_cb = make_exec_summary_completion_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            user="",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+        requirements_cb = make_requirements_approval_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            user="",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
 
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
@@ -382,6 +402,136 @@ def _run_slack_prd_flow(
                 error=run.error if run else None,
                 webhook_url=webhook_url,
             )
+
+
+def _run_slack_resume_flow(
+    run_id: str,
+    channel: str,
+    thread_ts: str,
+    project_id: str | None = None,
+) -> None:
+    """Resume a PRD flow from MongoDB state with auto-mode callbacks.
+
+    Called by the startup auto-resume logic.  Uses non-blocking gates
+    so the flow runs fully automated.
+    """
+    from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
+    from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus, runs
+    from crewai_productfeature_planner.tools.slack_tools import (
+        SlackPostPRDResultTool,
+        SlackSendMessageTool,
+    )
+    from crewai_productfeature_planner.apis.slack._flow_handlers import (
+        make_auto_exec_completion_gate,
+        make_auto_exec_summary_gate,
+        make_auto_requirements_gate,
+        make_progress_poster,
+    )
+
+    send_tool = SlackSendMessageTool()
+
+    progress_cb = make_progress_poster(
+        channel=channel,
+        thread_ts=thread_ts,
+        user="",
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+    exec_summary_cb = make_auto_exec_summary_gate(
+        channel=channel,
+        thread_ts=thread_ts,
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+    exec_completion_cb = make_auto_exec_completion_gate(
+        channel=channel,
+        thread_ts=thread_ts,
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+    requirements_cb = make_auto_requirements_gate(
+        channel=channel,
+        thread_ts=thread_ts,
+        send_tool=send_tool,
+        run_id=run_id,
+    )
+
+    if run_id not in runs:
+        runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
+
+    try:
+        resume_prd_flow(
+            run_id,
+            auto_approve=True,
+            progress_callback=progress_cb,
+            exec_summary_user_feedback_callback=exec_summary_cb,
+            executive_summary_callback=exec_completion_cb,
+            requirements_approval_callback=requirements_cb,
+        )
+
+        run = runs.get(run_id)
+        if run and run.status == FlowStatus.COMPLETED:
+            _fully_delivered = bool(run.confluence_url and run.jira_output)
+            if not _fully_delivered:
+                post_tool = SlackPostPRDResultTool()
+                post_tool.run(
+                    channel=channel,
+                    idea="",
+                    output_file=run.output_file,
+                    confluence_url=run.confluence_url,
+                    jira_output=run.jira_output,
+                    thread_ts=thread_ts,
+                    run_id=run_id,
+                )
+            logger.info("Auto-resume PRD flow %s completed", run_id)
+        elif run and run.status == FlowStatus.PAUSED:
+            from crewai_productfeature_planner.apis.slack.blocks import flow_paused_blocks
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+            blocks = flow_paused_blocks(run_id, run.error or "")
+            client = _get_slack_client()
+            if client:
+                try:
+                    client.chat_postMessage(
+                        channel=channel,
+                        thread_ts=thread_ts,
+                        blocks=blocks,
+                        text=f"PRD flow paused ({run_id})",
+                    )
+                except Exception:
+                    send_tool.run(
+                        channel=channel,
+                        text=(
+                            f":pause_button: PRD flow paused (run `{run_id}`). "
+                            "Click Resume PRD to retry."
+                        ),
+                        thread_ts=thread_ts,
+                    )
+        else:
+            error_msg = run.error if run else "Unknown error"
+            send_tool.run(
+                channel=channel,
+                text=f":x: Auto-resumed PRD flow failed: {error_msg}",
+                thread_ts=thread_ts,
+            )
+
+    except Exception as exc:
+        logger.error("Auto-resume PRD flow %s failed: %s", run_id, exc)
+        try:
+            send_tool.run(
+                channel=channel,
+                text=f":x: Auto-resume failed: {exc}",
+                thread_ts=thread_ts,
+            )
+        except Exception:
+            pass
+
+    except BaseException as exc:  # noqa: BLE001
+        logger.critical(
+            "Auto-resume PRD flow %s caught fatal %s: %s — "
+            "suppressed to protect server",
+            run_id, type(exc).__name__, exc,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -121,4 +121,21 @@
 
 ---
 
+## Engagement Manager (v0.35.0, expanded v0.39.0)
+
+- **LLM**: Gemini (Basic tier — `GEMINI_MODEL`, override via `ENGAGEMENT_MANAGER_MODEL`)
+- **Tools**: None
+- **Purpose**: Handle unknown/ambiguous intents AND orchestrate the full idea-to-PRD lifecycle. Coordinates all specialist agents through a 2-step strategy with continuous heartbeat updates and user steering detection.
+- **Integration**: Automatically invoked when the Slack intent classifier returns `unknown`. Also serves as the orchestration entry point via `orchestrate_idea_to_prd()`.
+- **Coordination**: Full knowledge of the agent team and execution order. Orchestrates Step 1 (sequential: Idea Refinement → Executive Summary) and Step 2 (parallel/coordinated: CEO Review + Requirements → Engineering + UX → Section Drafting).
+- **Heartbeat**: Generates emoji-prefixed status updates at every phase transition (🧠 planning, ⚙️ working, ✅ completed, 💬 waiting, 🔄 steering).
+- **User Steering**: Detects and classifies user messages during active flows (STEERING/QUESTION/FEEDBACK/UNRELATED) with LLM-powered analysis.
+- **Session Isolation**: Only processes messages from the initiating user — other users are silently ignored.
+- **Tasks**: `engagement_response_task` (intent routing), `idea_to_prd_orchestration_task` (lifecycle plan), `heartbeat_update_task` (status messages), `user_steering_detection_task` (message classification).
+- **Key Functions**: `create_engagement_manager()`, `handle_unknown_intent()`, `orchestrate_idea_to_prd()`, `detect_user_steering()`, `generate_heartbeat()`, `make_heartbeat_progress_callback()`.
+- **Fallback**: If the agent fails (LLM errors), gracefully falls back to a static help message with New Idea + Help buttons. Steering detection defaults to QUESTION on failure.
+- **Source**: `agents/engagement_manager/`
+
+---
+
 See also: [[LLM Model Tiers]], [[PRD Flow]], [[Orchestrator Overview]]

@@ -243,8 +243,31 @@ async def slack_oauth_callback(request: Request) -> HTMLResponse:
             ),
             status_code=400,
         )
+    except Exception as exc:
+        logger.error("OAuth code exchange unexpected error: %s", exc, exc_info=True)
+        return HTMLResponse(
+            content=(
+                "<html><body>"
+                "<h1>Token Exchange Failed</h1>"
+                "<p>An unexpected error occurred during token exchange.</p>"
+                "</body></html>"
+            ),
+            status_code=500,
+        )
 
-    summary = _apply_tokens(result)
+    try:
+        summary = _apply_tokens(result)
+    except Exception as exc:
+        logger.error("OAuth token persistence failed: %s", exc, exc_info=True)
+        return HTMLResponse(
+            content=(
+                "<html><body>"
+                "<h1>Token Persistence Failed</h1>"
+                "<p>Tokens were exchanged but could not be saved. Please try again.</p>"
+                "</body></html>"
+            ),
+            status_code=500,
+        )
     logger.info("Slack app installed/reinstalled: %s", summary)
 
     team = summary.get("team", "your workspace")

@@ -10,6 +10,7 @@
 | `GEMINI_MODEL` | **Basic** model — intent classification, next-step prediction |
 | `GEMINI_RESEARCH_MODEL` | **Research** model — idea refinement, PRD drafting, Jira |
 | `GEMINI_CRITIC_MODEL` | **Critic** model — lightweight section critique |
+| `ENGAGEMENT_MANAGER_MODEL` | Override Gemini model for Engagement Manager (defaults to `GEMINI_MODEL`) |
 | `OPENAI_MODEL` | **Basic** OpenAI model — intent classification |
 | `OPENAI_RESEARCH_MODEL` | **Research** OpenAI model — PRD section drafting & critique |
 | `CRITIC_LLM_TIMEOUT` | Timeout for critic agent calls |

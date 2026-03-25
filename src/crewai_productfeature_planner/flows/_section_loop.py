@@ -427,6 +427,7 @@ def section_approval_loop(
             "total_sections": total_steps,
             "iteration": section.iteration,
             "max_iterations": max_iter,
+            "critique_summary": (flow.state.critique or "")[:500],
         })
 
 

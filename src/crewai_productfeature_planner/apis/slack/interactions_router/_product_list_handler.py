@@ -1160,9 +1160,36 @@ def _run_jira_phase(
     flow.state.figma_design_url = doc.get("figma_design_url") or ""
     flow.state.figma_design_prompt = doc.get("figma_design_prompt") or ""
 
-    # The interactive Jira flow should not require Confluence — a user
-    # can create Jira tickets for a PRD that was never published.
-    skip_reason = _check_jira_prerequisites(flow, require_confluence=False)
+    # Jira tickets require Confluence to be published first.
+    # If Confluence is not published, guide the user to publish first.
+    if not flow.state.confluence_url:
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            publish_only_blocks,
+        )
+        msg = (
+            f"<@{user_id}> :warning: Confluence must be published before "
+            "creating Jira tickets. Please publish to Confluence first."
+        )
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+        client = _get_slack_client()
+        if client:
+            pub_blocks = publish_only_blocks(run_id)
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": msg}},
+                        *pub_blocks,
+                    ],
+                    text=msg,
+                )
+            except Exception:
+                send_tool.run(channel=channel, thread_ts=thread_ts, text=msg)
+        else:
+            send_tool.run(channel=channel, thread_ts=thread_ts, text=msg)
+        return
+
+    skip_reason = _check_jira_prerequisites(flow)
     if skip_reason:
         send_tool.run(
             channel=channel, thread_ts=thread_ts,
@@ -1172,7 +1199,7 @@ def _run_jira_phase(
 
     if phase == "skeleton":
         flow.state.jira_phase = ""  # Reset to allow skeleton generation
-        stage = build_jira_skeleton_stage(flow, require_confluence=False)
+        stage = build_jira_skeleton_stage(flow)
         if not stage.should_skip():
             result = stage.run()
             stage.apply(result)
@@ -1227,7 +1254,7 @@ def _run_jira_phase(
             )
             return
 
-        stage = build_jira_epics_stories_stage(flow, require_confluence=False)
+        stage = build_jira_epics_stories_stage(flow)
         if not stage.should_skip():
             result = stage.run()
             stage.apply(result)
@@ -1284,7 +1311,7 @@ def _run_jira_phase(
         flow.state.jira_phase = "subtasks_ready"
         _persist_jira_phase(run_id, "subtasks_ready")
 
-        stage = build_jira_subtasks_stage(flow, require_confluence=False)
+        stage = build_jira_subtasks_stage(flow)
         if not stage.should_skip():
             result = stage.run()
             # Capture raw subtask output before apply merges it
@@ -1344,7 +1371,7 @@ def _run_jira_phase(
         flow.state.jira_phase = "review_ready"
         _persist_jira_phase(run_id, "review_ready")
 
-        stage = build_jira_review_subtasks_stage(flow, require_confluence=False)
+        stage = build_jira_review_subtasks_stage(flow)
         if not stage.should_skip():
             result = stage.run()
             review_output = result.output
@@ -1391,7 +1418,7 @@ def _run_jira_phase(
         flow.state.jira_phase = "qa_test_ready"
         _persist_jira_phase(run_id, "qa_test_ready")
 
-        stage = build_jira_qa_test_subtasks_stage(flow, require_confluence=False)
+        stage = build_jira_qa_test_subtasks_stage(flow)
         if not stage.should_skip():
             result = stage.run()
             qa_output = result.output

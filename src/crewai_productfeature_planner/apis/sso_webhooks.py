@@ -47,7 +47,13 @@ async def receive_sso_event(payload: dict[str, Any] = Depends(verify_sso_webhook
 
     handler = _EVENT_HANDLERS.get(event_type)
     if handler:
-        handler(data)
+        try:
+            handler(data)
+        except Exception:
+            logger.error(
+                "[SSO Webhook] Handler failed for event=%s", event_type,
+                exc_info=True,
+            )
     else:
         logger.debug("[SSO Webhook] Unhandled event type: %s", event_type)
 

@@ -121,9 +121,10 @@ class TestStartupMarkdownReviewStage:
         ],
     )
     @patch(_HAS_CONF, return_value=True)
-    def test_does_not_skip_with_publishable_prds(self, _hc, _disc):
+    def test_always_skips_even_with_publishable_prds(self, _hc, _disc):
+        """v0.38.0: stage always skips (discovery-only, no auto-publish)."""
         stage = build_startup_markdown_review_stage()
-        assert stage.should_skip() is False
+        assert stage.should_skip() is True
 
     @patch(_UPSERT_DR)
     @patch(
@@ -143,23 +144,12 @@ class TestStartupMarkdownReviewStage:
         ],
     )
     @patch(_HAS_CONF, return_value=True)
-    def test_run_publishes_and_saves_url(self, _hc, _disc, mock_pub, mock_upsert):
+    def test_skip_prevents_publishing(self, _hc, _disc, mock_pub, mock_upsert):
+        """v0.38.0: should_skip returns True so run/publish never happens."""
         stage = build_startup_markdown_review_stage()
-        assert stage.should_skip() is False  # prime _ctx
-        result = stage.run()
-
-        mock_pub.assert_called_once_with(
-            title="Test",
-            markdown_content="# PRD content",
-            run_id="r1",
-        )
-        mock_upsert.assert_called_once_with(
-            run_id="r1",
-            confluence_published=True,
-            confluence_url="https://wiki/page/1",
-            confluence_page_id="1",
-        )
-        assert "Published 1 PRD(s)" in result.output
+        assert stage.should_skip() is True
+        mock_pub.assert_not_called()
+        mock_upsert.assert_not_called()
 
     @patch(
         _PUBLISH,
@@ -294,10 +284,11 @@ class TestStartupPipeline:
         ],
     )
     @patch(_HAS_CONF, return_value=True)
-    def test_pipeline_completes_with_publishable_prds(
+    def test_pipeline_skips_stage_even_with_publishable_prds(
         self, _hc, _disc, _pub, _upsert,
     ):
+        """v0.38.0: stage always skips — auto-publish disabled."""
         pipeline = build_startup_pipeline()
         pipeline.run_pipeline()
-        assert pipeline.completed == ["startup_markdown_review"]
-        assert pipeline.skipped == []
+        assert pipeline.skipped == ["startup_markdown_review"]
+        assert pipeline.completed == []

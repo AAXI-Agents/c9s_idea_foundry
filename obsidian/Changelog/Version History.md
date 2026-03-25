@@ -2,6 +2,48 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.40.0 (2026-03-25)
+
+| Version | Summary |
+|---------|--------|
+| 0.40.0 | Engagement Manager project knowledge awareness. (1) New _build_project_tools() builds FileReadTool + DirectoryReadTool scoped to project knowledge folder, loads completed-ideas context from MongoDB. (2) create_engagement_manager(project_id) gives agent file-reading tools and appends ideas context to backstory. (3) handle_unknown_intent(project_id) passes {project_knowledge} to task template. (4) engagement_response_task rewritten with A/B/C classification (knowledge question / action intent / steering) and duplication/synergy detection instructions. (5) agent.yaml backstory expanded with Project Knowledge & Idea Awareness section. (6) _message_handler.py passes project_id. 12 new tests, 59 EM tests, 2614 total |
+
+## v0.39.0 (2026-03-24)
+
+| Version | Summary |
+|---------|--------|
+| 0.39.0 | Engagement Manager PRD Orchestrator — transforms the engagement manager from a simple intent router into a full idea-to-PRD lifecycle orchestrator. (1) agent.yaml rewritten with expanded role, full agent team knowledge, 2-step orchestration strategy (Step 1 sequential, Step 2 parallel), heartbeat protocol, user steering detection, session isolation. (2) 3 new tasks: idea_to_prd_orchestration_task, heartbeat_update_task, user_steering_detection_task. (3) 5 new functions: generate_heartbeat(), make_heartbeat_progress_callback(), detect_user_steering(), _parse_steering_result(), orchestrate_idea_to_prd(). (4) .gitignore updated to ignore entire output/ folder. (5) conftest.py recursion limit fix for crewai 1.9.x. 32 new tests, 47 engagement manager tests total |
+
+## v0.38.0 (2026-03-24)
+
+| Version | Summary |
+|---------|--------|
+| 0.38.0 | Publication safety overhaul — user-triggered publishing only. (1) Duplicate Confluence fix — publish_to_confluence() accepts page_id; stored confluence_page_id reused for updates instead of creating duplicates. (2) Auto-publish removal — _run_auto_post_completion() no longer calls crews; startup functions discovery-only; file watcher disabled; startup stage always skips. (3) Confluence prerequisite for Jira — all Jira paths check confluence_url first; user guided to publish Confluence with button if not yet published. 23 tests updated, 2571 total |
+
+## v0.37.1 (2026-03-24)
+
+| Version | Summary |
+|---------|--------|
+| 0.37.1 | Slack thread recovery & flow-aware summaries. (1) Flow thread recovery — thread messages no longer silently dropped after in-memory cache expiry; new find_idea_by_thread() MongoDB fallback queries workingIdeas by slack_channel + slack_thread_ts, re-caches on match. (2) Flow-aware summaries — summary/status/progress requests in flow threads return structured flow status (emoji, sections done/total, idea text, section names) instead of generic help. 16 new tests, 2571 total |
+
+## v0.37.0 (2026-03-23)
+
+| Version | Summary |
+|---------|--------|
+| 0.37.0 | Server crash-prevention hardening for 99.99% uptime. _safe_handler() wraps all 13 Slack interaction handler dispatches with crash protection + Slack error notification. Global exception handler enhanced with exc_info=True. PRD router MongoDB calls wrapped (list_resumable, list_jobs, get_job, kickoff). OAuth router, SSO webhooks hardened. Jira & Confluence JSON decode protection. 14 new tests, 2560 total |
+
+## v0.36.0 (2026-03-23)
+
+| Version | Summary |
+|---------|--------|
+| 0.36.0 | Fully automated PRD flow + active-flow config guard. Default mode switched from interactive to automated — all approval gates auto-approve with progress summaries. Enhanced critique summaries in Slack. Auto-resume on server restart via find_resumable_on_startup(). Config guard blocks project configuration during active flows. 29 new tests, 2541 total |
+
+## v0.35.0 (2026-03-22)
+
+| Version | Summary |
+|---------|--------|
+| 0.35.0 | Engagement Manager agent — new CrewAI agent handles unknown intents with context-aware conversational responses. Uses GEMINI_MODEL (basic tier). Integrated into Slack message handler with graceful fallback. General questions retain direct LLM reply. 16 new tests, 2512 total |
+
 ## v0.28.x (2026-03-20)
 
 | Version | Summary |

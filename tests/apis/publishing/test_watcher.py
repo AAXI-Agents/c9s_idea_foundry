@@ -61,7 +61,8 @@ class TestStartWatcher:
             assert watcher.start_watcher() is False
 
     def test_starts_thread(self, tmp_path):
-        # Re-import real function since conftest mocks it for lifespan
+        # Since v0.38.0 start_watcher always returns False
+        # (auto-publish disabled — user must trigger explicitly)
         from importlib import reload
         import crewai_productfeature_planner.apis.publishing.watcher as w
         reload(w)
@@ -74,12 +75,10 @@ class TestStartWatcher:
             patch.object(w, "get_prds_directory", return_value=tmp_path),
         ):
             result = w.start_watcher()
-        assert result is True
-        assert w._watcher_thread is not None
-        assert w._watcher_thread.is_alive()
-        w.stop_watcher()
+        assert result is False
 
     def test_already_running(self, tmp_path):
+        # Since v0.38.0 start_watcher always returns False
         from importlib import reload
         import crewai_productfeature_planner.apis.publishing.watcher as w
         reload(w)
@@ -91,9 +90,8 @@ class TestStartWatcher:
             ),
             patch.object(w, "get_prds_directory", return_value=tmp_path),
         ):
-            w.start_watcher()
             assert w.start_watcher() is False
-        w.stop_watcher()
+            assert w.start_watcher() is False
 
 
 class TestScanForNewFiles:

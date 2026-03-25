@@ -64,48 +64,16 @@ def get_watcher_status() -> dict:
 def start_watcher() -> bool:
     """Start the file-watcher background thread.
 
-    Returns ``True`` if the watcher was started, ``False`` if it was
-    already running or is disabled by configuration.
+    .. versionchanged:: 0.38.0
+       File watcher no longer auto-publishes Confluence pages.
+       Always returns ``False`` — auto-publish is disabled.
+       Users must explicitly trigger publishing via Slack or API.
     """
-    global _watcher_thread, _watched_dir  # noqa: PLW0603
-
-    if _watcher_thread is not None and _watcher_thread.is_alive():
-        logger.debug("[FileWatcher] Already running")
-        return False
-
-    # Check env-var override
-    enabled_env = os.environ.get("PUBLISH_WATCHER_ENABLED", "").strip().lower()
-    if enabled_env in ("0", "false", "no"):
-        logger.info("[FileWatcher] Disabled via PUBLISH_WATCHER_ENABLED")
-        return False
-
-    # Ensure we have Confluence credentials (no point watching otherwise)
-    try:
-        from crewai_productfeature_planner.tools.confluence_tool import (
-            _has_confluence_credentials,
-        )
-        if not _has_confluence_credentials():
-            logger.info("[FileWatcher] No Confluence credentials — watcher not started")
-            return False
-    except Exception:  # noqa: BLE001
-        pass
-
-    prds_dir = get_prds_directory()
-    prds_dir.mkdir(parents=True, exist_ok=True)
-    _watched_dir = str(prds_dir)
-
-    # Seed processed set with existing files so we don't re-publish
-    _seed_existing_files(prds_dir)
-
-    _stop_event.clear()
-    _watcher_thread = threading.Thread(
-        target=_poll_loop,
-        name="prd-file-watcher",
-        daemon=True,
+    logger.info(
+        "[FileWatcher] Auto-publish watcher disabled (v0.38.0) — "
+        "users must trigger publishing explicitly"
     )
-    _watcher_thread.start()
-    logger.info("[FileWatcher] Started — watching %s", prds_dir)
-    return True
+    return False
 
 
 def stop_watcher() -> None:

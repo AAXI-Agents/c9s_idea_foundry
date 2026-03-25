@@ -213,7 +213,17 @@ def _confluence_request(
 
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
-            return json.loads(resp.read().decode())
+            raw = resp.read().decode()
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError as jde:
+                logger.error(
+                    "[Confluence] %s %s — invalid JSON response: %s",
+                    method, url, raw[:200],
+                )
+                raise RuntimeError(
+                    f"Confluence API returned invalid JSON: {raw[:200]}"
+                ) from jde
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode() if exc.fp else ""
         logger.error(
@@ -248,17 +258,39 @@ def find_page_by_title(
     return results[0] if results else None
 
 
+def _get_page_by_id(
+    page_id: str,
+    *,
+    base_url: str,
+    auth_header: str,
+) -> dict | None:
+    """Fetch an existing page by its Confluence page ID.
+
+    Returns the page dict (with ``id``, ``version``, etc.) or ``None``
+    if the page does not exist (404).
+    """
+    url = f"{base_url}/rest/api/content/{page_id}?expand=version"
+    try:
+        return _confluence_request("GET", url, auth_header=auth_header)
+    except RuntimeError:
+        # Page may have been deleted — fall back to title search
+        return None
+
+
 def publish_to_confluence(
     title: str,
     markdown_content: str,
     *,
     run_id: str = "",
     space_key: str | None = None,
+    page_id: str | None = None,
 ) -> dict:
     """Publish a Markdown document to Confluence.
 
-    If a page with the same *title* already exists in the target space
-    it is **updated**; otherwise a new page is created.
+    When *page_id* is provided the existing page is updated directly
+    (no title search needed).  Otherwise, if a page with the same
+    *title* already exists in the target space it is **updated**;
+    otherwise a new page is created.
 
     Args:
         title: Page title in Confluence.
@@ -266,6 +298,9 @@ def publish_to_confluence(
         run_id: Optional run ID for logging context.
         space_key: Optional explicit space key override.  When omitted,
             resolved via context variable → ``CONFLUENCE_SPACE_KEY`` env.
+        page_id: Optional existing Confluence page ID.  When provided,
+            the page is updated by ID — avoiding duplicate creation
+            when the same idea is published more than once.
 
     Returns:
         Dict with ``page_id``, ``url``, and ``action`` (``created`` or
@@ -276,16 +311,25 @@ def publish_to_confluence(
 
     xhtml = md_to_confluence_xhtml(markdown_content)
     logger.info(
-        "[Confluence] Publishing '%s' (%d chars XHTML, run_id=%s)",
-        title, len(xhtml), run_id,
+        "[Confluence] Publishing '%s' (%d chars XHTML, run_id=%s, page_id=%s)",
+        title, len(xhtml), run_id, page_id or "<new>",
     )
 
-    existing = find_page_by_title(
-        title,
-        base_url=env["base_url"],
-        space_key=env["space_key"],
-        auth_header=auth,
-    )
+    # Resolve existing page: prefer stored page_id, fall back to title search
+    existing = None
+    if page_id:
+        existing = _get_page_by_id(
+            page_id,
+            base_url=env["base_url"],
+            auth_header=auth,
+        )
+    if not existing:
+        existing = find_page_by_title(
+            title,
+            base_url=env["base_url"],
+            space_key=env["space_key"],
+            auth_header=auth,
+        )
 
     if existing:
         # Update existing page

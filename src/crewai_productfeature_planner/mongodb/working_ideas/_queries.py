@@ -112,6 +112,84 @@ def find_completed_without_output() -> list[dict[str, Any]]:
         return []
 
 
+def find_resumable_on_startup() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Partition unfinalized ideas into resumable vs failed on startup.
+
+    Ideas with Slack context (``slack_channel`` + ``slack_thread_ts``)
+    and ``inprogress`` or ``paused`` status are considered resumable.
+    All other unfinalized ideas are marked as ``failed``.
+
+    Returns:
+        A 2-tuple ``(resumable, failed)`` where each element is a list
+        of dicts with ``run_id``, ``idea``, ``prev_status``,
+        ``slack_channel``, ``slack_thread_ts``.
+    """
+    now = _now_iso()
+    resumable: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    try:
+        db = _common.get_db()
+        query = {"status": {"$nin": ["completed", "archived", "failed"]}}
+        docs = list(db[WORKING_COLLECTION].find(query))
+        for doc in docs:
+            run_id = doc.get("run_id", "unknown")
+            prev_status = doc.get("status", "unknown")
+            slack_channel = doc.get("slack_channel")
+            slack_thread_ts = doc.get("slack_thread_ts")
+
+            info = {
+                "run_id": run_id,
+                "idea": doc.get("idea", ""),
+                "prev_status": prev_status,
+                "slack_channel": slack_channel,
+                "slack_thread_ts": slack_thread_ts,
+                "project_id": doc.get("project_id"),
+            }
+
+            # Resumable: has Slack context and was actively running
+            if (
+                slack_channel
+                and slack_thread_ts
+                and prev_status in ("inprogress", "paused")
+            ):
+                resumable.append(info)
+                logger.info(
+                    "[MongoDB] Startup: idea %s (%s) is resumable",
+                    run_id, prev_status,
+                )
+            else:
+                # Mark as failed
+                db[WORKING_COLLECTION].update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {
+                        "status": "failed",
+                        "error": (
+                            f"Run was in '{prev_status}' status when the "
+                            f"server restarted. No Slack context available "
+                            f"for auto-resume."
+                        ),
+                        "update_date": now,
+                    }},
+                )
+                failed.append(info)
+                logger.warning(
+                    "[MongoDB] Startup recovery: working idea %s "
+                    "(%s -> failed) — no resume context",
+                    run_id, prev_status,
+                )
+
+        logger.info(
+            "[MongoDB] Startup partition: %d resumable, %d failed",
+            len(resumable), len(failed),
+        )
+        return resumable, failed
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Startup partition (unfinalized ideas) failed: %s", exc,
+        )
+        return [], []
+
+
 def fail_unfinalized_on_startup() -> list[dict[str, Any]]:
     """Mark all unfinalized working ideas as ``failed`` on server restart.
 
@@ -377,6 +455,29 @@ def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
         "sections_done": sections_done,
         "total_sections": total_sections,
     }
+
+
+def has_active_idea_flow(project_id: str) -> bool:
+    """Return ``True`` if the project has any in-progress idea flow.
+
+    Checks the ``workingIdeas`` collection for documents with
+    ``status == "inprogress"`` and matching *project_id*.  Used by
+    admin guardrails to prevent project configuration while a flow
+    is actively running.
+    """
+    try:
+        db = _common.get_db()
+        count = db[WORKING_COLLECTION].count_documents(
+            {"project_id": project_id, "status": "inprogress"},
+            limit=1,
+        )
+        return count > 0
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] has_active_idea_flow check failed for project %s: %s",
+            project_id, exc,
+        )
+        return False
 
 
 def find_ideas_by_project(
@@ -648,3 +749,32 @@ def get_run_documents(run_id: str) -> list[dict[str, Any]]:
     except PyMongoError as exc:
         logger.error("[MongoDB] Failed to fetch document for run_id=%s: %s", run_id, exc)
         return []
+
+
+def find_idea_by_thread(
+    channel: str,
+    thread_ts: str,
+) -> dict[str, Any] | None:
+    """Find the most-recent working-idea document for a Slack thread.
+
+    Looks up by ``slack_channel`` + ``slack_thread_ts``.  Excludes
+    archived ideas.  Returns the newest match (by ``created_at``
+    descending) or ``None``.
+    """
+    try:
+        db = _common.get_db()
+        doc = db[WORKING_COLLECTION].find_one(
+            {
+                "slack_channel": channel,
+                "slack_thread_ts": thread_ts,
+                "status": {"$ne": "archived"},
+            },
+            sort=[("created_at", -1)],
+        )
+        return doc
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] find_idea_by_thread failed (channel=%s thread=%s): %s",
+            channel, thread_ts, exc,
+        )
+        return None

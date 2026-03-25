@@ -262,34 +262,27 @@ def run_post_completion(flow: PRDFlow) -> None:
 
 
 def _run_auto_post_completion(flow: PRDFlow) -> None:
-    """Run Confluence-only post-completion crew (auto-approve mode).
+    """Notify that the PRD is ready for publishing (auto-approve mode).
 
-    Jira ticketing is **never** included in auto-approve mode because
-    it must go through the phased approval flow (skeleton → Epics &
-    Stories → Sub-tasks) with user interaction at each gate.
+    Confluence and Jira publishing are **never** triggered automatically.
+    The user must explicitly choose to publish via Slack button or API.
     """
-    from crewai_productfeature_planner.orchestrator import (
-        build_post_completion_crew,
+    logger.info(
+        "[PostCompletion] PRD finalized for run_id=%s — awaiting "
+        "user-triggered publish (no auto-publish).",
+        flow.state.run_id,
     )
-    from crewai_productfeature_planner.scripts.retry import (
-        crew_kickoff_with_retry,
-    )
-
-    crew = build_post_completion_crew(flow, confluence_only=True)
-    if crew is None:
-        logger.info(
-            "[PostCompletion] No delivery steps needed — skipping."
-        )
-        return
-    result = crew_kickoff_with_retry(crew, step_label="post_completion")
-    persist_post_completion(flow, result)
+    flow._notify_progress("prd_ready_for_publish", {})
 
 
 def _run_phased_post_completion(flow: PRDFlow) -> None:
-    """Run phased Confluence + Jira delivery with approval gates."""
-    from crewai_productfeature_planner.orchestrator import (
-        build_post_completion_crew,
-    )
+    """Run phased Jira delivery with approval gates.
+
+    Confluence publishing is NOT triggered here — it must be explicitly
+    requested by the user.  The Jira phased flow only starts when
+    Confluence has already been published (the prerequisite check in
+    ``_check_jira_prerequisites`` enforces this).
+    """
     from crewai_productfeature_planner.orchestrator._jira import (
         _check_jira_prerequisites,
         _persist_jira_phase,
@@ -303,24 +296,17 @@ def _run_phased_post_completion(flow: PRDFlow) -> None:
         crew_kickoff_with_retry,
     )
 
-    # ── Step 1: Confluence publish (reuse crew minus Jira tasks) ──
-    # Build post-completion crew — it still handles Confluence.
-    # We run it first; Jira is handled separately below.
-    # Temporarily clear jira credentials so the crew only does Confluence.
-    from crewai_productfeature_planner.orchestrator._helpers import (
-        _has_confluence_credentials,
-        _has_gemini_credentials,
-    )
-
+    # Confluence is NOT auto-published here.  The user must trigger
+    # it explicitly via Slack or API.  Log the status instead.
     confluence_done = bool(getattr(flow.state, "confluence_url", ""))
-    has_confluence = _has_confluence_credentials() and _has_gemini_credentials()
-    if has_confluence and not confluence_done and flow.state.final_prd:
-        crew = build_post_completion_crew(flow, confluence_only=True)
-        if crew is not None:
-            result = crew_kickoff_with_retry(
-                crew, step_label="post_completion_confluence",
-            )
-            persist_post_completion(flow, result)
+    if not confluence_done:
+        logger.info(
+            "[PhasedPostCompletion] Confluence not yet published for "
+            "run_id=%s — user must publish first before Jira can start.",
+            flow.state.run_id,
+        )
+        flow._notify_progress("prd_ready_for_publish", {})
+        return
 
     # ── Phase 1: Generate Jira skeleton ───────────────────────
     skip_reason = _check_jira_prerequisites(flow)

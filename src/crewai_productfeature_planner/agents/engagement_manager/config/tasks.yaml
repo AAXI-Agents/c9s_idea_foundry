@@ -1,0 +1,300 @@
+engagement_response_task:
+  description: >
+    A user has sent a message that does not match any known system
+    intent.  Your job is to understand what they need and guide them
+    to the right action — OR answer their question directly using
+    your project knowledge.
+
+    ## User Message
+    {user_message}
+
+    ## Conversation History
+    {conversation_history}
+
+    ## Available Actions
+    The system supports these actions (each has a clickable button):
+    - **New Idea / Create PRD** — start iterating on a product idea
+    - **Resume PRD** — continue a paused or unfinished PRD flow
+    - **Restart PRD** — start over on an existing idea from scratch
+    - **List Ideas** — see all ideas in the current project
+    - **List Products** — view completed products and delivery status
+    - **Publish to Confluence** — publish a completed PRD
+    - **Create Jira Tickets** — create Jira epics, stories, sub-tasks
+    - **Check Publish Status** — check Confluence/Jira delivery status
+    - **Switch Project** — change to a different project workspace
+    - **Create Project** — set up a new project workspace
+    - **Configure Project** — update Confluence/Jira keys
+    - **Configure Memory** — add guardrails, knowledge, tools to project
+    - **Help** — show all available actions
+
+    ## Active Context
+    {active_context}
+
+    ## Project Knowledge
+    {project_knowledge}
+
+    ## Your Task
+
+    First, classify the user's message:
+
+    **A. Knowledge question** — user is asking about existing ideas,
+    wanting a summary, comparison, status overview, or holistic view
+    across the project. Examples:
+    - "summary of all the ideas"
+    - "what ideas do we have?"
+    - "how many PRDs are completed?"
+    - "compare idea X with idea Y"
+    - "what's the status of our project?"
+
+    If it's a knowledge question:
+    1. Review the Project Knowledge section above for completed ideas.
+    2. If you have file-reading tools, use them to read idea markdown
+       files from the project's ideas/ folder for detailed content.
+       The directory tool can list files; the file read tool can read
+       their full markdown content.
+    3. Provide a comprehensive, well-structured answer based on the
+       actual idea content — include titles, key themes, statuses,
+       and how ideas relate to each other.
+    4. When summarizing multiple ideas, highlight:
+       - Common themes and synergies between ideas
+       - Potential duplications or overlaps
+       - Coverage gaps (what areas haven't been explored yet)
+    5. Keep the response informative but concise (use bullet points).
+
+    **B. Action intent** — user wants to do something specific:
+    1. Determine which action(s) would best serve their needs.
+    2. If clear, recommend the specific action button.
+    3. If ambiguous, ask 1-2 clarifying questions.
+    4. Keep your response concise (2-4 sentences max).
+    5. End with a recommendation of which action button to click.
+
+    **C. Idea feedback / steering** — user is providing feedback on
+    an in-progress idea iteration:
+    1. Explain how to provide feedback during the iteration flow.
+
+    IMPORTANT: Never suggest the user type a command.  Always
+    recommend clicking a button when suggesting actions.
+  expected_output: >
+    For knowledge questions: A well-structured summary or analysis
+    based on actual project data — with idea titles, themes, and
+    relationships. Use bullet points and bold text for readability.
+
+    For action intents: A concise, helpful response (2-4 sentences)
+    that identifies what the user wants and recommends the best action.
+    Must reference at least one clickable action by its exact label.
+
+
+# ── Idea-to-PRD Orchestration Task ──────────────────────────────
+
+idea_to_prd_orchestration_task:
+  description: >
+    You are the Engagement Manager orchestrating the full idea-to-PRD
+    lifecycle.  A user has submitted a product idea and you must
+    coordinate all specialist agents to transform it into a complete,
+    publication-ready PRD.
+
+    ## The Idea
+    {idea}
+
+    ## Initiating User
+    {initiator_user_id}
+
+    ## Run ID
+    {run_id}
+
+    ## Current Phase
+    {current_phase}
+
+    ## Conversation History
+    {conversation_history}
+
+    ## Completed Work So Far
+    {completed_work}
+
+    ## User Steering Message (if any)
+    {user_steering_message}
+
+    ## Your Orchestration Plan
+
+    Execute the following two-step strategy:
+
+    ### Step 1 — Sequential Foundation (must complete in order)
+
+    1. **Idea Refinement** (Idea Refiner agent)
+       - Enrich the raw idea with domain expertise, competitive context,
+         user pain-points, and success criteria
+       - 3-10 iterative cycles until the idea is rich enough for PRD
+       - HEARTBEAT: Before starting, tell user "Refining your idea with
+         industry expertise..." — after each cycle, share a brief update
+         on what was improved
+
+    2. **Executive Summary** (Product Manager agent)
+       - Draft the executive summary based on the refined idea
+       - Iterate with user feedback until approved
+       - HEARTBEAT: "Drafting executive summary..." → after each
+         iteration, share the current draft and ask for feedback
+
+    ### Step 2 — Coordinated Parallel Execution
+
+    Once Step 1 completes, coordinate these agents intelligently:
+
+    **Can start immediately in parallel:**
+    - **CEO Review** → Executive Product Summary (depends on: exec summary)
+    - **Requirements Breakdown** → Entities, APIs, state machines
+      (depends on: refined idea + exec summary)
+
+    **Start after Requirements Breakdown completes:**
+    - **Engineering Plan** (Eng Manager) → Architecture + phased plan
+      (depends on: requirements + exec product summary)
+    - **UX Design** (UX Designer) → Figma Make prototype
+      (depends on: exec product summary)
+
+    **Start after all above complete:**
+    - **Section Drafting** (Product Manager) → Individual PRD sections:
+      Problem Statement, User Personas, Functional Requirements,
+      Non-Functional Requirements, Edge Cases, Error Handling,
+      Success Metrics, Dependencies, Assumptions
+      (sections can be drafted in parallel once context is available)
+
+    For each agent task:
+    - Decide whether it can run now or must wait for dependencies
+    - Start parallel tasks together when their inputs are ready
+    - Route the output of each agent as input to dependent agents
+    - Always pick the execution order that maximizes data richness
+      for downstream agents while minimizing total token usage
+
+    ### Heartbeat Protocol
+
+    At EVERY stage transition, provide a heartbeat update:
+    - **PLANNING**: "I'm planning the next step — [brief explanation]"
+    - **STARTING**: "Starting [agent name] — [what it will produce]"
+    - **PROGRESS**: "The [agent name] is working on [brief status]..."
+    - **COMPLETED**: "[Agent name] complete — [1-sentence summary of output]"
+    - **WAITING**: "Waiting for your feedback on [what]..."
+    - **STEERING**: "Got it — incorporating your feedback into [phase]"
+
+    ### User Steering Detection
+
+    While orchestrating, actively watch for these user signals:
+    - Requests to change scope or focus → incorporate into current phase
+    - Additional constraints or requirements → feed to active agent
+    - Questions about progress → respond with current status
+    - Requests to skip or speed up → adjust plan accordingly
+    - Requests to add detail → route to appropriate agent
+
+    When user steering is detected, acknowledge it immediately and
+    explain how it will be incorporated.
+
+    ### Session Isolation
+
+    CRITICAL: Only respond to messages from user {initiator_user_id}.
+    If a message comes from a different user, ignore it completely.
+    This prevents conversational noise from affecting PRD quality.
+
+    ### Goal
+
+    The output of this orchestration is a complete PRD that is ready
+    for Confluence publication, Jira ticket creation, and Figma design
+    handoff.  Every section must be drafted, critiqued, and refined.
+
+  expected_output: >
+    A structured orchestration plan and execution log that includes:
+    1. The execution order chosen (with rationale for parallel vs sequential)
+    2. Heartbeat messages for each phase transition
+    3. A summary of all completed agent outputs
+    4. Any user steering that was incorporated
+    5. Final status: PRD ready for publication (Confluence, Jira, Figma)
+
+    The PRD should contain all sections: Executive Summary, Executive
+    Product Summary, Engineering Plan, Problem Statement, User Personas,
+    Functional Requirements, Non-Functional Requirements, Edge Cases,
+    Error Handling, Success Metrics, Dependencies, and Assumptions.
+
+
+# ── Heartbeat Update Task ───────────────────────────────────────
+
+heartbeat_update_task:
+  description: >
+    Generate a brief, user-friendly heartbeat update for the current
+    phase of the idea-to-PRD orchestration.
+
+    ## Phase
+    {phase}
+
+    ## Status
+    {status}
+
+    ## Agent Working
+    {agent_name}
+
+    ## Details
+    {details}
+
+    ## Run ID
+    {run_id}
+
+    Produce a concise update message (1-2 sentences) that tells the
+    user what is happening right now.  Use emoji for visual clarity:
+    - :brain: for thinking/planning
+    - :gear: for agent working
+    - :white_check_mark: for completion
+    - :speech_balloon: for waiting on user input
+    - :arrows_counterclockwise: for incorporating feedback
+
+    Keep it brief, friendly, and informative.
+  expected_output: >
+    A single concise heartbeat message (1-2 sentences) with appropriate
+    emoji prefix that communicates the current orchestration status.
+
+
+# ── User Steering Detection Task ───────────────────────────────
+
+user_steering_detection_task:
+  description: >
+    Analyse a user message received during an active idea-to-PRD
+    orchestration to determine if the user is trying to steer the
+    current iteration.
+
+    ## User Message
+    {user_message}
+
+    ## Current Phase
+    {current_phase}
+
+    ## Current Agent Working
+    {current_agent}
+
+    ## Idea Being Processed
+    {idea}
+
+    ## Initiator User ID
+    {initiator_user_id}
+
+    ## Message Author User ID
+    {message_author_id}
+
+    ## Your Task
+
+    1. **Session check**: If {message_author_id} ≠ {initiator_user_id},
+       respond with: IGNORE — message is from a different user.
+
+    2. **Intent classification**: Determine if the message is:
+       - **STEERING** — user wants to change scope, add constraints,
+         shift focus, add requirements, or modify the current iteration
+       - **QUESTION** — user is asking about progress or process
+       - **FEEDBACK** — user is providing direct feedback on current output
+       - **UNRELATED** — message is not about the current PRD process
+
+    3. **Action recommendation**:
+       - STEERING → extract the specific change and which agent/phase
+         should incorporate it
+       - QUESTION → formulate a brief status response
+       - FEEDBACK → route to the currently active agent
+       - UNRELATED → acknowledge but redirect to the active process
+
+  expected_output: >
+    A structured response with:
+    - **Classification**: IGNORE | STEERING | QUESTION | FEEDBACK | UNRELATED
+    - **Action**: What to do with this message
+    - **Extracted intent**: The specific user request (if applicable)
+    - **Target phase/agent**: Which part of the process to modify

@@ -109,6 +109,7 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
         find_completed_without_confluence,
     )
     from crewai_productfeature_planner.mongodb.product_requirements import (
+        get_delivery_record,
         upsert_delivery_record,
     )
     from crewai_productfeature_planner.mongodb.project_config import (
@@ -122,6 +123,12 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
 
     if not _has_confluence_credentials():
         raise RuntimeError("Confluence credentials are not configured")
+
+    # Look up existing page_id so we update instead of creating a duplicate
+    existing_page_id: str | None = None
+    record = get_delivery_record(run_id)
+    if record:
+        existing_page_id = record.get("confluence_page_id") or None
 
     # Find the matching document
     docs = find_completed_without_confluence()
@@ -154,6 +161,7 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
             title=title,
             markdown_content=content,
             run_id=run_id,
+            page_id=existing_page_id,
         )
 
     upsert_delivery_record(
@@ -213,6 +221,16 @@ def publish_confluence_all() -> dict[str, Any]:
             ctx_space = pc.get("confluence_space_key", "")
             ctx_parent = pc.get("confluence_parent_id", "")
 
+            # Look up existing page_id to update instead of creating duplicate
+            existing_page_id: str | None = None
+            if rid:
+                from crewai_productfeature_planner.mongodb.product_requirements import (
+                    get_delivery_record as _get_dr,
+                )
+                rec = _get_dr(rid)
+                if rec:
+                    existing_page_id = rec.get("confluence_page_id") or None
+
             with confluence_project_context(
                 space_key=ctx_space, parent_id=ctx_parent,
             ):
@@ -220,6 +238,7 @@ def publish_confluence_all() -> dict[str, Any]:
                     title=item["title"],
                     markdown_content=item["content"],
                     run_id=item.get("run_id", ""),
+                    page_id=existing_page_id,
                 )
 
             # Persist delivery record in productRequirements

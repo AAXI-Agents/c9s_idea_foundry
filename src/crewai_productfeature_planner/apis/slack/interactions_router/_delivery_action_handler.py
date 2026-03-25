@@ -72,7 +72,11 @@ def _do_create_jira(
     channel: str,
     thread_ts: str,
 ) -> None:
-    """Trigger the Jira skeleton phase for a specific run_id."""
+    """Trigger the Jira skeleton phase for a specific run_id.
+
+    Requires Confluence to be published first.  If not published,
+    guides the user to publish to Confluence instead.
+    """
     from crewai_productfeature_planner.tools.slack_tools import (
         SlackSendMessageTool,
         _get_slack_client,
@@ -80,6 +84,47 @@ def _do_create_jira(
 
     send_tool = SlackSendMessageTool()
     client = _get_slack_client()
+
+    # ── Check Confluence prerequisite ─────────────────────────
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        get_delivery_record,
+    )
+    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+        find_run_any_status,
+    )
+
+    doc = find_run_any_status(run_id)
+    record = get_delivery_record(run_id)
+    confluence_url = (
+        (record.get("confluence_url") if record else "")
+        or (doc.get("confluence_url") if doc else "")
+    )
+    if not confluence_url:
+        # Guide user to publish to Confluence first
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            publish_only_blocks,
+        )
+        msg = (
+            f"<@{user_id}> :warning: Confluence must be published before "
+            "creating Jira tickets. Please publish to Confluence first."
+        )
+        if client:
+            pub_blocks = publish_only_blocks(run_id)
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": msg}},
+                        *pub_blocks,
+                    ],
+                    text=msg,
+                )
+            except Exception as exc:
+                logger.debug("Confluence-first message failed: %s", exc)
+                send_tool.run(channel=channel, thread_ts=thread_ts, text=msg)
+        else:
+            send_tool.run(channel=channel, thread_ts=thread_ts, text=msg)
+        return
 
     # Acknowledge
     ack_text = (

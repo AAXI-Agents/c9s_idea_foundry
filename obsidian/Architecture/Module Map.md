@@ -37,6 +37,7 @@
 | `qa_lead/` | QA lead agent (stub, v0.18.0) |
 | `retro_manager/` | Retro manager agent (stub, v0.18.0) |
 | `ux_designer/` | UX Designer — Figma Make prompt generation + submission (v0.20.0) |
+| `engagement_manager/` | Engagement Manager & PRD Orchestrator — handles unknown intents, orchestrates idea-to-PRD lifecycle with heartbeats, user steering, session isolation (v0.35.0, expanded v0.39.0) |
 | `orchestrator/` | Atlassian publishing + Jira agents |
 
 ## APIs (`apis/`)

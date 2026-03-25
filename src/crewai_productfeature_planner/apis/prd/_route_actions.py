@@ -109,7 +109,13 @@ async def kickoff_prd_flow(
     """Trigger the iterative PRD generation flow."""
     logger.info("[API] PRD kickoff by user_id=%s", user.get("user_id"))
     # Enforce single active job — reject if one is already running
-    active = find_active_job()
+    try:
+        active = find_active_job()
+    except Exception as exc:
+        logger.error("[API] Failed to check active jobs: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to check active jobs",
+        ) from exc
     if active is not None:
         raise HTTPException(
             status_code=409,

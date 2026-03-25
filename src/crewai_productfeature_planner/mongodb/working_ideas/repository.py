@@ -40,10 +40,13 @@ from crewai_productfeature_planner.mongodb.working_ideas._queries import (  # no
     find_completed_ideas_by_project,
     find_completed_without_confluence,
     find_completed_without_output,
+    find_idea_by_thread,
     find_ideas_by_project,
+    find_resumable_on_startup,
     find_run_any_status,
     find_unfinalized,
     get_run_documents,
+    has_active_idea_flow,
 )
 
 # -- Iteration save / update operations -------------------------------------
@@ -79,10 +82,13 @@ __all__ = [
     "find_completed_ideas_by_project",
     "find_completed_without_confluence",
     "find_completed_without_output",
+    "find_idea_by_thread",
     "find_ideas_by_project",
+    "find_resumable_on_startup",
     "find_run_any_status",
     "find_unfinalized",
     "get_run_documents",
+    "has_active_idea_flow",
     # _sections
     "save_executive_summary",
     "save_failed",

@@ -68,6 +68,186 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Phrases that indicate the user is asking about flow status / summary
+_SUMMARY_PHRASES = (
+    "summary", "status", "progress", "where are we",
+    "how far", "what stage", "current state", "what's happening",
+    "what is happening", "update me", "give me an update",
+    "how's it going", "how is it going", "what section",
+)
+
+
+def _is_summary_request(text: str) -> bool:
+    """Return ``True`` if *text* looks like a request for flow status."""
+    lower = text.lower()
+    return any(phrase in lower for phrase in _SUMMARY_PHRASES)
+
+
+def _build_flow_summary(doc: dict) -> str | None:
+    """Build a human-readable summary of the flow state from a working-idea doc.
+
+    Returns ``None`` if the document doesn't contain enough data.
+    """
+    from crewai_productfeature_planner.apis.prd._sections import SECTION_ORDER
+
+    status = doc.get("status", "unknown")
+    idea_text = doc.get("idea") or doc.get("finalized_idea") or "Unknown idea"
+    # Truncate long idea text
+    if len(idea_text) > 200:
+        idea_text = idea_text[:200] + "…"
+
+    section_obj = doc.get("section") or {}
+    completed_sections: list[str] = []
+    for key, label in SECTION_ORDER:
+        if key == "executive_summary":
+            raw_exec = doc.get("executive_summary", [])
+            if isinstance(raw_exec, list) and raw_exec:
+                completed_sections.append(label)
+        elif key in section_obj:
+            entries = section_obj[key]
+            if isinstance(entries, list) and entries:
+                completed_sections.append(label)
+
+    total = len(SECTION_ORDER)
+    done = len(completed_sections)
+
+    # Build status label
+    status_labels = {
+        "inprogress": ":gear: *In Progress*",
+        "completed": ":white_check_mark: *Completed*",
+        "paused": ":pause_button: *Paused*",
+        "failed": ":x: *Failed*",
+    }
+    status_label = status_labels.get(status, f"*{status.title()}*")
+
+    parts = [
+        f"{status_label} — {done}/{total} sections complete",
+        f"*Idea:* {idea_text}",
+    ]
+    if completed_sections:
+        parts.append("*Sections done:* " + ", ".join(completed_sections))
+
+    remaining = [
+        label for key, label in SECTION_ORDER
+        if label not in completed_sections
+    ]
+    if remaining and status == "inprogress":
+        parts.append("*Remaining:* " + ", ".join(remaining))
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Active-flow guard helper
+# ---------------------------------------------------------------------------
+
+
+def _is_flow_active(project_id: str) -> bool:
+    """Return ``True`` if the project has any in-progress idea flow."""
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            has_active_idea_flow,
+        )
+        return has_active_idea_flow(project_id)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Engagement Manager — handles unknown / general_question intents
+# ---------------------------------------------------------------------------
+
+
+def _handle_engagement_manager(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    clean_text: str,
+    history: list[dict] | None,
+    session_project_id: str | None,
+    session_project_name: str | None,
+    reply_text: str,
+    send_tool: object,
+) -> str:
+    """Use the Engagement Manager agent to handle unknown intents.
+
+    Calls the agent synchronously to generate a context-aware response,
+    then posts it with relevant action buttons.  Falls back to a static
+    help message if the agent fails.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        BTN_HELP,
+        BTN_NEW_IDEA,
+        BTN_LIST_IDEAS,
+        BTN_RESUME_PRD,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    # Build active context description for the agent
+    ctx_parts: list[str] = []
+    if session_project_id:
+        ctx_parts.append(
+            f"Active project: {session_project_name or session_project_id}"
+        )
+    else:
+        ctx_parts.append("No project selected yet.")
+    active_context = " | ".join(ctx_parts)
+
+    # Try the engagement manager agent
+    try:
+        from crewai_productfeature_planner.agents.engagement_manager import (
+            handle_unknown_intent,
+        )
+        agent_response = handle_unknown_intent(
+            user_message=clean_text,
+            conversation_history=history,
+            active_context=active_context,
+            project_id=session_project_id,
+        )
+    except Exception:
+        logger.warning(
+            "Engagement Manager agent failed — using static fallback",
+            exc_info=True,
+        )
+        agent_response = ""
+
+    if agent_response:
+        fallback_text = f"<@{user}> {agent_response}"
+    else:
+        fallback_text = reply_text or (
+            f"<@{user}> I'm not sure what you'd like me to do. "
+            ":thinking_face:\n\n"
+            "Try mentioning me with a product idea to create a PRD, like:\n"
+            ">  _\"iterate an idea for a mobile app\"_"
+        )
+        if not fallback_text.startswith(f"<@{user}>"):
+            fallback_text = f"<@{user}> {fallback_text}"
+
+    # Pick action buttons based on context
+    buttons = [BTN_NEW_IDEA, BTN_HELP]
+    if session_project_id:
+        buttons = [BTN_NEW_IDEA, BTN_LIST_IDEAS, BTN_RESUME_PRD, BTN_HELP]
+
+    client = _get_slack_client()
+    if client:
+        try:
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                blocks=[
+                    {"type": "section", "text": {"type": "mrkdwn", "text": fallback_text}},
+                    {"type": "actions", "elements": buttons},
+                ],
+                text=fallback_text,
+            )
+        except Exception:
+            send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+    else:
+        send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+
+    append_to_thread(channel, thread_ts, "assistant", fallback_text)
+    return fallback_text
+
 
 # ---------------------------------------------------------------------------
 # Core: interpret + act
@@ -297,6 +477,21 @@ def _interpret_and_act_inner(
                 channel, thread_ts, user, history,
             )
             return
+        # Block config changes while an idea flow is in-progress
+        if session_project_id and _is_flow_active(session_project_id):
+            _reply(
+                channel, thread_ts,
+                ":warning: Cannot configure project settings while an idea "
+                "flow is in progress. Please wait for the current flow to "
+                "complete or publish before making changes.",
+            )
+            tracked_response = "(blocked — active flow)"
+            log_tracked_interaction(
+                log_interaction, "slack", clean_text, "update_config",
+                tracked_response, None, None, session_project_id,
+                channel, thread_ts, user, history,
+            )
+            return
         _handle_update_config(
             channel, thread_ts, user, session,
             confluence_space_key=interpretation.get("confluence_space_key"),
@@ -319,8 +514,18 @@ def _interpret_and_act_inner(
             )
             tracked_response = "(admin required)"
         else:
-            _handle_configure_memory(channel, thread_ts, user, session)
-            tracked_response = "(memory configuration prompt)"
+            # Block config changes while an idea flow is in-progress
+            if session_project_id and _is_flow_active(session_project_id):
+                _reply(
+                    channel, thread_ts,
+                    ":warning: Cannot configure project memory while an idea "
+                    "flow is in progress. Please wait for the current flow to "
+                    "complete or publish before making changes.",
+                )
+                tracked_response = "(blocked — active flow)"
+            else:
+                _handle_configure_memory(channel, thread_ts, user, session)
+                tracked_response = "(memory configuration prompt)"
         log_tracked_interaction(
             log_interaction, "slack", clean_text, "configure_memory",
             tracked_response, None, None, session_project_id,
@@ -490,13 +695,17 @@ def _interpret_and_act_inner(
             tracked_response = ask_text
         else:
             lower_text = clean_text.lower()
-            # Interactive (step-by-step) is the DEFAULT.  The user must
-            # explicitly opt-out with "auto", "fast", "quick", etc.
-            auto_mode = any(
+            # Automated (fully autonomous) is the DEFAULT.  The user
+            # must explicitly opt-in with "interactive", "step-by-step",
+            # etc. to get the manual approval gates.
+            interactive_mode = any(
                 kw in lower_text
-                for kw in ("auto", "fast", "quick", "auto-approve", "no approval")
+                for kw in (
+                    "interactive", "step-by-step", "step by step",
+                    "manual", "walk me through",
+                )
             )
-            interactive = not auto_mode
+            interactive = interactive_mode
 
             if interactive:
                 ack_text = (
@@ -507,9 +716,11 @@ def _interpret_and_act_inner(
                 )
             else:
                 ack_text = (
-                    f"<@{user}> Got it! :rocket: I'm starting to iterate on your idea:\n"
-                    f"> _{idea}_\n\n"
-                    "I'll post the results here when done."
+                    f"<@{user}> Got it! :rocket: I'm starting a *fully automated* "
+                    f"idea iteration for:\n> _{idea}_\n\n"
+                    "I'll keep you updated with progress summaries at each step. "
+                    "Reply in this thread at any time to provide feedback or "
+                    "steer the direction."
                 )
             send_tool.run(channel=channel, text=ack_text, thread_ts=thread_ts)
             append_to_thread(channel, thread_ts, "assistant", ack_text)
@@ -540,21 +751,64 @@ def _interpret_and_act_inner(
         _handle_check_publish_intent(channel, thread_ts, user, send_tool)
         tracked_response = "(check_publish status reported)"
 
-    else:
+    elif intent == "general_question":
+        # Check if the user is asking about an active flow in this thread.
+        # If so, provide a flow summary instead of a generic answer.
+        if _is_summary_request(clean_text):
+            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                find_idea_by_thread,
+            )
+            flow_doc = find_idea_by_thread(channel, thread_ts)
+            if flow_doc:
+                summary = _build_flow_summary(flow_doc)
+                if summary:
+                    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+                        BTN_LIST_IDEAS,
+                    )
+                    from crewai_productfeature_planner.tools.slack_tools import (
+                        _get_slack_client,
+                    )
+                    summary_text = f"<@{user}> Here's the current status:\n\n{summary}"
+                    client = _get_slack_client()
+                    if client:
+                        try:
+                            client.chat_postMessage(
+                                channel=channel,
+                                thread_ts=thread_ts,
+                                blocks=[
+                                    {"type": "section", "text": {"type": "mrkdwn", "text": summary_text}},
+                                    {"type": "actions", "elements": [BTN_LIST_IDEAS]},
+                                ],
+                                text=summary_text,
+                            )
+                        except Exception:
+                            send_tool.run(channel=channel, text=summary_text, thread_ts=thread_ts)
+                    else:
+                        send_tool.run(channel=channel, text=summary_text, thread_ts=thread_ts)
+                    append_to_thread(channel, thread_ts, "assistant", summary_text)
+                    tracked_response = summary_text
+                    log_tracked_interaction(
+                        log_interaction, "slack", clean_text, "flow_summary",
+                        tracked_response, idea, None, session_project_id,
+                        channel, thread_ts, user, history,
+                    )
+                    return
+
+        # General questions get a conversational reply from the LLM
+        # intent classifier — no need for the engagement manager.
         from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
             BTN_HELP,
             BTN_NEW_IDEA,
         )
         from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
-        fallback_text = reply_text or (
-            f"<@{user}> I'm not sure what you'd like me to do. "
-            ":thinking_face:\n\n"
-            "Try mentioning me with a product idea to create a PRD, like:\n"
-            ">  _\"iterate an idea for a mobile app\"_"
+        gq_text = reply_text or (
+            f"<@{user}> I generate comprehensive PRD (Product Requirements Documents) "
+            "by iterating on your idea through multiple refinement rounds. "
+            "Try describing a product idea to get started!"
         )
-        if not fallback_text.startswith(f"<@{user}>"):
-            fallback_text = f"<@{user}> {fallback_text}"
+        if not gq_text.startswith(f"<@{user}>"):
+            gq_text = f"<@{user}> {gq_text}"
         client = _get_slack_client()
         if client:
             try:
@@ -562,17 +816,24 @@ def _interpret_and_act_inner(
                     channel=channel,
                     thread_ts=thread_ts,
                     blocks=[
-                        {"type": "section", "text": {"type": "mrkdwn", "text": fallback_text}},
+                        {"type": "section", "text": {"type": "mrkdwn", "text": gq_text}},
                         {"type": "actions", "elements": [BTN_NEW_IDEA, BTN_HELP]},
                     ],
-                    text=fallback_text,
+                    text=gq_text,
                 )
             except Exception:
-                send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+                send_tool.run(channel=channel, text=gq_text, thread_ts=thread_ts)
         else:
-            send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
-        append_to_thread(channel, thread_ts, "assistant", fallback_text)
-        tracked_response = fallback_text
+            send_tool.run(channel=channel, text=gq_text, thread_ts=thread_ts)
+        append_to_thread(channel, thread_ts, "assistant", gq_text)
+        tracked_response = gq_text
+
+    else:
+        tracked_response = _handle_engagement_manager(
+            channel, thread_ts, user, clean_text, history,
+            session_project_id, session_project_name,
+            reply_text, send_tool,
+        )
 
     # ── Track this interaction for fine-tuning data ──
     interaction_id = log_tracked_interaction(

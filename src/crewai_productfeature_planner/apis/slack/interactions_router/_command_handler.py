@@ -18,6 +18,12 @@ _ADMIN_ACTIONS = frozenset({
     "cmd_create_project",
 })
 
+# Config actions blocked while an idea flow is in-progress.
+_CONFIG_ACTIONS = frozenset({
+    "cmd_configure_project",
+    "cmd_configure_memory",
+})
+
 # All cmd_* action IDs recognised by this handler.
 CMD_ACTIONS = frozenset({
     "cmd_list_ideas",
@@ -62,6 +68,13 @@ def _handle_command_action(
     if action_id in _ADMIN_ACTIONS and not can_manage_memory(user_id, channel):
         _deny_non_admin(channel, thread_ts, user_id)
         return
+
+    # Block config changes while an idea flow is in-progress
+    if action_id in _CONFIG_ACTIONS:
+        project_id = session.get("project_id") if session else None
+        if project_id and _is_flow_active(project_id):
+            _deny_active_flow(channel, thread_ts, user_id)
+            return
 
     if action_id == "cmd_list_ideas":
         from crewai_productfeature_planner.apis.slack._session_handlers import (
@@ -180,6 +193,29 @@ def _deny_non_admin(channel: str, thread_ts: str, user_id: str) -> None:
         f"<@{user_id}> :lock: Only workspace admins can manage project "
         "settings in a channel. Please ask an admin.",
     )
+
+
+def _deny_active_flow(channel: str, thread_ts: str, user_id: str) -> None:
+    """Block config changes while an idea flow is in-progress."""
+    from crewai_productfeature_planner.apis.slack._session_reply import reply
+
+    reply(
+        channel, thread_ts,
+        f"<@{user_id}> :warning: Cannot configure project settings while "
+        "an idea flow is in progress. Please wait for the current flow to "
+        "complete or publish before making changes.",
+    )
+
+
+def _is_flow_active(project_id: str) -> bool:
+    """Return ``True`` if the project has any in-progress idea flow."""
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            has_active_idea_flow,
+        )
+        return has_active_idea_flow(project_id)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _handle_help(

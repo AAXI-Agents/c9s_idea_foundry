@@ -27,6 +27,52 @@ def _with_team(team_id: str, fn, *args, **kwargs):
     return fn(*args, **kwargs)
 
 
+def _safe_handler(
+    team_id: str,
+    fn,
+    *args,
+    channel: str = "",
+    thread_ts: str = "",
+    **kwargs,
+):
+    """Run *fn* wrapped with team-id injection and crash protection.
+
+    If the handler raises any exception:
+    1. Log the full traceback at ERROR level.
+    2. Post a user-visible ":x: Something went wrong" Slack message.
+    3. Swallow the exception so the thread pool stays healthy.
+    """
+    from crewai_productfeature_planner.tools.slack_tools import current_team_id
+    current_team_id.set(team_id)
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        logger.error(
+            "Unhandled error in %s (channel=%s thread=%s): %s",
+            fn.__name__ if hasattr(fn, "__name__") else str(fn),
+            channel, thread_ts, exc,
+            exc_info=True,
+        )
+        # Best-effort user notification
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import (
+                _get_slack_client,
+            )
+            client = _get_slack_client()
+            if client and channel:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=(
+                        ":x: Something went wrong while processing your "
+                        "request. The error has been logged and our team "
+                        "has been notified. Please try again."
+                    ),
+                )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to post error reply to Slack", exc_info=True)
+
+
 # Action IDs we handle (must match blocks.py)
 _KNOWN_ACTIONS = frozenset({
     "refinement_agent",
@@ -311,9 +357,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_project_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -348,9 +395,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_command_action,
                     action_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -378,9 +426,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_memory_action,
                     action_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -408,9 +457,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_next_step_feedback,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -441,9 +491,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_idea_list_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -471,9 +522,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_product_config,
                     run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -507,9 +559,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_product_list_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -537,9 +590,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_jira_approval_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -574,9 +628,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_restart_prd_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -611,9 +666,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_archive_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -648,9 +704,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_flow_retry,
                     run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -685,9 +742,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     _handle_delivery_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 
@@ -722,9 +780,10 @@ async def slack_interactions(request: Request) -> JSONResponse:
             loop.run_in_executor(
                 None,
                 partial(
-                    _with_team, _team_id,
+                    _safe_handler, _team_id,
                     handle_project_setup_reply,
                     channel_id, thread_ts, user_id, "skip",
+                    channel=channel_id, thread_ts=thread_ts,
                 ),
             )
 

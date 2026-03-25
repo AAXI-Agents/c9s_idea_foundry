@@ -1,8 +1,8 @@
-"""Tests for interactive-by-default create_prd routing.
+"""Tests for automated-by-default create_prd routing.
 
-The interactive mode is the default when a user creates a PRD via Slack.
-Only when the user explicitly says "auto", "fast", "quick", etc. does
-the flow run in auto-approve mode.
+Automated (fully autonomous) mode is the default when a user creates a PRD
+via Slack.  Only when the user explicitly says "interactive", "step-by-step",
+"manual", or "walk me through" does the flow run in interactive mode.
 """
 
 import json
@@ -74,43 +74,42 @@ def _run(text: str, idea: str = "build a dashboard"):
 
 
 class TestInteractiveDefault:
-    """Interactive mode is the default for create_prd."""
+    """Automated mode is the default for create_prd."""
 
-    def test_plain_create_is_interactive(self):
+    def test_plain_create_is_automated(self):
         kickoff, send, _ = _run("create prd for build a dashboard")
-        kickoff.assert_called_once()
-        assert kickoff.call_args[1]["interactive"] is True
-
-    def test_ack_text_interactive(self):
-        _, send, _ = _run("create prd for build a dashboard")
-        ack = send.run.call_args[1]["text"]
-        assert "interactive" in ack.lower()
-
-    @pytest.mark.parametrize("text", [
-        "auto create prd for build a dashboard",
-        "fast create prd for build a dashboard",
-        "quick create prd for build a dashboard",
-        "create prd auto-approve for build a dashboard",
-        "create prd with no approval for build a dashboard",
-    ])
-    def test_keyword_disables_interactive(self, text):
-        kickoff, _, _ = _run(text)
         kickoff.assert_called_once()
         assert kickoff.call_args[1]["interactive"] is False
 
-    def test_ack_text_auto_mode(self):
-        _, send, _ = _run("auto create prd for build a dashboard")
+    def test_ack_text_automated(self):
+        _, send, _ = _run("create prd for build a dashboard")
         ack = send.run.call_args[1]["text"]
-        assert "results here when done" in ack
+        assert "automated" in ack.lower()
 
-    def test_metadata_records_interactive_true(self):
+    @pytest.mark.parametrize("text", [
+        "interactive create prd for build a dashboard",
+        "step-by-step create prd for build a dashboard",
+        "manual create prd for build a dashboard",
+        "walk me through create prd for build a dashboard",
+    ])
+    def test_keyword_enables_interactive(self, text):
+        kickoff, _, _ = _run(text)
+        kickoff.assert_called_once()
+        assert kickoff.call_args[1]["interactive"] is True
+
+    def test_ack_text_interactive_mode(self):
+        _, send, _ = _run("interactive create prd for build a dashboard")
+        ack = send.run.call_args[1]["text"]
+        assert "interactive" in ack.lower()
+
+    def test_metadata_records_interactive_false_by_default(self):
         _, _, log = _run("create prd for build a dashboard")
         log.assert_called_once()
         meta = log.call_args[1]["metadata"]
-        assert meta["interactive"] is True
+        assert meta["interactive"] is False
 
-    def test_metadata_records_interactive_false(self):
-        _, _, log = _run("auto create prd for build a dashboard")
+    def test_metadata_records_interactive_true(self):
+        _, _, log = _run("interactive create prd for build a dashboard")
         log.assert_called_once()
         meta = log.call_args[1]["metadata"]
-        assert meta["interactive"] is False
+        assert meta["interactive"] is True

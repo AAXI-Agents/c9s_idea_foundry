@@ -64,12 +64,17 @@ class TestDoPublish:
 class TestDoCreateJira:
     """Verify _do_create_jira starts a background Jira skeleton thread."""
 
+    _FIND_RUN = "crewai_productfeature_planner.mongodb.working_ideas.repository.find_run_any_status"
+    _GET_DELIVERY = "crewai_productfeature_planner.mongodb.product_requirements.get_delivery_record"
+
     @patch(f"{_HANDLER_MODULE}.threading")
     @patch(
         "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
         return_value=MagicMock(),
     )
-    def test_starts_background_thread(self, mock_client, mock_threading):
+    @patch(_GET_DELIVERY, return_value={"confluence_url": "https://example.atlassian.net/wiki/pages/123"})
+    @patch(_FIND_RUN, return_value={"run_id": "run-3", "confluence_url": "https://example.atlassian.net/wiki/pages/123"})
+    def test_starts_background_thread(self, mock_find, mock_delivery, mock_client, mock_threading):
         from crewai_productfeature_planner.apis.slack.interactions_router._delivery_action_handler import (
             _do_create_jira,
         )
@@ -83,7 +88,9 @@ class TestDoCreateJira:
         "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
         return_value=MagicMock(),
     )
-    def test_posts_ack_message(self, mock_get_client, mock_threading):
+    @patch(_GET_DELIVERY, return_value={"confluence_url": "https://example.atlassian.net/wiki/pages/123"})
+    @patch(_FIND_RUN, return_value={"run_id": "run-4", "confluence_url": "https://example.atlassian.net/wiki/pages/123"})
+    def test_posts_ack_message(self, mock_find, mock_delivery, mock_get_client, mock_threading):
         from crewai_productfeature_planner.apis.slack.interactions_router._delivery_action_handler import (
             _do_create_jira,
         )
@@ -95,6 +102,26 @@ class TestDoCreateJira:
         assert call_kw["channel"] == "C4"
         assert call_kw["thread_ts"] == "T4"
         assert "run-4" in call_kw["text"]
+
+    @patch(
+        "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
+        return_value=MagicMock(),
+    )
+    @patch(_GET_DELIVERY, return_value=None)
+    @patch(_FIND_RUN, return_value={"run_id": "run-5"})
+    def test_requires_confluence_first(self, mock_find, mock_delivery, mock_client):
+        """Jira creation must be blocked when Confluence is not published."""
+        from crewai_productfeature_planner.apis.slack.interactions_router._delivery_action_handler import (
+            _do_create_jira,
+        )
+
+        _do_create_jira("run-5", "U5", "C5", "T5")
+        # Should post a warning about Confluence being required
+        client = mock_client.return_value
+        posted_text = client.chat_postMessage.call_args[1].get(
+            "text", ""
+        )
+        assert "confluence" in posted_text.lower() or "publish" in posted_text.lower()
 
 
 class TestDeliveryActionsInDispatch:
