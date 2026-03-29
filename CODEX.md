@@ -46,7 +46,7 @@ when you need deep context on a topic.
 | **API endpoints** | `APIs/API Overview.md` |
 | **Version history / changelog** | `Changelog/Version History.md` |
 | **MongoDB schemas** | `Database/MongoDB Schema.md` |
-| **PRD generation flow** | `Flows/PRD Flow.md` |
+| **PRD generation flow** | `Flows/PRD Flow.md` (index → 10 flow pages) |
 | **Slack integration** | `Integrations/Slack Integration.md` |
 | **Confluence publishing** | `Integrations/Confluence Integration.md` |
 | **Jira ticketing** | `Integrations/Jira Integration.md` |
@@ -64,12 +64,14 @@ when you need deep context on a topic.
 | New module / file added | `Architecture/Module Map.md` |
 | New API endpoint | `APIs/API Overview.md` + affected domain page (`APIs/Health API.md`, `APIs/Projects API.md`, `APIs/Ideas API.md`, `APIs/PRD Flow API.md`, `APIs/Publishing API.md`, `APIs/Slack API.md`, `APIs/SSO Webhooks API.md`) |
 | Changed API request/response schema | Affected `APIs/<Domain> API.md` page — update field tables |
-| New agent or model change | `Agents/Agent Roles.md`, `Agents/LLM Model Tiers.md` |
+| New agent or model change | `Agents/Agent Roles.md` + affected agent page (`Agents/Idea Refiner.md`, `Agents/Product Manager.md`, `Agents/Requirements Breakdown.md`, `Agents/Orchestrator.md`, `Agents/CEO Reviewer.md`, `Agents/Engineering Manager.md`, `Agents/Staff Engineer.md`, `Agents/QA Lead.md`, `Agents/QA Engineer.md`, `Agents/UX Designer.md`, `Agents/Engagement Manager.md`, `Agents/Idea Agent.md`), `Agents/LLM Model Tiers.md` |
+| Changed agent role/goal/backstory/task | Affected `Agents/<Agent>.md` page — update role, goal, backstory, or task sections |
 | New Slack intent or action | `Integrations/Slack Integration.md`, `APIs/Slack API.md` |
 | MongoDB schema change | `Database/MongoDB Schema.md` + affected collection page (`Database/crewJobs Schema.md`, `Database/workingIdeas Schema.md`, `Database/productRequirements Schema.md`, `Database/projectConfig Schema.md`, `Database/projectMemory Schema.md`, `Database/agentInteraction Schema.md`, `Database/userSession Schema.md`, `Database/slackOAuth Schema.md`, `Database/userSuggestions Schema.md`) |
 | New MongoDB field or index | Affected `Database/<collection> Schema.md` page — update field tables |
 | New env var | `Architecture/Environment Variables.md` |
-| Pipeline stage change | `Orchestrator/Orchestrator Overview.md` |
+| Pipeline stage change | `Orchestrator/Orchestrator Overview.md`, `Flows/PRD Flow.md` + affected flow page (`Flows/Idea Refinement Flow.md`, `Flows/Executive Summary Flow.md`, `Flows/Requirements Breakdown Flow.md`, `Flows/CEO Review Flow.md`, `Flows/Engineering Plan Flow.md`, `Flows/Section Drafting Flow.md`, `Flows/Finalization Flow.md`, `Flows/UX Design Flow.md`, `Flows/Confluence Publishing Flow.md`, `Flows/Jira Ticketing Flow.md`) |
+| Changed flow step/approval gate/skip condition | Affected `Flows/<Flow>.md` page — update step details, skip conditions, data flow |
 | Version bump | `Changelog/Version History.md` |
 | Every session | `Sessions/Session Log.md` |
 
@@ -275,6 +277,10 @@ Every code change **must** update the relevant documentation artifacts:
 | Schema / model change | Affected `obsidian/Database/<collection> Schema.md` — update field tables, indexes, repository functions |
 | New MongoDB field or index | Affected `obsidian/Database/<collection> Schema.md` |
 | New repository function | Affected `obsidian/Database/<collection> Schema.md` — add to repository functions table |
+| New or changed agent | `obsidian/Agents/Agent Roles.md` + affected `obsidian/Agents/<Agent>.md` — update role, goal, backstory, tasks |
+| Changed agent role/goal/backstory/task | Affected `obsidian/Agents/<Agent>.md` — update role, goal, backstory, or task sections |
+| Pipeline or flow step change | `obsidian/Flows/PRD Flow.md` + affected `obsidian/Flows/<Flow>.md` — update step details, skip conditions, data flow |
+| Changed flow approval gate or skip condition | Affected `obsidian/Flows/<Flow>.md` — update approval gates, skip conditions |
 | Any code change | Affected Obsidian pages (see "When to Update Which Page" table above) |
 
 ---

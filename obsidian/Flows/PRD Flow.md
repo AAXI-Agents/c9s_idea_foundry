@@ -1,134 +1,131 @@
 # PRD Flow
 
-> End-to-end PRD generation pipeline defined in `flows/prd_flow.py`.
-
-## Pipeline Phases
-
-### Phase 0 — Pre-Completion Pipeline (AgentOrchestrator)
-
-**Stage 1: Idea Refinement** (Gemini, 3-10 cycles)
-- Evaluates: audience clarity, problem definition, solution specificity, competitive context, success criteria (scored 1-5)
-- Continues until all scores ≥ 3 ("IDEA_READY")
-
-**Stage 2: Requirements Breakdown** (Gemini, iterative)
-- Decomposes: entities, state machines, API contracts, acceptance criteria
-- Evaluates: feature completeness, entity granularity, state machine rigour, AI augmentation depth, API contract precision, acceptance criteria coverage (scored 1-5, all must ≥ 4)
-- Runs after executive summary approval (v0.12.3+)
-
-### Phase 1 — Executive Summary Iteration
-
-- Draft → Critique → Refine loop (min 2, max 10 cycles)
-- Multi-agent: Gemini PM + OpenAI PM
-- Critique scores: problem clarity, personas, functional reqs, non-functional reqs, edge cases, analytics, dependencies (rated 1-10)
-- Approved when all scores ≥ 8 ("READY_FOR_DEV")
-- User feedback gate: Slack users can provide critique or approve (v0.4.0+)
-- Completion gate: Continue/Stop before section drafting (v0.6.5+)
-
-### Phase 1.5 — Specialist Reviews (v0.18.0)
-
-Two specialist agents produce higher-level artefacts after executive summary approval:
-
-- **Phase 1.5a — CEO Review**: The CEO Reviewer agent transforms the executive summary into an *Executive Product Summary* — a 10-star product vision document. Source: `_ceo_eng_review.py::run_ceo_review()`
-- **Phase 1.5b — Engineering Plan**: The Eng Manager agent converts the executive product summary + requirements into an *Engineering Plan* — technical architecture, phasing, data model, test strategy. Source: `_ceo_eng_review.py::run_eng_plan()`
-- ~~**Phase 1.5c — UX Design**~~ (removed v0.41.0 — now a standalone post-PRD flow, see below)
-
-All artefacts are:
-- Stored as auto-approved specialist sections in the PRD draft
-- Used as context for Phase 2 section drafting (replacing raw executive summary)
-- Persisted to MongoDB via `save_iteration()`
-- Skipped on resume when already populated
-
-**User decision gate** (v0.20.1): After all specialist agents run, a "proceed to sections?" gate fires so the user can review requirements, exec product summary, engineering plan, and Figma design. On resume, this gate is automatically bypassed when all specialists were skipped (already completed) or Phase 2 sections already have content.
-
-**Requirements gate bypass** (v0.20.1): The requirements approval gate (`_requires_approval()`) auto-approves on resume when specialist agent state is present (`executive_product_summary`, `engineering_plan`, or `figma_design_status`), preventing 10-minute timeout re-prompts.
-
-### Phase 2 — Section-by-Section Generation
-
-- 9 remaining sections processed sequentially
-- Each: Draft → Critique → Refine (min 2, max 10 cycles)
-- Context: uses `executive_product_summary` + `engineering_plan` (v0.18.0+)
-- Critique scores: completeness, specificity, consistency, clarity, actionability, no-duplication (1-10, all must ≥ 8)
-- Approved when "SECTION_READY"
-
-### Phase 3 — Finalization
-
-- Assemble all 12 sections into markdown
-- Write PRD file to `output/prds/`
-- Mark run as completed in MongoDB
-
-### Phase 4 — Post-Completion Pipeline
-
-- **UX Design Flow** (v0.41.0): Standalone 2-phase design generation triggered after PRD completion. See below.
-- **Confluence Publish**: Push final PRD to Confluence space
-- **Jira Ticketing**: 5-phase approach (see [[Jira Integration]])
-  - Phase 1: Skeleton → Phase 2: Epics/Stories → Phase 3: Dev Sub-tasks → Phase 4: Review Sub-tasks (Staff Eng + QA Lead) → Phase 5: QA Test Sub-tasks (QA Engineer)
+> End-to-end PRD generation pipeline. Each phase has its own detail page with step-by-step flow, data flow diagrams, skip conditions, approval gates, and source file paths.
 
 ---
 
-## UX Design Flow (v0.41.0)
+## Pipeline Overview
 
-> Standalone post-PRD flow triggered from `_finalization.finalize()` after all PRD sections are approved.
+| Phase | Flow | Agent(s) | Purpose |
+|-------|------|----------|---------|
+| 0 | [[Idea Refinement Flow]] | [[Idea Refiner]] | 3-10 iterative enrichment cycles |
+| 1 | [[Executive Summary Flow]] | [[Product Manager]] | Multi-agent draft→critique→refine loop |
+| 1 | [[Requirements Breakdown Flow]] | [[Requirements Breakdown]] | Entities, state machines, API contracts |
+| 1.5a | [[CEO Review Flow]] | [[CEO Reviewer]] | 10-star Executive Product Summary |
+| 1.5b | [[Engineering Plan Flow]] | [[Engineering Manager]] | Architecture, data model, deployment |
+| 2 | [[Section Drafting Flow]] | [[Product Manager]] | 9 sections with critique scoring |
+| 3 | [[Finalization Flow]] | — | Assemble PRD, trigger post-completion |
+| Post-PRD | [[UX Design Flow]] | [[UX Designer]] | 2-phase design specification |
+| Post-Completion | [[Confluence Publishing Flow]] | [[Orchestrator]] | Publish to Confluence |
+| Post-Completion | [[Jira Ticketing Flow]] | [[Orchestrator]], [[Staff Engineer]], [[QA Lead]], [[QA Engineer]] | 5-phase Jira ticket creation |
 
-### Trigger
-- Called by `_trigger_ux_design_flow()` in `_finalization.py`
-- Requires: executive product summary present, UX design not already completed
-- Skip guards: no EPS → skip, status already `completed` or `prompt_ready` → skip
-- Errors: BillingError/ModelBusyError/ShutdownError propagate; other errors are caught (PRD is saved regardless)
+---
 
-### Phase 1 — Draft (UX Designer + Design Partner)
-- **Agents**: UX Designer (FigmaMakeTool) + Design Partner (gstack design-consultation)
-- **Input**: Executive product summary, idea, requirements breakdown, `output/design/DESIGN.md` reference
-- **Output**: `ux_design_draft.md` — 12-section design specification (product context, aesthetics, typography, color, spacing, layout, motion, shadows, components, interactions, CSS tokens, decisions log)
-- **Source**: `_ux_design.py::run_ux_design_draft()`
+## Execution Flow
 
-### Phase 2 — Review (Senior Designer)
-- **Agents**: Senior Designer (gstack plan-design-review)
-- **Input**: Phase 1 draft
-- **Process**: 7-pass review (information architecture, interaction states, user journey, AI slop, design system alignment, responsive/accessibility, unresolved decisions) with before/after scoring (0-10 each)
-- **Output**: `ux_design_final.md` — production-ready design specification
-- **Source**: `_ux_design.py::run_ux_design_review()`
+```
+Raw Idea
+  │
+  ▼
+Phase 0: Idea Refinement (3-10 cycles)
+  │                                    ← User approval gate
+  ▼
+Phase 1: Executive Summary (2-10 iterations)
+  │                                    ← User feedback gate (each iteration)
+  │                                    ← User completion gate
+  ├──► Requirements Breakdown
+  │
+  ▼
+Phase 1.5a: CEO Review → Executive Product Summary
+  │
+  ▼
+Phase 1.5b: Engineering Plan
+  │                                    ← User decision gate (proceed to sections?)
+  ▼
+Phase 2: Section Drafting (9 sections × 2-10 iterations)
+  │                                    ← User approval gate (each section)
+  ▼
+Phase 3: Finalization
+  │
+  ├──► UX Design (Phase 1: Draft → Phase 2: Review)
+  │
+  ├──► Confluence Publishing
+  │
+  └──► Jira Ticketing (5 phases)
+       Phase 1: Skeleton            ← User approval
+       Phase 2: Epics & Stories     ← User review
+       Phase 3: Sub-tasks
+       Phase 4: Staff Eng + QA Lead reviews
+       Phase 5: QA test counter-tickets
+```
 
-### File Output
-- Only 2 files per product idea (fixed names, overwrite on each run):
-  - `output/{project_id}/ux design/ux_design_draft.md`
-  - `output/{project_id}/ux design/ux_design_final.md`
-- Entry point: `ux_design_flow.py::kick_off_ux_design_flow()`
-
-## Progress Events
-
-| Event | When | Key fields |
-|-------|------|-----------|
-| `section_start` | Section begins | `section_title`, `section_key`, `section_step`, `total_sections` |
-| `exec_summary_iteration` | Each exec summary pass | `iteration`, `max_iterations` |
-| `executive_summary_complete` | Exec summary finalized | `iterations` |
-| `section_iteration` | Each section pass | `section_title`, `iteration`, `max_iterations` |
-| `section_complete` | Section approved | `section_title`, `iterations` |
-| `all_sections_complete` | All sections done | `total_iterations`, `total_sections` |
-| `prd_complete` | Final PRD assembled | _(empty)_ |
-| `confluence_published` | Published to Confluence | `url` |
-| `jira_published` | Jira tickets created | `ticket_count` |
+---
 
 ## PRD State (`PRDState`)
 
 Tracks the full lifecycle:
-- `run_id` — unique 12-char hex identifier
-- `idea` / `original_idea` — feature idea (before/after refinement)
-- `draft` — PRDDraft containing 10 PRDSection objects
-- `executive_summary` — iterative draft with version history
-- `requirements_breakdown` — structured requirements text
-- `status` — "new" → "inprogress" → "completed"
-- `confluence_url`, `jira_output`, `jira_skeleton`, `jira_phase`
-- `jira_review_output`, `jira_qa_test_output` (v0.19.0)
 
-Progress saved to MongoDB on every iteration, enabling pause/resume.
+| Field | Type | Set by |
+|-------|------|--------|
+| `run_id` | 12-char hex | Service |
+| `idea` / `original_idea` | str | Idea Refinement |
+| `draft` | PRDDraft (10 sections) | Section Drafting |
+| `executive_summary` | ExecutiveSummaryDraft | Executive Summary |
+| `requirements_breakdown` | str | Requirements Breakdown |
+| `executive_product_summary` | str | CEO Review |
+| `engineering_plan` | str | Engineering Plan |
+| `figma_design_url` / `figma_design_prompt` | str | UX Design |
+| `confluence_url` | str | Confluence Publishing |
+| `jira_skeleton` / `jira_output` / `jira_phase` | str | Jira Ticketing |
+| `status` | `"new"` → `"inprogress"` → `"completed"` | Lifecycle |
+
+---
+
+## Progress Events
+
+| Event | When | Key Fields |
+|-------|------|-----------|
+| `pipeline_stage_start` | Any stage begins | stage name |
+| `pipeline_stage_complete` | Stage finished | iteration count |
+| `section_start` | Section begins | `section_title`, `section_step`, `total_sections` |
+| `section_complete` | Section approved | `section_title`, `iterations` |
+| `all_sections_complete` | All sections done | `total_iterations`, `total_sections` |
+| `prd_complete` | Final PRD assembled | — |
+| `confluence_published` | Published to Confluence | `url` |
+| `jira_published` | Jira tickets created | `ticket_count` |
+
+---
+
+## API Entry Points
+
+| Function | File | Purpose |
+|----------|------|---------|
+| `run_prd_flow(run_id, idea, ...)` | `apis/prd/service.py` | Execute new PRD flow |
+| `resume_prd_flow(run_id, ...)` | `apis/prd/service.py` | Resume paused/unfinalized flow |
+| `restore_prd_state(run_id)` | `apis/prd/service.py` | Rebuild state from MongoDB |
+| `make_approval_callback(run_id)` | `apis/prd/service.py` | Create blocking section-approval callback |
+
+---
+
+## Resume Behaviour
+
+Progress saved to MongoDB on every iteration, enabling pause/resume:
+- Phase 0-1: Skip if already completed (flags in state)
+- Phase 1.5: Skip if specialist outputs already populated
+- Phase 2: Skip approved sections, resume from last unapproved
+- Post-completion: Check `jira_phase` state machine, resume from next phase
+
+---
 
 ## Degenerate Content Detection
 
-If a draft is excessively short, off-topic, or contains template placeholders, the content is wiped and the section restarts from scratch.
+If a draft is excessively short (<5 chars after stripping), off-topic, or contains template placeholders, the content is wiped and the section restarts from scratch.
+
+---
 
 ## Draft Files (v0.8.3+)
 
-In-progress saves go to `output/prds/_drafts/` — only completed PRDs are in `output/prds/`.
+In-progress saves go to `output/prds/_drafts/`. Only completed PRDs appear in `output/prds/`.
 
 ---
 

@@ -4,6 +4,84 @@
 
 ---
 
+## Session — 2026-03-29 (v0.44.0)
+
+**Scope**: PRD Flow Obsidian docs breakdown — individual flow step pages with detailed step-by-step documentation
+**Version**: v0.43.9 → v0.44.0
+
+### Problem
+The monolithic PRD Flow page packed all 10 pipeline phases into a single document without step-by-step detail on skip conditions, approval gates, scoring criteria, function signatures, data flow, or resume behaviour. Users could not edit individual flow steps, and Codex could not efficiently diff flow changes.
+
+### Changes
+
+Created 10 new Obsidian pages under `obsidian/Flows/`:
+1. **Idea Refinement Flow.md** — 4 steps (skip check, refinement execution, state update, approval gate), 5 scoring criteria, progress events, resume logic
+2. **Executive Summary Flow.md** — 6 steps (pre-draft gate, parallel drafting, critique scoring, user feedback gate, refinement loop, completion gate), 7 critique criteria
+3. **Requirements Breakdown Flow.md** — 4 steps (skip check, execution, state update, approval gate), 6 scoring criteria, auto-approve conditions
+4. **CEO Review Flow.md** — 4 steps (skip check, agent execution, output processing, persistence), reasoning mode, challenge areas
+5. **Engineering Plan Flow.md** — 4 steps + user decision gate, 9 coverage areas, data flow diagram
+6. **Section Drafting Flow.md** — 7 steps per section (skip, parallel draft, persistence, approval, critique, refinement, degenerate detection), 6 critique criteria, 12-section table
+7. **Finalization Flow.md** — 10 steps (assemble, UX appendix, write file, persist, XHTML, mark complete, knowledge sync, state flags, trigger UX, trigger post-completion)
+8. **UX Design Flow.md** — 2 phases (draft with 5 steps, review with 3 steps), 12-section spec coverage, 7-pass review table, trigger conditions
+9. **Confluence Publishing Flow.md** — 5 steps (skip check, config resolve, publish, state update, delivery record), startup auto-publish
+10. **Jira Ticketing Flow.md** — 5 phases (skeleton → Epics/Stories → Sub-tasks → Review → QA Test), phase state machine diagram, approval gate invariant, 23 regression tests
+
+Updated `obsidian/Flows/PRD Flow.md`:
+- Converted to index page with pipeline overview table
+- ASCII execution flow diagram with approval gates marked
+- Links to all 10 sub-pages via `[[wikilinks]]`
+
+Updated `CODEX.md`:
+- "When to Update Which Page" table references individual flow pages
+- "Documentation Updates" table adds flow step/approval gate triggers
+
+Updated `version.py`:
+- Appended v0.44.0 CodexEntry (Y bump — new feature set)
+
+---
+
+## Session — 2026-03-29 (v0.43.9)
+
+**Scope**: Agent Roles Obsidian docs breakdown — individual agent pages with full role, goal, backstory, tasks
+**Version**: v0.43.8 → v0.43.9
+
+### Problem
+The monolithic Agent Roles page had brief summaries without the exact YAML role/goal/backstory text, task definitions, or scoring criteria. Users could not edit individual agent configurations, and Codex could not efficiently diff agent changes against the documentation.
+
+### Changes
+
+Created 12 new Obsidian pages under `obsidian/Agents/`:
+1. **Idea Refiner.md** — Research tier, 2 tasks (refine_idea, evaluate_quality), 5 scoring criteria (all ≥ 3), 3-10 iteration cycles
+2. **Product Manager.md** — Research/Critic tiers, 3 tasks (draft_prd, critique_prd, draft_section), Gemini/OpenAI/Critic variants, FileReadTool + DirectoryReadTool
+3. **Requirements Breakdown.md** — Research tier, 2 tasks (breakdown_requirements, evaluate_requirements), 6 scoring criteria (all ≥ 4)
+4. **Orchestrator.md** — Research tier, 2 tasks (publish_to_confluence, generate_jira_skeleton), ConfluencePublishTool + JiraCreateIssueTool, 3 agent variants
+5. **CEO Reviewer.md** — Research tier, 1 task (generate_executive_product_summary), reasoning=True, Phase 1.5a
+6. **Engineering Manager.md** — Research tier, 1 task (generate_engineering_plan), Architecture/Data/Test/Security/Deployment coverage, Phase 1.5b
+7. **Staff Engineer.md** — Research tier, 1 task (create_staff_engineer_review_subtasks), JiraCreateIssueTool, 11-point audit checklist, Jira Phase 4a
+8. **QA Lead.md** — Research tier, 1 task (create_qa_lead_review_subtasks), JiraCreateIssueTool, 9-point verification checklist, Jira Phase 4b
+9. **QA Engineer.md** — Research tier, 1 task (create_qa_engineer_test_subtasks), JiraCreateIssueTool, edge/security/rendering tests, Jira Phase 5
+10. **UX Designer.md** — Research tier, 1 task (generate_figma_make_prompt), FigmaMakeTool, 3 agent variants (UX Designer, Design Partner, Senior Designer), 2-phase flow
+11. **Engagement Manager.md** — Basic tier, 4 tasks (engagement_response, idea_to_prd_orchestration, heartbeat_update, user_steering_detection), fast path, 6 key functions
+12. **Idea Agent.md** — Basic tier, 1 task (idea_query), fast path, context extraction, steering recommendations, gap analysis, 4 key functions
+
+Updated `obsidian/Agents/Agent Roles.md`:
+- Converted from monolithic reference to index page
+- 4 category tables (PRD Pipeline, Jira Review, Design, Conversational agents)
+- ASCII execution order diagram
+- Links to all 12 sub-pages via `[[wikilinks]]`
+
+Updated `CODEX.md`:
+- "When to Update Which Page" table now references individual agent pages
+- "Documentation Updates" table adds agent role/goal/backstory/task triggers
+
+Updated `version.py`:
+- Appended v0.43.9 CodexEntry
+
+Updated `/memories/codex-rules.md`:
+- Added per-agent page list to documentation update rules
+
+---
+
 ## Session — 2026-03-29 (v0.43.8)
 
 **Scope**: MongoDB Schema Obsidian docs breakdown — individual collection pages with field-level schemas

@@ -2622,6 +2622,40 @@ _CODEX: list[CodexEntry] = [
             "diagram and wikilinks. 2728 tests passing."
         ),
     ),
+    CodexEntry(
+        "0.43.9",
+        date(2026, 3, 29),
+        (
+            "Agent Roles Obsidian docs breakdown — split monolithic "
+            "Agent Roles page into 12 individual agent pages with "
+            "detailed role, goal, backstory, tasks, tools, LLM model "
+            "env vars, scoring criteria, PRD flow phases, and source "
+            "file paths. New pages: Idea Refiner, Product Manager, "
+            "Requirements Breakdown, Orchestrator, CEO Reviewer, "
+            "Engineering Manager, Staff Engineer, QA Lead, QA Engineer, "
+            "UX Designer, Engagement Manager, Idea Agent. Agent Roles "
+            "converted to index page with execution order diagram and "
+            "wikilinks. CODEX updated with per-agent page references."
+        ),
+    ),
+    CodexEntry(
+        "0.44.0",
+        date(2026, 3, 29),
+        (
+            "PRD Flow Obsidian docs breakdown — split monolithic PRD Flow "
+            "page into 10 individual flow step pages with detailed "
+            "step-by-step documentation. New pages: Idea Refinement Flow, "
+            "Executive Summary Flow, Requirements Breakdown Flow, CEO "
+            "Review Flow, Engineering Plan Flow, Section Drafting Flow, "
+            "Finalization Flow, UX Design Flow, Confluence Publishing "
+            "Flow, Jira Ticketing Flow. Each page documents every step "
+            "with skip conditions, approval gates, scoring criteria, "
+            "progress events, resume behaviour, MongoDB persistence, "
+            "data flow diagrams, and source file paths. PRD Flow "
+            "converted to index page with execution flow diagram and "
+            "wikilinks. CODEX updated with per-flow page references."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
