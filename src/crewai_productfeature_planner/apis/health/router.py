@@ -1,7 +1,8 @@
 """Health check router."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.version import (
     get_codex,
@@ -191,7 +192,7 @@ async def slack_token_status(team_id: str | None = None) -> dict:
         400: {"description": "Missing required env vars or exchange failed."},
     },
 )
-async def slack_token_exchange(team_id: str | None = None) -> dict:
+async def slack_token_exchange(team_id: str | None = None, user: dict = Depends(require_sso_user)) -> dict:
     """One-time exchange of a long-lived ``xoxb-`` token for rotating tokens.
 
     Requires ``SLACK_CLIENT_ID`` and ``SLACK_CLIENT_SECRET`` env vars.
@@ -232,7 +233,7 @@ async def slack_token_exchange(team_id: str | None = None) -> dict:
         result = exchange_token(team_id, token=existing_token)
     except (ValueError, RuntimeError) as exc:
         logger.error("[Health] Token exchange failed team_id=%s", team_id, exc_info=True)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail="Token exchange failed. Check server logs.")
 
     logger.info("[Health] Token exchanged successfully team_id=%s", team_id)
     status = token_status(team_id)
@@ -276,7 +277,7 @@ async def slack_token_exchange(team_id: str | None = None) -> dict:
         400: {"description": "Refresh failed — check credentials and refresh token."},
     },
 )
-async def slack_token_refresh(team_id: str | None = None) -> dict:
+async def slack_token_refresh(team_id: str | None = None, user: dict = Depends(require_sso_user)) -> dict:
     """Force an immediate token refresh for *team_id*."""
     from crewai_productfeature_planner.mongodb.slack_oauth import get_all_teams
     from crewai_productfeature_planner.tools.slack_token_manager import (

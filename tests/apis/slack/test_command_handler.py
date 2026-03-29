@@ -32,7 +32,7 @@ class TestCMDActions:
             assert action.startswith("cmd_")
 
     def test_expected_count(self):
-        assert len(CMD_ACTIONS) == 16
+        assert len(CMD_ACTIONS) == 17
 
 
 # ---------------------------------------------------------------------------

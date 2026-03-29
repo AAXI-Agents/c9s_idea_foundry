@@ -9,6 +9,7 @@ class PRDKickoffRequest(BaseModel):
     idea: str = Field(
         ...,
         min_length=1,
+        max_length=50_000,
         description="The product feature idea to build a PRD for.",
         examples=["Add dark mode to the dashboard"],
     )
@@ -41,6 +42,7 @@ class PRDApproveRequest(BaseModel):
     )
     feedback: str | None = Field(
         default=None,
+        max_length=10_000,
         description=(
             "Optional critique feedback from the user. When provided with "
             "approve=false, this feedback is used as the critique for the "

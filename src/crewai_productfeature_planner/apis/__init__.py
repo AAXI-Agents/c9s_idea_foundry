@@ -170,6 +170,18 @@ def _resume_flow_background(
 ) -> None:
     """Background thread target: resume a single PRD flow."""
     try:
+        # Double-check the idea is not archived before resuming
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_run_any_status,
+        )
+        doc = find_run_any_status(run_id)
+        if doc and doc.get("status") == "archived":
+            _logger.info(
+                "Startup auto-resume: skipping run_id=%s — already archived",
+                run_id,
+            )
+            return
+
         from crewai_productfeature_planner.apis.slack.router import (
             _run_slack_resume_flow,
         )
@@ -251,6 +263,15 @@ async def _lifespan(application: FastAPI):
             _logger.info("Startup recovery: %d incomplete job(s) marked as failed", len(recovered_jobs))
     except Exception as exc:
         _logger.warning("Startup recovery (fail incomplete jobs) failed: %s", exc)
+
+    # 2a. Archive stale crew jobs whose ideas were archived by user
+    try:
+        from crewai_productfeature_planner.mongodb.crew_jobs import archive_stale_jobs_on_startup
+        archived_count = archive_stale_jobs_on_startup()
+        if archived_count:
+            _logger.info("Startup: archived %d stale crew job(s) for archived ideas", archived_count)
+    except Exception as exc:
+        _logger.warning("Startup (archive stale jobs) failed: %s", exc)
 
     # 2b. Partition unfinalized working ideas into resumable vs failed.
     #     Resumable ideas (with Slack context) will be auto-resumed
@@ -552,8 +573,8 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
         status_code=status_code,
         content={
             "error_code": error_code,
-            "message": str(exc),
+            "message": "An internal error occurred. Check server logs for details.",
             "run_id": None,
-            "detail": f"{type(exc).__name__}: {exc}",
+            "detail": error_code,
         },
     )

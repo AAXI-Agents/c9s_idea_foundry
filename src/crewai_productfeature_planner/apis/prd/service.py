@@ -203,6 +203,7 @@ def run_prd_flow(
     from crewai_productfeature_planner.scripts.retry import (
         BillingError, LLMError, ModelBusyError, ShutdownError,
     )
+    from crewai_productfeature_planner.apis.shared import FlowCancelled
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
@@ -301,6 +302,11 @@ def run_prd_flow(
             "[API] PRD flow paused due to LLM error (run_id=%s): %s",
             run_id, exc,
         )
+    except FlowCancelled:
+        run.status = FlowStatus.FAILED
+        run.error = "CANCELLED: Flow cancelled (idea archived)"
+        update_job_completed(run_id, status="archived")
+        logger.info("[API] PRD flow cancelled (run_id=%s)", run_id)
     except Exception as exc:
         run.status = FlowStatus.PAUSED
         run.error = f"INTERNAL_ERROR: {exc}"
@@ -330,6 +336,9 @@ def run_prd_flow(
         approval_feedback.pop(run_id, None)
         approval_selected.pop(run_id, None)
         pause_requested.pop(run_id, None)
+        # Cleanup cancellation event
+        from crewai_productfeature_planner.apis.shared import cancel_events
+        cancel_events.pop(run_id, None)
         # Cleanup callback registry
         cleanup_callbacks(run_id)
 
@@ -559,6 +568,27 @@ def resume_prd_flow(
     from crewai_productfeature_planner.scripts.retry import (
         BillingError, LLMError, ModelBusyError, ShutdownError,
     )
+    from crewai_productfeature_planner.apis.shared import FlowCancelled, cancel_events
+
+    # Register cancellation event so archive can stop this resumed flow
+    if run_id not in cancel_events:
+        cancel_events[run_id] = threading.Event()
+
+    # ── Guard: refuse to resume an archived/completed/failed idea ──
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_run_any_status,
+        )
+        idea_doc = find_run_any_status(run_id)
+        if idea_doc and idea_doc.get("status") in ("archived", "failed"):
+            logger.warning(
+                "[API] Refusing to resume run_id=%s — status is %s",
+                run_id, idea_doc.get("status"),
+            )
+            cancel_events.pop(run_id, None)
+            return
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not check idea status for %s", run_id, exc_info=True)
 
     run = runs[run_id]
     run.status = FlowStatus.RUNNING
@@ -724,6 +754,11 @@ def resume_prd_flow(
             "[API] Resumed PRD flow paused due to LLM error (run_id=%s): %s",
             run_id, exc,
         )
+    except FlowCancelled:
+        run.status = FlowStatus.FAILED
+        run.error = "CANCELLED: Flow cancelled (idea archived)"
+        update_job_completed(run_id, status="archived")
+        logger.info("[API] Resumed PRD flow cancelled (run_id=%s)", run_id)
     except Exception as exc:
         run.status = FlowStatus.PAUSED
         run.error = f"INTERNAL_ERROR: {exc}"
@@ -751,5 +786,7 @@ def resume_prd_flow(
         approval_decisions.pop(run_id, None)
         approval_feedback.pop(run_id, None)
         pause_requested.pop(run_id, None)
+        # Cleanup cancellation event
+        cancel_events.pop(run_id, None)
         # Cleanup callback registry
         cleanup_callbacks(run_id)

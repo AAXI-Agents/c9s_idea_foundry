@@ -220,10 +220,62 @@ def finalize(flow: PRDFlow) -> str:
         "total_iterations": flow.state.iteration,
     })
 
+    # ── UX Design Flow — triggered after PRD completion ──────
+    # Runs the 2-phase UX design flow (draft + Senior Designer review)
+    # in a background-safe manner.  Failures do not block the PRD.
+    _trigger_ux_design_flow(flow)
+
     # ── Post-completion: Confluence publish & Jira ticketing ──
     run_post_completion(flow)
 
     return save_result
+
+
+# ------------------------------------------------------------------
+# UX Design Flow trigger (post-PRD)
+# ------------------------------------------------------------------
+
+def _trigger_ux_design_flow(flow: PRDFlow) -> None:
+    """Trigger the standalone UX design flow after PRD completion.
+
+    Runs the 2-phase UX design flow (UX Designer + Design Partner draft,
+    then Senior Designer review) asynchronously.  Failures are logged
+    but never fail the overall PRD pipeline.
+    """
+    # Skip if no executive product summary (required input for UX flow).
+    if not flow.state.executive_product_summary:
+        logger.info(
+            "[UXDesignTrigger] Skipping — no executive product summary "
+            "for run_id=%s",
+            flow.state.run_id,
+        )
+        return
+
+    # Skip if UX design already completed (resumed flow).
+    if flow.state.figma_design_status in ("completed", "prompt_ready"):
+        logger.info(
+            "[UXDesignTrigger] Skipping — UX design already present "
+            "(status=%s) for run_id=%s",
+            flow.state.figma_design_status,
+            flow.state.run_id,
+        )
+        return
+
+    try:
+        from crewai_productfeature_planner.flows.ux_design_flow import (
+            kick_off_ux_design_flow,
+        )
+        kick_off_ux_design_flow(flow)
+    except (BillingError, ModelBusyError, ShutdownError):
+        raise  # Must propagate for proper pause handling
+    except Exception as exc:
+        logger.warning(
+            "[UXDesignTrigger] UX design flow failed for run_id=%s — "
+            "PRD is saved but UX design was not generated: %s",
+            flow.state.run_id,
+            exc,
+            exc_info=True,
+        )
 
 
 # ------------------------------------------------------------------

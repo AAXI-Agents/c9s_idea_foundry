@@ -158,6 +158,7 @@ def run_interactive_slack_flow(
         from crewai_productfeature_planner.scripts.retry import (
             BillingError, LLMError, ModelBusyError,
         )
+        from crewai_productfeature_planner.apis.shared import FlowCancelled
 
         runs[run_id].status = FlowStatus.RUNNING
         update_job_started(run_id)
@@ -322,6 +323,12 @@ def run_interactive_slack_flow(
                 _post_blocks(channel, thread_ts, blocks,
                              text=f"PRD flow paused due to error ({run_id}).{extra}")
 
+        except FlowCancelled:
+            update_job_completed(run_id, status="archived")
+            runs[run_id].status = FlowStatus.FAILED
+            runs[run_id].error = "CANCELLED: Flow cancelled (idea archived)"
+            logger.info("Interactive Slack PRD flow %s cancelled", run_id)
+
     except Exception as exc:
         logger.error("Interactive Slack PRD flow %s failed: %s", run_id, exc)
         runs[run_id].status = FlowStatus.FAILED
@@ -364,4 +371,7 @@ def run_interactive_slack_flow(
             cleanup_callbacks(run_id)
         except Exception:  # noqa: BLE001
             pass
+        # Clean up cancellation event
+        from crewai_productfeature_planner.apis.shared import cancel_events
+        cancel_events.pop(run_id, None)
         cleanup_interactive_run(run_id)

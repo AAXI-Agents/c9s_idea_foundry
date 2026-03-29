@@ -516,3 +516,82 @@ def sync_completed_idea(run_id: str) -> Path | None:
             run_id, exc,
         )
         return None
+
+
+def archive_idea_knowledge(run_id: str) -> Path | None:
+    """Move the idea knowledge page to an archive folder.
+
+    Moves ``projects/{name}/ideas/{title}.md`` →
+    ``projects/{name}/archives/{YYYY}/{MM}/{DD}/{title}.md``
+    and refreshes the project overview page.
+
+    Returns:
+        Path to the archived file, or ``None`` if no file existed.
+    """
+    try:
+        from crewai_productfeature_planner.mongodb.client import get_db
+        from crewai_productfeature_planner.mongodb.project_config import get_project
+        from crewai_productfeature_planner.mongodb.project_memory import (
+            get_project_memory,
+        )
+
+        doc = get_db()["workingIdeas"].find_one(
+            {"run_id": run_id},
+            {"_id": 0},
+        )
+        if not doc:
+            logger.debug(
+                "[ProjectKnowledge] No doc for run_id=%s — nothing to archive",
+                run_id,
+            )
+            return None
+
+        project_id = doc.get("project_id")
+        if not project_id:
+            return None
+
+        config = get_project(project_id)
+        if not config:
+            return None
+
+        project_name = config.get("name", "Unnamed Project")
+        dirname = _safe_dirname(project_name)
+        title = _idea_title_from_doc(doc)
+        filename = _safe_filename(title)
+
+        ideas_dir = _PROJECTS_ROOT / dirname / "ideas"
+        source = ideas_dir / f"{filename}.md"
+
+        if not source.exists():
+            logger.debug(
+                "[ProjectKnowledge] No idea file to archive: %s", source,
+            )
+            return None
+
+        # Build archive path: projects/{name}/archives/{YYYY}/{MM}/{DD}/
+        now = datetime.now(timezone.utc)
+        archive_dir = (
+            _PROJECTS_ROOT / dirname / "archives"
+            / str(now.year) / f"{now.month:02d}" / f"{now.day:02d}"
+        )
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        dest = archive_dir / f"{filename}.md"
+
+        source.rename(dest)
+        logger.info(
+            "[ProjectKnowledge] Archived idea file: %s → %s",
+            source, dest,
+        )
+
+        # Refresh the project overview page (idea list updated)
+        memory = get_project_memory(project_id)
+        generate_project_page(config, memory)
+
+        return dest
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[ProjectKnowledge] Failed to archive idea knowledge for "
+            "run_id=%s: %s",
+            run_id, exc,
+        )
+        return None

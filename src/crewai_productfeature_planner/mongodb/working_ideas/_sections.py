@@ -59,6 +59,14 @@ def save_iteration(
     if not section_key and draft:
         section_key = next(iter(draft))
 
+    # Guard against MongoDB field-path injection via dots or $ operators
+    if section_key and ("." in section_key or section_key.startswith("$")):
+        logger.error(
+            "[MongoDB] Rejected section_key with illegal chars: %r",
+            section_key,
+        )
+        return None
+
     # Build the iteration record to push into the section array
     iteration_record = {
         "content": draft.get(section_key, "") if section_key else "",
@@ -69,10 +77,20 @@ def save_iteration(
 
     try:
         db = _common.get_db()
+
+        # Never overwrite terminal statuses — if the idea was archived,
+        # completed, or failed, preserve that status.
+        _TERMINAL = {"archived", "completed", "failed"}
+        existing = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id}, {"status": 1}
+        )
+        current_status = existing.get("status") if existing else None
+
         set_fields: dict[str, Any] = {
-            "status": "inprogress",
             "update_date": now,
         }
+        if current_status not in _TERMINAL:
+            set_fields["status"] = "inprogress"
         if finalized_idea:
             set_fields["finalized_idea"] = finalized_idea
         if idea:
@@ -200,12 +218,21 @@ def save_executive_summary(
     }
     try:
         db = _common.get_db()
+
+        # Never overwrite terminal statuses
+        _TERMINAL = {"archived", "completed", "failed"}
+        existing = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id}, {"status": 1}
+        )
+        current_status = existing.get("status") if existing else None
+        _status_set = {} if current_status in _TERMINAL else {"status": "inprogress"}
+
         result = db[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {
                 "$push": {"executive_summary": record},
                 "$set": {
-                    "status": "inprogress",
+                    **_status_set,
                     "update_date": now,
                 },
                 "$setOnInsert": {
@@ -362,12 +389,30 @@ def save_pipeline_step(
         "step": step,
         "updated_date": now,
     }
+
+    # Guard against MongoDB field-path injection via dots or $ operators
+    if "." in pipeline_key or pipeline_key.startswith("$"):
+        logger.error(
+            "[MongoDB] Rejected pipeline_key with illegal chars: %r",
+            pipeline_key,
+        )
+        return None
+
     try:
         db = _common.get_db()
+
+        # Never overwrite terminal statuses
+        _TERMINAL = {"archived", "completed", "failed"}
+        existing = db[WORKING_COLLECTION].find_one(
+            {"run_id": run_id}, {"status": 1}
+        )
+        current_status = existing.get("status") if existing else None
+
         set_fields: dict[str, Any] = {
-            "status": "inprogress",
             "update_date": now,
         }
+        if current_status not in _TERMINAL:
+            set_fields["status"] = "inprogress"
         if finalized_idea:
             set_fields["finalized_idea"] = finalized_idea
 

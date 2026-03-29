@@ -7,6 +7,7 @@ import pytest
 
 from crewai_productfeature_planner.tools.gemini_chat import (
     _fallback,
+    generate_chat_response,
     interpret_message,
 )
 
@@ -415,3 +416,162 @@ def test_retry_on_429_with_backoff(monkeypatch):
     # Check that the expected backoff calls were made (background threads may add extra calls)
     retry_calls = [c for c in mock_sleep.call_args_list if c in (call(1), call(2))]
     assert len(retry_calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# generate_chat_response — direct text mode
+# ---------------------------------------------------------------------------
+
+def _mock_text_urlopen(text: str):
+    """Create a mock urlopen returning plain text Gemini response."""
+    response_body = json.dumps({
+        "candidates": [{"content": {"parts": [{"text": text}]}}],
+    }).encode()
+
+    import io
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _ctx_manager(req, **kwargs):
+        yield io.BytesIO(response_body)
+
+    return _ctx_manager
+
+
+def test_generate_chat_response_no_api_key():
+    """Should return None when GOOGLE_API_KEY is not set."""
+    result = generate_chat_response(
+        system_prompt="You are helpful.",
+        user_message="Hello",
+    )
+    assert result is None
+
+
+def test_generate_chat_response_success(monkeypatch):
+    """Should return text response on success."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    with patch("urllib.request.urlopen", _mock_text_urlopen("Hello! How can I help?")):
+        result = generate_chat_response(
+            system_prompt="You are helpful.",
+            user_message="Hi there",
+        )
+    assert result == "Hello! How can I help?"
+
+
+def test_generate_chat_response_with_history(monkeypatch):
+    """Conversation history should be included in the payload."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    payloads = []
+
+    import io
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _capture_urlopen(req, **kwargs):
+        payloads.append(json.loads(req.data.decode()))
+        body = json.dumps({
+            "candidates": [{"content": {"parts": [{"text": "response"}]}}],
+        }).encode()
+        yield io.BytesIO(body)
+
+    with patch("urllib.request.urlopen", _capture_urlopen):
+        generate_chat_response(
+            system_prompt="System prompt",
+            user_message="User message",
+            conversation_history=[
+                {"role": "user", "content": "prev question"},
+                {"role": "assistant", "content": "prev answer"},
+            ],
+        )
+
+    assert len(payloads) == 1
+    contents = payloads[0]["contents"]
+    # History (2 turns) + user message = 3 entries
+    assert len(contents) == 3
+    assert contents[0]["role"] == "user"
+    assert contents[1]["role"] == "model"
+    assert contents[2]["role"] == "user"
+
+
+def test_generate_chat_response_model_override(monkeypatch):
+    """model_override should take precedence."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    urls = []
+
+    import io
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _capture_urlopen(req, **kwargs):
+        urls.append(req.full_url)
+        body = json.dumps({
+            "candidates": [{"content": {"parts": [{"text": "OK"}]}}],
+        }).encode()
+        yield io.BytesIO(body)
+
+    with patch("urllib.request.urlopen", _capture_urlopen):
+        generate_chat_response(
+            system_prompt="Test",
+            user_message="Hi",
+            model_override="gemini-custom",
+        )
+
+    assert "gemini-custom" in urls[0]
+
+
+def test_generate_chat_response_empty_response(monkeypatch):
+    """Should return None when response text is empty."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    with patch("urllib.request.urlopen", _mock_text_urlopen("")):
+        result = generate_chat_response(
+            system_prompt="Test",
+            user_message="Hi",
+        )
+    assert result is None
+
+
+def test_generate_chat_response_http_error(monkeypatch):
+    """HTTP errors should return None after retries."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    import io
+    import urllib.error
+
+    def _raise_error(req, **kwargs):
+        raise urllib.error.HTTPError(
+            "https://example.com", 403, "Forbidden", {},
+            io.BytesIO(b"forbidden"),
+        )
+
+    with patch("urllib.request.urlopen", _raise_error):
+        with patch("crewai_productfeature_planner.tools.gemini_chat.time.sleep"):
+            result = generate_chat_response(
+                system_prompt="Test",
+                user_message="Hi",
+            )
+    assert result is None
+
+
+def test_generate_chat_response_thinking_budget_zero(monkeypatch):
+    """thinkingBudget should be 0 for low latency."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    payloads = []
+
+    import io
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _capture(req, **kwargs):
+        payloads.append(json.loads(req.data.decode()))
+        body = json.dumps({
+            "candidates": [{"content": {"parts": [{"text": "OK"}]}}],
+        }).encode()
+        yield io.BytesIO(body)
+
+    with patch("urllib.request.urlopen", _capture):
+        generate_chat_response(
+            system_prompt="Test",
+            user_message="Hi",
+        )
+
+    config = payloads[0]["generationConfig"]
+    assert config["thinkingConfig"]["thinkingBudget"] == 0

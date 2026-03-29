@@ -511,3 +511,69 @@ def fail_incomplete_jobs_on_startup() -> list[dict[str, str]]:
     except PyMongoError as exc:
         logger.error("[CrewJobs] Startup recovery failed: %s", exc)
         return []
+
+
+def archive_stale_jobs_on_startup() -> int:
+    """Mark crew jobs as archived if their working idea is archived.
+
+    On startup, cross-references non-final crew jobs against the
+    workingIdeas collection.  Any job whose idea has ``status: "archived"``
+    is marked ``archived`` so the scheduler and delivery scanner skip it.
+
+    Returns:
+        The number of jobs archived.
+    """
+    now = datetime.now(timezone.utc)
+    count = 0
+    try:
+        db = get_db()
+        # Find non-final crew jobs
+        stale_statuses = ["queued", "running", "awaiting_approval", "paused"]
+        jobs = list(
+            db[CREW_JOBS_COLLECTION].find(
+                {"status": {"$in": stale_statuses}},
+                {"job_id": 1, "_id": 1},
+            )
+        )
+        if not jobs:
+            return 0
+
+        job_ids = [j["job_id"] for j in jobs if j.get("job_id")]
+        # Check which of these have archived working ideas
+        archived_docs = list(
+            db["workingIdeas"].find(
+                {"run_id": {"$in": job_ids}, "status": "archived"},
+                {"run_id": 1, "_id": 0},
+            )
+        )
+        archived_ids = {d["run_id"] for d in archived_docs}
+
+        for job in jobs:
+            jid = job.get("job_id", "")
+            if jid in archived_ids:
+                db[CREW_JOBS_COLLECTION].update_one(
+                    {"_id": job["_id"]},
+                    {"$set": {
+                        "status": "archived",
+                        "error": "Idea was archived by user",
+                        "completed_at": now,
+                        "updated_at": now,
+                    }},
+                )
+                count += 1
+                logger.info(
+                    "[CrewJobs] Startup: archived stale job %s "
+                    "(idea was archived by user)",
+                    jid,
+                )
+
+        if count:
+            logger.info(
+                "[CrewJobs] Startup: %d stale job(s) archived "
+                "(ideas were archived by user)",
+                count,
+            )
+        return count
+    except PyMongoError as exc:
+        logger.error("[CrewJobs] archive_stale_jobs_on_startup failed: %s", exc)
+        return 0

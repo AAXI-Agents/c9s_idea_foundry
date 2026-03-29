@@ -30,7 +30,7 @@ Two specialist agents produce higher-level artefacts after executive summary app
 
 - **Phase 1.5a — CEO Review**: The CEO Reviewer agent transforms the executive summary into an *Executive Product Summary* — a 10-star product vision document. Source: `_ceo_eng_review.py::run_ceo_review()`
 - **Phase 1.5b — Engineering Plan**: The Eng Manager agent converts the executive product summary + requirements into an *Engineering Plan* — technical architecture, phasing, data model, test strategy. Source: `_ceo_eng_review.py::run_eng_plan()`
-- **Phase 1.5c — UX Design** (v0.20.0, Playwright v0.21.0): The UX Designer agent converts the executive product summary into a structured Figma Make prompt and optionally submits it to Figma Make via Playwright headless browser automation to generate a clickable prototype. Source: `_ux_design.py::run_ux_design()`
+- ~~**Phase 1.5c — UX Design**~~ (removed v0.41.0 — now a standalone post-PRD flow, see below)
 
 All artefacts are:
 - Stored as auto-approved specialist sections in the PRD draft
@@ -58,9 +58,41 @@ All artefacts are:
 
 ### Phase 4 — Post-Completion Pipeline
 
+- **UX Design Flow** (v0.41.0): Standalone 2-phase design generation triggered after PRD completion. See below.
 - **Confluence Publish**: Push final PRD to Confluence space
 - **Jira Ticketing**: 5-phase approach (see [[Jira Integration]])
   - Phase 1: Skeleton → Phase 2: Epics/Stories → Phase 3: Dev Sub-tasks → Phase 4: Review Sub-tasks (Staff Eng + QA Lead) → Phase 5: QA Test Sub-tasks (QA Engineer)
+
+---
+
+## UX Design Flow (v0.41.0)
+
+> Standalone post-PRD flow triggered from `_finalization.finalize()` after all PRD sections are approved.
+
+### Trigger
+- Called by `_trigger_ux_design_flow()` in `_finalization.py`
+- Requires: executive product summary present, UX design not already completed
+- Skip guards: no EPS → skip, status already `completed` or `prompt_ready` → skip
+- Errors: BillingError/ModelBusyError/ShutdownError propagate; other errors are caught (PRD is saved regardless)
+
+### Phase 1 — Draft (UX Designer + Design Partner)
+- **Agents**: UX Designer (FigmaMakeTool) + Design Partner (gstack design-consultation)
+- **Input**: Executive product summary, idea, requirements breakdown, `output/design/DESIGN.md` reference
+- **Output**: `ux_design_draft.md` — 12-section design specification (product context, aesthetics, typography, color, spacing, layout, motion, shadows, components, interactions, CSS tokens, decisions log)
+- **Source**: `_ux_design.py::run_ux_design_draft()`
+
+### Phase 2 — Review (Senior Designer)
+- **Agents**: Senior Designer (gstack plan-design-review)
+- **Input**: Phase 1 draft
+- **Process**: 7-pass review (information architecture, interaction states, user journey, AI slop, design system alignment, responsive/accessibility, unresolved decisions) with before/after scoring (0-10 each)
+- **Output**: `ux_design_final.md` — production-ready design specification
+- **Source**: `_ux_design.py::run_ux_design_review()`
+
+### File Output
+- Only 2 files per product idea (fixed names, overwrite on each run):
+  - `output/{project_id}/ux design/ux_design_draft.md`
+  - `output/{project_id}/ux design/ux_design_final.md`
+- Entry point: `ux_design_flow.py::kick_off_ux_design_flow()`
 
 ## Progress Events
 

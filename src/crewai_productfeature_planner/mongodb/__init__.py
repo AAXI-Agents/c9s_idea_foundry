@@ -107,6 +107,11 @@ from crewai_productfeature_planner.mongodb.user_session import (
     start_session,
     switch_session,
 )
+from crewai_productfeature_planner.mongodb.user_suggestions import (
+    USER_SUGGESTIONS_COLLECTION,
+    find_suggestions_by_project,
+    log_suggestion,
+)
 
 __all__ = [
     "AGENT_INTERACTIONS_COLLECTION",

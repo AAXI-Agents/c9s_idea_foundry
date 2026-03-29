@@ -93,9 +93,6 @@ from crewai_productfeature_planner.flows._ceo_eng_review import (
     run_ceo_review as _run_ceo_review_fn,
     run_eng_plan as _run_eng_plan_fn,
 )
-from crewai_productfeature_planner.flows._ux_design import (
-    run_ux_design as _run_ux_design_fn,
-)
 from crewai_productfeature_planner.flows._finalization import (
     save_progress as _save_progress_fn,
     persist_output_path as _persist_output_path_fn,
@@ -419,16 +416,16 @@ class PRDFlow(Flow[PRDState]):
         """Generate Engineering Plan via the Eng Manager agent."""
         return _run_eng_plan_fn(self)
 
-    def _run_ux_design(self) -> str:
-        """Generate UX design via the UX Designer agent + Figma Make."""
-        return _run_ux_design_fn(self)
-
     # ------------------------------------------------------------------
     # Step 1 — Executive Summary iteration → then section drafting
     # ------------------------------------------------------------------
     @start()
     def generate_sections(self) -> str:
         """Run the agent pipeline, iterate the executive summary, then draft sections."""
+        # ── Early cancellation check ──
+        from crewai_productfeature_planner.apis.shared import check_cancelled
+        check_cancelled(self.state.run_id)
+
         # ── Agent pipeline (idea refinement → requirements → …) ──
         from crewai_productfeature_planner.orchestrator import (
             build_default_pipeline,
@@ -437,7 +434,9 @@ class PRDFlow(Flow[PRDState]):
         orchestrator = build_default_pipeline(self)
         orchestrator.run_pipeline()
 
-        # Diagnostic: log callback state at start of section generation.
+        # ── Cancellation checkpoint (after pipeline) ──
+        from crewai_productfeature_planner.apis.shared import check_cancelled
+        check_cancelled(self.state.run_id)
         # This helps debug cases where CrewAI's asyncio.to_thread loses
         # instance attributes set before kickoff().
         logger.info(
@@ -524,6 +523,7 @@ class PRDFlow(Flow[PRDState]):
             )
         else:
             # ── Phase 1: Executive Summary iteration ─────────────
+            check_cancelled(self.state.run_id)
             logger.info(
                 "[Phase 1] Iterating executive summary for idea: '%s'",
                 self.state.idea[:80],
@@ -533,6 +533,7 @@ class PRDFlow(Flow[PRDState]):
             )
 
         # ── Requirements Breakdown (runs after exec summary approval) ──
+        check_cancelled(self.state.run_id)
         from crewai_productfeature_planner.orchestrator._requirements import (
             build_requirements_breakdown_stage,
         )
@@ -567,6 +568,7 @@ class PRDFlow(Flow[PRDState]):
                 raise req_stage.finalized_exc()
 
         # ── Phase 1.5a: CEO Review → Executive Product Summary ───
+        check_cancelled(self.state.run_id)
         specialists_all_skipped = True
         if not self.state.executive_product_summary:
             specialists_all_skipped = False
@@ -590,6 +592,7 @@ class PRDFlow(Flow[PRDState]):
                 eps_section.is_approved = True
 
         # ── Phase 1.5b: Eng Manager → Engineering Plan ───────────
+        check_cancelled(self.state.run_id)
         if not self.state.engineering_plan:
             specialists_all_skipped = False
             logger.info(
@@ -608,21 +611,9 @@ class PRDFlow(Flow[PRDState]):
                 eng_section.content = self.state.engineering_plan
                 eng_section.is_approved = True
 
-        # ── Phase 1.5c: UX Designer → Figma Make Design ─────────
-        if not self.state.figma_design_url and self.state.figma_design_status != "prompt_ready":
-            specialists_all_skipped = False
-            logger.info(
-                "[Phase 1.5c] Running UX Designer to generate "
-                "Figma Make design",
-            )
-            self._run_ux_design()
-        else:
-            logger.info(
-                "[Phase 1.5c] Skipping UX Design — already present "
-                "(status=%s, url=%s)",
-                self.state.figma_design_status,
-                bool(self.state.figma_design_url),
-            )
+        # ── Phase 1.5c removed — UX Design is now a separate
+        # post-PRD flow triggered after finalization.  See
+        # flows/ux_design_flow.py for the standalone 2-phase UX flow.
 
         # ── User decision gate — proceed to section drafting? ────
         # Fires after all specialist agents (CEO, Eng, UX) have run so
@@ -687,6 +678,9 @@ class PRDFlow(Flow[PRDState]):
         )
 
         for section in self.state.draft.sections:
+            # ── Cancellation checkpoint (before each section) ──
+            check_cancelled(self.state.run_id)
+
             # Skip sections already approved (e.g. executive_summary
             # completed in Phase 1).
             if section.is_approved:
@@ -747,6 +741,7 @@ class PRDFlow(Flow[PRDState]):
                         "section_step": section.step,
                         "total_sections": total_steps,
                         "iterations": section.iteration,
+                        "content": section.content,
                     })
                     continue
 
@@ -852,6 +847,7 @@ class PRDFlow(Flow[PRDState]):
                 "section_step": section.step,
                 "total_sections": total_steps,
                 "iterations": section.iteration,
+                "content": section.content,
             })
 
         logger.info("[Steps 1-3] All sections completed, total iterations=%d",

@@ -38,6 +38,8 @@ def product_list_blocks(
     user: str,
     project_name: str,
     project_id: str,
+    *,
+    is_admin: bool = False,
 ) -> list[dict]:
     """Build Block Kit blocks for listing completed products with
     delivery action buttons.
@@ -70,21 +72,22 @@ def product_list_blocks(
         {"type": "divider"},
     ]
 
-    # Project-level actions (Config button)
-    blocks.append(
-        {
-            "type": "actions",
-            "block_id": f"product_project_actions_{project_id}",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": ":gear: Config"},
-                    "action_id": "product_config",
-                    "value": project_id,
-                },
-            ],
-        },
-    )
+    # Project-level actions (Config button — admin only)
+    if is_admin:
+        blocks.append(
+            {
+                "type": "actions",
+                "block_id": f"product_project_actions_{project_id}",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": ":gear: Config"},
+                        "action_id": "product_config",
+                        "value": project_id,
+                    },
+                ],
+            },
+        )
     blocks.append({"type": "divider"})
 
     for idx, product in enumerate(products, 1):

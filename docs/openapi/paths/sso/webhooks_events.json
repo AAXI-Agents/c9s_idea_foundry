@@ -1,0 +1,66 @@
+{
+  "post": {
+    "tags": ["SSO Webhooks"],
+    "summary": "Receive SSO lifecycle events",
+    "description": "Webhook endpoint for SSO user lifecycle events. Verified via HMAC-SHA256 signature in X-Webhook-Signature header. Handles: user.created, user.updated, user.deleted, login.success, login.failed, token.revoked.",
+    "operationId": "receiveSsoEvent",
+    "security": [{ "ssoWebhook": [] }],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "required": ["event", "data"],
+            "properties": {
+              "event": {
+                "type": "string",
+                "enum": [
+                  "user.created",
+                  "user.updated",
+                  "user.deleted",
+                  "login.success",
+                  "login.failed",
+                  "token.revoked"
+                ],
+                "description": "Event type."
+              },
+              "data": {
+                "type": "object",
+                "description": "Event payload (varies by event type).",
+                "properties": {
+                  "user_id": { "type": "string" },
+                  "email": { "type": "string" }
+                }
+              }
+            }
+          },
+          "example": {
+            "event": "user.created",
+            "data": {
+              "user_id": "usr_abc123",
+              "email": "user@example.com"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Event processed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string", "example": "ok" },
+                "event": { "type": "string", "example": "user.created" }
+              }
+            }
+          }
+        }
+      },
+      "401": { "description": "Invalid webhook signature." }
+    }
+  }
+}

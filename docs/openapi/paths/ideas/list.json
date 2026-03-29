@@ -1,0 +1,54 @@
+{
+  "get": {
+    "tags": ["Ideas"],
+    "summary": "List ideas (paginated)",
+    "description": "Return a paginated list of ideas with optional project and status filters, newest first. Requires SSO authentication.",
+    "operationId": "listIdeas",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "minimum": 1, "default": 1 },
+        "description": "Page number (1-based)."
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "enum": [10, 25, 50], "default": 10 },
+        "description": "Items per page: 10, 25, or 50."
+      },
+      {
+        "name": "project_id",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "Filter ideas by project ID."
+      },
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": ["inprogress", "completed", "paused", "failed", "archived"]
+        },
+        "description": "Filter ideas by status."
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Paginated idea list.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/IdeaListResponse" }
+          }
+        }
+      },
+      "400": { "description": "Invalid page_size or status value." },
+      "401": { "description": "Missing or invalid SSO token." }
+    }
+  }
+}

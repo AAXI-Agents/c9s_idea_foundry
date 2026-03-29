@@ -301,10 +301,10 @@ class TestBuildFlowSummary:
 
 
 class TestSummaryIntegration:
-    """Integration: general_question + summary phrase + flow doc → flow summary."""
+    """Integration: general_question + active flow → Idea Agent response."""
 
     def test_summary_request_returns_flow_summary(self):
-        """When general_question + summary phrase + flow doc → flow summary."""
+        """When general_question + active flow doc → Idea Agent handles it."""
         from crewai_productfeature_planner.apis.slack._message_handler import (
             _interpret_and_act_inner,
         )
@@ -337,6 +337,9 @@ class TestSummaryIntegration:
             f"{_ST}._get_slack_client", return_value=mock_client
         ), patch(
             f"{_AI_REPO}.log_interaction"
+        ), patch(
+            "crewai_productfeature_planner.agents.idea_agent.handle_idea_query",
+            return_value="The AI chatbot idea is *In Progress* with 2/12 sections done.",
         ):
             MockInterp.return_value.run.return_value = json.dumps({
                 "intent": "general_question",
@@ -352,12 +355,11 @@ class TestSummaryIntegration:
                 event_ts="9999.0001",
             )
 
-        # Should post a flow summary, not the generic reply
+        # Should post Idea Agent response, not the generic reply
         mock_client.chat_postMessage.assert_called_once()
         posted_text = mock_client.chat_postMessage.call_args[1]["text"]
-        assert "In Progress" in posted_text
         assert "AI chatbot" in posted_text
-        assert "2/12" in posted_text
+        assert "In Progress" in posted_text
 
     def test_non_summary_general_question_unchanged(self):
         """When general_question + NOT summary phrase → normal generic reply."""

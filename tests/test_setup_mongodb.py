@@ -33,6 +33,7 @@ class TestAllCollections:
         "agentInteraction",
         "crewJobs",
         "userSession",
+        "userSuggestions",
         "productRequirements",
         "slackOAuth",
         "projectConfig",

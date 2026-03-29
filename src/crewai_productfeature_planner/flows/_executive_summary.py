@@ -95,6 +95,7 @@ def exec_summary_user_gate(
                 flow.state.executive_summary.iterations,
             ),
             "chars": len(flow.state.finalized_idea),
+            "content": flow.state.finalized_idea,
         })
         return False
 
@@ -494,6 +495,7 @@ def iterate_executive_summary(
     flow._notify_progress("executive_summary_complete", {
         "iterations": len(flow.state.executive_summary.iterations),
         "chars": len(flow.state.finalized_idea),
+        "content": flow.state.finalized_idea,
     })
 
 

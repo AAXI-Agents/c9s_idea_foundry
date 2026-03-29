@@ -93,6 +93,13 @@ class FlowRun(BaseModel):
     )
 
 
+# ── Flow cancellation ─────────────────────────────────────────
+
+
+class FlowCancelled(Exception):
+    """Raised when a running flow is cancelled (e.g. idea archived)."""
+
+
 # ── In-memory stores ─────────────────────────────────────────
 # Swap for a DB when persistence is needed.
 
@@ -108,3 +115,32 @@ pause_requested: dict[str, bool] = {}
 
 # Per-run selected agent: which agent's result the caller chose.
 approval_selected: dict[str, str] = {}
+
+# Per-run cancellation events: set when the flow should stop.
+cancel_events: dict[str, threading.Event] = {}
+
+
+def request_cancel(run_id: str) -> None:
+    """Signal the cancel event for *run_id*.
+
+    If no event is registered yet (e.g. the flow started before
+    cancel-event registration was added), creates one and sets it
+    immediately so ``check_cancelled()`` will detect it.
+    """
+    evt = cancel_events.get(run_id)
+    if evt is None:
+        evt = threading.Event()
+        cancel_events[run_id] = evt
+    evt.set()
+
+
+def is_cancelled(run_id: str) -> bool:
+    """Return ``True`` if cancellation has been requested for *run_id*."""
+    evt = cancel_events.get(run_id)
+    return evt is not None and evt.is_set()
+
+
+def check_cancelled(run_id: str) -> None:
+    """Raise :class:`FlowCancelled` if *run_id* has been cancelled."""
+    if is_cancelled(run_id):
+        raise FlowCancelled(f"Flow {run_id} was cancelled")

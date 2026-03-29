@@ -1,0 +1,39 @@
+{
+  "patch": {
+    "tags": ["Ideas"],
+    "summary": "Update idea status (archive / pause)",
+    "description": "Transition an idea to 'archived' or 'paused' status. Archiving also signals cancellation to any running flow. Requires SSO authentication.",
+    "operationId": "updateIdeaStatus",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Unique flow run identifier."
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": { "$ref": "#/components/schemas/IdeaStatusUpdate" },
+          "example": { "status": "archived" }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Status updated.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/IdeaItem" }
+          }
+        }
+      },
+      "401": { "description": "Missing or invalid SSO token." },
+      "404": { "description": "Idea not found." }
+    }
+  }
+}

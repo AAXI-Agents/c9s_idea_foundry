@@ -36,6 +36,9 @@ from crewai_productfeature_planner.mongodb.slack_oauth.repository import (
 from crewai_productfeature_planner.mongodb.user_session import (
     USER_SESSION_COLLECTION,
 )
+from crewai_productfeature_planner.mongodb.user_suggestions import (
+    USER_SUGGESTIONS_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
 )
@@ -84,6 +87,11 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
     ],
     SLACK_OAUTH_COLLECTION: [
         IndexModel([("team_id", ASCENDING)], unique=True),
+    ],
+    USER_SUGGESTIONS_COLLECTION: [
+        IndexModel([("suggestion_id", ASCENDING)], unique=True),
+        IndexModel([("project_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
     ],
 }
 

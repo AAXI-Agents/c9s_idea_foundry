@@ -1,0 +1,74 @@
+{
+  "get": {
+    "tags": ["Projects"],
+    "summary": "List projects (paginated)",
+    "description": "Return a paginated list of projects, newest first. Requires SSO authentication.",
+    "operationId": "listProjects",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "minimum": 1, "default": 1 },
+        "description": "Page number (1-based)."
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "enum": [10, 25, 50], "default": 10 },
+        "description": "Items per page: 10, 25, or 50."
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Paginated project list.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ProjectListResponse" }
+          }
+        }
+      },
+      "400": {
+        "description": "Invalid page_size value."
+      },
+      "401": {
+        "description": "Missing or invalid SSO token."
+      }
+    }
+  },
+  "post": {
+    "tags": ["Projects"],
+    "summary": "Create a new project",
+    "description": "Create a project with optional Confluence, Jira, and Figma configuration. Returns the created project. Requires SSO authentication.",
+    "operationId": "createProject",
+    "security": [{ "ssoAuth": [] }],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": { "$ref": "#/components/schemas/ProjectCreate" },
+          "example": {
+            "name": "Fitness App v2",
+            "confluence_space_key": "FIT",
+            "jira_project_key": "FIT",
+            "reference_urls": ["https://figma.com/file/abc123"]
+          }
+        }
+      }
+    },
+    "responses": {
+      "201": {
+        "description": "Project created.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ProjectItem" }
+          }
+        }
+      },
+      "401": { "description": "Missing or invalid SSO token." },
+      "422": { "description": "Validation error." }
+    }
+  }
+}

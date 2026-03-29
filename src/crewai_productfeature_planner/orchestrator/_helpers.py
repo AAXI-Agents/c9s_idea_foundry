@@ -49,19 +49,34 @@ def _has_gemini_credentials() -> bool:
 
 
 def _has_confluence_credentials() -> bool:
-    """Return True when all required Confluence env vars are set."""
-    from crewai_productfeature_planner.tools.confluence_tool import (
-        _has_confluence_credentials as _check,
+    """Return True when all required Confluence env vars are set.
+
+    Checks ``ATLASSIAN_BASE_URL``, ``ATLASSIAN_USERNAME``, and
+    ``ATLASSIAN_API_TOKEN``.  Intentionally inlined (not imported from
+    ``confluence_tool``) to avoid triggering the heavy ``tools/__init__``
+    import chain (CrewAI framework) during server startup.
+    """
+    return bool(
+        os.environ.get("ATLASSIAN_BASE_URL")
+        and os.environ.get("ATLASSIAN_USERNAME")
+        and os.environ.get("ATLASSIAN_API_TOKEN")
     )
-    return _check()
 
 
 def _has_jira_credentials() -> bool:
-    """Return True when all required Jira env vars are set."""
-    from crewai_productfeature_planner.tools.jira_tool import (
-        _has_jira_credentials as _check,
+    """Return True when all required Jira env vars are set.
+
+    Checks ``ATLASSIAN_BASE_URL``, ``JIRA_PROJECT_KEY``,
+    ``ATLASSIAN_USERNAME``, and ``ATLASSIAN_API_TOKEN``.  Intentionally
+    inlined to avoid triggering the heavy ``tools/__init__`` import
+    chain during server startup.
+    """
+    return bool(
+        os.environ.get("ATLASSIAN_BASE_URL")
+        and os.environ.get("JIRA_PROJECT_KEY")
+        and os.environ.get("ATLASSIAN_USERNAME")
+        and os.environ.get("ATLASSIAN_API_TOKEN")
     )
-    return _check()
 
 
 # ── CLI output ────────────────────────────────────────────────────────

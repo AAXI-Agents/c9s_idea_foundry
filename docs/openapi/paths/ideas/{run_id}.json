@@ -1,0 +1,29 @@
+{
+  "get": {
+    "tags": ["Ideas"],
+    "summary": "Get a single idea by run_id",
+    "operationId": "getIdea",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Unique flow run identifier."
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Idea found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/IdeaItem" }
+          }
+        }
+      },
+      "401": { "description": "Missing or invalid SSO token." },
+      "404": { "description": "Idea not found." }
+    }
+  }
+}

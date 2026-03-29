@@ -402,6 +402,16 @@ async def slack_interactions(request: Request) -> JSONResponse:
                 ),
             )
 
+            if channel_id:
+                loop.run_in_executor(
+                    None,
+                    partial(
+                        _with_team, _team_id, _post_ack,
+                        channel_id, thread_ts,
+                        f":thinking_face: <@{user_id}> Thinking\u2026",
+                    ),
+                )
+
             return JSONResponse({"ok": True})
 
         # ── Memory configuration actions ──

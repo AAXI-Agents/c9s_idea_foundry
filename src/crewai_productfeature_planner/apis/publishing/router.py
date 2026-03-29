@@ -33,6 +33,13 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
+def _safe_detail(exc: Exception) -> str:
+    """Return a generic error message — never expose internal details."""
+    if isinstance(exc, RuntimeError):
+        return "Service temporarily unavailable. Check server logs."
+    return "An internal error occurred. Check server logs."
+
 router = APIRouter(
     prefix="/publishing",
     tags=["Publishing"],
@@ -75,7 +82,7 @@ async def list_pending(user: dict = Depends(require_sso_user)):
         return PendingListResponse(count=len(items), items=items)
     except Exception as exc:
         logger.error("list_pending failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -104,10 +111,10 @@ async def publish_confluence_all_endpoint(background_tasks: BackgroundTasks, use
         result = publish_confluence_all()
         return ConfluenceBatchResult(**result)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("publish_confluence_all failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -142,12 +149,12 @@ async def publish_confluence_single_endpoint(run_id: str, user: dict = Depends(r
         result = publish_confluence_single(run_id)
         return ConfluencePublishResult(**result)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_safe_detail(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("publish_confluence_single failed for %s: %s", run_id, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +184,10 @@ async def create_jira_all_endpoint(background_tasks: BackgroundTasks, user: dict
         result = create_jira_all()
         return JiraBatchResult(**result)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("create_jira_all failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -215,12 +222,12 @@ async def create_jira_single_endpoint(run_id: str, user: dict = Depends(require_
         result = create_jira_single(run_id)
         return JiraCreateResult(**result)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_safe_detail(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("create_jira_single failed for %s: %s", run_id, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -249,10 +256,10 @@ async def publish_all_endpoint(background_tasks: BackgroundTasks, user: dict = D
         result = publish_all_and_create_tickets()
         return CombinedPublishResult(**result)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("publish_all failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -286,12 +293,12 @@ async def publish_single_all_endpoint(run_id: str, user: dict = Depends(require_
         result = publish_and_create_tickets(run_id)
         return CombinedPublishResult(**result)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_safe_detail(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("publish_single_all failed for %s: %s", run_id, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -325,10 +332,10 @@ async def get_status_endpoint(run_id: str, user: dict = Depends(require_sso_user
     try:
         return get_delivery_status(run_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("get_status failed for %s: %s", run_id, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

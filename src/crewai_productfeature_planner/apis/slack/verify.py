@@ -69,6 +69,11 @@ async def verify_slack_request(request: Request) -> None:
     verification_token = _get_verification_token()
 
     if not signing_secret and not verification_token:
+        logger.warning(
+            "[Security] Slack request verification BYPASSED — neither "
+            "SLACK_SIGNING_SECRET nor SLACK_VERIFICATION_TOKEN is set. "
+            "Set one of these in .env for production."
+        )
         return
 
     # ---- Preferred: HMAC-SHA256 signing secret ----

@@ -46,6 +46,7 @@ class SlackPRDKickoffRequest(BaseModel):
     )
     text: Optional[str] = Field(
         None,
+        max_length=50_000,
         description=(
             "Natural-language product idea / feature description. "
             "E.g. 'create a PRD for a mobile fitness app'"
@@ -72,7 +73,7 @@ class SlackPRDKickoffRequest(BaseModel):
     )
     webhook_url: Optional[str] = Field(
         default=None,
-        description="Optional callback URL for result delivery.",
+        description="Optional callback URL for result delivery (must be https://).",
         json_schema_extra={"example": "https://example.com/webhooks/prd-result"},
     )
 
@@ -110,7 +111,41 @@ def _resolve_channel(req: SlackPRDKickoffRequest) -> str:
 
 def _deliver_webhook(run_id: str, result: dict | None, error: str | None, webhook_url: str) -> None:
     """POST the flow result to the webhook URL."""
+    import ipaddress
+    import socket
     import httpx
+    from urllib.parse import urlparse
+
+    # ── SSRF protection: validate webhook_url ──
+    try:
+        parsed = urlparse(webhook_url)
+        if parsed.scheme not in ("https",):
+            logger.warning(
+                "Webhook rejected for run %s: non-HTTPS scheme %s",
+                run_id, parsed.scheme,
+            )
+            return
+        hostname = parsed.hostname or ""
+        if not hostname:
+            logger.warning("Webhook rejected for run %s: empty hostname", run_id)
+            return
+        # Resolve hostname and block private/loopback IPs
+        try:
+            resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
+            for _family, _type, _proto, _canonname, sockaddr in resolved:
+                ip = ipaddress.ip_address(sockaddr[0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    logger.warning(
+                        "Webhook rejected for run %s: resolved to private IP %s",
+                        run_id, ip,
+                    )
+                    return
+        except socket.gaierror:
+            logger.warning("Webhook rejected for run %s: DNS resolution failed for %s", run_id, hostname)
+            return
+    except Exception:
+        logger.warning("Webhook rejected for run %s: invalid URL %s", run_id, webhook_url)
+        return
 
     payload = {
         "run_id": run_id,
@@ -355,6 +390,9 @@ def _run_slack_prd_flow(
                         ),
                         thread_ts=thread_ts or "",
                     )
+        elif run and run.status == FlowStatus.FAILED and run.error and "CANCELLED" in run.error:
+            # Flow was cancelled (e.g. idea archived) — no error message needed
+            logger.info("Slack PRD flow %s cancelled", run_id)
         else:
             error_msg = run.error if run else "Unknown error"
             if notify:
@@ -416,7 +454,7 @@ def _run_slack_resume_flow(
     so the flow runs fully automated.
     """
     from crewai_productfeature_planner.apis.prd.service import resume_prd_flow
-    from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus, runs
+    from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus, cancel_events, runs
     from crewai_productfeature_planner.tools.slack_tools import (
         SlackPostPRDResultTool,
         SlackSendMessageTool,
@@ -427,6 +465,11 @@ def _run_slack_resume_flow(
         make_auto_requirements_gate,
         make_progress_poster,
     )
+
+    # Register cancellation event so archive can stop this resumed flow
+    import threading
+    if run_id not in cancel_events:
+        cancel_events[run_id] = threading.Event()
 
     send_tool = SlackSendMessageTool()
 

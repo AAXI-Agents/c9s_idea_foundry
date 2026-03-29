@@ -12,6 +12,7 @@ Redirect URL (must match the manifest):
 from __future__ import annotations
 
 import base64
+import html as html_mod
 import json
 import os
 import ssl
@@ -202,7 +203,7 @@ async def slack_oauth_callback(request: Request) -> HTMLResponse:
     params = request.query_params
 
     if "error" in params:
-        error = params["error"]
+        error = html_mod.escape(params["error"])
         logger.warning("Slack OAuth callback received error: %s", error)
         return HTMLResponse(
             content=(
@@ -236,10 +237,11 @@ async def slack_oauth_callback(request: Request) -> HTMLResponse:
         logger.error("OAuth code exchange failed: %s", exc)
         return HTMLResponse(
             content=(
-                f"<html><body>"
-                f"<h1>Token Exchange Failed</h1>"
-                f"<p>{exc}</p>"
-                f"</body></html>"
+                "<html><body>"
+                "<h1>Token Exchange Failed</h1>"
+                "<p>The OAuth token exchange could not be completed. "
+                "Please try again.</p>"
+                "</body></html>"
             ),
             status_code=400,
         )
@@ -270,10 +272,10 @@ async def slack_oauth_callback(request: Request) -> HTMLResponse:
         )
     logger.info("Slack app installed/reinstalled: %s", summary)
 
-    team = summary.get("team", "your workspace")
-    scopes = summary.get("scope", "N/A")
-    bot_user = summary.get("bot_user_id", "N/A")
-    token_type = summary.get("bot_token_type", "unknown")
+    team = html_mod.escape(summary.get("team", "your workspace"))
+    scopes = html_mod.escape(summary.get("scope", "N/A"))
+    bot_user = html_mod.escape(summary.get("bot_user_id", "N/A"))
+    token_type = html_mod.escape(summary.get("bot_token_type", "unknown"))
 
     return HTMLResponse(
         content=(

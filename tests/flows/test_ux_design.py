@@ -1,18 +1,18 @@
-"""Tests for the UX Design flow step (Phase 1.5c).
+"""Tests for the UX Design flow (2-phase: draft + review).
 
 Covers:
-- ``run_ux_design()`` — full flow with Figma URL return
-- Prompt-only fallback (no Figma credentials)
-- Skip on missing executive product summary
-- Skip on missing Gemini credentials
-- Error/skipped agent output parsing
-- Raw output fallback when no pattern matches
-- MongoDB persistence calls
-- Progress notifications
+- ``run_ux_design_draft()`` — Phase 1: UX Designer + Design Partner
+- ``run_ux_design_review()`` — Phase 2: Senior Designer review
+- ``run_ux_design_flow()`` — Full 2-phase orchestrator
+- ``run_ux_design()`` — Legacy entry point (backward compat)
+- ``_write_design_file()`` — Fixed-name file writing (draft/final)
+- ``_trigger_ux_design_flow()`` — Post-PRD trigger from finalization
+- Agent factory tests (Design Partner, Senior Designer)
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -52,245 +52,102 @@ def _mock_notify(flow: PRDFlow):
 _UX_MOD = "crewai_productfeature_planner.flows._ux_design"
 
 
-# ── run_ux_design ─────────────────────────────────────────────
+# ── Phase 1: run_ux_design_draft ──────────────────────────────
 
 
-class TestRunUxDesign:
+class TestRunUxDesignDraft:
 
     @patch(f"{_UX_MOD}.Crew")
     @patch(f"{_UX_MOD}.Task")
     @patch(f"{_UX_MOD}.save_iteration")
     @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_returns_figma_url_on_success(
+    def test_returns_draft_content(
         self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
     ):
-        """Agent returning FIGMA_URL: should populate state and return URL."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
+        """Phase 1 should return the raw agent output as draft content."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
 
         flow = _make_flow()
-        notifier = _mock_notify(flow)
+        _mock_notify(flow)
 
         mock_result = MagicMock()
-        mock_result.raw = "FIGMA_URL:https://www.figma.com/design/abc123"
+        mock_result.raw = "# Design System\n\nComplete design spec here."
         mock_kickoff.return_value = mock_result
 
         with patch(
             "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
+        ) as mock_ux, patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
+        ) as mock_dp, patch(
             f"{_UX_MOD}._persist_figma_design",
-        ) as mock_persist:
-            mock_create.return_value = MagicMock()
-            result = run_ux_design(flow)
+        ), patch(
+            f"{_UX_MOD}._write_design_file",
+        ) as mock_write:
+            mock_ux.return_value = MagicMock()
+            mock_dp.return_value = MagicMock()
+            result = run_ux_design_draft(flow)
 
-        assert result == "https://www.figma.com/design/abc123"
-        assert flow.state.figma_design_url == result
+        assert "Design System" in result
+        assert flow.state.figma_design_status == "prompt_ready"
+
+        # Draft file should be written with fixed name.
+        mock_write.assert_called_once()
+        call_args = mock_write.call_args
+        assert call_args[0][1] == "ux_design_draft.md"
+
+    @patch(f"{_UX_MOD}.Crew")
+    @patch(f"{_UX_MOD}.Task")
+    @patch(f"{_UX_MOD}.save_iteration")
+    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
+    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
+    def test_captures_figma_url(
+        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
+    ):
+        """When agent returns FIGMA_URL, it should be captured."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        mock_result = MagicMock()
+        mock_result.raw = "FIGMA_URL:https://figma.com/design/abc123\nDesign spec."
+        mock_kickoff.return_value = mock_result
+
+        with patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
+        ) as mock_ux, patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
+        ) as mock_dp, patch(
+            f"{_UX_MOD}._persist_figma_design",
+        ), patch(
+            f"{_UX_MOD}._write_design_file",
+        ):
+            mock_ux.return_value = MagicMock()
+            mock_dp.return_value = MagicMock()
+            result = run_ux_design_draft(flow)
+
+        assert "FIGMA_URL" in result
+        assert flow.state.figma_design_url == "https://figma.com/design/abc123"
         assert flow.state.figma_design_status == "completed"
 
-        # Verify MongoDB persistence
-        mock_persist.assert_any_call(flow.state.run_id, status="generating")
-        mock_persist.assert_any_call(flow.state.run_id, status="prompting")
-        mock_persist.assert_any_call(
-            flow.state.run_id, url=result, status="completed",
-        )
-
-        # Progress notifications
-        notifier.assert_any_call("ux_design_start", {
-            "eps_length": len("The 10-star product vision"),
-        })
-        notifier.assert_any_call("ux_design_complete", {
-            "figma_url": result,
-            "has_prompt": True,
-            "status": "completed",
-            "prompt_preview": "FIGMA_URL:https://www.figma.com/design/abc123"[:500],
-        })
-
-        # save_iteration called
-        mock_save.assert_called_once()
-        assert mock_save.call_args.kwargs["section_key"] == "ux_design"
-        assert mock_save.call_args.kwargs["step"] == "ux_design"
-
-    @patch(f"{_UX_MOD}.Crew")
-    @patch(f"{_UX_MOD}.Task")
     @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_returns_prompt_when_no_figma_creds(
-        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
-    ):
-        """Agent returning FIGMA_PROMPT: should store prompt and set prompt_ready."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
-
-        flow = _make_flow()
-        _mock_notify(flow)
-
-        mock_result = MagicMock()
-        mock_result.raw = (
-            "FIGMA_PROMPT: Design a dark mode dashboard with sidebar "
-            "navigation and 12-column grid layout."
-        )
-        mock_kickoff.return_value = mock_result
-
-        with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ) as mock_persist:
-            mock_create.return_value = MagicMock()
-            result = run_ux_design(flow)
-
-        assert result == ""  # No URL returned
-        assert "dashboard" in flow.state.figma_design_prompt
-        assert flow.state.figma_design_status == "prompt_ready"
-        mock_persist.assert_any_call(flow.state.run_id, status="prompt_ready")
-
-    @patch(f"{_UX_MOD}.Crew")
-    @patch(f"{_UX_MOD}.Task")
-    @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
-    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_handles_error_output(
-        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
-    ):
-        """Agent returning FIGMA_ERROR with short content should skip."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
-
-        flow = _make_flow()
-        _mock_notify(flow)
-
-        mock_result = MagicMock()
-        mock_result.raw = "FIGMA_ERROR: HTTP 500 from Figma API"
-        mock_kickoff.return_value = mock_result
-
-        with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ):
-            mock_create.return_value = MagicMock()
-            result = run_ux_design(flow)
-
-        assert result == ""
-        assert flow.state.figma_design_status == "skipped"
-
-    @patch(f"{_UX_MOD}.Crew")
-    @patch(f"{_UX_MOD}.Task")
-    @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
-    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_error_with_long_content_recovers_prompt(
-        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
-    ):
-        """Agent returning FIGMA_ERROR alongside >100 chars of design content
-        should recover the content as prompt_ready."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
-
-        flow = _make_flow()
-        _mock_notify(flow)
-
-        design_content = "Design a dark-themed dashboard with sidebar nav. " * 5
-        mock_result = MagicMock()
-        mock_result.raw = (
-            f"FIGMA_ERROR: HTTP 404 not found\n\n{design_content}"
-        )
-        mock_kickoff.return_value = mock_result
-
-        with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ):
-            mock_create.return_value = MagicMock()
-            result = run_ux_design(flow)
-
-        assert result == ""
-        assert flow.state.figma_design_status == "prompt_ready"
-        assert "dashboard" in flow.state.figma_design_prompt
-
-    @patch(f"{_UX_MOD}.Crew")
-    @patch(f"{_UX_MOD}.Task")
-    @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
-    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_handles_skipped_output(
-        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
-    ):
-        """Agent returning FIGMA_SKIPPED: should set status to skipped."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
-
-        flow = _make_flow()
-        _mock_notify(flow)
-
-        mock_result = MagicMock()
-        mock_result.raw = "FIGMA_SKIPPED: No credentials configured"
-        mock_kickoff.return_value = mock_result
-
-        with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ):
-            mock_create.return_value = MagicMock()
-            result = run_ux_design(flow)
-
-        assert result == ""
-        assert flow.state.figma_design_status == "skipped"
-
-    @patch(f"{_UX_MOD}.Crew")
-    @patch(f"{_UX_MOD}.Task")
-    @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
-    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_raw_output_fallback(
-        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
-    ):
-        """Unrecognised output should be stored as prompt for manual use."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
-
-        flow = _make_flow()
-        _mock_notify(flow)
-
-        mock_result = MagicMock()
-        mock_result.raw = "Here is my design spec with pages and components..."
-        mock_kickoff.return_value = mock_result
-
-        with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ):
-            mock_create.return_value = MagicMock()
-            result = run_ux_design(flow)
-
-        assert result == ""
-        assert flow.state.figma_design_prompt == mock_result.raw.strip()
-        assert flow.state.figma_design_status == "prompt_ready"
-
-    @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
-    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_skips_when_no_exec_summary(
-        self, mock_proj, mock_kickoff, mock_save,
-    ):
+    def test_skips_when_no_eps(self, mock_proj, mock_save):
         """Should return empty string when no executive product summary."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
 
         flow = _make_flow(executive_product_summary="")
         _mock_notify(flow)
 
-        result = run_ux_design(flow)
-
+        result = run_ux_design_draft(flow)
         assert result == ""
-        mock_kickoff.assert_not_called()
 
     @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_skips_when_no_gemini_credentials(
-        self, mock_proj, mock_kickoff, mock_save,
-    ):
-        """Should skip gracefully when agent creation raises EnvironmentError."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
+    def test_skips_when_no_credentials(self, mock_proj, mock_save):
+        """Should skip when UX Designer creation raises EnvironmentError."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
 
         flow = _make_flow()
         notifier = _mock_notify(flow)
@@ -301,13 +158,83 @@ class TestRunUxDesign:
         ), patch(
             f"{_UX_MOD}._persist_figma_design",
         ):
-            result = run_ux_design(flow)
+            result = run_ux_design_draft(flow)
 
         assert result == ""
-        assert flow.state.figma_design_status == ""
-        mock_kickoff.assert_not_called()
-        notifier.assert_any_call("ux_design_skipped", {
-            "reason": "no_credentials",
+        notifier.assert_any_call("ux_design_skipped", {"reason": "no_credentials"})
+
+    @patch(f"{_UX_MOD}.Crew")
+    @patch(f"{_UX_MOD}.Task")
+    @patch(f"{_UX_MOD}.save_iteration")
+    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
+    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
+    def test_continues_without_design_partner(
+        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
+    ):
+        """If Design Partner creation fails, should proceed with UX Designer only."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        mock_result = MagicMock()
+        mock_result.raw = "Design without partner"
+        mock_kickoff.return_value = mock_result
+
+        with patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
+        ) as mock_ux, patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
+            side_effect=Exception("Partner init failed"),
+        ), patch(
+            f"{_UX_MOD}._persist_figma_design",
+        ), patch(
+            f"{_UX_MOD}._write_design_file",
+        ):
+            mock_ux.return_value = MagicMock()
+            result = run_ux_design_draft(flow)
+
+        assert result == "Design without partner"
+
+    @patch(f"{_UX_MOD}.Crew")
+    @patch(f"{_UX_MOD}.Task")
+    @patch(f"{_UX_MOD}.save_iteration")
+    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
+    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
+    def test_sends_progress_notifications(
+        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
+    ):
+        """Progress events should fire for start and draft_complete."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
+
+        flow = _make_flow()
+        notifier = _mock_notify(flow)
+
+        mock_result = MagicMock()
+        mock_result.raw = "Design output"
+        mock_kickoff.return_value = mock_result
+
+        with patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
+        ) as mock_ux, patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
+        ) as mock_dp, patch(
+            f"{_UX_MOD}._persist_figma_design",
+        ), patch(
+            f"{_UX_MOD}._write_design_file",
+        ):
+            mock_ux.return_value = MagicMock()
+            mock_dp.return_value = MagicMock()
+            run_ux_design_draft(flow)
+
+        notifier.assert_any_call("ux_design_start", {
+            "eps_length": len("The 10-star product vision"),
+        })
+        notifier.assert_any_call("ux_design_draft_complete", {
+            "figma_url": "",
+            "has_prompt": True,
+            "status": "prompt_ready",
+            "prompt_preview": "Design output"[:500],
         })
 
     @patch(f"{_UX_MOD}.Crew")
@@ -315,164 +242,463 @@ class TestRunUxDesign:
     @patch(f"{_UX_MOD}.save_iteration")
     @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_url_takes_priority_over_prompt(
+    def test_persists_to_mongodb(
         self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
     ):
-        """When output has both URL and PROMPT, URL should win."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
+        """Draft should be persisted to MongoDB iterations."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
 
         flow = _make_flow()
         _mock_notify(flow)
 
         mock_result = MagicMock()
-        mock_result.raw = (
-            "FIGMA_URL:https://figma.com/design/f1\n"
-            "FIGMA_PROMPT: detailed prompt here"
-        )
+        mock_result.raw = "Full design specification"
         mock_kickoff.return_value = mock_result
 
         with patch(
             "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
+        ) as mock_ux, patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
+        ) as mock_dp, patch(
             f"{_UX_MOD}._persist_figma_design",
+        ), patch(
+            f"{_UX_MOD}._write_design_file",
         ):
-            mock_create.return_value = MagicMock()
-            result = run_ux_design(flow)
+            mock_ux.return_value = MagicMock()
+            mock_dp.return_value = MagicMock()
+            run_ux_design_draft(flow)
 
-        # URL branch should take effect
-        assert result == "https://figma.com/design/f1"
-        assert flow.state.figma_design_url == result
-        assert flow.state.figma_design_status == "completed"
+        mock_save.assert_called_once()
+        assert mock_save.call_args.kwargs["step"] == "ux_design_draft"
+        assert mock_save.call_args.kwargs["section_key"] == "ux_design"
 
 
-class TestUxDesignFileOnlyOnSuccess:
-    """UX design markdown file should only be saved when Figma URL is available."""
+# ── Phase 2: run_ux_design_review ─────────────────────────────
 
-    @patch(f"{_UX_MOD}.Crew")
-    @patch(f"{_UX_MOD}.Task")
-    @patch(f"{_UX_MOD}.save_iteration")
-    @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
-    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_file_saved_when_figma_url_present(
-        self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
-    ):
-        """_save_ux_design_file should be called when Figma URL is available."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
 
-        flow = _make_flow()
-        _mock_notify(flow)
-
-        mock_result = MagicMock()
-        mock_result.raw = "FIGMA_URL:https://www.figma.com/design/abc123"
-        mock_kickoff.return_value = mock_result
-
-        with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ), patch(
-            f"{_UX_MOD}._save_ux_design_file",
-        ) as mock_save_file:
-            mock_create.return_value = MagicMock()
-            run_ux_design(flow)
-
-        mock_save_file.assert_called_once()
-        call_kwargs = mock_save_file.call_args
-        assert call_kwargs[0][2] == "https://www.figma.com/design/abc123"  # figma_url arg
+class TestRunUxDesignReview:
 
     @patch(f"{_UX_MOD}.Crew")
     @patch(f"{_UX_MOD}.Task")
     @patch(f"{_UX_MOD}.save_iteration")
     @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_file_not_saved_when_prompt_only(
+    def test_returns_final_content(
         self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
     ):
-        """_save_ux_design_file should NOT be called for prompt-only (no Figma URL)."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
+        """Phase 2 should return the Senior Designer's final output."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_review
 
         flow = _make_flow()
         _mock_notify(flow)
 
         mock_result = MagicMock()
-        mock_result.raw = "FIGMA_PROMPT: Design a dashboard with sidebar"
+        mock_result.raw = "# Final Design\n\nReviewed and finalized."
         mock_kickoff.return_value = mock_result
 
         with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ), patch(
-            f"{_UX_MOD}._save_ux_design_file",
-        ) as mock_save_file:
-            mock_create.return_value = MagicMock()
-            run_ux_design(flow)
+            "crewai_productfeature_planner.agents.ux_designer.create_senior_designer",
+        ) as mock_sd, patch(
+            f"{_UX_MOD}._write_design_file",
+        ) as mock_write:
+            mock_sd.return_value = MagicMock()
+            result = run_ux_design_review(flow, "Initial draft content")
 
-        mock_save_file.assert_not_called()
+        assert "Final Design" in result
+
+        # Final file should be written.
+        mock_write.assert_called_once()
+        call_args = mock_write.call_args
+        assert call_args[0][1] == "ux_design_final.md"
+
+    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
+    def test_skips_when_no_draft(self, mock_proj):
+        """Should return empty string when no initial draft provided."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_review
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        result = run_ux_design_review(flow, "")
+        assert result == ""
+
+    @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
+    def test_returns_draft_on_credential_failure(self, mock_proj):
+        """Should return the original draft if Senior Designer cannot be created."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_review
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        with patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_senior_designer",
+            side_effect=EnvironmentError("No creds"),
+        ):
+            result = run_ux_design_review(flow, "Original draft")
+
+        assert result == "Original draft"
 
     @patch(f"{_UX_MOD}.Crew")
     @patch(f"{_UX_MOD}.Task")
     @patch(f"{_UX_MOD}.save_iteration")
     @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_file_not_saved_when_error_skipped(
+    def test_persists_final_to_mongodb(
         self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
     ):
-        """_save_ux_design_file should NOT be called when status is skipped."""
-        from crewai_productfeature_planner.flows._ux_design import run_ux_design
+        """Final design should be persisted as iteration 2."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_review
 
         flow = _make_flow()
         _mock_notify(flow)
 
         mock_result = MagicMock()
-        mock_result.raw = "FIGMA_SKIPPED: No credentials"
+        mock_result.raw = "Final reviewed design"
         mock_kickoff.return_value = mock_result
 
         with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ), patch(
-            f"{_UX_MOD}._save_ux_design_file",
-        ) as mock_save_file:
-            mock_create.return_value = MagicMock()
-            run_ux_design(flow)
+            "crewai_productfeature_planner.agents.ux_designer.create_senior_designer",
+        ) as mock_sd, patch(
+            f"{_UX_MOD}._write_design_file",
+        ):
+            mock_sd.return_value = MagicMock()
+            run_ux_design_review(flow, "Draft content")
 
-        mock_save_file.assert_not_called()
+        mock_save.assert_called_once()
+        assert mock_save.call_args.kwargs["step"] == "ux_design_review"
+        assert mock_save.call_args.kwargs["iteration"] == 2
 
     @patch(f"{_UX_MOD}.Crew")
     @patch(f"{_UX_MOD}.Task")
     @patch(f"{_UX_MOD}.save_iteration")
     @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_file_uses_project_dir_when_available(
+    def test_sends_review_progress(
         self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
     ):
-        """_save_ux_design_file should receive the project_id for project-based paths."""
+        """Should fire review_start and ux_design_complete progress events."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_review
+
+        flow = _make_flow()
+        notifier = _mock_notify(flow)
+
+        mock_result = MagicMock()
+        mock_result.raw = "Reviewed output"
+        mock_kickoff.return_value = mock_result
+
+        with patch(
+            "crewai_productfeature_planner.agents.ux_designer.create_senior_designer",
+        ) as mock_sd, patch(
+            f"{_UX_MOD}._write_design_file",
+        ):
+            mock_sd.return_value = MagicMock()
+            run_ux_design_review(flow, "Draft content")
+
+        notifier.assert_any_call("ux_design_review_start", {
+            "draft_length": len("Draft content"),
+        })
+        notifier.assert_any_call("ux_design_complete", {
+            "figma_url": "",
+            "has_prompt": True,
+            "status": flow.state.figma_design_status,
+            "prompt_preview": "Reviewed output"[:500],
+        })
+
+
+# ── Full flow: run_ux_design_flow ─────────────────────────────
+
+
+class TestRunUxDesignFlow:
+
+    @patch(f"{_UX_MOD}.run_ux_design_review")
+    @patch(f"{_UX_MOD}.run_ux_design_draft")
+    def test_runs_both_phases(self, mock_draft, mock_review):
+        """Full flow should run Phase 1 then Phase 2."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_flow
+
+        flow = _make_flow()
+        mock_draft.return_value = "Draft content"
+        mock_review.return_value = "Final content"
+
+        run_ux_design_flow(flow)
+
+        mock_draft.assert_called_once_with(flow)
+        mock_review.assert_called_once_with(flow, "Draft content")
+
+    @patch(f"{_UX_MOD}.run_ux_design_review")
+    @patch(f"{_UX_MOD}.run_ux_design_draft")
+    def test_stops_when_draft_empty(self, mock_draft, mock_review):
+        """Should not run Phase 2 if Phase 1 returned empty."""
+        from crewai_productfeature_planner.flows._ux_design import run_ux_design_flow
+
+        flow = _make_flow()
+        mock_draft.return_value = ""
+
+        result = run_ux_design_flow(flow)
+
+        assert result == ""
+        mock_review.assert_not_called()
+
+
+# ── Legacy entry point: run_ux_design ─────────────────────────
+
+
+class TestRunUxDesignLegacy:
+
+    @patch(f"{_UX_MOD}.run_ux_design_flow")
+    def test_delegates_to_full_flow(self, mock_flow):
+        """Legacy run_ux_design should delegate to run_ux_design_flow."""
         from crewai_productfeature_planner.flows._ux_design import run_ux_design
+
+        flow = _make_flow()
+        mock_flow.return_value = "https://figma.com/design/xyz"
+
+        result = run_ux_design(flow)
+
+        assert result == "https://figma.com/design/xyz"
+        mock_flow.assert_called_once_with(flow)
+
+
+# ── File writing: _write_design_file ──────────────────────────
+
+
+class TestWriteDesignFile:
+
+    def test_writes_file_with_fixed_name(self, tmp_path):
+        """Should write to the exact filename, overwriting existing."""
+        from crewai_productfeature_planner.flows._ux_design import _write_design_file
+
+        output_dir = str(tmp_path / "ux_output")
+        path1 = _write_design_file(output_dir, "ux_design_draft.md", "First draft")
+        assert Path(path1).is_file()
+        assert "First draft" in Path(path1).read_text()
+
+        # Overwrite with new content.
+        path2 = _write_design_file(output_dir, "ux_design_draft.md", "Second draft")
+        assert path1 == path2
+        content = Path(path2).read_text()
+        assert "Second draft" in content
+        assert "First draft" not in content
+
+    def test_includes_figma_url(self, tmp_path):
+        """Should include Figma URL link when provided."""
+        from crewai_productfeature_planner.flows._ux_design import _write_design_file
+
+        output_dir = str(tmp_path / "ux_output")
+        path = _write_design_file(
+            output_dir, "ux_design_final.md", "Content",
+            figma_url="https://figma.com/design/abc",
+        )
+        content = Path(path).read_text()
+        assert "https://figma.com/design/abc" in content
+        assert "Figma Prototype" in content
+
+    def test_creates_directory(self, tmp_path):
+        """Should create output directory if it doesn't exist."""
+        from crewai_productfeature_planner.flows._ux_design import _write_design_file
+
+        deep_dir = str(tmp_path / "a" / "b" / "c")
+        path = _write_design_file(deep_dir, "test.md", "Content")
+        assert Path(path).is_file()
+
+
+# ── Finalization trigger: _trigger_ux_design_flow ─────────────
+
+
+class TestTriggerUxDesignFlow:
+
+    def test_triggers_when_prd_complete(self):
+        """Should trigger UX flow when EPS available and no prior design."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
 
         flow = _make_flow()
         _mock_notify(flow)
 
-        mock_result = MagicMock()
-        mock_result.raw = "FIGMA_URL:https://www.figma.com/design/abc123"
-        mock_kickoff.return_value = mock_result
+        with patch(
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+        ) as mock_kick:
+            _trigger_ux_design_flow(flow)
+            mock_kick.assert_called_once_with(flow)
+
+    def test_skips_when_no_eps(self):
+        """Should skip when no executive product summary."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
+
+        flow = _make_flow(executive_product_summary="")
+        _mock_notify(flow)
 
         with patch(
-            "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
-        ) as mock_create, patch(
-            f"{_UX_MOD}._persist_figma_design",
-        ), patch(
-            f"{_UX_MOD}._save_ux_design_file",
-        ) as mock_save_file:
-            mock_create.return_value = MagicMock()
-            run_ux_design(flow)
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+        ) as mock_kick:
+            _trigger_ux_design_flow(flow)
+            mock_kick.assert_not_called()
 
-        # Fourth arg is project_id
-        assert mock_save_file.call_args[0][3] == "proj-ux"
+    def test_skips_when_already_prompt_ready(self):
+        """Should skip when UX design already has prompt_ready status."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
+
+        flow = _make_flow(figma_design_status="prompt_ready")
+        _mock_notify(flow)
+
+        with patch(
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+        ) as mock_kick:
+            _trigger_ux_design_flow(flow)
+            mock_kick.assert_not_called()
+
+    def test_skips_when_already_completed(self):
+        """Should skip when UX design already completed with URL."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
+
+        flow = _make_flow(figma_design_status="completed")
+        _mock_notify(flow)
+
+        with patch(
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+        ) as mock_kick:
+            _trigger_ux_design_flow(flow)
+            mock_kick.assert_not_called()
+
+    def test_catches_non_fatal_errors(self):
+        """UX flow failure should not propagate (PRD is still saved)."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        with patch(
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+            side_effect=RuntimeError("Agent crashed"),
+        ):
+            # Should not raise
+            _trigger_ux_design_flow(flow)
+
+    def test_propagates_billing_error(self):
+        """BillingError should propagate for proper pause handling."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
+        from crewai_productfeature_planner.scripts.retry import BillingError
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        with patch(
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+            side_effect=BillingError("Billing limit"),
+        ):
+            with pytest.raises(BillingError):
+                _trigger_ux_design_flow(flow)
+
+    def test_propagates_model_busy_error(self):
+        """ModelBusyError should propagate for proper pause handling."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
+        from crewai_productfeature_planner.scripts.retry import ModelBusyError
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        with patch(
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+            side_effect=ModelBusyError("Model overloaded"),
+        ):
+            with pytest.raises(ModelBusyError):
+                _trigger_ux_design_flow(flow)
+
+    def test_propagates_shutdown_error(self):
+        """ShutdownError should propagate for proper shutdown handling."""
+        from crewai_productfeature_planner.flows._finalization import (
+            _trigger_ux_design_flow,
+        )
+        from crewai_productfeature_planner.scripts.retry import ShutdownError
+
+        flow = _make_flow()
+        _mock_notify(flow)
+
+        with patch(
+            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
+            side_effect=ShutdownError("Shutting down"),
+        ):
+            with pytest.raises(ShutdownError):
+                _trigger_ux_design_flow(flow)
 
 
-# ── UX Designer agent factory (basic tests) ──────────────────
+# ── Agent factories ───────────────────────────────────────────
+
+
+class TestDesignPartnerAgent:
+
+    def test_create_requires_gemini_creds(self, monkeypatch):
+        """Should raise when no Gemini credentials available."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+        from crewai_productfeature_planner.agents.ux_designer.agent import (
+            create_design_partner,
+        )
+        with pytest.raises(EnvironmentError):
+            create_design_partner()
+
+    def test_loads_config(self, monkeypatch):
+        """Should load design_partner.yaml config."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+        from crewai_productfeature_planner.agents.ux_designer.agent import (
+            create_design_partner,
+        )
+        agent = create_design_partner()
+        assert "Design Partner" in agent.role
+
+
+class TestSeniorDesignerAgent:
+
+    def test_create_requires_gemini_creds(self, monkeypatch):
+        """Should raise when no Gemini credentials available."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+        from crewai_productfeature_planner.agents.ux_designer.agent import (
+            create_senior_designer,
+        )
+        with pytest.raises(EnvironmentError):
+            create_senior_designer()
+
+    def test_loads_config(self, monkeypatch):
+        """Should load senior_designer.yaml config."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+        from crewai_productfeature_planner.agents.ux_designer.agent import (
+            create_senior_designer,
+        )
+        agent = create_senior_designer()
+        assert "Senior Designer" in agent.role
+
+
+class TestUxDesignFlowTaskConfigs:
+
+    def test_loads_flow_task_configs(self):
+        """Should load the ux_design_flow_tasks.yaml file."""
+        from crewai_productfeature_planner.agents.ux_designer.agent import (
+            get_ux_design_flow_task_configs,
+        )
+        configs = get_ux_design_flow_task_configs()
+        assert "create_initial_design_draft_task" in configs
+        assert "review_and_finalize_design_task" in configs
+
+
+# ── Original UX Designer agent factory (backward compat) ─────
 
 
 class TestUxDesignerAgent:
@@ -501,3 +727,34 @@ class TestUxDesignerAgent:
         assert "description" in task
         assert "expected_output" in task
         assert "{executive_product_summary}" in task["description"]
+
+
+# ── Output filenames ──────────────────────────────────────────
+
+
+class TestOutputFilenames:
+
+    def test_draft_filename_is_fixed(self):
+        """Draft filename should be a constant, not timestamped."""
+        from crewai_productfeature_planner.flows._ux_design import DRAFT_FILENAME
+        assert DRAFT_FILENAME == "ux_design_draft.md"
+        assert "{" not in DRAFT_FILENAME  # No dynamic parts
+
+    def test_final_filename_is_fixed(self):
+        """Final filename should be a constant, not timestamped."""
+        from crewai_productfeature_planner.flows._ux_design import FINAL_FILENAME
+        assert FINAL_FILENAME == "ux_design_final.md"
+        assert "{" not in FINAL_FILENAME
+
+
+class TestResolveOutputDir:
+
+    def test_project_dir(self):
+        """Should return project-specific path when project_id given."""
+        from crewai_productfeature_planner.flows._ux_design import _resolve_output_dir
+        assert _resolve_output_dir("proj-abc") == "output/proj-abc/ux design"
+
+    def test_fallback_dir(self):
+        """Should return default path when no project_id."""
+        from crewai_productfeature_planner.flows._ux_design import _resolve_output_dir
+        assert _resolve_output_dir(None) == "output/prds"

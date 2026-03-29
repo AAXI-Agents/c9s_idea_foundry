@@ -180,8 +180,8 @@ class TestProductListBlocks:
         assert blocks[-1]["type"] == "actions"  # footer command buttons
 
     def test_config_button_present(self):
-        """Product list should include a project-level Config button."""
-        blocks = product_list_blocks(_PRODUCTS, _USER, _PROJECT_NAME, _PROJECT_ID)
+        """Product list should include a project-level Config button for admins."""
+        blocks = product_list_blocks(_PRODUCTS, _USER, _PROJECT_NAME, _PROJECT_ID, is_admin=True)
         config_blocks = [
             b for b in blocks
             if b["type"] == "actions"

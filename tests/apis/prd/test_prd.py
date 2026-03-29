@@ -338,7 +338,9 @@ def test_global_error_handler_returns_500():
     assert resp.status_code == 500
     body = resp.json()
     assert body["error_code"] == "INTERNAL_ERROR"
-    assert "db down" in body["message"]
+    # Security: error details must NOT leak to the client
+    assert "db down" not in body["message"]
+    assert "internal error" in body["message"].lower()
     runs.clear()
 
 

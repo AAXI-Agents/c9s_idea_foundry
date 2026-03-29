@@ -72,6 +72,15 @@ engagement_response_task:
     an in-progress idea iteration:
     1. Explain how to provide feedback during the iteration flow.
 
+    **D. Clarification needed** — the user's intent is truly ambiguous
+    and you cannot confidently classify it into A, B, or C:
+    1. Acknowledge what you understood from the message.
+    2. Ask the user a specific clarifying question (1-2 questions max).
+    3. Suggest 2-3 likely actions they might want, each with the
+       matching button label.
+    4. Prefix your response with "[CLARIFICATION] " so the system
+       can track ambiguous intents for improvement.
+
     IMPORTANT: Never suggest the user type a command.  Always
     recommend clicking a button when suggesting actions.
   expected_output: >
@@ -82,6 +91,10 @@ engagement_response_task:
     For action intents: A concise, helpful response (2-4 sentences)
     that identifies what the user wants and recommends the best action.
     Must reference at least one clickable action by its exact label.
+
+    For clarification needed: Start with "[CLARIFICATION] " followed
+    by what you understood, a clarifying question, and 2-3 suggested
+    actions with their button labels.
 
 
 # ── Idea-to-PRD Orchestration Task ──────────────────────────────

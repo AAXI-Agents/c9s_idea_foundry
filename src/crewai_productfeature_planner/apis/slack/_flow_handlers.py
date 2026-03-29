@@ -14,6 +14,10 @@ import threading
 import uuid
 from typing import Callable
 
+from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+    truncate_with_file_hint,
+    upload_content_file,
+)
 from crewai_productfeature_planner.apis.slack._thread_state import append_to_thread
 
 from crewai_productfeature_planner.scripts.logging_config import get_logger
@@ -200,29 +204,35 @@ def make_progress_poster(
                     )
 
         elif event_type == "exec_summary_iteration":
-            iteration = details.get("iteration", 0)
-            max_iter = details.get("max_iterations", 0)
-            critique_summary = details.get("critique_summary", "")
-            msg = (
-                f":writing_hand: Refining *Executive Summary*… "
-                f"(iteration {iteration}/{max_iter})"
-            )
-            if critique_summary:
-                preview = critique_summary[:300]
-                if len(critique_summary) > 300:
-                    preview += "…"
-                msg += f"\n\n*What I'm working on:*\n>{preview}"
-                msg += (
-                    "\n\n_Reply in this thread if you'd like to "
-                    "adjust the direction._"
-                )
+            # Suppressed — only section_start and completion events are
+            # shown to avoid flooding the thread with per-iteration noise.
+            pass
 
         elif event_type == "executive_summary_complete":
             iters = details.get("iterations", 0)
+            content = details.get("content", "")
+            tag = f"<@{user}> " if user else ""
             msg = (
-                f":white_check_mark: *Executive Summary* complete "
+                f"{tag}:white_check_mark: *Executive Summary* complete "
                 f"after {iters} iteration(s)."
             )
+            if content:
+                try:
+                    preview, was_truncated = truncate_with_file_hint(content)
+                    msg += f"\n\n{preview}"
+                    if was_truncated:
+                        upload_content_file(
+                            channel=channel,
+                            thread_ts=thread_ts,
+                            content=content,
+                            filename="executive_summary.md",
+                            title="Executive Summary — Full Content",
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "Content preview/upload failed for executive_summary",
+                        exc_info=True,
+                    )
 
         # ── Phase 1.5 — Specialist agent events ──────────────
 
@@ -286,42 +296,43 @@ def make_progress_poster(
                 msg = ":fast_forward: *UX Design* skipped."
 
         elif event_type == "section_iteration":
-            title = details.get("section_title", "")
-            step = details.get("section_step", 0)
-            total = details.get("total_sections", 0)
-            iteration = details.get("iteration", 0)
-            max_iter = details.get("max_iterations", 0)
-            critique_summary = details.get("critique_summary", "")
-            emoji = _SECTION_EMOJIS.get(
-                details.get("section_key", ""), ":writing_hand:",
-            )
-            msg = (
-                f"{emoji} [{step}/{total}] Refining _{title}_… "
-                f"(iteration {iteration}/{max_iter})"
-            )
-            if critique_summary:
-                # Truncate for Slack readability
-                preview = critique_summary[:300]
-                if len(critique_summary) > 300:
-                    preview += "…"
-                msg += f"\n\n*What I'm working on:*\n>{preview}"
-                msg += (
-                    "\n\n_Reply in this thread if you'd like to "
-                    "adjust the direction._"
-                )
+            # Suppressed — only section_start and section_complete are
+            # shown to avoid flooding the thread with per-iteration noise.
+            pass
 
         elif event_type == "section_complete":
             title = details.get("section_title", "")
             step = details.get("section_step", 0)
             total = details.get("total_sections", 0)
             iters = details.get("iterations", 0)
+            content = details.get("content", "")
             emoji = _SECTION_EMOJIS.get(
                 details.get("section_key", ""), ":white_check_mark:",
             )
+            tag = f"<@{user}> " if user else ""
             msg = (
-                f"{emoji} [{step}/{total}] *{title}* complete "
+                f"{tag}{emoji} [{step}/{total}] *{title}* complete "
                 f"({iters} iteration(s))."
             )
+            if content:
+                try:
+                    preview, was_truncated = truncate_with_file_hint(content)
+                    msg += f"\n\n{preview}"
+                    if was_truncated:
+                        section_key = details.get("section_key", "section")
+                        upload_content_file(
+                            channel=channel,
+                            thread_ts=thread_ts,
+                            content=content,
+                            filename=f"{section_key}.md",
+                            title=f"{title} — Full Content",
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "Content preview/upload failed for %s",
+                        details.get("section_key", "section"),
+                        exc_info=True,
+                    )
 
         elif event_type == "all_sections_complete":
             msg = (
@@ -1846,6 +1857,45 @@ def handle_archive_idea(
         logger.error("Archive idea intent failed: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# Cancel helper — unblock pending approval gates for a cancelled run
+# ---------------------------------------------------------------------------
+
+
+def _unblock_gates_for_cancel(run_id: str) -> None:
+    """Set all pending gate events for *run_id* so the flow thread unblocks.
+
+    After the events fire the gate callbacks will see no decision and
+    auto-approve/continue.  The next ``check_cancelled()`` checkpoint in
+    the flow will then raise ``FlowCancelled``.
+    """
+    # Exec-summary feedback gate
+    with _exec_feedback_lock:
+        info = _pending_exec_feedback.get(run_id)
+        if info and "event" in info:
+            info["event"].set()
+
+    # Exec-summary completion gate
+    with _exec_completion_lock:
+        info = _pending_exec_completion.get(run_id)
+        if info and "event" in info:
+            info["event"].set()
+
+    # Requirements approval gate
+    with _requirements_approval_lock:
+        info = _pending_requirements_approval.get(run_id)
+        if info and "event" in info:
+            info["event"].set()
+
+    # Interactive-mode gates (approval events in shared.py)
+    from crewai_productfeature_planner.apis.shared import approval_events
+    evt = approval_events.get(run_id)
+    if evt is not None:
+        evt.set()
+
+    logger.info("[Cancel] Unblocked approval gates for run_id=%s", run_id)
+
+
 def execute_archive_idea(
     run_id: str,
     channel: str,
@@ -1885,6 +1935,17 @@ def execute_archive_idea(
             or "(unknown idea)"
         )
 
+        # ── Signal cancellation to stop any running flow ──
+        from crewai_productfeature_planner.apis.shared import (
+            cancel_events,
+            request_cancel,
+        )
+        request_cancel(run_id)
+
+        # Unblock any pending approval gates so the flow thread wakes up
+        # and reaches the next check_cancelled() checkpoint.
+        _unblock_gates_for_cancel(run_id)
+
         # Archive the working-idea document
         mark_archived(run_id)
 
@@ -1896,6 +1957,18 @@ def execute_archive_idea(
             update_job_status(run_id, "archived")
         except Exception:
             logger.debug("Could not archive crewJob for %s", run_id, exc_info=True)
+
+        # Move the project knowledge file to archives/
+        try:
+            from crewai_productfeature_planner.scripts.project_knowledge import (
+                archive_idea_knowledge,
+            )
+            archive_idea_knowledge(run_id)
+        except Exception:
+            logger.debug(
+                "Could not archive knowledge file for %s", run_id,
+                exc_info=True,
+            )
 
         idea_preview = idea[:500] + "\u2026" if len(idea) > 500 else idea
 
@@ -2053,6 +2126,11 @@ def kick_off_prd_flow(
             pass
 
     run_id = uuid.uuid4().hex[:12]
+
+    # Create cancellation event so archive can stop this flow
+    from crewai_productfeature_planner.apis.shared import cancel_events
+    cancel_event = threading.Event()
+    cancel_events[run_id] = cancel_event
 
     if interactive:
         from crewai_productfeature_planner.apis.slack.interactive_handlers import (

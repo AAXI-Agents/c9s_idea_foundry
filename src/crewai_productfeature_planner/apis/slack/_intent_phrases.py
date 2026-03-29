@@ -46,6 +46,14 @@ _LIST_IDEAS_PHRASES = (
     "ideas in progress", "what ideas",
     "which ideas", "view ideas",
 )
+_SUMMARIZE_IDEAS_PHRASES = (
+    "summary of ideas", "summarize ideas", "summarize my ideas",
+    "idea summary", "ideas summary", "summarize all ideas",
+    "give me a summary of ideas", "overview of ideas",
+    "summarize the ideas", "ideas overview",
+    "summary of all ideas", "brief on ideas",
+    "recap of ideas", "ideas recap",
+)
 _LIST_PRODUCTS_PHRASES = (
     "list products", "show products", "list completed",
     "show completed ideas", "completed ideas",
@@ -137,6 +145,7 @@ _PHRASE_INTENT_MAP: list[tuple[tuple[str, ...], str]] = [
     (_IDEA_PHRASES, "create_prd"),
     (_CONFIGURE_MEMORY_PHRASES, "configure_memory"),
     (_UPDATE_CONFIG_PHRASES, "update_config"),
+    (_SUMMARIZE_IDEAS_PHRASES, "summarize_ideas"),
     (_LIST_IDEAS_PHRASES, "list_ideas"),
     (_LIST_PRODUCTS_PHRASES, "list_products_intent"),
     (_LIST_PROJECTS_PHRASES, "list_projects"),

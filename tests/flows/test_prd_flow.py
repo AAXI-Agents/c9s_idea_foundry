@@ -2488,10 +2488,6 @@ def test_callback_true_continues_to_sections(
             sec.is_approved = True
         return "Eng plan"
 
-    def _mock_ux(self_):
-        self_.state.figma_design_status = "prompt_ready"
-        return ""
-
     # Should not raise, should return finalized PRD
     _ES = "crewai_productfeature_planner.flows._executive_summary"
     _AG = "crewai_productfeature_planner.flows._agents"
@@ -2501,8 +2497,7 @@ def test_callback_true_continues_to_sections(
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
          patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_FL}._run_ceo_review", _mock_ceo_review), \
-         patch(f"{_FL}._run_eng_plan", _mock_eng_plan), \
-         patch(f"{_FL}._run_ux_design", _mock_ux):
+         patch(f"{_FL}._run_eng_plan", _mock_eng_plan):
         result = flow.generate_sections()
     assert result is not None
     # Executive summary should be carried from Phase 1
@@ -2627,17 +2622,12 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
             sec.is_approved = True
         return "Eng plan"
 
-    def _mock_ux(self_):
-        self_.state.figma_design_status = "prompt_ready"
-        return ""
-
     with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
          patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
          patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_FL}._run_ceo_review", _mock_ceo), \
-         patch(f"{_FL}._run_eng_plan", _mock_eng), \
-         patch(f"{_FL}._run_ux_design", _mock_ux):
+         patch(f"{_FL}._run_eng_plan", _mock_eng):
         result = flow.generate_sections()
 
     assert result is not None
@@ -2758,17 +2748,12 @@ def test_phase1_runs_when_below_threshold(
             sec.is_approved = True
         return "Eng plan"
 
-    def _mock_ux(self_):
-        self_.state.figma_design_status = "prompt_ready"
-        return ""
-
     with patch(f"{_ES}.Crew", _mock_crew), patch(f"{_ES}.Task", _mock_task), \
          patch(f"{_ES}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_AG}.Crew", _mock_crew), patch(f"{_AG}.Task", _mock_task), \
          patch(f"{_AG}.crew_kickoff_with_retry", mock_kickoff), \
          patch(f"{_FL}._run_ceo_review", _mock_ceo), \
-         patch(f"{_FL}._run_eng_plan", _mock_eng), \
-         patch(f"{_FL}._run_ux_design", _mock_ux):
+         patch(f"{_FL}._run_eng_plan", _mock_eng):
         result = flow.generate_sections()
 
     assert result is not None

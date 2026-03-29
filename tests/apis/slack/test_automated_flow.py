@@ -128,9 +128,9 @@ class TestAutoRequirementsGate:
 
 
 class TestEnhancedProgressSummaries:
-    """Progress poster should include critique summaries in messages."""
+    """Progress poster should suppress per-iteration messages."""
 
-    def test_section_iteration_includes_critique(self):
+    def test_section_iteration_suppressed(self):
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
             make_progress_poster,
         )
@@ -147,13 +147,9 @@ class TestEnhancedProgressSummaries:
             "critique_summary": "Missing user impact analysis and ROI metrics.",
         })
 
-        send_tool.run.assert_called_once()
-        msg = send_tool.run.call_args[1].get("text", "")
-        assert "Missing user impact" in msg
-        assert "What I'm working on" in msg
-        assert "Reply in this thread" in msg
+        send_tool.run.assert_not_called()
 
-    def test_section_iteration_without_critique(self):
+    def test_section_iteration_without_critique_suppressed(self):
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
             make_progress_poster,
         )
@@ -169,11 +165,9 @@ class TestEnhancedProgressSummaries:
             "max_iterations": 5,
         })
 
-        send_tool.run.assert_called_once()
-        msg = send_tool.run.call_args[1].get("text", "")
-        assert "What I'm working on" not in msg
+        send_tool.run.assert_not_called()
 
-    def test_exec_summary_iteration_includes_critique(self):
+    def test_exec_summary_iteration_suppressed(self):
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
             make_progress_poster,
         )
@@ -187,9 +181,7 @@ class TestEnhancedProgressSummaries:
             "critique_summary": "Needs clearer success metrics.",
         })
 
-        msg = send_tool.run.call_args[1].get("text", "")
-        assert "clearer success metrics" in msg
-        assert "Reply in this thread" in msg
+        send_tool.run.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

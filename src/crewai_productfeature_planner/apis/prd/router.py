@@ -4,7 +4,7 @@ Action endpoints (kickoff, approve, pause, resume) live in
 ``_route_actions.py`` and are included via ``action_router``.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from crewai_productfeature_planner.apis.prd.models import (
     ErrorResponse,
@@ -194,7 +194,7 @@ def _job_doc_to_detail(doc: dict) -> JobDetail:
 async def list_all_jobs(
     status: str | None = None,
     flow_name: str | None = None,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
     user: dict = Depends(require_sso_user),
 ):
     """List persistent job records, optionally filtered."""

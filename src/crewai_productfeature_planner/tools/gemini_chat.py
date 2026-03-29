@@ -477,6 +477,163 @@ def interpret_message(
 
 
 # ---------------------------------------------------------------------------
+# Fast conversational response (bypasses CrewAI overhead)
+# ---------------------------------------------------------------------------
+
+
+def generate_chat_response(
+    system_prompt: str,
+    user_message: str,
+    conversation_history: list[dict] | None = None,
+    *,
+    temperature: float = 0.3,
+    max_output_tokens: int = 2048,
+    model_override: str | None = None,
+) -> str | None:
+    """Send a conversational request to Gemini and return plain-text response.
+
+    Uses the same direct REST API approach as :func:`interpret_message` but
+    returns **plain text** instead of JSON-mode output.  This avoids
+    CrewAI ``Crew.kickoff()`` overhead (~2-4 s) and typically responds
+    in 200-800 ms.
+
+    Args:
+        system_prompt: The system instruction for the model.
+        user_message: The user's message (appended as final ``user`` turn).
+        conversation_history: Optional prior turns (``role``/``content`` dicts).
+        temperature: Sampling temperature (default 0.3).
+        max_output_tokens: Maximum response length in tokens.
+        model_override: Explicit model name; falls back to ``GEMINI_MODEL``
+            env-var → ``DEFAULT_GEMINI_MODEL``.
+
+    Returns:
+        The model's text response, or ``None`` on failure.
+    """
+    ensure_gemini_env()
+
+    api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+    if not api_key:
+        logger.warning("[Gemini] GOOGLE_API_KEY not set — cannot generate chat response")
+        return None
+
+    model = (model_override or "").strip()
+    if not model:
+        model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
+
+    # ── Build contents array ───────────────────────────────────
+    contents: list[dict] = []
+    if conversation_history:
+        for turn in conversation_history:
+            role = turn.get("role", "user")
+            gemini_role = "model" if role == "assistant" else "user"
+            contents.append({
+                "role": gemini_role,
+                "parts": [{"text": turn.get("content", "")}],
+            })
+
+    contents.append({
+        "role": "user",
+        "parts": [{"text": user_message}],
+    })
+
+    payload = {
+        "contents": contents,
+        "systemInstruction": {
+            "parts": [{"text": system_prompt}],
+        },
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_output_tokens,
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={api_key}"
+    )
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    ssl_context: ssl.SSLContext | None = None
+    try:
+        import certifi
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+
+    resp_payload = None
+    _MAX_RETRIES = 2
+    _RETRYABLE = {429, 500, 502, 503, 504}
+    for _attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context) as resp:
+                resp_payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+            break
+        except urllib.error.HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="replace")[:500]
+            except Exception:
+                pass
+            logger.error(
+                "[Gemini] chat HTTP error %s attempt=%d/%d: %s",
+                exc.code, _attempt, _MAX_RETRIES, body,
+            )
+            if exc.code not in _RETRYABLE or _attempt == _MAX_RETRIES:
+                return None
+            time.sleep(2 ** (_attempt - 1))
+        except urllib.error.URLError as exc:
+            logger.error(
+                "[Gemini] chat connection error attempt=%d/%d: %s",
+                _attempt, _MAX_RETRIES, exc.reason,
+            )
+            if _attempt == _MAX_RETRIES:
+                return None
+            time.sleep(2 ** (_attempt - 1))
+        except Exception as exc:
+            logger.error(
+                "[Gemini] chat unexpected error attempt=%d/%d: %s",
+                _attempt, _MAX_RETRIES, exc,
+            )
+            if _attempt == _MAX_RETRIES:
+                return None
+            time.sleep(2 ** (_attempt - 1))
+
+    if resp_payload is None:
+        return None
+
+    # ── Extract text ───────────────────────────────────────────
+    try:
+        text = (
+            resp_payload.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+            .strip()
+        )
+    except (IndexError, KeyError, TypeError):
+        logger.warning("[Gemini] Unexpected chat response structure")
+        return None
+
+    if not text:
+        logger.warning("[Gemini] Empty chat response")
+        return None
+
+    logger.info(
+        "[Gemini] chat response (%d chars) model=%s",
+        len(text), model,
+    )
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

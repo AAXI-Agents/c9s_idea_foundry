@@ -9,6 +9,10 @@ from crewai_productfeature_planner.agents.engagement_manager.agent import (
     DEFAULT_LLM_MAX_RETRIES,
     _build_engagement_llm,
     _build_project_tools,
+    _handle_unknown_intent_crewai,
+    _handle_unknown_intent_fast,
+    _detect_user_steering_fast,
+    _detect_user_steering_crewai,
     _load_yaml,
     _parse_steering_result,
     _HEARTBEAT_EMOJI,
@@ -769,3 +773,152 @@ def test_tasks_yaml_has_project_knowledge_placeholder():
     config = _load_yaml("tasks.yaml")
     task = config["engagement_response_task"]
     assert "{project_knowledge}" in task["description"]
+
+
+# ── Fast-path tests (direct Gemini REST API) ──────────────────
+
+
+_FAST_CHAT_TARGET = (
+    "crewai_productfeature_planner.agents.engagement_manager.agent"
+    ".generate_chat_response"
+)
+
+
+class TestHandleUnknownIntentFastPath:
+    """Tests for the direct Gemini REST API fast path."""
+
+    @patch(
+        "crewai_productfeature_planner.tools.gemini_chat.generate_chat_response",
+        return_value="Try clicking *New Idea* to get started.",
+    )
+    def test_fast_path_returns_response(self, mock_chat):
+        """Fast path should return generate_chat_response result."""
+        result = _handle_unknown_intent_fast("what can you do?", None, "", None)
+        assert result == "Try clicking *New Idea* to get started."
+        mock_chat.assert_called_once()
+
+    @patch(
+        "crewai_productfeature_planner.tools.gemini_chat.generate_chat_response",
+        return_value=None,
+    )
+    def test_fast_path_returns_none_on_failure(self, mock_chat):
+        """Fast path returns None when generate_chat_response fails."""
+        result = _handle_unknown_intent_fast("help", None, "", None)
+        assert result is None
+
+    @patch(
+        "crewai_productfeature_planner.tools.gemini_chat.generate_chat_response",
+        return_value="Fast response",
+    )
+    def test_handle_uses_fast_path_by_default(self, mock_chat):
+        """handle_unknown_intent should use fast path by default."""
+        result = handle_unknown_intent("what can you do?")
+        assert result == "Fast response"
+
+    @patch(
+        "crewai_productfeature_planner.tools.gemini_chat.generate_chat_response",
+        return_value=None,
+    )
+    @patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent.Task",
+    )
+    @patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent.Crew",
+    )
+    @patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent.create_engagement_manager",
+    )
+    @patch(
+        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+    )
+    def test_falls_back_to_crewai_when_fast_fails(
+        self, mock_kickoff, mock_create, mock_crew, mock_task, mock_chat,
+    ):
+        """When fast path returns None, should fall back to CrewAI."""
+        mock_create.return_value = MagicMock()
+        mock_kickoff.return_value = "CrewAI response"
+        result = handle_unknown_intent("what can you do?")
+        assert result == "CrewAI response"
+        mock_chat.assert_called_once()
+        mock_kickoff.assert_called_once()
+
+    @patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent.Task",
+    )
+    @patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent.Crew",
+    )
+    @patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent.create_engagement_manager",
+    )
+    @patch(
+        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+    )
+    def test_uses_crewai_when_env_var_set(
+        self, mock_kickoff, mock_create, mock_crew, mock_task, monkeypatch,
+    ):
+        """ENGAGEMENT_MANAGER_USE_CREWAI=true should bypass fast path."""
+        monkeypatch.setenv("ENGAGEMENT_MANAGER_USE_CREWAI", "true")
+        mock_create.return_value = MagicMock()
+        mock_kickoff.return_value = "CrewAI forced"
+        result = handle_unknown_intent("hello")
+        assert result == "CrewAI forced"
+        mock_kickoff.assert_called_once()
+
+
+class TestDetectUserSteeringFastPath:
+    """Tests for the direct Gemini REST API fast path for steering."""
+
+    def test_ignores_non_initiator_without_llm(self):
+        """Non-initiator is rejected immediately — no fast/slow path."""
+        result = detect_user_steering(
+            user_message="change scope",
+            current_phase="idea_refinement",
+            current_agent="Idea Refiner",
+            idea="Build a dashboard",
+            initiator_user_id="U123",
+            message_author_id="U999",
+        )
+        assert result["classification"] == "IGNORE"
+
+    @patch(
+        "crewai_productfeature_planner.tools.gemini_chat.generate_chat_response",
+        return_value='{"classification": "STEERING", "action": "Add mobile", "extracted_intent": "mobile", "target_phase": "idea_refinement"}',
+    )
+    def test_fast_path_parses_json(self, mock_chat):
+        """Fast steering detection should parse JSON response."""
+        result = _detect_user_steering_fast(
+            "add mobile support", "idea_refinement", "Idea Refiner",
+            "Dashboard idea", "U123", "U123",
+        )
+        assert result is not None
+        assert result["classification"] == "STEERING"
+
+    @patch(
+        "crewai_productfeature_planner.tools.gemini_chat.generate_chat_response",
+        return_value=None,
+    )
+    def test_fast_path_returns_none_on_failure(self, mock_chat):
+        """Fast path returns None when REST call fails."""
+        result = _detect_user_steering_fast(
+            "what?", "idea_refinement", "Idea Refiner",
+            "Dashboard idea", "U123", "U123",
+        )
+        assert result is None
+
+    @patch(
+        "crewai_productfeature_planner.tools.gemini_chat.generate_chat_response",
+        return_value='{"classification": "QUESTION", "action": "status", "extracted_intent": "", "target_phase": ""}',
+    )
+    def test_detect_steering_uses_fast_path(self, mock_chat):
+        """detect_user_steering should use fast path by default."""
+        result = detect_user_steering(
+            user_message="what's happening?",
+            current_phase="section_drafting",
+            current_agent="Product Manager",
+            idea="Dashboard idea",
+            initiator_user_id="U123",
+            message_author_id="U123",
+        )
+        assert result["classification"] == "QUESTION"
+        mock_chat.assert_called_once()

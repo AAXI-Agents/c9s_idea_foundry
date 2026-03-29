@@ -182,7 +182,9 @@ class TestGlobalExceptionHandler:
         assert resp.status_code == 500
         body = json.loads(resp.body)
         assert body["error_code"] == "INTERNAL_ERROR"
-        assert "boom" in body["message"]
+        # Security: error details must NOT leak to the client
+        assert "boom" not in body["message"]
+        assert "internal error" in body["message"].lower()
         assert body["run_id"] is None
 
     @pytest.mark.anyio

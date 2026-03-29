@@ -2,6 +2,96 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.43.8 (2026-03-29)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.8 | MongoDB Schema Obsidian docs breakdown — split monolithic MongoDB Schema page into 9 individual collection pages: crewJobs, workingIdeas, productRequirements, projectConfig, projectMemory, agentInteraction, userSession, slackOAuth, userSuggestions. Each page documents every field with type, constraints, descriptions, API references, repository functions, indexes, and related collections. MongoDB Schema converted to index page with collection relationship diagram. 2728 tests passing |
+
+## v0.43.7 (2026-03-29)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.7 | API Obsidian docs breakdown — split monolithic API Overview into 7 individual domain pages with detailed field-level request/response schemas: Health API, Projects API, Ideas API, PRD Flow API, Publishing API, Slack API, SSO Webhooks API. Each page documents every field with type, constraints, defaults, and descriptions. API Overview converted to index page with wikilinks. Enables users to edit schemas and Codex to diff and apply code changes. 2728 tests passing |
+
+## v0.43.6 (2026-03-29)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.6 | Comprehensive API and Obsidian documentation update for web app integration. OpenAPI spec: title updated to "Idea Foundry API", added web app integration guide (auth, pagination, error handling, CORS, status lifecycle), 7 new path files (Projects CRUD, Ideas lifecycle, SSO Webhooks), 10 new component schemas, security schemes, API tags. Obsidian: API Overview rewritten as web app reference, Project Overview updated with dual-client architecture, Server Lifecycle updated to current startup sequence, Environment Variables reorganized with web app section, MongoDB Schema added data model mapping. 2728 tests passing |
+
+## v0.43.5 (2026-03-28)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.5 | Fix 47-second server startup regression. (1) Credential checks in `_helpers.py` lazily imported from `tools.confluence_tool`/`tools.jira_tool`, triggering `tools/__init__.py` → `file_read_tool` → `crewai_tools` → full CrewAI framework (~15s). Fixed by inlining env-var checks. (2) `find_completed_without_confluence()` fetched full documents (~100KB each) for all completed ideas from Atlas — ~47s. Fixed with two-phase query: projection first (0.05s), then full docs only for unpublished. Result: startup pipeline ~47s → ~0.9s. 2728 tests passing |
+
+## v0.43.4 (2026-03-28)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.4 | Fix thread-history mention gate — bot now responds to thread follow-ups without @mention when it has already replied (persisted in agentInteractions). After server restarts cleared the in-memory thread cache, the bot silently ignored follow-ups unless re-@mentioned. The `has_bot_thread_history()` check was gated behind `_bot_mentioned` — now ungated (same as the flow_thread fallback). 2728 tests passing |
+
+## v0.43.3 (2026-03-28)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.3 | Engagement Manager & Idea Agent latency optimization — bypass CrewAI Crew.kickoff() overhead (~2-4 s) with direct Gemini REST API calls (~200-800 ms). (1) New `generate_chat_response()` in `gemini_chat.py` — plain-text Gemini REST API helper (thinkingBudget=0, 30s timeout, 2 retries). (2) `handle_unknown_intent()` fast path by default; fallback to CrewAI on failure or `ENGAGEMENT_MANAGER_USE_CREWAI=true`. (3) `detect_user_steering()` same fast/fallback pattern. (4) `handle_idea_query()` same pattern (`IDEA_AGENT_USE_CREWAI=true`). (5) 21 new tests. 2728 tests passing |
+
+## v0.43.2 (2026-03-28)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.2 | Immediate 'Thinking…' acknowledgment on all Slack interactions. (1) New `_post_thinking()` in `_message_handler.py` posts `:thinking_face: Thinking…` before LLM classification. (2) `interpret_and_act()` calls it before `_interpret_and_act_inner()` (all @mention + thread-reply paths). (3) cmd_* button clicks in `_dispatch.py` get a 'Thinking…' ack via `_post_ack()`. 2707 tests passing |
+
+## v0.43.1 (2026-03-27)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.1 | Reduce Slack iteration noise and enhance completion summaries. (1) Suppress section_iteration and exec_summary_iteration progress messages — per-iteration refinement noise no longer floods the Slack thread. (2) section_complete and executive_summary_complete events now include full section content. (3) Completion messages tag user (<@user>) when user ID is available (interactive flows). (4) Completion messages include inline content preview; content exceeding Slack's 2800-char block limit is truncated and full text uploaded as downloadable .md file. (5) Leverages _slack_file_helper.py (truncate_with_file_hint, upload_content_file). 2707 tests passing |
+
+## v0.43.0 (2026-03-27)
+
+| Version | Summary |
+|---------|--------|
+| 0.43.0 | New Idea Agent — context-aware in-thread analyst for active idea iterations. Replaces Engagement Manager during active flows so user questions get rich, specific answers. (1) New agents/idea_agent/ module (agent.yaml, tasks.yaml, agent.py). (2) _extract_iteration_context() builds structured context from working-idea MongoDB doc. (3) handle_idea_query() runs with full iteration context. (4) extract_steering_feedback() parses steering recommendations. (5) _handle_idea_agent() in _message_handler.py. (6) general_question + active flow → Idea Agent (not _build_flow_summary). (7) Unknown intents during active flows → Idea Agent (Engagement Manager disengaged). (8) 21 new tests. 2696 tests passing |
+
+## v0.42.4 (2026-03-27)
+
+| Version | Summary |
+|---------|--------|
+| 0.42.4 | ISO 27001 security audit — all HIGH and MEDIUM findings remediated. (1) XSS fix on OAuth callback. (2) SSRF protection on webhook_url. (3) figma_api_key masked → figma_api_key_set boolean. (4) Error detail redaction (global handler + publishing router). (5) Input validation max_length. (6) Slack verify WARNING on bypass. (7) Path traversal guard. (8) section_key/pipeline_key injection guards. (9) Auth on health token endpoints. (10) Query limit bounds. 2675 tests passing |
+
+## v0.42.3 (2026-03-27)
+
+| Version | Summary |
+|---------|--------|
+| 0.42.3 | Root-cause fix: save_iteration() was unconditionally overwriting status to 'inprogress' via $set — resurrecting archived ideas. (1) save_iteration(), save_executive_summary_iteration(), save_pipeline_step() now guard terminal statuses (archived, completed, failed). (2) resume_prd_flow() queries MongoDB and refuses to resume archived/failed runs. (3) generate_sections() adds early check_cancelled(). (4) Manually archived stale d64725f5e861. 2675 tests |
+
+## v0.42.2 (2026-03-27)
+
+| Version | Summary |
+|---------|--------|
+| 0.42.2 | Fix archive cancellation for resumed/auto-resumed flows. (1) resume_prd_flow() now registers cancel_events and catches FlowCancelled — previously ignored archive cancel signals. (2) _run_slack_resume_flow() registers cancel event before resume. (3) request_cancel() creates event if missing (defensive). (4) REST API archive path calls request_cancel() + _unblock_gates_for_cancel() + archives crew job. (5) _resume_flow_background() checks archived status before resuming. (6) Fixed completed_at None validation in GET /ideas. 2675 tests passing |
+
+## v0.42.1 (2026-03-27)
+
+| Version | Summary |
+|---------|--------|
+| 0.42.1 | Archive stops active flows + scan cleanup. (1) FlowCancelled exception + cancel_events registry in shared.py with request_cancel(), is_cancelled(), check_cancelled() helpers. (2) kick_off_prd_flow() registers cancel event per run_id. (3) execute_archive_idea() signals cancel + unblocks gates. (4) _unblock_gates_for_cancel() sets all pending gate events. (5) PRDFlow.generate_sections() checks cancellation at 6 strategic points. (6) run_prd_flow() catches FlowCancelled → archived status. (7) Interactive flow runner + router handle FlowCancelled. (8) get_run_documents() excludes archived status. (9) archive_stale_jobs_on_startup() — new startup step cleans crew jobs for archived ideas. (10) Cleaned up stale d64725f5e861 'new idea' flow. 17 new tests, 2675+ total |
+
+## v0.42.0 (2026-03-26)
+
+| Version | Summary |
+|---------|--------|
+| 0.42.0 | Summarize ideas, user suggestions, admin config guard, idea command-phrase guard, archive knowledge file. (1) New 'summarize_ideas' intent — AI-powered narrative summary via Engagement Manager; BTN_SUMMARIZE_IDEAS + cmd dispatch. (2) New userSuggestions MongoDB collection — tracks clarification_needed and unknown_intent entries for self-learning. (3) Engagement Manager category D 'clarification needed' for ambiguous intents. (4) product_list_blocks() Config button hidden for non-admin users + handler guard. (5) _is_command_phrase_idea() prevents auto-starting PRD flow for command phrases like 'add new idea'. (6) archive_idea_knowledge() moves idea .md to archives/{YYYY}/{MM}/{DD}/ on archive action. 22 new tests, 2658+ total |
+
+## v0.41.0 (2026-03-26)
+
+| Version | Summary |
+|---------|--------|
+| 0.41.0 | UX Design flow refactor — standalone 2-phase post-PRD flow. (1) Phase 1.5c removed from PRDFlow.generate_sections(); UX design now triggered from finalize() after PRD completion. (2) _ux_design.py fully rewritten: run_ux_design_draft() (Phase 1 — UX Designer + Design Partner), run_ux_design_review() (Phase 2 — Senior Designer 7-pass review), run_ux_design_flow() (orchestrates both). (3) Fixed filenames (ux_design_draft.md, ux_design_final.md) — fixes 30-file proliferation. (4) 3 new YAML configs (design_partner, senior_designer, ux_design_flow_tasks). (5) 3 new agent factories with credential checks. (6) ux_design_flow.py standalone entry point. (7) _finalization.py _trigger_ux_design_flow() with skip guards and error propagation. 37 UX design tests, 2636 total |
+
 ## v0.40.0 (2026-03-25)
 
 | Version | Summary |

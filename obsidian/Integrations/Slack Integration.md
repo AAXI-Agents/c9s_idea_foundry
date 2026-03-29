@@ -102,7 +102,7 @@ is true (checked in order, short-circuiting):
 ## Intents
 
 Classified via LLM + phrase-based fallback:
-`create_prd`, `iterate_idea`, `publish`, `create_jira`, `check_publish`, `resume_prd`, `restart_prd`, `list_ideas`, `list_products`, `list_projects`, `switch_project`, `create_project`, `configure_memory`, `end_session`, `current_project`, `general_question`, `help`, `greeting`, `unknown`
+`create_prd`, `iterate_idea`, `publish`, `create_jira`, `check_publish`, `resume_prd`, `restart_prd`, `list_ideas`, `summarize_ideas`, `list_products`, `list_projects`, `switch_project`, `create_project`, `configure_memory`, `end_session`, `current_project`, `general_question`, `help`, `greeting`, `unknown`
 
 ## Token Management
 

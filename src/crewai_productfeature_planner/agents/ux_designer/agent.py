@@ -1,8 +1,12 @@
-"""UX Designer agent factory.
+"""UX Designer agent factories.
 
-Creates a UX Designer agent that converts executive product summaries
-into structured Figma Make prompts and submits them to generate
-clickable prototypes.  Uses the research model tier for design thinking.
+Creates agents for the UX design flow:
+- **UX Designer**: Converts executive product summaries into structured
+  Figma Make prompts and designs.  Uses the research model tier.
+- **Design Partner**: Collaborates with UX Designer on the initial draft
+  (gstack design-consultation methodology).
+- **Senior Designer**: Reviews and finalizes the design via 7-pass review
+  (gstack plan-design-review methodology).
 """
 
 import os
@@ -99,3 +103,99 @@ def create_ux_designer(
 def get_task_configs() -> dict:
     """Load and return the UX Designer task configurations."""
     return _load_yaml("tasks.yaml")
+
+
+# ------------------------------------------------------------------
+# Design Partner agent (gstack design-consultation methodology)
+# ------------------------------------------------------------------
+
+def create_design_partner(
+    project_id: str | None = None,
+) -> Agent:
+    """Create a Design Partner agent for the initial design draft.
+
+    Works alongside the UX Designer to produce a comprehensive design
+    specification covering product context, aesthetics, typography,
+    color, spacing, layout, motion, and component patterns.
+
+    Parameters
+    ----------
+    project_id:
+        Optional project identifier for memory enrichment.
+    """
+    has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
+    has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+    if not has_api_key and not has_project:
+        raise EnvironmentError(
+            "Design Partner requires GOOGLE_API_KEY or "
+            "GOOGLE_CLOUD_PROJECT to be set."
+        )
+    ensure_gemini_env()
+    agent_config = _load_yaml("design_partner.yaml")["design_partner"]
+    logger.info(
+        "Creating Design Partner agent (role='%s')",
+        agent_config["role"].strip(),
+    )
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+    return Agent(
+        role=agent_config["role"].strip(),
+        goal=agent_config["goal"].strip(),
+        backstory=backstory,
+        llm=_build_llm(),
+        tools=[],
+        verbose=is_verbose(),
+        allow_delegation=False,
+    )
+
+
+# ------------------------------------------------------------------
+# Senior Designer agent (gstack plan-design-review methodology)
+# ------------------------------------------------------------------
+
+def create_senior_designer(
+    project_id: str | None = None,
+) -> Agent:
+    """Create a Senior Designer agent for design review & finalization.
+
+    Applies a rigorous 7-pass review (information architecture,
+    interaction states, user journey, AI slop, design system alignment,
+    responsive/accessibility, unresolved decisions) and produces the
+    final production-ready design specification.
+
+    Parameters
+    ----------
+    project_id:
+        Optional project identifier for memory enrichment.
+    """
+    has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
+    has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+    if not has_api_key and not has_project:
+        raise EnvironmentError(
+            "Senior Designer requires GOOGLE_API_KEY or "
+            "GOOGLE_CLOUD_PROJECT to be set."
+        )
+    ensure_gemini_env()
+    agent_config = _load_yaml("senior_designer.yaml")["senior_designer"]
+    logger.info(
+        "Creating Senior Designer agent (role='%s')",
+        agent_config["role"].strip(),
+    )
+    backstory = enrich_backstory(
+        agent_config["backstory"].strip(), project_id,
+    )
+    return Agent(
+        role=agent_config["role"].strip(),
+        goal=agent_config["goal"].strip(),
+        backstory=backstory,
+        llm=_build_llm(),
+        tools=[],
+        verbose=is_verbose(),
+        allow_delegation=False,
+    )
+
+
+def get_ux_design_flow_task_configs() -> dict:
+    """Load task configs for the standalone UX Design Flow."""
+    return _load_yaml("ux_design_flow_tasks.yaml")

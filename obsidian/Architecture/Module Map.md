@@ -36,8 +36,9 @@
 | `qa_engineer/` | QA engineer agent (stub, v0.18.0) |
 | `qa_lead/` | QA lead agent (stub, v0.18.0) |
 | `retro_manager/` | Retro manager agent (stub, v0.18.0) |
-| `ux_designer/` | UX Designer — Figma Make prompt generation + submission (v0.20.0) |
-| `engagement_manager/` | Engagement Manager & PRD Orchestrator — handles unknown intents, orchestrates idea-to-PRD lifecycle with heartbeats, user steering, session isolation (v0.35.0, expanded v0.39.0) |
+| `ux_designer/` | UX Designer + Design Partner + Senior Designer — 2-phase UX design flow (v0.20.0, refactored v0.41.0) |
+| `engagement_manager/` | Engagement Manager & PRD Orchestrator — handles unknown intents, orchestrates idea-to-PRD lifecycle with heartbeats, user steering, session isolation. Disengaged during active iterations (v0.35.0, expanded v0.39.0, v0.43.0) |
+| `idea_agent/` | Idea Agent — context-aware in-thread analyst for active idea iterations, answers questions about current state and produces steering recommendations (v0.43.0) |
 | `orchestrator/` | Atlassian publishing + Jira agents |
 
 ## APIs (`apis/`)
@@ -45,7 +46,7 @@
 | File / Dir | Purpose |
 |-----------|---------|
 | `__init__.py` | FastAPI app factory, router registration, lifespan hooks |
-| `shared.py` | FlowRun, FlowStatus, approval state |
+| `shared.py` | FlowRun, FlowStatus, FlowCancelled, approval state, cancel_events |
 | `health/router.py` | `/health`, token management endpoints |
 | `prd/router.py` | `/flow/prd/*` — kickoff, approve, pause, resume, runs, jobs |
 | `prd/models.py` | Pydantic request/response schemas |
@@ -67,7 +68,8 @@
 | `_agents.py` | Agent creation, parallel execution, decision parsing |
 | `_executive_summary.py` | Phase 1 executive summary iteration |
 | `_ceo_eng_review.py` | Phase 1.5 CEO review + Engineering plan |
-| `_ux_design.py` | Phase 1.5c UX design — Figma Make prompt + submission (v0.20.0) |
+| `_ux_design.py` | UX design engine — 2-phase draft + review, fixed filenames (v0.20.0, refactored v0.41.0) |
+| `ux_design_flow.py` | Standalone UX design flow entry point — kick_off_ux_design_flow() (v0.41.0) |
 | `_section_loop.py` | Phase 2 section critique→refine loop |
 | `_finalization.py` | Save, finalize, post-completion delivery |
 
@@ -100,6 +102,7 @@
 | `project_memory/` | Project-level memory store |
 | `slack_oauth/` | Slack OAuth token persistence |
 | `user_session/` | User session management |
+| `user_suggestions/` | Ambiguous intent tracking for self-learning |
 | `users/` | Application user accounts (SSO + Slack provisioned) |
 
 ## Tools (`tools/`)

@@ -51,6 +51,7 @@ from crewai_productfeature_planner.apis.slack._intent_phrases import (
     _LIST_PROJECTS_PHRASES,
     _RESTART_PRD_PHRASES,
     _RESUME_PRD_PHRASES,
+    _SUMMARIZE_IDEAS_PHRASES,
     _SWITCH_PROJECT_PHRASES,
     _UPDATE_CONFIG_PHRASES,
     _phrase_fallback,
@@ -81,6 +82,30 @@ def _is_summary_request(text: str) -> bool:
     """Return ``True`` if *text* looks like a request for flow status."""
     lower = text.lower()
     return any(phrase in lower for phrase in _SUMMARY_PHRASES)
+
+
+# Minimum word count for a legitimate idea description.
+# "new idea", "create prd", "add idea" are commands, not ideas.
+_MIN_IDEA_WORDS = 4
+
+
+def _is_command_phrase_idea(idea_text: str) -> bool:
+    """Return ``True`` if the LLM-extracted idea is really just a command.
+
+    When a user says "add new idea" or "create a prd", the LLM sometimes
+    extracts the command text itself as the idea (e.g. ``"new idea"``).
+    This guard prevents auto-starting the flow with meaningless ideas.
+    """
+    stripped = idea_text.strip().lower()
+    # Direct match against known command phrases
+    if any(stripped == p for p in _IDEA_PHRASES):
+        return True
+    # Very short "ideas" are almost certainly just commands
+    if len(stripped.split()) < _MIN_IDEA_WORDS:
+        # Check if it's a substring of any command phrase or vice versa
+        if any(p in stripped or stripped in p for p in _IDEA_PHRASES):
+            return True
+    return False
 
 
 def _build_flow_summary(doc: dict) -> str | None:
@@ -154,6 +179,101 @@ def _is_flow_active(project_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Summarize Ideas — uses Engagement Manager for AI-powered summary
+# ---------------------------------------------------------------------------
+
+
+def _handle_summarize_ideas(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    clean_text: str,
+    history: list[dict] | None,
+    session_project_id: str | None,
+    session_project_name: str | None,
+    send_tool: object,
+) -> str:
+    """Summarize all ideas for the current project using the Engagement Manager.
+
+    Unlike ``handle_list_ideas`` (which shows a formatted list), this uses
+    the AI agent to produce a narrative summary — themes, synergies,
+    gaps, and status overview.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        BTN_HELP,
+        BTN_LIST_IDEAS,
+        BTN_NEW_IDEA,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    if not session_project_id:
+        from crewai_productfeature_planner.apis.slack._handler_proxies import (
+            _prompt_project_selection,
+        )
+        _prompt_project_selection(channel, thread_ts, user)
+        return "(project selection required)"
+
+    # Use the engagement manager with an explicit summarize instruction
+    try:
+        from crewai_productfeature_planner.agents.engagement_manager import (
+            handle_unknown_intent,
+        )
+        ctx_parts: list[str] = []
+        if session_project_id:
+            ctx_parts.append(
+                f"Active project: {session_project_name or session_project_id}"
+            )
+        active_context = " | ".join(ctx_parts) or "(no active context)"
+
+        agent_response = handle_unknown_intent(
+            user_message=(
+                "Please provide a comprehensive summary of all ideas in this project. "
+                "Include themes, synergies between ideas, status of each idea, "
+                "coverage gaps, and any notable patterns."
+            ),
+            conversation_history=history,
+            active_context=active_context,
+            project_id=session_project_id,
+        )
+    except Exception:
+        logger.warning(
+            "Engagement Manager failed for summarize_ideas — using fallback",
+            exc_info=True,
+        )
+        agent_response = ""
+
+    if agent_response:
+        text = f"<@{user}> :memo: *Ideas Summary*\n\n{agent_response}"
+    else:
+        text = (
+            f"<@{user}> I couldn't generate a summary right now. "
+            "Try listing your ideas instead."
+        )
+
+    buttons = [BTN_LIST_IDEAS, BTN_NEW_IDEA, BTN_HELP]
+
+    client = _get_slack_client()
+    if client:
+        try:
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                blocks=[
+                    {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                    {"type": "actions", "elements": buttons},
+                ],
+                text=text,
+            )
+        except Exception:
+            send_tool.run(channel=channel, text=text, thread_ts=thread_ts)
+    else:
+        send_tool.run(channel=channel, text=text, thread_ts=thread_ts)
+
+    append_to_thread(channel, thread_ts, "assistant", text)
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Engagement Manager — handles unknown / general_question intents
 # ---------------------------------------------------------------------------
 
@@ -213,6 +333,25 @@ def _handle_engagement_manager(
 
     if agent_response:
         fallback_text = f"<@{user}> {agent_response}"
+        # Track clarification requests in user_suggestions
+        if agent_response.startswith("[CLARIFICATION]"):
+            try:
+                from crewai_productfeature_planner.mongodb.user_suggestions import (
+                    log_suggestion,
+                )
+                log_suggestion(
+                    user_message=clean_text,
+                    agent_interpretation=agent_response,
+                    suggestion_type="clarification_needed",
+                    user_id=user,
+                    project_id=session_project_id,
+                    channel=channel,
+                    thread_ts=thread_ts,
+                )
+            except Exception:
+                logger.debug(
+                    "Failed to log clarification suggestion", exc_info=True,
+                )
     else:
         fallback_text = reply_text or (
             f"<@{user}> I'm not sure what you'd like me to do. "
@@ -222,6 +361,24 @@ def _handle_engagement_manager(
         )
         if not fallback_text.startswith(f"<@{user}>"):
             fallback_text = f"<@{user}> {fallback_text}"
+        # Log unknown intents for learning
+        try:
+            from crewai_productfeature_planner.mongodb.user_suggestions import (
+                log_suggestion,
+            )
+            log_suggestion(
+                user_message=clean_text,
+                agent_interpretation="(agent failed — static fallback)",
+                suggestion_type="unknown_intent",
+                user_id=user,
+                project_id=session_project_id,
+                channel=channel,
+                thread_ts=thread_ts,
+            )
+        except Exception:
+            logger.debug(
+                "Failed to log unknown_intent suggestion", exc_info=True,
+            )
 
     # Pick action buttons based on context
     buttons = [BTN_NEW_IDEA, BTN_HELP]
@@ -250,6 +407,139 @@ def _handle_engagement_manager(
 
 
 # ---------------------------------------------------------------------------
+# Idea Agent — handles questions/feedback during active idea iterations
+# ---------------------------------------------------------------------------
+
+
+def _handle_idea_agent(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    clean_text: str,
+    history: list[dict] | None,
+    flow_doc: dict,
+    send_tool: object,
+) -> str:
+    """Use the Idea Agent to answer questions about an active iteration.
+
+    The Idea Agent has full access to the working-idea MongoDB document
+    and can answer questions about the current idea, sections, critiques,
+    and provide steering recommendations for upcoming iterations.
+
+    Falls back to ``_build_flow_summary`` if the agent fails.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
+        BTN_LIST_IDEAS,
+    )
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    try:
+        from crewai_productfeature_planner.agents.idea_agent import (
+            handle_idea_query,
+            extract_steering_feedback,
+        )
+        agent_response = handle_idea_query(
+            user_message=clean_text,
+            flow_doc=flow_doc,
+            conversation_history=history,
+        )
+    except Exception:
+        logger.warning(
+            "[IdeaAgent] Agent failed — falling back to flow summary",
+            exc_info=True,
+        )
+        agent_response = ""
+
+    if agent_response:
+        response_text = f"<@{user}> {agent_response}"
+
+        # If the response contains steering feedback, persist it so
+        # downstream agents can incorporate it in the next iteration.
+        try:
+            from crewai_productfeature_planner.agents.idea_agent import (
+                extract_steering_feedback,
+            )
+            steering = extract_steering_feedback(agent_response)
+            if steering:
+                run_id = flow_doc.get("run_id")
+                if run_id:
+                    from crewai_productfeature_planner.mongodb.agent_interactions import (
+                        log_interaction,
+                    )
+                    log_interaction(
+                        source="slack",
+                        user_message=clean_text,
+                        intent="idea_agent_steering",
+                        agent_response=steering,
+                        run_id=run_id,
+                        channel=channel,
+                        thread_ts=thread_ts,
+                        user_id=user,
+                        metadata={"steering_feedback": steering},
+                    )
+                    logger.info(
+                        "[IdeaAgent] Steering feedback saved for run_id=%s",
+                        run_id,
+                    )
+        except Exception:
+            logger.debug(
+                "[IdeaAgent] Failed to persist steering feedback",
+                exc_info=True,
+            )
+    else:
+        # Fallback to the basic flow summary
+        summary = _build_flow_summary(flow_doc)
+        response_text = f"<@{user}> {summary}" if summary else (
+            f"<@{user}> An idea iteration is active in this thread, "
+            "but I couldn't fetch the details. Try asking again."
+        )
+
+    buttons = [BTN_LIST_IDEAS]
+
+    client = _get_slack_client()
+    if client:
+        try:
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                blocks=[
+                    {"type": "section", "text": {"type": "mrkdwn", "text": response_text}},
+                    {"type": "actions", "elements": buttons},
+                ],
+                text=response_text,
+            )
+        except Exception:
+            send_tool.run(channel=channel, text=response_text, thread_ts=thread_ts)
+    else:
+        send_tool.run(channel=channel, text=response_text, thread_ts=thread_ts)
+
+    append_to_thread(channel, thread_ts, "assistant", response_text)
+    return response_text
+
+
+# ---------------------------------------------------------------------------
+# "Thinking…" acknowledgment
+# ---------------------------------------------------------------------------
+
+
+def _post_thinking(channel: str, thread_ts: str, user: str) -> None:
+    """Post an immediate *Thinking…* indicator so the user knows the bot
+    received their message.  Best-effort — never raises."""
+    try:
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+        client = _get_slack_client()
+        if client:
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=f":thinking_face: <@{user}> Thinking\u2026",
+            )
+    except Exception:  # noqa: BLE001
+        logger.debug("_post_thinking failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
 # Core: interpret + act
 # ---------------------------------------------------------------------------
 
@@ -274,6 +564,7 @@ def interpret_and_act(
     project, end session, current project).
     """
     try:
+        _post_thinking(channel, thread_ts, user)
         _interpret_and_act_inner(channel, thread_ts, user, clean_text, event_ts)
     except Exception:
         logger.exception(
@@ -364,6 +655,7 @@ def _interpret_and_act_inner(
     has_project_phrase = any(p in lower_text_bare for p in _CREATE_PROJECT_PHRASES)
     has_list_phrase = any(p in lower_text_bare for p in _LIST_PROJECTS_PHRASES)
     has_list_ideas_phrase = any(p in lower_text_bare for p in _LIST_IDEAS_PHRASES)
+    has_summarize_phrase = any(p in lower_text_bare for p in _SUMMARIZE_IDEAS_PHRASES)
     has_switch_phrase = any(p in lower_text_bare for p in _SWITCH_PROJECT_PHRASES)
     has_end_phrase = any(p in lower_text_bare for p in _END_SESSION_PHRASES)
     has_current_phrase = any(p in lower_text_bare for p in _CURRENT_PROJECT_PHRASES)
@@ -409,11 +701,25 @@ def _interpret_and_act_inner(
         )
         return
 
+    # ── Summarize ideas (must be checked BEFORE list_ideas) ──
+    if intent == "summarize_ideas" or (not has_idea_phrase and has_summarize_phrase):
+        _handle_summarize_ideas(
+            channel, thread_ts, user, clean_text, history,
+            session_project_id, session_project_name, send_tool,
+        )
+        tracked_response = "(summarize ideas)"
+        log_tracked_interaction(
+            log_interaction, "slack", clean_text, "summarize_ideas",
+            tracked_response, None, None, session_project_id,
+            channel, thread_ts, user, history,
+        )
+        return
+
     # ── List ideas (must be checked BEFORE list_projects) ──
     # Guard: if the text matches memory/config phrases, don't let a
     # misclassified "list_ideas" LLM intent catch it — let it fall
     # through to the configure_memory / update_config dispatch below.
-    if (intent == "list_ideas" and not has_memory_phrase and not has_config_phrase) or (not has_idea_phrase and has_list_ideas_phrase):
+    if (intent == "list_ideas" and not has_memory_phrase and not has_config_phrase) or (not has_idea_phrase and has_list_ideas_phrase and not has_summarize_phrase):
         _handle_list_ideas(channel, thread_ts, user, session)
         tracked_response = "(list ideas)"
         log_tracked_interaction(
@@ -683,6 +989,17 @@ def _interpret_and_act_inner(
         return
 
     if intent == "create_prd":
+        # Guard: if the LLM extracted a "idea" that is really just the
+        # command phrase itself (e.g. "new idea", "add new idea",
+        # "create a prd"), treat it as no-idea and prompt the user for
+        # a real idea description instead of auto-starting the flow.
+        if idea and _is_command_phrase_idea(idea):
+            logger.info(
+                "Idea text %r looks like a command phrase — prompting user",
+                idea[:60],
+            )
+            idea = None
+
         if not idea:
             ask_text = reply_text or (
                 f"<@{user}> I'd love to help you iterate on an idea! "
@@ -752,50 +1069,28 @@ def _interpret_and_act_inner(
         tracked_response = "(check_publish status reported)"
 
     elif intent == "general_question":
-        # Check if the user is asking about an active flow in this thread.
-        # If so, provide a flow summary instead of a generic answer.
-        if _is_summary_request(clean_text):
-            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
-                find_idea_by_thread,
+        # Check if there's an active idea flow in this thread.
+        # If so, route to the Idea Agent for context-rich answers
+        # instead of the generic flow summary or engagement manager.
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_idea_by_thread,
+        )
+        flow_doc = find_idea_by_thread(channel, thread_ts)
+        if flow_doc and flow_doc.get("status") in ("inprogress", "paused"):
+            tracked_response = _handle_idea_agent(
+                channel, thread_ts, user, clean_text, history,
+                flow_doc, send_tool,
             )
-            flow_doc = find_idea_by_thread(channel, thread_ts)
-            if flow_doc:
-                summary = _build_flow_summary(flow_doc)
-                if summary:
-                    from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
-                        BTN_LIST_IDEAS,
-                    )
-                    from crewai_productfeature_planner.tools.slack_tools import (
-                        _get_slack_client,
-                    )
-                    summary_text = f"<@{user}> Here's the current status:\n\n{summary}"
-                    client = _get_slack_client()
-                    if client:
-                        try:
-                            client.chat_postMessage(
-                                channel=channel,
-                                thread_ts=thread_ts,
-                                blocks=[
-                                    {"type": "section", "text": {"type": "mrkdwn", "text": summary_text}},
-                                    {"type": "actions", "elements": [BTN_LIST_IDEAS]},
-                                ],
-                                text=summary_text,
-                            )
-                        except Exception:
-                            send_tool.run(channel=channel, text=summary_text, thread_ts=thread_ts)
-                    else:
-                        send_tool.run(channel=channel, text=summary_text, thread_ts=thread_ts)
-                    append_to_thread(channel, thread_ts, "assistant", summary_text)
-                    tracked_response = summary_text
-                    log_tracked_interaction(
-                        log_interaction, "slack", clean_text, "flow_summary",
-                        tracked_response, idea, None, session_project_id,
-                        channel, thread_ts, user, history,
-                    )
-                    return
+            log_tracked_interaction(
+                log_interaction, "slack", clean_text, "idea_agent_query",
+                tracked_response, idea, flow_doc.get("run_id"),
+                session_project_id,
+                channel, thread_ts, user, history,
+            )
+            return
 
-        # General questions get a conversational reply from the LLM
-        # intent classifier — no need for the engagement manager.
+        # No active flow — general questions get a conversational reply
+        # from the LLM intent classifier.
         from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
             BTN_HELP,
             BTN_NEW_IDEA,
@@ -829,11 +1124,24 @@ def _interpret_and_act_inner(
         tracked_response = gq_text
 
     else:
-        tracked_response = _handle_engagement_manager(
-            channel, thread_ts, user, clean_text, history,
-            session_project_id, session_project_name,
-            reply_text, send_tool,
+        # Unknown intent — check for active idea flow first.
+        # During an active iteration, the Idea Agent handles all
+        # unrecognised questions (the Engagement Manager is disengaged).
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_idea_by_thread,
         )
+        flow_doc = find_idea_by_thread(channel, thread_ts)
+        if flow_doc and flow_doc.get("status") in ("inprogress", "paused"):
+            tracked_response = _handle_idea_agent(
+                channel, thread_ts, user, clean_text, history,
+                flow_doc, send_tool,
+            )
+        else:
+            tracked_response = _handle_engagement_manager(
+                channel, thread_ts, user, clean_text, history,
+                session_project_id, session_project_name,
+                reply_text, send_tool,
+            )
 
     # ── Track this interaction for fine-tuning data ──
     interaction_id = log_tracked_interaction(

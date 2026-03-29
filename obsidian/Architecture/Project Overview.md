@@ -1,6 +1,6 @@
 # Project Overview
 
-> CrewAI Product Feature Planner — multi-agent system that transforms raw product ideas into implementation-ready PRDs.
+> Idea Foundry — AI-powered platform that transforms raw product ideas into implementation-ready PRDs using multi-agent orchestration.
 
 ## Tech Stack
 
@@ -10,13 +10,36 @@
 | CrewAI | 1.9.3 (multi-agent orchestration) |
 | Gemini LLM | gemini-3-flash-preview (default) |
 | OpenAI | o3 (fallback / secondary PM agent) |
-| MongoDB | Working ideas, finalized ideas, crew jobs |
+| MongoDB | Working ideas, finalized ideas, crew jobs, projects, users |
 | FastAPI | REST API + Slack webhooks |
 | Slack | Bot: Events API, Interactions API, OAuth v2, Block Kit |
 | Confluence | Post-completion PRD publishing |
 | Jira | Phased ticket creation (Epics → Stories → Sub-tasks) |
 | Pydantic | v2 — API request/response and flow state |
 | Embedder | google-vertex (backed by google-genai SDK) |
+
+## Architecture — Web App + Slack Integration
+
+The backend serves two client interfaces:
+
+| Client | Transport | Auth | Primary Use |
+|--------|-----------|------|-------------|
+| **Web App** | REST API (JSON) | SSO JWT Bearer token | Project management, idea lifecycle, PRD generation, publishing |
+| **Slack Bot** | Webhooks (Events + Interactions) | HMAC-SHA256 signing | Conversational PRD creation, Block Kit approvals |
+
+Both clients share the same backend services (MongoDB, PRD Flow, Publishing).
+
+### API Surface for Web App
+
+| Domain | Endpoints | Purpose |
+|--------|-----------|---------|
+| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}` | Project CRUD with Confluence/Jira/Figma config |
+| Ideas | `GET /ideas`, `GET /ideas/{run_id}`, `PATCH /ideas/{run_id}/status` | Idea list, progress, archive/pause |
+| PRD Flow | `POST /flow/prd/kickoff`, `GET /flow/runs/{run_id}`, `POST /flow/prd/approve`, `/pause`, `/resume` | AI-driven PRD generation lifecycle |
+| Publishing | `POST /publishing/confluence/{run_id}`, `POST /publishing/jira/{run_id}`, `GET /publishing/status/{run_id}` | Delivery to Confluence & Jira |
+| Health | `GET /health`, `GET /version` | Liveness, version info |
+
+→ Full endpoint reference: [[API Overview]]
 
 ## Project Conventions
 
@@ -42,8 +65,9 @@ Lives in `src/crewai_productfeature_planner/version.py`:
 | Entry | File | Purpose |
 |-------|------|---------|
 | CLI | `src/.../main.py` | Interactive PRD generation |
-| API Server | `src/.../apis/__init__.py` | FastAPI app with lifespan hooks |
+| API Server | `src/.../apis/__init__.py` | FastAPI app with lifespan hooks, serves web app + Slack |
 | PRD Flow | `src/.../flows/prd_flow.py` | CrewAI Flow orchestrating PRD lifecycle |
+| OpenAPI Spec | `docs/openapi/openapi.json` | Web app integration reference (schemas, paths, auth) |
 
 ## Quick Start
 

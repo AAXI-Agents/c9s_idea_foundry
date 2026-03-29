@@ -70,10 +70,12 @@ def handle_list_products(
     _backfill_missing_idea_titles(products)
 
     from crewai_productfeature_planner.apis.slack.blocks import product_list_blocks
+    from crewai_productfeature_planner.apis.slack.session_manager import can_manage_memory
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
     blocks = product_list_blocks(
         products, user, project_name or "your project", project_id or "",
+        is_admin=can_manage_memory(user, channel),
     )
 
     client = _get_slack_client()

@@ -192,6 +192,10 @@ def handle_unknown_intent(
 ) -> str:
     """Run the engagement manager to produce a helpful response.
 
+    Uses a **direct Gemini REST API call** to avoid CrewAI framework
+    overhead (~2-4 s).  Falls back to CrewAI ``Crew.kickoff()`` when
+    ``ENGAGEMENT_MANAGER_USE_CREWAI=true`` or when the fast path fails.
+
     Args:
         user_message: The user's raw message text.
         conversation_history: Optional list of prior messages in the thread.
@@ -203,6 +207,110 @@ def handle_unknown_intent(
     Returns:
         The agent's response text — a concise navigation guide.
     """
+    use_crewai = os.environ.get(
+        "ENGAGEMENT_MANAGER_USE_CREWAI", ""
+    ).strip().lower() in ("true", "1", "yes")
+
+    if not use_crewai:
+        result = _handle_unknown_intent_fast(
+            user_message, conversation_history, active_context, project_id,
+        )
+        if result is not None:
+            return result
+        logger.warning(
+            "[EngagementManager] Fast path failed — falling back to CrewAI",
+        )
+
+    return _handle_unknown_intent_crewai(
+        user_message, conversation_history, active_context, project_id,
+    )
+
+
+def _handle_unknown_intent_fast(
+    user_message: str,
+    conversation_history: list[dict] | None,
+    active_context: str,
+    project_id: str | None,
+) -> str | None:
+    """Fast path: direct Gemini REST API call (~200-800 ms)."""
+    from crewai_productfeature_planner.tools.gemini_chat import (
+        generate_chat_response,
+    )
+
+    agent_config = _load_yaml("agent.yaml")["engagement_manager"]
+    task_configs = _load_yaml("tasks.yaml")
+
+    # Build project knowledge
+    project_knowledge = "(no project selected — no ideas context available)"
+    if project_id:
+        try:
+            from crewai_productfeature_planner.scripts.project_knowledge import (
+                load_completed_ideas_context,
+            )
+            ctx = load_completed_ideas_context(project_id)
+            if ctx:
+                project_knowledge = ctx
+        except Exception:
+            logger.debug(
+                "[EngagementManager] Could not load ideas context",
+                exc_info=True,
+            )
+
+    history_str = ""
+    if conversation_history:
+        history_str = json.dumps(conversation_history[-10:], ensure_ascii=False)
+    if not history_str:
+        history_str = "(no prior conversation)"
+    if not active_context:
+        active_context = "(no active context available)"
+
+    system_prompt = (
+        f"Role: {agent_config['role'].strip()}\n"
+        f"Goal: {agent_config['goal'].strip()}\n\n"
+        f"{agent_config['backstory'].strip()}"
+    )
+
+    task_description = task_configs["engagement_response_task"]["description"].format(
+        user_message=user_message,
+        conversation_history=history_str,
+        active_context=active_context,
+        project_knowledge=project_knowledge,
+    )
+    expected_output = task_configs["engagement_response_task"]["expected_output"]
+    user_prompt = f"{task_description}\n\n## Expected Output\n{expected_output}"
+
+    model = os.environ.get(
+        "ENGAGEMENT_MANAGER_MODEL",
+        os.environ.get("GEMINI_MODEL", ""),
+    ).strip() or None
+
+    logger.info(
+        "[EngagementManager] Fast path for message: '%s'",
+        user_message[:80],
+    )
+
+    response = generate_chat_response(
+        system_prompt=system_prompt,
+        user_message=user_prompt,
+        conversation_history=conversation_history,
+        model_override=model,
+    )
+
+    if response:
+        logger.info(
+            "[EngagementManager] Fast response (%d chars): '%s'",
+            len(response), response[:200],
+        )
+    return response
+
+
+def _handle_unknown_intent_crewai(
+    user_message: str,
+    conversation_history: list[dict] | None,
+    active_context: str,
+    project_id: str | None,
+) -> str:
+    """Slow path: CrewAI Crew.kickoff() (~3-5 s)."""
     from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 
     task_configs = _load_yaml("tasks.yaml")
@@ -252,7 +360,7 @@ def handle_unknown_intent(
     )
 
     logger.info(
-        "[EngagementManager] Handling unknown intent for message: '%s'",
+        "[EngagementManager] CrewAI path for message: '%s'",
         user_message[:80],
     )
 
@@ -260,7 +368,7 @@ def handle_unknown_intent(
     response = str(result).strip()
 
     logger.info(
-        "[EngagementManager] Response: '%s'",
+        "[EngagementManager] CrewAI response: '%s'",
         response[:200],
     )
     return response
@@ -449,8 +557,9 @@ def detect_user_steering(
 ) -> dict[str, Any]:
     """Classify a user message during an active PRD orchestration.
 
-    Uses the engagement manager LLM to determine whether the message
-    is a steering request, question, feedback, or unrelated.
+    Uses a **direct Gemini REST API call** to avoid CrewAI framework
+    overhead.  Falls back to CrewAI when ``ENGAGEMENT_MANAGER_USE_CREWAI=true``
+    or when the fast path fails.
 
     **Session isolation**: If *message_author_id* differs from
     *initiator_user_id*, returns ``{"classification": "IGNORE"}``
@@ -474,6 +583,102 @@ def detect_user_steering(
             "target_phase": "",
         }
 
+    use_crewai = os.environ.get(
+        "ENGAGEMENT_MANAGER_USE_CREWAI", ""
+    ).strip().lower() in ("true", "1", "yes")
+
+    if not use_crewai:
+        result = _detect_user_steering_fast(
+            user_message, current_phase, current_agent, idea,
+            initiator_user_id, message_author_id,
+        )
+        if result is not None:
+            return result
+        logger.warning(
+            "[Steering] Fast path failed — falling back to CrewAI",
+        )
+
+    return _detect_user_steering_crewai(
+        user_message, current_phase, current_agent, idea,
+        initiator_user_id, message_author_id,
+    )
+
+
+def _detect_user_steering_fast(
+    user_message: str,
+    current_phase: str,
+    current_agent: str,
+    idea: str,
+    initiator_user_id: str,
+    message_author_id: str,
+) -> dict[str, Any] | None:
+    """Fast path: direct Gemini REST API call (~200-800 ms)."""
+    from crewai_productfeature_planner.tools.gemini_chat import (
+        generate_chat_response,
+    )
+
+    agent_config = _load_yaml("agent.yaml")["engagement_manager"]
+    task_configs = _load_yaml("tasks.yaml")
+
+    system_prompt = (
+        f"Role: {agent_config['role'].strip()}\n"
+        f"Goal: {agent_config['goal'].strip()}\n\n"
+        f"{agent_config['backstory'].strip()}\n\n"
+        "IMPORTANT: You MUST respond with valid JSON containing exactly "
+        "these keys: classification, action, extracted_intent, target_phase."
+    )
+
+    task_description = task_configs["user_steering_detection_task"][
+        "description"
+    ].format(
+        user_message=user_message,
+        current_phase=current_phase,
+        current_agent=current_agent,
+        idea=idea[:500],
+        initiator_user_id=initiator_user_id,
+        message_author_id=message_author_id,
+    )
+    expected_output = task_configs["user_steering_detection_task"]["expected_output"]
+    user_prompt = f"{task_description}\n\n## Expected Output\n{expected_output}"
+
+    model = os.environ.get(
+        "ENGAGEMENT_MANAGER_MODEL",
+        os.environ.get("GEMINI_MODEL", ""),
+    ).strip() or None
+
+    logger.info(
+        "[Steering] Fast path for message from %s: '%s'",
+        message_author_id, user_message[:80],
+    )
+
+    try:
+        raw = generate_chat_response(
+            system_prompt=system_prompt,
+            user_message=user_prompt,
+            temperature=0.1,
+            max_output_tokens=512,
+            model_override=model,
+        )
+        if raw is None:
+            return None
+        return _parse_steering_result(raw)
+    except Exception:
+        logger.warning(
+            "[Steering] Fast path classification failed",
+            exc_info=True,
+        )
+        return None
+
+
+def _detect_user_steering_crewai(
+    user_message: str,
+    current_phase: str,
+    current_agent: str,
+    idea: str,
+    initiator_user_id: str,
+    message_author_id: str,
+) -> dict[str, Any]:
+    """Slow path: CrewAI Crew.kickoff() (~3-5 s)."""
     from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
 
     task_configs = _load_yaml("tasks.yaml")
@@ -504,7 +709,7 @@ def detect_user_steering(
     )
 
     logger.info(
-        "[Steering] Analysing message from %s: '%s'",
+        "[Steering] CrewAI path for message from %s: '%s'",
         message_author_id,
         user_message[:80],
     )

@@ -1,0 +1,89 @@
+{
+  "get": {
+    "tags": ["Projects"],
+    "summary": "Get a project by ID",
+    "operationId": "getProject",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Unique project identifier."
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Project found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ProjectItem" }
+          }
+        }
+      },
+      "401": { "description": "Missing or invalid SSO token." },
+      "404": { "description": "Project not found." }
+    }
+  },
+  "patch": {
+    "tags": ["Projects"],
+    "summary": "Update a project",
+    "description": "Partial update — only submitted fields are changed. Requires SSO authentication.",
+    "operationId": "updateProject",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Unique project identifier."
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": { "$ref": "#/components/schemas/ProjectUpdate" },
+          "example": {
+            "name": "Fitness App v3",
+            "jira_project_key": "FIT2"
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Project updated.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ProjectItem" }
+          }
+        }
+      },
+      "401": { "description": "Missing or invalid SSO token." },
+      "404": { "description": "Project not found." }
+    }
+  },
+  "delete": {
+    "tags": ["Projects"],
+    "summary": "Delete a project",
+    "operationId": "deleteProject",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Unique project identifier."
+      }
+    ],
+    "responses": {
+      "204": { "description": "Project deleted." },
+      "401": { "description": "Missing or invalid SSO token." },
+      "404": { "description": "Project not found." }
+    }
+  }
+}

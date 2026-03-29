@@ -129,9 +129,13 @@ def handle_list_ideas(
         from crewai_productfeature_planner.apis.slack.blocks import (
             product_list_blocks,
         )
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            can_manage_memory,
+        )
 
         blocks = product_list_blocks(
             products, user, project_name or "your project", project_id or "",
+            is_admin=can_manage_memory(user, channel),
         )
         try:
             client.chat_postMessage(

@@ -179,7 +179,26 @@ async def update_idea_status(run_id: str, body: IdeaStatusUpdate, user: dict = D
 
     logger.info("[Ideas] STATUS UPDATE run_id=%s new_status=%s user_id=%s", run_id, body.status, user.get("user_id"))
     if body.status == "archived":
+        # Signal cancellation to stop any running flow for this run
+        from crewai_productfeature_planner.apis.shared import request_cancel
+        request_cancel(run_id)
+        # Unblock any pending approval gates so the flow thread wakes up
+        try:
+            from crewai_productfeature_planner.apis.slack._flow_handlers import (
+                _unblock_gates_for_cancel,
+            )
+            _unblock_gates_for_cancel(run_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not unblock gates for %s", run_id, exc_info=True)
         mark_archived(run_id)
+        # Also archive the crew job
+        try:
+            from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
+                update_job_status,
+            )
+            update_job_status(run_id, "archived")
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not archive crewJob for %s", run_id, exc_info=True)
     elif body.status == "paused":
         mark_paused(run_id)
 
@@ -222,7 +241,7 @@ def _idea_fields(doc: dict[str, Any]) -> dict[str, Any]:
         "status": status_val,
         "project_id": doc.get("project_id", ""),
         "created_at": doc.get("created_at", ""),
-        "completed_at": doc.get("completed_at", ""),
+        "completed_at": doc.get("completed_at") or "",
         "sections_done": sections_done,
         "total_sections": _TOTAL_SECTIONS,
         "iteration": effective_iter,

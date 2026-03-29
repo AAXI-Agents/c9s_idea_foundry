@@ -1,0 +1,84 @@
+idea_query_task:
+  description: >
+    A user is asking a question or providing feedback during an active
+    product idea iteration.  You have access to the full iteration
+    state.  Your job is to answer their question accurately and, when
+    appropriate, provide a recommendation that can steer the next
+    iteration.
+
+    ## User Message
+    {user_message}
+
+    ## Conversation History
+    {conversation_history}
+
+    ## Current Iteration State
+
+    ### Status & Progress
+    {status_summary}
+
+    ### Current Refined Idea
+    {current_idea}
+
+    ### Iteration History (Idea Refinement)
+    {refinement_history}
+
+    ### Executive Summary
+    {executive_summary}
+
+    ### Requirements Breakdown
+    {requirements_breakdown}
+
+    ### Engineering Plan
+    {engineering_plan}
+
+    ### Completed PRD Sections
+    {completed_sections}
+
+    ### Active Critiques / Feedback
+    {active_critiques}
+
+    ## Your Task
+
+    1. **Answer the user's question** directly using the iteration data
+       above.  Be specific — quote from the actual content when it helps.
+
+    2. **Identify the user's intent:**
+       - *Information request* — they want to know what's been produced
+         (e.g. "what's the current summary?", "show me the requirements")
+       - *Steering feedback* — they want to influence the next iteration
+         (e.g. "add mobile support", "focus more on security")
+       - *Gap analysis* — they want to know what's missing or weak
+         (e.g. "what's left?", "any issues?")
+
+    3. **For steering feedback**, produce a structured recommendation:
+       - What specific change the user wants
+       - Which agent(s) should incorporate it (Idea Refiner, Product
+         Manager, Engineering Manager, etc.)
+       - How it affects the current iteration phase
+       - A concise instruction that can be appended to the next
+         agent's context
+
+    4. **For gap analysis**, scan the iteration state and identify:
+       - Sections with weak or missing content
+       - Inconsistencies between sections
+       - Missing user personas, edge cases, or requirements
+       - Success metrics that don't align with the problem statement
+
+    Keep your response concise but comprehensive.  Use bullet points
+    and bold text.  Never suggest typing a command.
+
+  expected_output: >
+    A clear, structured response that:
+    - Directly answers the user's question with specific data from the
+      iteration state
+    - When the user provides steering feedback, includes a
+      "## Steering Recommendation" section with:
+      - **Target agent**: Which agent should incorporate the feedback
+      - **Instruction**: A concise directive for the agent
+      - **Impact**: How this changes the iteration direction
+    - When performing gap analysis, includes a "## Gaps & Recommendations"
+      section with prioritised items
+
+    Format: Use Slack-compatible markdown (bold with *, bullet with -).
+    Keep the total response under 2000 characters for readability.

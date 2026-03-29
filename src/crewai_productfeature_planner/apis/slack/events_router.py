@@ -354,22 +354,22 @@ async def slack_events(request: Request) -> JSONResponse:
                         has_active_session = True
 
                 # Last resort: check if the bot has ever replied in
-                # this thread (persisted in agentInteraction) — but
-                # only when the bot is @mentioned.
+                # this thread (persisted in agentInteraction).
+                # No @mention required — the thread is an established
+                # conversation when the bot has already responded in it.
                 has_thread_history = False
                 if not (has_conversation or has_interactive
                         or has_pending or has_active_session):
-                    if _bot_mentioned:
-                        from crewai_productfeature_planner.mongodb.agent_interactions import (
-                            has_bot_thread_history,
-                        )
-                        has_thread_history = has_bot_thread_history(
-                            channel, thread_ts,
-                        )
-                        if has_thread_history:
-                            # Re-register in the in-memory cache so
-                            # subsequent messages skip the DB lookup.
-                            touch_thread(channel, thread_ts)
+                    from crewai_productfeature_planner.mongodb.agent_interactions import (
+                        has_bot_thread_history,
+                    )
+                    has_thread_history = has_bot_thread_history(
+                        channel, thread_ts,
+                    )
+                    if has_thread_history:
+                        # Re-register in the in-memory cache so
+                        # subsequent messages skip the DB lookup.
+                        touch_thread(channel, thread_ts)
 
                 # Final fallback: check if a working-idea flow document
                 # is linked to this thread (via slack_channel +

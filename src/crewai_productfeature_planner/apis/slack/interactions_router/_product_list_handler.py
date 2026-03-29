@@ -116,7 +116,21 @@ def _handle_product_config(
     """Launch the project configuration wizard from the product list.
 
     The button value is just ``project_id`` (no idea_number or run_id).
+    Admin-only — non-admin users are denied.
     """
+    from crewai_productfeature_planner.apis.slack.session_manager import (
+        can_manage_memory,
+    )
+
+    if not can_manage_memory(user_id, channel):
+        from crewai_productfeature_planner.apis.slack._session_reply import reply
+        reply(
+            channel, thread_ts,
+            f"<@{user_id}> :lock: Only workspace admins can configure "
+            "project settings in a channel. Please ask an admin.",
+        )
+        return
+
     from crewai_productfeature_planner.apis.slack.blocks import (
         project_setup_step_blocks,
     )
@@ -231,14 +245,24 @@ def _handle_confluence_publish(
             # stored content only on disk), try the on-disk output file.
             if len(flow.state.final_prd) < 100:
                 import os
+                from pathlib import Path
                 output_file = doc.get("output_file", "")
+                # Path traversal guard: only read files under output/
+                _output_root = Path("output").resolve()
                 if output_file and os.path.isfile(output_file):
-                    try:
-                        prd_text = open(output_file, encoding="utf-8").read()  # noqa: SIM115
-                        if prd_text:
-                            flow.state.final_prd = prd_text
-                    except OSError:
-                        pass
+                    _resolved = Path(output_file).resolve()
+                    if not _resolved.is_relative_to(_output_root):
+                        logger.warning(
+                            "[Security] Blocked read of output_file outside output/: %s",
+                            output_file,
+                        )
+                    else:
+                        try:
+                            prd_text = _resolved.read_text(encoding="utf-8")
+                            if prd_text:
+                                flow.state.final_prd = prd_text
+                        except OSError:
+                            pass
 
             from crewai_productfeature_planner.orchestrator import (
                 build_post_completion_crew,
@@ -1136,18 +1160,28 @@ def _run_jira_phase(
     # stored content only on disk), try the on-disk output file.
     if len(flow.state.final_prd) < 100:
         import os
+        from pathlib import Path
         output_file = doc.get("output_file", "")
+        # Path traversal guard: only read files under output/
+        _output_root = Path("output").resolve()
         if output_file and os.path.isfile(output_file):
-            try:
-                prd_text = open(output_file, encoding="utf-8").read()   # noqa: SIM115
-                if prd_text:
-                    flow.state.final_prd = prd_text
-                    logger.info(
-                        "[JiraPhase] Loaded PRD from disk: %s (%d chars)",
-                        output_file, len(prd_text),
-                    )
-            except OSError as exc:
-                logger.warning("[JiraPhase] Failed to read output file: %s", exc)
+            _resolved = Path(output_file).resolve()
+            if not _resolved.is_relative_to(_output_root):
+                logger.warning(
+                    "[Security] Blocked read of output_file outside output/: %s",
+                    output_file,
+                )
+            else:
+                try:
+                    prd_text = _resolved.read_text(encoding="utf-8")
+                    if prd_text:
+                        flow.state.final_prd = prd_text
+                        logger.info(
+                            "[JiraPhase] Loaded PRD from disk: %s (%d chars)",
+                            output_file, len(prd_text),
+                        )
+                except OSError as exc:
+                    logger.warning("[JiraPhase] Failed to read output file: %s", exc)
 
     # Restore delivery-related fields from the MongoDB document.
     flow.state.confluence_url = doc.get("confluence_url") or ""

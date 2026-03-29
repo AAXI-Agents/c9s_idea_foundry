@@ -42,6 +42,7 @@ CMD_ACTIONS = frozenset({
     "cmd_restart_prd",
     "cmd_current_project",
     "cmd_create_prd",
+    "cmd_summarize_ideas",
 })
 
 
@@ -178,6 +179,24 @@ def _handle_command_action(
             channel, thread_ts,
             f"<@{user_id}> :bulb: What product or feature idea would you "
             "like to work on? Describe it and I'll start an interactive PRD flow.",
+        )
+
+    elif action_id == "cmd_summarize_ideas":
+        from crewai_productfeature_planner.apis.slack._message_handler import (
+            _handle_summarize_ideas,
+        )
+        from crewai_productfeature_planner.apis.slack._thread_state import (
+            get_thread_history,
+        )
+        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
+        history = get_thread_history(channel, thread_ts)
+        project_id = session.get("project_id") if session else None
+        project_name = session.get("project_name") if session else None
+        _handle_summarize_ideas(
+            channel, thread_ts, user_id,
+            "summarize ideas", history,
+            project_id, project_name,
+            SlackSendMessageTool(),
         )
 
     else:

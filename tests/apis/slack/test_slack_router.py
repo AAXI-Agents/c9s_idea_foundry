@@ -108,13 +108,20 @@ async def test_kickoff_sync_returns_result():
 
 # ---- _deliver_webhook ----
 
+def _mock_public_dns(*_args, **_kwargs):
+    """Return a fake public IP so SSRF checks pass in tests."""
+    import socket
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+
 def test_deliver_webhook_posts(monkeypatch):
     from crewai_productfeature_planner.apis.slack.router import _deliver_webhook
 
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
 
-    with patch("httpx.Client") as MockClient:
+    with patch("httpx.Client") as MockClient, \
+         patch("socket.getaddrinfo", side_effect=_mock_public_dns):
         mock_client_instance = MagicMock()
         mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
         mock_client_instance.__exit__ = MagicMock(return_value=False)
@@ -133,6 +140,7 @@ def test_deliver_webhook_posts(monkeypatch):
 def test_deliver_webhook_error_does_not_raise():
     from crewai_productfeature_planner.apis.slack.router import _deliver_webhook
 
-    with patch("httpx.Client", side_effect=Exception("network error")):
+    with patch("httpx.Client", side_effect=Exception("network error")), \
+         patch("socket.getaddrinfo", side_effect=_mock_public_dns):
         # Should not raise
         _deliver_webhook("run_err", None, "boom", "https://hook.example.com")

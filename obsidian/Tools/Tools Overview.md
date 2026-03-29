@@ -20,7 +20,7 @@
 
 | Tool | File | Purpose |
 |------|------|---------|
-| `gemini_chat.py` | `tools/` | Gemini LLM intent classification |
+| `gemini_chat.py` | `tools/` | Gemini LLM intent classification + direct chat response (v0.43.3) |
 | `openai_chat.py` | `tools/` | OpenAI LLM intent classification (fallback) |
 
 ## Token Management

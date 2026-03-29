@@ -834,12 +834,14 @@ class TestMentionGateActiveSession:
 
 class TestMentionGateThreadHistory:
     """When the only reason to process is ``thread_history``, the bot
-    must be @mentioned in the message text.
+    does NOT need to be @mentioned — the thread is an established
+    conversation (the bot has already replied).  This ensures thread
+    continuity survives server restarts that clear the in-memory cache.
     """
 
     @pytest.mark.asyncio
-    async def test_no_mention_ignores(self):
-        """No @mention + thread_history → ignored."""
+    async def test_no_mention_dispatches_with_thread_history(self):
+        """No @mention + thread_history → dispatched (bot already replied)."""
         import crewai_productfeature_planner.apis.slack._thread_state as ts
 
         ts._bot_user_id = _BOT_ID
@@ -860,7 +862,7 @@ class TestMentionGateThreadHistory:
         ), patch(f"{_ER}._handle_thread_message") as mock_thread:
             resp = await _post(payload)
         assert resp.status_code == 200
-        mock_thread.assert_not_called()
+        mock_thread.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_with_mention_dispatches(self):

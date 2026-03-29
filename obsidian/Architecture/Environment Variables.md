@@ -1,6 +1,20 @@
 # Environment Variables
 
-> Key environment variables for the CrewAI PRD Planner.
+> Key environment variables for Idea Foundry (CrewAI PRD Planner).
+
+## Web App Integration
+
+| Variable | Purpose |
+|----------|---------|
+| `CORS_ALLOWED_ORIGINS` | Allowed CORS origins for web app (default: `http://localhost:3000`). Comma-separated for multiple origins |
+| `SSO_ENABLED` | Enable SSO auth enforcement (`true`/`false`, default `false`). Set `false` for local dev (anonymous bypass) |
+| `SSO_BASE_URL` | SSO service base URL for remote token introspection (default `http://localhost:8100`) |
+| `SSO_JWT_PUBLIC_KEY_PATH` | Path to RS256 public key PEM (for fast local JWT verification) |
+| `SSO_ISSUER` | Expected JWT issuer claim (default `c9s-sso`) |
+| `SSO_EXPECTED_APP_ID` | When set, only accept tokens with this `app_id` (Idea Foundry) |
+| `SSO_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying SSO webhook payloads |
+
+> **Application name**: "Idea Foundry" — registered as an OAuth client in the SSO service. When `SSO_EXPECTED_APP_ID` is set, tokens must be issued through the OAuth authorization-code flow for that specific application.
 
 ## LLM Providers
 
@@ -11,6 +25,9 @@
 | `GEMINI_RESEARCH_MODEL` | **Research** model — idea refinement, PRD drafting, Jira |
 | `GEMINI_CRITIC_MODEL` | **Critic** model — lightweight section critique |
 | `ENGAGEMENT_MANAGER_MODEL` | Override Gemini model for Engagement Manager (defaults to `GEMINI_MODEL`) |
+| `ENGAGEMENT_MANAGER_USE_CREWAI` | Set `true` to force CrewAI path instead of fast direct REST API (v0.43.3) |
+| `IDEA_AGENT_MODEL` | Override Gemini model for Idea Agent (defaults to `GEMINI_MODEL`) |
+| `IDEA_AGENT_USE_CREWAI` | Set `true` to force CrewAI path instead of fast direct REST API (v0.43.3) |
 | `OPENAI_MODEL` | **Basic** OpenAI model — intent classification |
 | `OPENAI_RESEARCH_MODEL` | **Research** OpenAI model — PRD section drafting & critique |
 | `CRITIC_LLM_TIMEOUT` | Timeout for critic agent calls |
@@ -89,22 +106,6 @@
 | `PRD_SECTION_MAX_ITERATIONS` | Max section refinement cycles |
 | `DEFAULT_MULTI_AGENTS` | Number of parallel agents (default: 1) |
 
-## SSO Authentication (v0.23.0)
-
-| Variable | Purpose |
-|----------|---------|
-| `SSO_ENABLED` | Enable SSO auth enforcement (`true`/`false`, default `false`) |
-| `SSO_BASE_URL` | SSO service base URL for remote introspection (default `http://localhost:8100`) |
-| `SSO_JWT_PUBLIC_KEY_PATH` | Path to RS256 public key PEM (for local JWT verification) |
-| `SSO_ISSUER` | Expected JWT issuer claim (default `c9s-sso`) |
-| `SSO_EXPECTED_APP_ID` | When set, only accept tokens with this `app_id` (Idea Foundry) |
-| `SSO_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying SSO webhook payloads |
-
-> **Application name**: "Idea Foundry" — registered as an OAuth client in
-> the SSO service's bootstrap. When `SSO_EXPECTED_APP_ID` is set, tokens
-> must be issued through the OAuth authorization-code flow for that
-> specific application.
-
 ---
 
-See also: [[Project Overview]], [[LLM Model Tiers]]
+See also: [[Project Overview]], [[LLM Model Tiers]], [[API Overview]]

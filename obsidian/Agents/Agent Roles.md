@@ -105,13 +105,29 @@
 - **Phase**: Jira Phase 5 (after review sub-tasks)
 - **Source**: `agents/qa_engineer/`
 
-### UX Designer (v0.20.0)
+### UX Designer (v0.20.0, refactored v0.41.0)
 
 - **LLM**: Gemini (Research tier — `GEMINI_UX_DESIGNER_MODEL`)
 - **Tools**: FigmaMakeTool
-- **Purpose**: Convert the Executive Product Summary into a structured Figma Make prompt covering design system (colours, typography, spacing), user flows (with error/empty/loading states), reusable components (with variants), responsive page layouts, and interactions. Submits to Figma Make via Playwright browser automation when a Figma session is configured (see `login.py`); otherwise stores prompt for manual use.
-- **Phase**: 1.5c (after Engineering Plan)
+- **Purpose**: Convert the Executive Product Summary into a structured design specification covering design system (colours, typography, spacing), user flows, reusable components, responsive layouts, and interactions. Phase 1 agent in the 2-phase UX design flow.
+- **Phase**: Post-PRD (triggered from finalization after all sections approved)
 - **Source**: `agents/ux_designer/`
+
+### Design Partner (v0.41.0)
+
+- **LLM**: Gemini (Research tier)
+- **Tools**: None
+- **Purpose**: Collaborates with UX Designer on the initial design draft using gstack design-consultation methodology. Covers product context, aesthetic direction, typography, color, spacing, layout, motion, shadows, component patterns, interaction states, and CSS token export. Includes AI slop avoidance blacklist.
+- **Phase**: Post-PRD Phase 1 (with UX Designer)
+- **Source**: `agents/ux_designer/config/design_partner.yaml`
+
+### Senior Designer (v0.41.0)
+
+- **LLM**: Gemini (Research tier)
+- **Tools**: None
+- **Purpose**: Reviews and finalizes the initial design draft using gstack plan-design-review methodology. Applies 7-pass review (information architecture, interaction states, user journey, AI slop, design system alignment, responsive/accessibility, unresolved decisions) with before/after scoring. Produces the production-ready design specification.
+- **Phase**: Post-PRD Phase 2 (after UX Designer + Design Partner draft)
+- **Source**: `agents/ux_designer/config/senior_designer.yaml`
 
 ### Release Engineer (stub)
 - **Source**: `agents/release_engineer/` — placeholder for future activation
@@ -134,7 +150,24 @@
 - **Tasks**: `engagement_response_task` (intent routing), `idea_to_prd_orchestration_task` (lifecycle plan), `heartbeat_update_task` (status messages), `user_steering_detection_task` (message classification).
 - **Key Functions**: `create_engagement_manager()`, `handle_unknown_intent()`, `orchestrate_idea_to_prd()`, `detect_user_steering()`, `generate_heartbeat()`, `make_heartbeat_progress_callback()`.
 - **Fallback**: If the agent fails (LLM errors), gracefully falls back to a static help message with New Idea + Help buttons. Steering detection defaults to QUESTION on failure.
+- **Disengaged**: During active idea iterations (status=inprogress/paused), the Engagement Manager is disengaged — all user questions and unknown intents route to the Idea Agent instead (v0.43.0).
 - **Source**: `agents/engagement_manager/`
+
+---
+
+## Idea Agent (v0.43.0)
+
+- **LLM**: Gemini (Basic tier — `GEMINI_MODEL`, override via `IDEA_AGENT_MODEL`)
+- **Tools**: None
+- **Purpose**: Context-aware in-thread analyst for active idea iterations. Answers user questions about the current state of the idea (refined text, iteration history, executive summary, requirements, engineering plan, sections, critiques) and produces steering recommendations that downstream agents can incorporate.
+- **Integration**: Automatically invoked when a user sends a `general_question` or unknown intent in a Slack thread that has an active flow (status=inprogress/paused). Replaces the Engagement Manager during active iterations.
+- **Context Extraction**: `_extract_iteration_context()` builds structured context from the working-idea MongoDB document — status, refined idea, refinement history, exec summary, requirements, engineering plan, completed sections, and active critiques.
+- **Steering**: When users provide feedback ("add mobile support", "focus on security"), the agent produces a structured `## Steering Recommendation` with target agent, instruction, and impact. `extract_steering_feedback()` parses and persists this to `agentInteraction` for downstream agents.
+- **Gap Analysis**: Identifies missing user personas, weak requirements, inconsistent sections, misaligned success metrics.
+- **Tasks**: `idea_query_task` (combined information/steering/gap analysis).
+- **Key Functions**: `create_idea_agent()`, `handle_idea_query()`, `extract_steering_feedback()`, `_extract_iteration_context()`.
+- **Fallback**: If the agent fails, falls back to `_build_flow_summary()` for basic status information.
+- **Source**: `agents/idea_agent/`
 
 ---
 

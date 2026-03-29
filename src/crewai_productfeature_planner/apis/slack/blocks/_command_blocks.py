@@ -43,6 +43,7 @@ BTN_CREATE_JIRA = _btn(":ticket: Create Jira Tickets", "cmd_create_jira")
 BTN_RESTART_PRD = _btn(":rewind: Restart PRD", "cmd_restart_prd")
 BTN_CURRENT_PROJECT = _btn(":pushpin: Current Project", "cmd_current_project")
 BTN_NEW_IDEA = _btn(":sparkles: New Idea", "cmd_create_prd")
+BTN_SUMMARIZE_IDEAS = _btn(":memo: Summarize Ideas", "cmd_summarize_ideas")
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +91,7 @@ def help_blocks(
             "elements": [
                 BTN_NEW_IDEA,
                 BTN_LIST_IDEAS,
+                BTN_SUMMARIZE_IDEAS,
                 BTN_LIST_PRODUCTS,
                 BTN_RESUME_PRD,
             ],

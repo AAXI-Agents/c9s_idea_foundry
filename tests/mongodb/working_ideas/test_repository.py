@@ -567,7 +567,7 @@ def test_get_run_documents_returns_doc(wi_mocks):
     result = get_run_documents("run-1")
     assert result == [doc]
     mock_collection.find_one.assert_called_once_with(
-        {"run_id": "run-1", "status": {"$ne": "completed"}}
+        {"run_id": "run-1", "status": {"$nin": ["completed", "archived"]}}
     )
 
 
@@ -1171,14 +1171,22 @@ class TestFindCompletedWithoutConfluence:
     def test_returns_docs_not_published(self, wi_mocks):
         """Returns completed docs whose run_id has no published delivery record."""
         mock_collection, mock_db = wi_mocks
-        completed_docs = [
+        completed_id_docs = [
+            {"_id": "id1", "run_id": "r1"},
+            {"_id": "id2", "run_id": "r2"},
+        ]
+        full_docs = [
             {"run_id": "r1", "status": "completed", "idea": "idea1"},
             {"run_id": "r2", "status": "completed", "idea": "idea2"},
         ]
-        # workingIdeas.find(...).sort(...) returns completed docs
-        mock_cursor = MagicMock()
-        mock_cursor.sort.return_value = completed_docs
-        mock_collection.find.return_value = mock_cursor
+
+        # Phase 1: projection query returns id docs
+        # Phase 3: full doc fetch returns full docs
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = completed_id_docs
+        full_cursor = MagicMock()
+        full_cursor.sort.return_value = full_docs
+        mock_collection.find.side_effect = [proj_cursor, full_cursor]
 
         # productRequirements collection — no published records
         mock_pr_col = MagicMock()
@@ -1195,13 +1203,20 @@ class TestFindCompletedWithoutConfluence:
     def test_excludes_published_runs(self, wi_mocks):
         """Runs with confluence_published=True in productRequirements are excluded."""
         mock_collection, mock_db = wi_mocks
-        completed_docs = [
-            {"run_id": "r1", "status": "completed", "idea": "idea1"},
+        completed_id_docs = [
+            {"_id": "id1", "run_id": "r1"},
+            {"_id": "id2", "run_id": "r2"},
+        ]
+        full_docs = [
             {"run_id": "r2", "status": "completed", "idea": "idea2"},
         ]
-        mock_cursor = MagicMock()
-        mock_cursor.sort.return_value = completed_docs
-        mock_collection.find.return_value = mock_cursor
+
+        # Phase 1: projection, Phase 3: full docs (only r2)
+        proj_cursor = MagicMock()
+        proj_cursor.sort.return_value = completed_id_docs
+        full_cursor = MagicMock()
+        full_cursor.sort.return_value = full_docs
+        mock_collection.find.side_effect = [proj_cursor, full_cursor]
 
         # productRequirements: r1 is already published
         mock_pr_col = MagicMock()

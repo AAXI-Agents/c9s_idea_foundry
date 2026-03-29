@@ -7,6 +7,7 @@ Re-exports the public repository API so callers can do::
 
 from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
     CREW_JOBS_COLLECTION,
+    archive_stale_jobs_on_startup,
     create_job,
     fail_incomplete_jobs_on_startup,
     find_active_job,
@@ -21,6 +22,7 @@ from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
 
 __all__ = [
     "CREW_JOBS_COLLECTION",
+    "archive_stale_jobs_on_startup",
     "create_job",
     "fail_incomplete_jobs_on_startup",
     "find_active_job",

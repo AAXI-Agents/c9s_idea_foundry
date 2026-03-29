@@ -1,0 +1,133 @@
+# Tasks for the standalone UX Design Flow.
+# Phase 1: UX Designer + Design Partner → draft
+# Phase 2: Senior Designer → final
+
+create_initial_design_draft_task:
+  description: >
+    You are collaborating with the UX Designer to produce the **initial
+    design draft** for a product whose PRD is now complete and ready
+    for publication.
+
+    --- EXECUTIVE PRODUCT SUMMARY ---
+    {executive_product_summary}
+    --- END ---
+
+    Original product idea:
+    {idea}
+
+    Requirements breakdown:
+    {requirements_breakdown}
+
+    Existing design system reference (if available):
+    {design_system_reference}
+
+    Your task — produce a complete, structured design specification:
+
+    1. **Product Context** — What this is, who it's for, comparable
+       products, primary UI surfaces.
+
+    2. **Aesthetic Direction** — Specific direction (not "modern and
+       clean"), decoration level, mood, reference design system.
+       Include AI Slop anti-pattern list.
+
+    3. **Typography** — Font families for titles, body, UI, code.
+       Full type scale table with size, line-height, weight, usage.
+       Letter spacing rules.
+
+    4. **Color** — Core palette, backgrounds, borders, semantic colors.
+       Status colors mapped to product pipeline stages.
+       Dark mode strategy.  Contrast verification for all pairings.
+
+    5. **Spacing** — Token scale with usage mapping.
+       Density specification (table row heights, card padding, etc.).
+
+    6. **Layout** — Grid system, sidebar, max content width.
+       Border radius tokens.  Breakpoints with responsive behavior.
+       Screen inventory with content zones.
+       Navigation hierarchy tree.  ASCII wireframe.
+
+    7. **Motion** — Duration tokens, easing curves, motion rules.
+
+    8. **Shadows** — Elevation scale with usage.
+
+    9. **Component Patterns** — Buttons (with CSS), status badges,
+       cards, data tables, toast notifications, modals, sidebar nav,
+       progress bars.  All with complete CSS.
+
+    10. **Interaction States** — Global state matrix (default, hover,
+        focused, active, disabled, loading).  Page-level states
+        (loading, empty, error, success, partial).
+
+    11. **CSS Token Export** — Complete `:root {{}}` block with all
+        design tokens as CSS custom properties, ready for Figma Make.
+
+    12. **Decisions Log** — Rationale for each major decision.
+
+    CRITICAL: Every color, font, spacing, and motion value must be
+    concrete (hex, px, ms) — no placeholder values.  Ground all
+    tokens in the referenced design system.
+
+  expected_output: >
+    A complete Markdown design specification document containing all
+    12 sections listed above.  Must include concrete values for every
+    token, CSS custom properties in a `:root {{}}` block, component CSS,
+    and a decisions log.  This is the initial draft — it will be
+    reviewed and refined by the Senior Designer.
+  agent: ux_designer
+
+review_and_finalize_design_task:
+  description: >
+    You are the Senior Designer performing a **7-pass review** of the
+    initial design draft.  Your job is to find gaps, fix them, and
+    produce the final, production-ready design specification.
+
+    --- INITIAL DESIGN DRAFT ---
+    {initial_design_draft}
+    --- END ---
+
+    Product context:
+    {idea}
+
+    Apply your 7-pass review methodology:
+
+    **Pass 1: Information Architecture** — Is the screen inventory
+    complete?  Navigation hierarchy clear?  Content zones defined?
+
+    **Pass 2: Interaction State Coverage** — Does every interactive
+    element have all 6 states?  Are page-level states defined?
+
+    **Pass 3: User Journey & Emotional Arc** — Is the product lifecycle
+    mapped to emotional states with appropriate UI density and tone?
+
+    **Pass 4: AI Slop Risk** — Check against the 10-item blacklist.
+    Are all examples grounded in real product data?
+
+    **Pass 5: Design System Alignment** — Are token names consistent?
+    Semantic aliases used?  All tokens traceable to the foundation?
+
+    **Pass 6: Responsive & Accessibility** — Mobile layouts defined?
+    Touch targets 44px+?  WCAG AA contrast verified?  ARIA patterns?
+
+    **Pass 7: Unresolved Design Decisions** — Open questions documented
+    with recommended defaults and deferral impact?
+
+    For each pass:
+    1. Score the initial draft (0-10)
+    2. List specific fixes to reach a 9+
+    3. Apply those fixes in your output
+
+    Your output is the **complete final design** — not just the review
+    notes.  It must be a self-contained document that incorporates all
+    fixes and is ready for Figma Make upload.
+
+    Include a "Senior Designer Review Summary" table at the top with
+    before/after scores for each pass.
+
+  expected_output: >
+    The complete, final design specification document in Markdown.  Must
+    include: review summary table (7 passes, before/after scores),
+    all sections from the initial draft with gaps filled, full CSS
+    token export block with any new tokens added, and an updated
+    decisions log documenting review fixes.  This is the production-ready
+    design for Figma Make upload.
+  agent: senior_designer

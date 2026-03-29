@@ -25,9 +25,10 @@ _TOTAL_SECTIONS = 12
 def find_completed_without_confluence() -> list[dict[str, Any]]:
     """Find completed working ideas that have not been published to Confluence.
 
-    Queries ``workingIdeas`` for completed documents, then excludes any
-    whose ``run_id`` has a delivery record in ``productRequirements``
-    with ``confluence_published`` set to ``True``.
+    Uses a two-phase approach to avoid fetching large full documents
+    unnecessarily: first queries with a lightweight projection to
+    identify unpublished ``run_id`` values, then fetches full documents
+    only for those that need publishing.
 
     Returns:
         A list of full document dicts, or an empty list on failure.
@@ -38,16 +39,22 @@ def find_completed_without_confluence() -> list[dict[str, Any]]:
 
     try:
         db = _common.get_db()
-        completed = list(
+
+        # Phase 1: lightweight projection — only fetch run_id
+        completed_ids = list(
             db[WORKING_COLLECTION]
-            .find({"status": "completed"})
+            .find({"status": "completed"}, {"run_id": 1})
             .sort("created_at", -1)
         )
-        if not completed:
+        if not completed_ids:
+            logger.info(
+                "[MongoDB] Found 0 completed idea(s) without Confluence publish",
+            )
             return []
 
-        # Gather run_ids that already have Confluence published
-        run_ids = [d["run_id"] for d in completed if d.get("run_id")]
+        run_ids = [d["run_id"] for d in completed_ids if d.get("run_id")]
+
+        # Phase 2: exclude already-published run_ids
         published_ids: set[str] = set()
         if run_ids:
             published_docs = db[PRODUCT_REQUIREMENTS_COLLECTION].find(
@@ -61,10 +68,22 @@ def find_completed_without_confluence() -> list[dict[str, Any]]:
                 d["run_id"] for d in published_docs if d.get("run_id")
             }
 
-        result = [
-            d for d in completed
-            if d.get("run_id") and d["run_id"] not in published_ids
+        unpublished_ids = [
+            rid for rid in run_ids if rid not in published_ids
         ]
+
+        if not unpublished_ids:
+            logger.info(
+                "[MongoDB] Found 0 completed idea(s) without Confluence publish",
+            )
+            return []
+
+        # Phase 3: fetch full documents only for unpublished run_ids
+        result = list(
+            db[WORKING_COLLECTION]
+            .find({"run_id": {"$in": unpublished_ids}})
+            .sort("created_at", -1)
+        )
         logger.info(
             "[MongoDB] Found %d completed idea(s) without Confluence publish",
             len(result),
@@ -739,7 +758,7 @@ def get_run_documents(run_id: str) -> list[dict[str, Any]]:
     try:
         db = _common.get_db()
         doc = db[WORKING_COLLECTION].find_one(
-            {"run_id": run_id, "status": {"$ne": "completed"}}
+            {"run_id": run_id, "status": {"$nin": ["completed", "archived"]}}
         )
         if doc is None:
             logger.info("[MongoDB] No document found for run_id=%s", run_id)

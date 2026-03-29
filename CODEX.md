@@ -62,10 +62,12 @@ when you need deep context on a topic.
 | Change type | Pages to update |
 |------------|----------------|
 | New module / file added | `Architecture/Module Map.md` |
-| New API endpoint | `APIs/API Overview.md` |
+| New API endpoint | `APIs/API Overview.md` + affected domain page (`APIs/Health API.md`, `APIs/Projects API.md`, `APIs/Ideas API.md`, `APIs/PRD Flow API.md`, `APIs/Publishing API.md`, `APIs/Slack API.md`, `APIs/SSO Webhooks API.md`) |
+| Changed API request/response schema | Affected `APIs/<Domain> API.md` page — update field tables |
 | New agent or model change | `Agents/Agent Roles.md`, `Agents/LLM Model Tiers.md` |
-| New Slack intent or action | `Integrations/Slack Integration.md` |
-| MongoDB schema change | `Database/MongoDB Schema.md` |
+| New Slack intent or action | `Integrations/Slack Integration.md`, `APIs/Slack API.md` |
+| MongoDB schema change | `Database/MongoDB Schema.md` + affected collection page (`Database/crewJobs Schema.md`, `Database/workingIdeas Schema.md`, `Database/productRequirements Schema.md`, `Database/projectConfig Schema.md`, `Database/projectMemory Schema.md`, `Database/agentInteraction Schema.md`, `Database/userSession Schema.md`, `Database/slackOAuth Schema.md`, `Database/userSuggestions Schema.md`) |
+| New MongoDB field or index | Affected `Database/<collection> Schema.md` page — update field tables |
 | New env var | `Architecture/Environment Variables.md` |
 | Pipeline stage change | `Orchestrator/Orchestrator Overview.md` |
 | Version bump | `Changelog/Version History.md` |
@@ -265,11 +267,14 @@ Every code change **must** update the relevant documentation artifacts:
 
 | Trigger | Files to update |
 |---------|----------------|
-| New or changed API endpoint | `docs/openapi/openapi.json`, `docs/openapi/paths/` |
+| New or changed API endpoint | `docs/openapi/openapi.json`, `docs/openapi/paths/`, affected `obsidian/APIs/<Domain> API.md` |
+| Changed API request/response model | Affected `obsidian/APIs/<Domain> API.md` — update field tables, types, constraints |
 | New or changed env var | `.env.example`, `obsidian/Architecture/Environment Variables.md` |
 | New feature or major change | `README.md` (feature list, usage, examples) |
 | New dependency added | `pyproject.toml`, `README.md` (prerequisites section) |
-| Schema / model change | `obsidian/Database/MongoDB Schema.md` |
+| Schema / model change | Affected `obsidian/Database/<collection> Schema.md` — update field tables, indexes, repository functions |
+| New MongoDB field or index | Affected `obsidian/Database/<collection> Schema.md` |
+| New repository function | Affected `obsidian/Database/<collection> Schema.md` — add to repository functions table |
 | Any code change | Affected Obsidian pages (see "When to Update Which Page" table above) |
 
 ---
