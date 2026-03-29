@@ -283,6 +283,42 @@ Every code change **must** update the relevant documentation artifacts:
 | Changed flow approval gate or skip condition | Affected `obsidian/Flows/<Flow>.md` — update approval gates, skip conditions |
 | Any code change | Affected Obsidian pages (see "When to Update Which Page" table above) |
 
+### Change Request Workflow (APIs, Database, Flows)
+
+Every page in `obsidian/APIs/`, `obsidian/Database/`, and `obsidian/Flows/`
+has a **## Change Requests** section at the bottom with **Pending** and
+**Completed** sub-headings.
+
+**User workflow:**
+
+1. Open the relevant Obsidian page (e.g. `APIs/Slack API.md`).
+2. Under `### Pending`, add a checkbox item:
+   ```
+   - [ ] Add a new query param `limit` to GET /slack/channels
+   ```
+3. Ask Codex to process change requests.
+
+**Codex workflow (when processing CRs):**
+
+1. Scan all pages in `APIs/`, `Database/`, `Flows/` for unchecked `- [ ]`
+   items under `### Pending`.
+2. For each pending CR:
+   a. Implement the requested code change.
+   b. Update the Obsidian page content to reflect the change.
+   c. Move the item from `### Pending` to `### Completed` as `- [x]`
+      with the date: `- [x] <request> *(completed YYYY-MM-DD)*`
+   d. Remove the `_No pending change requests._` placeholder if items exist.
+3. Bump version in `version.py` (`Y` for new features, `Z` for fixes).
+4. Update `obsidian/Changelog/Version History.md`.
+
+**Rules:**
+
+- Never delete a completed CR — they form an audit trail.
+- If a CR is unclear, add a comment below it: `  - ⚠️ Clarification needed: …`
+  and skip it until the user responds.
+- Replace `_No pending change requests._` when adding the first item;
+  restore it when the last pending item is completed.
+
 ---
 
 ## Session Management (Summary)

@@ -1,6 +1,6 @@
-# Requirements Breakdown Flow
+# Step 3 — Requirements Breakdown Flow
 
-> Phase 1 — Decompose the refined idea into granular, implementation-ready requirements.
+> Pipeline Step 3 — Decompose the refined idea into granular, implementation-ready requirements.
 
 | Field | Value |
 |-------|-------|
@@ -134,4 +134,30 @@ Next:   → CEO Review Flow (Phase 1.5a)
 
 ---
 
-See also: [[PRD Flow]], [[Requirements Breakdown]], [[Executive Summary Flow]], [[CEO Review Flow]]
+See also: [[PRD Flow]], [[Requirements Breakdown]], [[Executive Summary Flow|Step 2 — Executive Summary Flow]], [[CEO Review Flow|Step 4 — CEO Review Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+_No completed change requests._

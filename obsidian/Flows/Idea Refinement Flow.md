@@ -1,6 +1,6 @@
-# Idea Refinement Flow
+# Step 1 — Idea Refinement Flow
 
-> Phase 0 — Iterative idea enrichment with domain expertise (3-10 cycles).
+> Pipeline Step 1 — Iterative idea enrichment with domain expertise (3-10 cycles).
 
 | Field | Value |
 |-------|-------|
@@ -127,4 +127,30 @@ Next:   → Executive Summary Flow (Phase 1)
 
 ---
 
-See also: [[PRD Flow]], [[Idea Refiner]], [[Executive Summary Flow]]
+See also: [[PRD Flow]], [[Idea Refiner]], [[Executive Summary Flow|Step 2 — Executive Summary Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+_No completed change requests._

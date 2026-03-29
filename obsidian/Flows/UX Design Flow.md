@@ -1,6 +1,6 @@
 # UX Design Flow
 
-> Post-PRD — Standalone 2-phase design generation triggered after PRD completion.
+> Post-PRD — Standalone 2-phase design generation triggered by Finalization (Step 7).
 
 | Field | Value |
 |-------|-------|
@@ -30,41 +30,15 @@ Called by `_trigger_ux_design_flow()` in `_finalization.py` after finalization:
 
 ## Step-by-Step Flow
 
-### Phase 1 — Draft (UX Designer + Design Partner)
+### Phase 1 — Draft (Design Partner + UX Designer)
 
 ```
 run_ux_design_draft(flow) → str
 ```
 
-#### Step 1 — Agent Setup
+#### Step 1 — Design Specification Scope
 
-- Creates UX Designer agent with `FigmaMakeTool`
-- Creates Design Partner agent (gstack design-consultation methodology)
-
-#### Step 2 — Draft Generation
-
-- Task: `create_initial_design_draft_task`
-- Input parameters:
-  - `{executive_product_summary}`: from CEO Review
-  - `{idea}`: refined idea text
-  - `{requirements_breakdown}`: from Requirements Breakdown
-  - Project config (Figma credentials)
-
-#### Step 3 — Output Parsing
-
-- Scans output for markers:
-  - `FIGMA_URL:<url>` → `flow.state.figma_design_url`, status = `"completed"`
-  - `FIGMA_PROMPT:<prompt>` → `flow.state.figma_design_prompt`, status = `"prompt_ready"`
-  - `FIGMA_ERROR:<message>` → logged, flow continues
-  - `FIGMA_SKIPPED:<reason>` → logged, flow continues
-
-#### Step 4 — File Output
-
-- Writes `output/{project_id}/ux design/ux_design_draft.md` (overwritten on each run)
-
-#### Step 5 — Draft Design Specification
-
-The draft covers 12 sections:
+The Design Partner agent (gstack design-consultation methodology) structures the draft across 12 sections:
 1. Product context
 2. Aesthetic direction
 3. Typography
@@ -79,6 +53,18 @@ The draft covers 12 sections:
 12. Decisions log
 
 Includes AI slop avoidance blacklist.
+
+#### Step 2 — Draft Generation
+
+- Task: `create_initial_design_draft_task`
+- Input parameters:
+  - `{executive_product_summary}`: from CEO Review
+  - `{idea}`: refined idea text
+  - `{requirements_breakdown}`: from Requirements Breakdown
+
+#### Step 3 — File Output
+
+- Writes `output/{project_id}/ux design/ux_design_draft.md` (overwritten on each run)
 
 ---
 
@@ -170,4 +156,31 @@ Output: flow.state.figma_design_url (Figma URL)
 
 ---
 
-See also: [[PRD Flow]], [[UX Designer]], [[Finalization Flow]], [[CEO Review Flow]]
+See also: [[PRD Flow]], [[UX Designer]], [[Finalization Flow|Step 7 — Finalization Flow]], [[CEO Review Flow|Step 4 — CEO Review Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+- [x] Remove FigmaMakeTool agent setup (old Step 1) and Figma output parsing (old Step 3) — output markdown only, no Figma interaction *(completed 2026-03-29)*
+- [x] Move Draft Design Specification (old Step 5) to Step 1 as the Design Partner agent’s role definition *(completed 2026-03-29)*

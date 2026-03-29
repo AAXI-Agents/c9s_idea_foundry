@@ -1,6 +1,6 @@
-# CEO Review Flow
+# Step 4 — CEO Review Flow
 
-> Phase 1.5a — Transform the executive summary into a 10-star Executive Product Summary.
+> Pipeline Step 4 — Transform the executive summary into a 10-star Executive Product Summary.
 
 | Field | Value |
 |-------|-------|
@@ -102,4 +102,30 @@ Next:   → Engineering Plan Flow (Phase 1.5b, primary input)
 
 ---
 
-See also: [[PRD Flow]], [[CEO Reviewer]], [[Executive Summary Flow]], [[Engineering Plan Flow]]
+See also: [[PRD Flow]], [[CEO Reviewer]], [[Executive Summary Flow|Step 2 — Executive Summary Flow]], [[Engineering Plan Flow|Step 6 — Engineering Plan Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+_No completed change requests._

@@ -1,6 +1,6 @@
-# Engineering Plan Flow
+# Step 6 — Engineering Plan Flow
 
-> Phase 1.5b — Generate a bulletproof engineering plan from the Executive Product Summary and requirements.
+> Pipeline Step 6 — Generate a bulletproof engineering plan from the Executive Product Summary, requirements, and all completed PRD sections.
 
 | Field | Value |
 |-------|-------|
@@ -121,4 +121,30 @@ executive_summary_callback(content, idea, run_id, ...)
 
 ---
 
-See also: [[PRD Flow]], [[Engineering Manager]], [[CEO Review Flow]], [[Section Drafting Flow]]
+See also: [[PRD Flow]], [[Engineering Manager]], [[CEO Review Flow|Step 4 — CEO Review Flow]], [[Section Drafting Flow|Step 5 — Section Drafting Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+_No completed change requests._

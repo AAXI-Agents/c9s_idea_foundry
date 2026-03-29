@@ -1,6 +1,6 @@
-# Executive Summary Flow
+# Step 2 — Executive Summary Flow
 
-> Phase 1 — Multi-agent draft→critique→refine loop for the PRD executive summary.
+> Pipeline Step 2 — Multi-agent draft→critique→refine loop for the PRD executive summary.
 
 | Field | Value |
 |-------|-------|
@@ -148,4 +148,30 @@ Next:   → Requirements Breakdown Flow + CEO Review Flow (Phase 1 / 1.5a)
 
 ---
 
-See also: [[PRD Flow]], [[Product Manager]], [[Idea Refinement Flow]], [[Requirements Breakdown Flow]]
+See also: [[PRD Flow]], [[Product Manager]], [[Idea Refinement Flow|Step 1 — Idea Refinement Flow]], [[Requirements Breakdown Flow|Step 3 — Requirements Breakdown Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+_No completed change requests._

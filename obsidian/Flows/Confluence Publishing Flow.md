@@ -1,6 +1,6 @@
 # Confluence Publishing Flow
 
-> Post-Completion — Publish the finalized PRD to Atlassian Confluence.
+> Post-PRD — Publish the finalized PRD to Atlassian Confluence.
 
 | Field | Value |
 |-------|-------|
@@ -129,4 +129,30 @@ Output: flow.state.confluence_url
 
 ---
 
-See also: [[PRD Flow]], [[Orchestrator]], [[Confluence Integration]], [[Finalization Flow]]
+See also: [[PRD Flow]], [[Orchestrator]], [[Confluence Integration]], [[Finalization Flow|Step 7 — Finalization Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+_No completed change requests._

@@ -1,6 +1,6 @@
-# Finalization Flow
+# Step 7 — Finalization Flow
 
-> Phase 3 — Assemble all sections into the final PRD, trigger UX design and post-completion delivery.
+> Pipeline Step 7 — Assemble all sections into the final PRD, trigger UX design and post-completion delivery.
 
 | Field | Value |
 |-------|-------|
@@ -153,4 +153,30 @@ Triggers: → UX Design Flow (Post-PRD)
 
 ---
 
-See also: [[PRD Flow]], [[Section Drafting Flow]], [[UX Design Flow]], [[Confluence Publishing Flow]], [[Jira Ticketing Flow]]
+See also: [[PRD Flow]], [[Section Drafting Flow|Step 5 — Section Drafting Flow]], [[UX Design Flow]], [[Confluence Publishing Flow]], [[Jira Ticketing Flow]]
+
+
+---
+
+## Change Requests
+
+<!-- 
+HOW TO USE: Add your change requests below as bullet points.
+Codex will implement each request, update this page, bump the
+version, and move the completed item to the "Completed" list.
+
+FORMAT:
+- [ ] <your change request here>
+
+EXAMPLE:
+- [ ] Add a new field `priority` (string, optional) to the response
+- [ ] Rename endpoint from /v1/old to /v2/new
+-->
+
+### Pending
+
+_No pending change requests._
+
+### Completed
+
+_No completed change requests._
