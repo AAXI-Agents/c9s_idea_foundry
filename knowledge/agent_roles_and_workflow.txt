@@ -1,0 +1,345 @@
+================================================================================
+AGENT ROLES & WORKFLOW — CrewAI Product Feature Planner
+================================================================================
+
+This document describes every agent role in the system, their position in
+the pipeline, inputs and outputs, collaboration patterns, and execution
+strategy.  The Engagement Manager and all specialist agents use this
+knowledge to coordinate effectively.
+
+────────────────────────────────────────────────────────────────────────────────
+1. AGENT ROSTER
+────────────────────────────────────────────────────────────────────────────────
+
+The system has 16 agent roles across 5 functional areas:
+
+  PRD Planning Agents (Phase 0–3):
+    1.  Idea Refiner — enriches raw ideas with domain expertise
+    2.  Product Manager — drafts/critiques executive summary and sections
+    3.  Requirements Breakdown — decomposes ideas into implementation specs
+    4.  CEO Reviewer — produces visionary Executive Product Summary
+    5.  Engineering Manager — produces comprehensive engineering plan
+
+  UX Design Agents (parallel with PRD):
+    6.  UX Designer — generates initial design specifications
+    7.  Design Partner — collaborates on design draft with aesthetic direction
+    8.  Senior Designer — 7-pass review to produce final design spec
+
+  Quality Review Agents (post-engineering plan):
+    9.  Staff Engineer — paranoid structural audit for production safety
+    10. QA Lead — test methodology and acceptance criteria review
+    11. QA Engineer — edge case, security, and rendering test review
+
+  Delivery Agents (Phase 4):
+    12. Orchestrator — publishes to Confluence and creates Jira tickets
+    13. Architect Tech Lead — decomposes stories into sub-tasks
+    14. Product Manager (Jira) — creates agent-ready Jira epics/stories
+    15. Delivery Manager — autonomous startup delivery scanning
+
+  Coordination Agents:
+    16. Engagement Manager — orchestrates full idea-to-PRD lifecycle
+    17. Idea Agent — real-time iteration advisor during active flows
+
+  Utility Agents (outside PRD flow):
+    18. Release Engineer — release hygiene (sync, test, push, PR)
+    19. Retro Manager — retrospective analysis from commit history
+
+────────────────────────────────────────────────────────────────────────────────
+2. PIPELINE EXECUTION ORDER
+────────────────────────────────────────────────────────────────────────────────
+
+Phase 0 — Pre-Completion Pipeline (AgentOrchestrator):
+
+  Stage 1: Idea Refinement (Idea Refiner)
+    Input:  Raw idea text from user
+    Output: Enriched idea (400–800 words)
+    Cycles: 3–10 iterative refinement cycles
+    Criteria: All 5 scores >= 3 (IDEA_READY)
+    LLM: Gemini
+
+  Stage 2: Requirements Breakdown (Requirements Breakdown Agent)
+    Input:  Refined idea
+    Output: Structured requirements (entities, state machines, APIs,
+            acceptance criteria)
+    Cycles: Iterative until all 6 criteria score >= 4
+    Criteria: REQUIREMENTS_READY
+    LLM: Gemini
+
+Phase 1 — Executive Summary Iteration:
+
+  Agents: Product Manager (Gemini) + Product Manager (OpenAI)
+    Input:  Refined idea + requirements breakdown
+    Output: Executive Summary
+    Cycles: 2–10 draft-critique-refine cycles
+    Criteria: All 7 scores >= 8 (READY_FOR_DEV)
+    Multi-agent: Gemini drafts, OpenAI critiques (or vice versa)
+
+Phase 2 — Parallel Review & Planning:
+
+  These agents can run in parallel after Phase 1:
+
+  CEO Review (CEO Reviewer)
+    Input:  Executive Summary + original idea
+    Output: Executive Product Summary (10-star vision)
+    LLM: Gemini
+
+  Engineering Plan (Engineering Manager)
+    Input:  Executive Product Summary + requirements breakdown
+    Output: 9-section engineering plan with ASCII diagrams
+    LLM: Gemini
+
+  UX Design (UX Designer + Design Partner + Senior Designer)
+    Input:  Executive Product Summary + requirements breakdown
+    Output: 12-section design specification with CSS tokens
+    Flow:   Draft (Designer + Partner) → Review (Senior Designer)
+    LLM: Gemini
+
+Phase 3 — Section-by-Section Generation:
+
+  Agent: Product Manager (drafts) + Product Manager Critic (reviews)
+    Input:  Executive Product Summary + Engineering Plan +
+            approved sections (for consistency)
+    Output: 9 PRD sections (Problem Statement through Assumptions)
+    Cycles: 2–10 per section, processed sequentially
+    Criteria: All 6 scores >= 8 per section (SECTION_READY)
+
+Phase 4 — Finalization:
+    • Assemble all 10 sections into markdown
+    • Write PRD file to output/prds/
+    • Mark run as completed in MongoDB
+
+Phase 5 — Post-Completion Pipeline (AgentOrchestrator):
+
+  Stage 1: Confluence Publish (Orchestrator)
+    Input:  Complete PRD markdown
+    Output: Confluence page (URL)
+
+  Stage 2: Jira Ticketing (multi-agent flow)
+
+    Step 1: Skeleton Generation (Product Manager Jira)
+      Input:  Executive summary + functional requirements
+      Output: Epic/Story skeleton outline
+      Gate:   User must approve skeleton before ticket creation
+
+    Step 2: Epic & Story Creation (Product Manager Jira)
+      Input:  Approved skeleton + PRD details
+      Output: Jira Epics + Stories with acceptance criteria
+      Categories: Data Persistence → Data Layer → Data Presentation →
+                  App & Data Security
+
+    Step 3: Sub-Task Decomposition (Architect Tech Lead)
+      Input:  Stories created + engineering plan
+      Output: Sub-Tasks with full implementation specs
+
+    Step 4: Staff Engineer Review (Staff Engineer)
+      Input:  Sub-tasks under each Story
+      Output: Production readiness audit sub-tasks
+
+    Step 5: QA Lead Review (QA Lead)
+      Input:  Sub-tasks under each Story
+      Output: Test methodology audit sub-tasks
+
+    Step 6: QA Engineer Testing (QA Engineer)
+      Input:  Implementation sub-tasks
+      Output: Counter-ticket QA test sub-tasks
+
+────────────────────────────────────────────────────────────────────────────────
+3. LLM MODEL ASSIGNMENT
+────────────────────────────────────────────────────────────────────────────────
+
+  Tier 1 — High-Quality Reasoning (complex planning, architecture):
+    • Engineering Manager:    gemini-3-flash-preview
+    • CEO Reviewer:           gemini-3-flash-preview
+    • Staff Engineer:         gemini-3-flash-preview
+    • Senior Designer:        gemini-3-flash-preview
+    • Architect Tech Lead:    gemini-3-flash-preview
+
+  Tier 2 — Standard Generation (drafting, refinement):
+    • Idea Refiner:           gemini-3-flash-preview
+    • Product Manager:        gemini-3-flash-preview (primary)
+    • Product Manager:        o3 (secondary/critic)
+    • Requirements Breakdown: gemini-3-flash-preview
+    • UX Designer:            gemini-3-flash-preview
+    • Design Partner:         gemini-3-flash-preview
+    • Product Manager (Jira): gemini-3-flash-preview
+
+  Tier 3 — Fast Response (classification, routing):
+    • Engagement Manager:     gemini-3-flash-preview
+    • Idea Agent:             gemini-3-flash-preview
+    • QA Lead:                gemini-3-flash-preview
+    • QA Engineer:            gemini-3-flash-preview
+
+────────────────────────────────────────────────────────────────────────────────
+4. ENGAGEMENT MANAGER ORCHESTRATION STRATEGY
+────────────────────────────────────────────────────────────────────────────────
+
+The Engagement Manager is the single point of contact for users throughout
+the entire idea-to-PRD journey.  Orchestration follows a two-step strategy:
+
+  Step 1 — Sequential Foundation (must complete in order):
+    1. Idea Refinement → needs raw idea as input
+    2. Executive Summary → needs refined idea as input
+
+  Step 2 — Coordinated Parallel Execution:
+    After Step 1, the Engagement Manager decides execution order:
+
+    Can start immediately:
+      • CEO Review (depends on: exec summary)
+      • Requirements Breakdown (depends on: refined idea + exec summary)
+
+    Start after Requirements Breakdown:
+      • Engineering Plan (depends on: requirements + exec product summary)
+      • UX Design (depends on: exec product summary)
+
+    Start after all above:
+      • Section Drafting (depends on: full context from above)
+
+Communication Protocol:
+  • PLANNING: "I'm planning the next step — [brief explanation]"
+  • STARTING: "Starting [agent] — [what it will produce]"
+  • PROGRESS: "The [agent] is working on [status]..."
+  • COMPLETED: "[Agent] complete — [1-sentence summary]"
+  • WAITING: "Waiting for your feedback on [what]..."
+  • STEERING: "Got it — incorporating your feedback into [phase]"
+
+User Steering Detection:
+  • STEERING — user wants to change scope or add constraints
+  • QUESTION — user is asking about progress
+  • FEEDBACK — user is providing direct feedback on output
+  • UNRELATED — message not about the PRD process
+
+Session Isolation:
+  • Only engage with the initiating user
+  • Messages from other users in the same thread are ignored
+  • Prevents noise from impacting PRD quality
+
+────────────────────────────────────────────────────────────────────────────────
+5. IDEA AGENT CAPABILITIES
+────────────────────────────────────────────────────────────────────────────────
+
+The Idea Agent provides real-time situational awareness during active
+idea-to-PRD flows:
+
+  What it can tell the user:
+    • Current refined idea text (latest iteration)
+    • How many refinement iterations have run and what changed
+    • Latest executive summary draft and critique feedback
+    • Requirements breakdown output
+    • Engineering plan status and content
+    • Which PRD sections are drafted vs remaining
+    • Actual content of any completed section
+    • Current critique feedback
+
+  How it steers iterations:
+    • Analyses user feedback against current iteration state
+    • Produces structured recommendations for active agents
+    • Identifies gaps: missing personas, unclear requirements, weak metrics
+    • Cross-references sections to flag inconsistencies
+    • Prioritises feedback for maximum downstream impact
+
+  Communication style:
+    • Direct and informative — lead with the answer, then context
+    • Bullet points and bold text for scanability
+    • Specific quotes from iteration data when relevant
+    • Never suggests typing commands — recommends clickable actions
+
+────────────────────────────────────────────────────────────────────────────────
+6. AGENT TOOL ASSIGNMENTS
+────────────────────────────────────────────────────────────────────────────────
+
+  Agents with no tools (reasoning only):
+    • Idea Refiner
+    • Requirements Breakdown Agent
+    • CEO Reviewer
+    • Engineering Manager
+    • Staff Engineer
+    • QA Lead
+    • QA Engineer
+    • Design Partner
+    • Senior Designer
+
+  Agents with tools:
+    • Product Manager: web search, web scrape, file write, file read,
+      directory read, website search
+    • Orchestrator: Confluence publisher, Jira issue creator
+    • UX Designer: web search, web scrape (for design research)
+    • Engagement Manager: Slack send message, Slack read messages,
+      Slack post PRD result, Slack interpret message,
+      file read, directory read
+    • Idea Agent: file read, directory read
+
+────────────────────────────────────────────────────────────────────────────────
+7. INTERACTIVE FLOW (SLACK)
+────────────────────────────────────────────────────────────────────────────────
+
+The Slack interactive flow provides Block Kit buttons at every decision
+point.  Users never need to type commands.
+
+  1. Refinement Mode Choice:
+     • "Agent" — automatic refinement (3–10 cycles)
+     • "Manual" — user types refinements, clicks Approve when done
+
+  2. Idea Approval:
+     • "Approve" — proceed to requirements breakdown
+     • "Cancel" — stop the flow
+
+  3. Requirements Approval:
+     • "Approve" — proceed to PRD generation
+     • "Cancel" — stop the flow
+
+  4. Auto-Generation:
+     • Phases 1–4 run with auto_approve=true
+     • Results posted back to the Slack thread
+
+  5. Jira Approval (3-phase):
+     • Phase 1: Approve skeleton outline
+     • Phase 2: Approve Epics/Stories
+     • Phase 3: Approve Sub-tasks
+
+Available user actions (each has a clickable button):
+  • New Idea / Create PRD
+  • Resume PRD
+  • Restart PRD
+  • List Ideas
+  • List Products
+  • Publish to Confluence
+  • Create Jira Tickets
+  • Check Publish Status
+  • Switch Project
+  • Create Project
+  • Configure Project
+  • Configure Memory
+  • Help
+
+────────────────────────────────────────────────────────────────────────────────
+8. CROSS-AGENT DATA FLOW
+────────────────────────────────────────────────────────────────────────────────
+
+Data flows between agents through these artifacts:
+
+  Raw Idea → [Idea Refiner] → Refined Idea
+    ↓
+  Refined Idea → [Requirements Breakdown] → Structured Requirements
+    ↓
+  Refined Idea + Exec Summary → [CEO Reviewer] → Executive Product Summary
+    ↓
+  Exec Product Summary + Requirements → [Engineering Manager] → Engineering Plan
+    ↓
+  Exec Product Summary + Requirements → [UX Designer] → UX Design Spec
+    ↓
+  Exec Product Summary + Engineering Plan + Approved Sections
+    → [Product Manager] → PRD Sections (9 sections, one at a time)
+    ↓
+  Complete PRD → [Orchestrator] → Confluence Page
+    ↓
+  Exec Summary + Functional Reqs → [PM Jira] → Jira Skeleton → Epics + Stories
+    ↓
+  Stories + Engineering Plan → [Architect Tech Lead] → Sub-Tasks
+    ↓
+  Sub-Tasks → [Staff Engineer] → Review Sub-Tasks
+  Sub-Tasks → [QA Lead] → Review Sub-Tasks
+  Sub-Tasks → [QA Engineer] → QA Test Sub-Tasks
+
+Each downstream agent receives the accumulated context from all upstream
+agents.  This means later agents have richer context but also more data
+to process — optimizing token usage requires selective context passing.

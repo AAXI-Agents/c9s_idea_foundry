@@ -2,6 +2,24 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.47.0 (2026-03-30)
+
+| Version | Summary |
+|---------|--------|
+| 0.47.0 | Background Slack token refresh scheduler — prevents token rotation death spiral. Root cause: Slack rotating tokens (xoxe.*) expire every 12h and refresh tokens are single-use. If the server is down during the refresh window, both tokens die permanently (`invalid_refresh_token`). Fix: (1) Added `token_refresh_scheduler.py` — background daemon thread that proactively refreshes tokens when < 1h remaining, runs every 30min, immediate refresh on startup. (2) Integrated into server lifespan (step 7b + shutdown). (3) Token manager `get_valid_token()` returns None on permanent `invalid_refresh_token` (env var fallback). (4) Circuit breakers in event handlers skip processing when no token. (5) 12 scheduler tests + test fixture fix. 2699 tests passing |
+
+## v0.46.1 (2026-03-30)
+
+| Version | Summary |
+|---------|--------|
+| 0.46.1 | Critical fix — Engagement Manager delivery failure detection and startup token validation. Root cause: expired Slack OAuth token caused silent message delivery failures. Fixes: (1) Extracted `_validate_slack_token()` in `apis/__init__.py` that calls `auth.test` on startup to verify the token is actually usable — logs ERROR for expired/revoked tokens instead of falsely reporting "token available". (2) Added delivery failure tracking in `_handle_engagement_manager` — logs ERROR with 'DELIVERY FAILED' when both Block Kit and plain-text fallback fail. (3) Added 28 regression tests in `test_engagement_manager_response.py` covering 7 invariants. 2681 tests passing |
+
+## v0.46.0 (2026-03-30)
+
+| Version | Summary |
+|---------|--------|
+| 0.46.0 | Enhanced knowledge base — created 5 new detailed knowledge files based on agent roles and tasks: `idea_refinement.txt` (domain expertise, hard questions framework, refinement output standards), `engineering_standards.txt` (engineering plan structure, architecture decisions, staff engineer review checklist, Jira ticket quality), `review_criteria.txt` (unified scoring criteria across all pipeline stages — idea refinement, executive summary, PRD sections, requirements breakdown, CEO review, UX design review, QA review), `ux_design_standards.txt` (design system principles, interaction states, WCAG accessibility, responsive breakpoints, AI slop blacklist, typography/color/component standards), `agent_roles_and_workflow.txt` (full 19-agent roster, pipeline execution order, LLM model tiers, orchestration strategy, data flow diagram). Wired new sources to agents: Idea Refiner gets `idea_refinement.txt`, Staff Engineer gets `engineering_standards.txt`, QA Lead and QA Engineer get `review_criteria.txt`. Updated `knowledge_sources.py` with 5 new builder functions. Updated `project_architecture.txt` with expanded agent roster and knowledge file listing |
+
 ## v0.45.1 (2026-03-30)
 
 | Version | Summary |

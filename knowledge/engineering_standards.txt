@@ -1,0 +1,270 @@
+================================================================================
+ENGINEERING STANDARDS — CrewAI Product Feature Planner
+================================================================================
+
+This document defines the technical standards, architecture patterns, and
+quality criteria used by the Engineering Manager, Staff Engineer, and
+Architect Tech Lead agents when producing engineering plans and reviewing
+implementation readiness.
+
+────────────────────────────────────────────────────────────────────────────────
+1. ENGINEERING PLAN STRUCTURE
+────────────────────────────────────────────────────────────────────────────────
+
+A complete Engineering Plan has 9 sections:
+
+  1. Architecture Overview
+     • System components and boundaries (ASCII diagram required)
+     • Technology stack decisions with rationale
+     • Data flow diagrams covering happy, nil, empty, and error paths
+
+  2. Component Breakdown
+     • Each component: purpose, interfaces, dependencies
+     • State machines for stateful objects (ASCII diagrams)
+     • API contract sketches (endpoints, methods, payloads)
+
+  3. Implementation Phases
+     • Ordered: foundation → core logic → integration → polish
+     • Each phase lists concrete Jira-ready work items
+     • Inter-phase dependencies mapped
+     • Complexity per phase: S (1-2 days), M (3-5 days), L (1-2 weeks),
+       XL (2+ weeks)
+
+  4. Data Model
+     • Entity definitions with typed attributes and relationships
+     • Database schema (tables/collections, indexes, constraints)
+     • Migration strategy for schema changes
+
+  5. Error Handling & Failure Modes
+     • Per-component failure analysis with handling strategy
+     • Retry strategies (exponential backoff with jitter)
+     • Circuit breakers and graceful degradation plans
+     • Error classification: Critical / Major / Minor
+
+  6. Test Strategy
+     • Test pyramid: unit (70%), integration (20%), E2E (10%)
+     • Critical paths requiring test coverage
+     • Edge case test matrix
+     • Performance / load test requirements with targets
+
+  7. Security & Trust Boundaries
+     • Attack surface analysis
+     • Input validation at system boundaries
+     • Authorization boundaries and role mapping
+     • Data classification (PII, credentials, internal, public)
+
+  8. Deployment & Rollout
+     • Deployment sequence and feature flag strategy
+     • Rollback plan (step-by-step procedure)
+     • Post-deploy verification checklist
+
+  9. Observability
+     • Logging requirements per component (structured JSON)
+     • Metrics: request rate, error rate, latency percentiles
+     • Alerting thresholds and escalation paths
+     • Debugging guide for common failure scenarios
+
+────────────────────────────────────────────────────────────────────────────────
+2. ARCHITECTURE DECISION PRINCIPLES
+────────────────────────────────────────────────────────────────────────────────
+
+The Engineering Manager follows these principles:
+
+  DRY — Flag repetition aggressively.  Shared logic belongs in one place.
+  Well-Tested — Non-negotiable.  Every component has test coverage.
+  Engineered Enough — Not under-engineered (fragile), not over-engineered
+    (premature abstraction).  Solve today's problem well.
+  Edge Case Thoughtfulness — Handle more edge cases, not fewer.
+    Thoughtfulness over speed.
+  Explicit over Clever — Code should be obvious, not impressive.
+  Minimal Diff — Achieve the goal with the fewest new abstractions.
+
+Architecture Decision Records (ADRs):
+  Every non-trivial technical choice must be documented with:
+  • Context — what problem are we solving?
+  • Decision — what did we choose?
+  • Rationale — why this over alternatives?
+  • Consequences — what trade-offs are we accepting?
+
+────────────────────────────────────────────────────────────────────────────────
+3. TECHNOLOGY STACK DEFAULTS
+────────────────────────────────────────────────────────────────────────────────
+
+Unless the PRD specifies otherwise, use these defaults:
+
+  Data Persistence:
+    • MongoDB — document-oriented storage
+    • Collections with JSON Schema validators
+    • Compound indexes for common query patterns
+    • TTL indexes for ephemeral data
+
+  Data Layer:
+    • FastAPI — REST API framework (Python 3.11+)
+    • Pydantic v2 — request/response validation
+    • Webhooks with idempotency keys and retry logic
+    • OpenAPI 3.1 specification for all endpoints
+
+  Data Presentation:
+    • React with TypeScript — web frontend
+    • Web-only unless PRD explicitly requests mobile (iOS/Android)
+    • Component-driven architecture
+    • Responsive design (mobile, tablet, desktop breakpoints)
+
+  App & Data Security:
+    • Role-based access control (RBAC)
+    • Environment-variable-driven configuration
+    • Input validation at all API boundaries
+    • Database injection prevention (parameterized queries)
+    • JWT or session-based authentication
+
+  Infrastructure:
+    • Containerised deployment (Docker)
+    • CI/CD pipeline with automated testing
+    • Feature flags for progressive rollout
+    • Structured logging (JSON format)
+
+────────────────────────────────────────────────────────────────────────────────
+4. STAFF ENGINEER REVIEW CHECKLIST
+────────────────────────────────────────────────────────────────────────────────
+
+The Staff Engineer performs a structural audit for production safety:
+
+  N+1 Queries:
+    • Does the data layer batch correctly?
+    • Are there loops that issue individual database queries?
+    • Is eager loading used where appropriate?
+
+  Race Conditions:
+    • Are there concurrent writes without locking/atomicity?
+    • Is optimistic concurrency control used where needed?
+    • Are transactions required for multi-document updates?
+
+  Stale Reads:
+    • Is caching invalidated on relevant mutations?
+    • Are there read-after-write consistency requirements?
+    • Is eventual consistency acceptable for this use case?
+
+  Trust Boundary Violations:
+    • Is user input validated before use?
+    • Are authorization checks at every API endpoint?
+    • Is output encoded for the correct context (HTML, JSON, URL)?
+
+  Missing Indexes:
+    • Will queries table-scan in production?
+    • Are compound indexes aligned with query patterns?
+    • Are covered queries possible for high-traffic reads?
+
+  Escaping Bugs:
+    • Is output encoded for the correct context?
+    • Are there XSS vectors in user-generated content?
+    • Is parameter binding used for all database queries?
+
+  Broken Invariants:
+    • Can state machines reach impossible states?
+    • Are business rules enforced at the data layer (not just UI)?
+    • Are required field constraints at the database level?
+
+  Bad Retry Logic:
+    • Are retries idempotent?
+    • Is exponential backoff with jitter implemented?
+    • Is there a maximum retry count with dead-letter handling?
+    • Are circuit breakers in place for external dependencies?
+
+  Tests Missing Real Failure Modes:
+    • Do test cases cover actual production failure scenarios?
+    • Are there tests for partial failures (e.g., write succeeds,
+      notification fails)?
+    • Are timeouts and connection errors tested?
+
+  Schema Migration Risks:
+    • Is backward compatibility maintained during rollout?
+    • Can the migration run with zero-downtime?
+    • Is there a rollback plan for failed migrations?
+
+────────────────────────────────────────────────────────────────────────────────
+5. JIRA TICKET QUALITY STANDARDS
+────────────────────────────────────────────────────────────────────────────────
+
+Every Jira ticket (Epic, Story, Sub-Task) must be agent-ready — detailed
+enough that an AI coding agent (Claude/Codex/Copilot) can start working
+immediately without clarification.
+
+Epic Requirements:
+  • Summary captures the strategic intent
+  • Description includes executive summary context
+  • Dependencies between Epics explicitly linked
+  • Labels: "prd,auto-generated"
+
+Story Requirements:
+  • Title prefixed with category: [Data Persistence], [Data Layer],
+    [Data Presentation], [App & Data Security]
+  • Description includes detailed acceptance criteria
+  • Acceptance criteria in Given/When/Then format
+  • Sample data with concrete JSON examples
+  • Dependencies via is_blocked_by_key links
+  • Labels: "prd,auto-generated"
+  • Component assigned matching the category
+
+Sub-Task Requirements (Architect Tech Lead format):
+  Every sub-task description MUST contain:
+  1. Reasoning — WHY this sub-task exists
+  2. Instructions — HOW to implement (step-by-step)
+  3. Sample Data — WHAT the inputs/outputs look like (JSON)
+  4. Guard Rails — DON'T do these things
+  5. Definition of Done — VERIFY with these checklist items
+
+  Acceptance Criteria for QE covering:
+    • JSON schema validation test
+    • State transition verification test
+    • API request/response contract test
+    • Webhook retry logic test
+    • Error taxonomy validation test
+    • Observability hooks verification test
+
+Dependency Ordering:
+  1. Data Persistence stories — no blockers (starting point)
+  2. Data Layer stories — blocked by Data Persistence
+  3. Data Presentation stories — blocked by Data Layer
+  4. App & Data Security stories — blocked by Data Layer
+
+────────────────────────────────────────────────────────────────────────────────
+6. ENGINEERING QUALITY GATES
+────────────────────────────────────────────────────────────────────────────────
+
+An engineering plan passes review when:
+
+  Architecture:
+    ✓ All system components identified with clear boundaries
+    ✓ Data flow covers happy, nil, empty, and error paths
+    ✓ ASCII diagrams for non-trivial flows and state machines
+    ✓ Technology choices justified with ADR format
+
+  Implementation:
+    ✓ Phases ordered with dependency mapping
+    ✓ Each phase maps to Jira Epics with concrete work items
+    ✓ Complexity estimates realistic (not optimistic)
+    ✓ Critical path identified
+
+  Data:
+    ✓ All entities have typed attributes with validation rules
+    ✓ Indexes defined for query patterns
+    ✓ Migration strategy for schema changes
+    ✓ Example documents provided
+
+  Reliability:
+    ✓ Every component has failure mode analysis
+    ✓ Retry strategies defined with backoff parameters
+    ✓ Graceful degradation for external dependencies
+    ✓ Error classification complete
+
+  Testing:
+    ✓ Test pyramid defined with coverage targets
+    ✓ Critical paths enumerated
+    ✓ Performance targets with load test requirements
+    ✓ Edge case matrix covers boundary conditions
+
+  Security:
+    ✓ Attack surface documented
+    ✓ Input validation at system boundaries
+    ✓ Authorization model defined
+    ✓ Data classification complete (PII, secrets, internal, public)

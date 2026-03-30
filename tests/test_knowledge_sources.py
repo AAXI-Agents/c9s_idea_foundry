@@ -172,9 +172,9 @@ class TestBuildPrdKnowledgeSources:
         sources = build_prd_knowledge_sources()
         assert isinstance(sources, list)
 
-    def test_returns_three_sources(self):
+    def test_returns_four_sources(self):
         sources = build_prd_knowledge_sources()
-        assert len(sources) == 3
+        assert len(sources) == 4
 
     def test_all_are_text_file_knowledge_source(self):
         sources = build_prd_knowledge_sources()
@@ -207,12 +207,13 @@ class TestBuildPrdKnowledgeSources:
         assert a is not b
         clear_knowledge_cache()
 
-    def test_order_user_project_guidelines(self):
-        """Sources should be ordered: user, project, guidelines."""
+    def test_order_user_project_guidelines_criteria(self):
+        """Sources should be ordered: user, project, guidelines, criteria."""
         sources = build_prd_knowledge_sources()
         assert _USER_PREFERENCE_FILE in sources[0].file_paths
         assert _PROJECT_ARCHITECTURE_FILE in sources[1].file_paths
         assert _PRD_GUIDELINES_FILE in sources[2].file_paths
+        assert "review_criteria.txt" in sources[3].file_paths
 
 
 

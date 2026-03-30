@@ -131,6 +131,71 @@ class TestGetValidToken:
 
         assert token == "xoxb-fallback"
 
+    def test_invalid_refresh_token_returns_none_no_env(self, monkeypatch):
+        """When refresh token is permanently invalid and no env var is set,
+        return None instead of the expired token."""
+        monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
+        monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
+        monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("SLACK_ACCESS_TOKEN", raising=False)
+
+        doc = _fake_team_doc(
+            access_token="xoxb-expired",
+            refresh_token="xoxr-invalid",
+            expires_at=time.time() - 100,
+        )
+
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"), \
+             patch.object(tm, "_do_refresh",
+                          side_effect=RuntimeError("invalid_refresh_token")):
+            token = tm.get_valid_token(TEAM_A)
+
+        assert token is None
+
+    def test_invalid_refresh_token_falls_back_to_env(self, monkeypatch):
+        """When refresh token is permanently invalid, fall back to
+        SLACK_BOT_TOKEN env var."""
+        monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
+        monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-env-rescue")
+
+        doc = _fake_team_doc(
+            access_token="xoxb-expired",
+            refresh_token="xoxr-invalid",
+            expires_at=time.time() - 100,
+        )
+
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"), \
+             patch.object(tm, "_do_refresh",
+                          side_effect=RuntimeError("invalid_refresh_token")):
+            token = tm.get_valid_token(TEAM_A)
+
+        assert token == "xoxb-env-rescue"
+
+    def test_invalid_refresh_token_access_token_env_fallback(self, monkeypatch):
+        """SLACK_ACCESS_TOKEN env var also works as fallback for invalid
+        refresh."""
+        monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
+        monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
+        monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+        monkeypatch.setenv("SLACK_ACCESS_TOKEN", "xoxb-access-rescue")
+
+        doc = _fake_team_doc(
+            access_token="xoxb-expired",
+            refresh_token="xoxr-invalid",
+            expires_at=time.time() - 100,
+        )
+
+        with patch(f"{_REPO}.get_team", return_value=doc), \
+             patch(f"{_REPO}.get_all_teams"), \
+             patch.object(tm, "_do_refresh",
+                          side_effect=RuntimeError("invalid_refresh_token")):
+            token = tm.get_valid_token(TEAM_A)
+
+        assert token == "xoxb-access-rescue"
+
     def test_returns_none_for_unknown_team(self):
         with patch(f"{_REPO}.get_team", return_value=None), \
              patch(f"{_REPO}.get_all_teams"):

@@ -40,7 +40,12 @@ crewai_productfeature_planner/
 ├── knowledge/                          # Knowledge files for agent context
 │   ├── user_preference.txt             # User profile and PRD preferences
 │   ├── project_architecture.txt        # This file — system architecture
-│   └── prd_guidelines.txt              # PRD writing standards and templates
+│   ├── prd_guidelines.txt              # PRD writing standards and templates
+│   ├── idea_refinement.txt             # Idea refinement domain expertise
+│   ├── review_criteria.txt             # Quality gates and scoring criteria
+│   ├── engineering_standards.txt       # Engineering plan and review standards
+│   ├── ux_design_standards.txt         # UX design system and spec standards
+│   └── agent_roles_and_workflow.txt    # Agent roster and pipeline workflow
 ├── src/crewai_productfeature_planner/
 │   ├── main.py                         # FastAPI app entry, CLI, startup recovery
 │   ├── agents/                         # Agent factories (one subdir per agent)
@@ -218,20 +223,85 @@ Slack webhooks:
 4. AGENT ROLES
 ────────────────────────────────────────────────────────────────────────────────
 
-• Idea Refiner (Gemini, no tools)
-  Purpose: Enrich raw ideas with domain expertise and stakeholder perspective.
+PRD Planning Agents:
+  • Idea Refiner (Gemini, no tools)
+    Purpose: Enrich raw ideas with domain expertise and stakeholder perspective.
+    Iterates 3–10 cycles until all quality scores >= 3 (IDEA_READY).
 
-• Product Manager — Gemini variant (6 tools: search, scrape, file I/O)
-  Purpose: Draft and critique PRD sections with deep industry knowledge.
+  • Product Manager — Gemini variant (6 tools: search, scrape, file I/O)
+    Purpose: Draft and critique PRD sections with deep industry knowledge.
 
-• Product Manager — OpenAI variant (same 6 tools)
-  Purpose: Secondary PM for multi-agent diversity in critique cycles.
+  • Product Manager — OpenAI variant (same 6 tools)
+    Purpose: Secondary PM for multi-agent diversity in critique cycles.
 
-• Requirements Breakdown Agent (Gemini, no tools)
-  Purpose: Decompose refined ideas into structured, granular requirements.
+  • Requirements Breakdown Agent (Gemini, no tools)
+    Purpose: Decompose refined ideas into entities, state machines,
+    API contracts, and acceptance criteria.
 
-• Orchestrator Agent (Gemini, 2 tools: Confluence + Jira)
-  Purpose: Publish completed PRDs and create tracking tickets.
+  • CEO Reviewer (Gemini, no tools)
+    Purpose: Transform executive summary into 10-star Executive Product
+    Summary with visionary scope and delight opportunities.
+
+  • Engineering Manager (Gemini, no tools)
+    Purpose: Produce comprehensive engineering plans with architecture,
+    phased implementation, ASCII diagrams, and test strategy.
+
+UX Design Agents:
+  • UX Designer (Gemini, 2 tools: search, scrape)
+    Purpose: Generate initial design specification with design system,
+    user flows, components, and CSS tokens.
+
+  • Design Partner (Gemini, no tools)
+    Purpose: Collaborate with UX Designer on aesthetic direction, design
+    system research, and AI slop avoidance.
+
+  • Senior Designer (Gemini, no tools)
+    Purpose: 7-pass review of design specification to produce final,
+    production-ready design spec.
+
+Quality Review Agents:
+  • Staff Engineer (Gemini, 1 tool: Jira)
+    Purpose: Paranoid structural audit — N+1 queries, race conditions,
+    trust boundaries, broken invariants, bad retry logic.
+
+  • QA Lead (Gemini, 1 tool: Jira)
+    Purpose: Test methodology audit — acceptance criteria coverage,
+    test gaps, regression risk, test data requirements.
+
+  • QA Engineer (Gemini, 1 tool: Jira)
+    Purpose: Edge case, security, and rendering/behaviour test review.
+    Creates counter-tickets for every implementation sub-task.
+
+Delivery Agents:
+  • Orchestrator Agent (Gemini, 2 tools: Confluence + Jira)
+    Purpose: Publish completed PRDs and create tracking tickets.
+
+  • Architect Tech Lead (Gemini, 1 tool: Jira)
+    Purpose: Decompose User Stories into sub-tasks with full
+    implementation specs for AI coding agents.
+
+  • Product Manager Jira (Gemini, 1 tool: Jira)
+    Purpose: Create agent-ready Jira Epics and Stories with acceptance
+    criteria scoped by discipline.
+
+  • Delivery Manager (Gemini, 2 tools: Confluence + Jira)
+    Purpose: Autonomous startup delivery scanning for unpublished PRDs.
+
+Coordination Agents:
+  • Engagement Manager (Gemini, 5 tools: Slack + file I/O)
+    Purpose: Orchestrate full idea-to-PRD lifecycle with heartbeat
+    updates, user steering, and session isolation.
+
+  • Idea Agent (Gemini, 2 tools: file I/O)
+    Purpose: Real-time iteration advisor during active PRD flows.
+    Answers questions about current state and steers iterations.
+
+Utility Agents (outside PRD flow):
+  • Release Engineer
+    Purpose: Release hygiene — sync, test, push, create PR.
+
+  • Retro Manager
+    Purpose: Retrospective analysis from commit history with metrics.
 
 ────────────────────────────────────────────────────────────────────────────────
 4a. SLACK TOOLS

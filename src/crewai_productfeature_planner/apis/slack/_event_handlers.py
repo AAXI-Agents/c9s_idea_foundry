@@ -74,7 +74,10 @@ def _handle_app_mention(event: dict) -> None:
     from crewai_productfeature_planner.apis.slack.session_manager import (
         has_pending_state,
     )
-    from crewai_productfeature_planner.tools.slack_tools import current_team_id
+    from crewai_productfeature_planner.tools.slack_tools import (
+        current_team_id,
+        _get_slack_client,
+    )
 
     current_team_id.set(event.get("_team_id"))
 
@@ -84,6 +87,17 @@ def _handle_app_mention(event: dict) -> None:
     thread_ts = event.get("thread_ts") or event.get("ts", "")
     event_ts = event.get("ts", "")
     clean_text = re.sub(r"<@[^>]+>\s*", "", text).strip()
+
+    # ── Circuit breaker: skip processing if no usable Slack token ──
+    client = _get_slack_client()
+    if client is None:
+        logger.error(
+            "[EventHandler] Cannot process app_mention — no usable Slack "
+            "token. Set SLACK_BOT_TOKEN in .env or re-install the Slack "
+            "app. channel=%s user=%s text=%r",
+            channel, user, clean_text[:80],
+        )
+        return
 
     er = _er()
     try:
@@ -114,7 +128,10 @@ def _handle_app_mention(event: dict) -> None:
 
 
 def _handle_thread_message(event: dict) -> None:
-    from crewai_productfeature_planner.tools.slack_tools import current_team_id
+    from crewai_productfeature_planner.tools.slack_tools import (
+        current_team_id,
+        _get_slack_client,
+    )
 
     current_team_id.set(event.get("_team_id"))
 
@@ -123,6 +140,16 @@ def _handle_thread_message(event: dict) -> None:
     user = event.get("user", "")
     thread_ts = event.get("thread_ts", "")
     event_ts = event.get("ts", "")
+
+    # ── Circuit breaker: skip processing if no usable Slack token ──
+    client = _get_slack_client()
+    if client is None:
+        logger.error(
+            "[EventHandler] Cannot process thread message — no usable "
+            "Slack token. channel=%s user=%s",
+            channel, user,
+        )
+        return
 
     er = _er()
     bot_id = er.get_bot_user_id()

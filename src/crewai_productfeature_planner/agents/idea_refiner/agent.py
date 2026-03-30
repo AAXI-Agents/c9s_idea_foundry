@@ -25,6 +25,7 @@ import yaml
 from crewai import Agent, Crew, Process, Task, LLM
 
 from crewai_productfeature_planner.scripts.knowledge_sources import (
+    build_idea_refinement_knowledge_source,
     build_prd_knowledge_sources,
     get_google_embedder_config,
 )
@@ -123,7 +124,10 @@ def create_idea_refiner(project_id: str | None = None) -> Agent:
         allow_delegation=False,
         reasoning=True,
         max_reasoning_attempts=3,
-        knowledge_sources=build_prd_knowledge_sources(),
+        knowledge_sources=[
+            *build_prd_knowledge_sources(),
+            build_idea_refinement_knowledge_source(),
+        ],
         embedder=get_google_embedder_config(),
     )
 

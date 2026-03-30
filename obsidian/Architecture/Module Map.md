@@ -114,6 +114,7 @@
 | `jira/` | Jira operations, helpers, ADF converter |
 | `slack_tools.py` | Send/read/post/interpret Slack messages |
 | `slack_token_manager.py` | Token rotation, exchange, persistence |
+| `token_refresh_scheduler.py` | Background token refresh daemon (proactive rotation) |
 | `file_write_tool.py` | PRD file writer |
 | `file_read_tool.py` | File reader |
 | `directory_read_tool.py` | Directory listing |
@@ -132,7 +133,7 @@
 | `slack_config.py` | Slack manifest validation |
 | `memory_loader.py` | Project memory resolution |
 | `confluence_xhtml.py` | Markdown → Confluence XHTML converter |
-| `knowledge_sources.py` | Knowledge file loading and caching |
+| `knowledge_sources.py` | Knowledge file loading, caching, and builder factories (8 knowledge files: user_preference, project_architecture, prd_guidelines, idea_refinement, review_criteria, engineering_standards, ux_design_standards, agent_roles_and_workflow) |
 | `project_knowledge.py` | Obsidian-style project knowledge base builder (project pages, completed idea pages, agent context) |
 | `migrate_output_dirs.py` | One-time script: migrate output files to project-based directories (delete after use) |
 

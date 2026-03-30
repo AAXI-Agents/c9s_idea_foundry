@@ -1,0 +1,318 @@
+================================================================================
+REVIEW CRITERIA & QUALITY GATES — CrewAI Product Feature Planner
+================================================================================
+
+This document defines the unified scoring criteria and quality gates used
+across all review stages of the PRD generation pipeline.  Agents use these
+criteria when evaluating and approving work products at each stage.
+
+────────────────────────────────────────────────────────────────────────────────
+1. IDEA REFINEMENT QUALITY GATE
+────────────────────────────────────────────────────────────────────────────────
+
+Evaluator: Idea Refiner (evaluate_quality_task)
+Scale: 1–5 per criterion
+Pass threshold: All scores >= 3 (IDEA_READY)
+
+  Criterion 1: Target Audience Clarity (1–5)
+    1 = No audience identified
+    2 = Generic audience ("businesses", "users")
+    3 = Specific segment identified with roles
+    4 = Segment with demographics, context, and workflow
+    5 = Multiple personas with prioritization and usage patterns
+
+  Criterion 2: Problem Definition (1–5)
+    1 = No problem stated
+    2 = Vague problem ("users need this")
+    3 = Pain-point articulated with examples
+    4 = Pain-point with evidence and impact quantification
+    5 = Root cause analysis with current workaround costs
+
+  Criterion 3: Solution Specificity (1–5)
+    1 = Only a concept name
+    2 = High-level description of capability
+    3 = Key features described concretely
+    4 = Features with user flows and interaction model
+    5 = Features with technical approach and feasibility assessment
+
+  Criterion 4: Competitive Context (1–5)
+    1 = No competitors mentioned
+    2 = Competitors named without analysis
+    3 = Differentiation articulated for top competitors
+    4 = Competitive matrix with strengths/weaknesses
+    5 = Sustainable moat identified with strategic rationale
+
+  Criterion 5: Success Criteria (1–5)
+    1 = No success criteria
+    2 = Vague goals ("increase engagement")
+    3 = Measurable outcomes with targets
+    4 = KPIs with baselines, targets, and timeframes
+    5 = Leading/lagging indicators with measurement methodology
+
+Iteration rules:
+  • Minimum 3 iterations, maximum 10
+  • If iteration >= min_iterations, lean toward READY unless clearly
+    inadequate
+  • Each NEEDS_MORE response must include 2–3 specific improvements
+
+────────────────────────────────────────────────────────────────────────────────
+2. EXECUTIVE SUMMARY QUALITY GATE
+────────────────────────────────────────────────────────────────────────────────
+
+Evaluator: Product Manager (critique_prd_task)
+Scale: 1–10 per criterion
+Pass threshold: All scores >= 8 (READY_FOR_DEV)
+
+  Criterion 1: Problem Statement Clarity (1–10)
+    • Is the problem crisp and unambiguous?
+    • Is there evidence or data to back it up?
+    • Scores 8+ when a reader immediately understands the "why"
+
+  Criterion 2: User Persona Definition (1–10)
+    • Are personas specific with names, roles, pain-points, goals?
+    • Are usage contexts described (frequency, environment)?
+    • Scores 8+ when personas drive design decisions
+
+  Criterion 3: Functional Requirements (1–10)
+    • Are requirements numbered, prioritized, and testable?
+    • Do they include acceptance criteria?
+    • Scores 8+ when a developer can start building immediately
+
+  Criterion 4: Non-Functional Requirements (1–10)
+    • Are performance, scalability, security targets quantified?
+    • Are compliance requirements identified?
+    • Scores 8+ when all targets are measurable
+
+  Criterion 5: Edge Cases (1–10)
+    • Are boundary conditions and failure scenarios covered?
+    • Is expected behavior specified for each edge case?
+    • Scores 8+ when no obvious scenarios are missing
+
+  Criterion 6: Analytics & Tracking (1–10)
+    • Are success metrics defined with baselines and targets?
+    • Are instrumentation requirements specified?
+    • Scores 8+ when metrics are directly attributable to the feature
+
+  Criterion 7: Dependencies & Risks (1–10)
+    • Are dependencies identified with owners?
+    • Are risks assessed with mitigations?
+    • Scores 8+ when every dependency has a mitigation plan
+
+Iteration rules:
+  • Minimum 2 iterations, maximum 10
+  • Each NEEDS_REFINEMENT response must list specific gaps with severity
+    (Critical / Major / Minor)
+  • If all scores >= 8, mark as READY_FOR_DEV
+
+────────────────────────────────────────────────────────────────────────────────
+3. PRD SECTION QUALITY GATE
+────────────────────────────────────────────────────────────────────────────────
+
+Evaluator: Product Manager Critic (critique_section_task)
+Scale: 1–10 per criterion
+Pass threshold: All scores >= 8 (SECTION_READY)
+
+  Criterion 1: Completeness (1–10)
+    • Does it cover all required elements for this section type?
+    • Are there gaps in coverage?
+    • Scores 8+ when nothing is missing
+
+  Criterion 2: Specificity (1–10)
+    • Are requirements concrete and testable?
+    • Are there measurable targets (not vague qualifiers)?
+    • Scores 8+ when every requirement can be verified
+
+  Criterion 3: Consistency (1–10)
+    • Does it align with the executive summary?
+    • Does it align with other approved sections?
+    • Scores 8+ when terminology and scope are consistent
+
+  Criterion 4: Clarity (1–10)
+    • Is the language unambiguous and well-organized?
+    • Are terms defined on first use?
+    • Scores 8+ when no reader would misinterpret meaning
+
+  Criterion 5: Actionability (1–10)
+    • Can a development team act on this section?
+    • Are there concrete deliverables implied?
+    • Scores 8+ when a developer needs no clarification
+
+  Criterion 6: No Duplication (1–10)
+    • Does it avoid repeating content from other sections?
+    • Are cross-references used instead of repetition?
+    • Scores 8+ when each section is self-contained with
+      references to other sections where needed
+
+Iteration rules:
+  • Minimum 2 iterations, maximum 10 per section
+  • 9 sections are processed sequentially
+  • Degenerate output detection: if a draft is excessively short,
+    off-topic, or contains template placeholders, the section
+    restarts from scratch
+  • Each NEEDS_REFINEMENT response must include specific
+    recommendations for every gap found
+
+────────────────────────────────────────────────────────────────────────────────
+4. REQUIREMENTS BREAKDOWN QUALITY GATE
+────────────────────────────────────────────────────────────────────────────────
+
+Evaluator: Requirements Breakdown Agent (evaluate_requirements_task)
+Scale: 1–5 per criterion
+Pass threshold: All scores >= 4 (REQUIREMENTS_READY)
+
+  Criterion 1: Feature Completeness (1–5)
+    • Are all logical features of the product identified?
+    • Are there obvious features missing?
+    • Scores 4+ when a data architect sees the full picture
+
+  Criterion 2: Entity Granularity (1–5)
+    • Does every entity list ALL attributes with concrete data types?
+    • Are relationships specified with foreign key field names?
+    • Are indexes defined?  Are example documents provided?
+    • Scores 4+ when collection schemas can be created directly
+
+  Criterion 3: State Machine Rigour (1–5)
+    • Does every stateful entity have a complete state diagram?
+    • Are ALL transitions defined with triggers, guards, side effects?
+    • Are invalid transitions explicitly rejected?
+    • Scores 4+ when a state machine engine can be built directly
+
+  Criterion 4: AI Augmentation Depth (1–5)
+    • Are AI agent inputs, outputs, confidence thresholds concrete?
+    • Are user-override flows and fallback behaviours defined?
+    • Is there a prompt sketch for the AI agent?
+    • Scores 4+ when the agent integration is implementable
+
+  Criterion 5: API Contract Precision (1–5)
+    • Are endpoints fully specified (method, path, request/response)?
+    • Are auth requirements, pagination, error codes defined?
+    • Scores 4+ when API stubs can be generated directly
+
+  Criterion 6: Acceptance Criteria Coverage (1–5)
+    • Are criteria in Given/When/Then format?
+    • Is there coverage for AI behaviour, state transitions,
+      data validation, and error handling?
+    • Scores 4+ when integration tests can be written directly
+
+Granularity test — a data architect should be able to:
+  ✓ Create every collection/table schema from the entity definitions
+  ✓ Build a state machine engine from the transition definitions
+  ✓ Generate API stubs from the contract sketches
+  ✓ Write integration tests from the acceptance criteria
+
+If any of these four are not possible, the breakdown NEEDS_MORE.
+
+────────────────────────────────────────────────────────────────────────────────
+5. CEO REVIEW QUALITY EXPECTATIONS
+────────────────────────────────────────────────────────────────────────────────
+
+The CEO Reviewer transforms the executive summary into an Executive Product
+Summary with visionary scope.  The output must include:
+
+  Problem Reframing:
+    • Challenge: Is this the right problem to solve?
+    • Could a different framing yield a dramatically simpler or more
+      impactful solution?
+    • Not the literal request — the underlying need
+
+  10-Star Product Vision:
+    • What is 10x more ambitious and delivers 10x more value for 2x effort?
+    • The version that feels inevitable, delightful, maybe even magical
+    • Focus on user outcomes, not feature lists
+
+  User Empathy:
+    • What would make a user say "this is exactly what I needed"?
+    • Experience described from the user's perspective
+    • Emotional journey, not just functional steps
+
+  Delight Opportunities:
+    • 3–5 "bonus chunk" opportunities (each <30 min of dev effort)
+    • Things that make users think "oh nice, they thought of that"
+    • Small touches with outsized emotional impact
+
+  Scope Mapping:
+    • Current state → this plan → 12-month ideal
+    • Progressive trajectory, not just a single milestone
+
+  Business Impact:
+    • Why this matters to the business
+    • Market opportunity and competitive positioning
+    • Revenue/efficiency impact quantified where possible
+
+  CEO Review Lenses:
+    1. Is this the right problem to solve?
+    2. What is the 10-star version?
+    3. What would make a user say "this is exactly what I needed"?
+
+────────────────────────────────────────────────────────────────────────────────
+6. UX DESIGN REVIEW METHODOLOGY
+────────────────────────────────────────────────────────────────────────────────
+
+The Senior Designer applies a 7-pass review (scores 0–10 each pass):
+
+  Pass 1: Information Architecture
+    • Screen inventory complete?  Navigation hierarchy clear?
+    • Content zones defined per screen?  Primary actions identified?
+    • Target score: 9+ (every screen catalogued with purpose and nav path)
+
+  Pass 2: Interaction State Coverage
+    • Every interactive element has 6 states: default, hover, focused,
+      active, disabled, loading?
+    • Page-level states: loading (skeleton), empty, error, success, partial?
+    • Target score: 9+ (full state matrix for every component)
+
+  Pass 3: User Journey & Emotional Arc
+    • Lifecycle mapped to emotional states?
+    • UI density, motion, and tone vary by stage?
+    • Target score: 9+ (explicit mood, density, motion, copy tone per stage)
+
+  Pass 4: AI Slop Risk
+    • Check against the 10-item blacklist (see ux_design_standards.txt)
+    • All examples use real product data, not lorem ipsum
+    • Target score: 9+ (zero slop patterns, grounded examples)
+
+  Pass 5: Design System Alignment
+    • Token naming consistent?  Semantic aliases used?
+    • All tokens traceable to the foundation system?
+    • Target score: 9+ (every token named, valued, with usage and source)
+
+  Pass 6: Responsive & Accessibility
+    • Mobile layouts defined?  Touch targets >= 44px?
+    • WCAG AA contrast verified?  Keyboard navigation mapped?
+    • ARIA patterns for every interactive component?
+    • Target score: 9+ (full breakpoint layouts, contrast table, ARIA roles)
+
+  Pass 7: Unresolved Design Decisions
+    • Open questions documented with recommended defaults?
+    • Impact of deferral assessed?
+    • Target score: 9+ (every ambiguity catalogued with deferral cost)
+
+────────────────────────────────────────────────────────────────────────────────
+7. QA REVIEW QUALITY GATES
+────────────────────────────────────────────────────────────────────────────────
+
+QA Lead Review (per Story):
+  ✓ Test coverage matrix mapping sub-tasks to test types
+  ✓ Missing test scenarios in GIVEN/WHEN/THEN format
+  ✓ Acceptance criteria gaps identified
+  ✓ Regression risk assessment with specific tests
+  ✓ Test data requirements documented
+  ✓ Definition of Done checklist complete
+
+QA Engineer Tests (per implementation Sub-Task):
+  ✓ Edge case tests (boundary values, concurrent access, partial
+    failures, state transitions, clock/timezone issues)
+  ✓ Security tests (injection, auth bypass, authorization flaws,
+    data exposure, rate limiting, CSRF/SSRF)
+  ✓ Rendering/behaviour tests for UI sub-tasks (empty states,
+    loading states, error states, responsive layout, accessibility)
+  ✓ Test environment setup documented
+  ✓ No duplication with unit tests — covers what unit tests cannot
+
+Staff Engineer Review (per Story):
+  ✓ All HIGH severity risks mitigated
+  ✓ All required regression tests written
+  ✓ No N+1 queries remaining
+  ✓ No unguarded race conditions
+  ✓ All trust boundaries validated
+  ✓ Retry logic is idempotent with backoff

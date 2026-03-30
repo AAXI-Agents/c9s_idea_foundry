@@ -295,6 +295,29 @@ def get_valid_token(team_id: str | None = None) -> Optional[str]:
                         "Re-install the app to obtain a new token.",
                         team_id,
                     )
+                    # Permanent failure — DO NOT return the expired token.
+                    # Try SLACK_BOT_TOKEN env var as last resort.
+                    env_token = (
+                        os.environ.get("SLACK_BOT_TOKEN", "").strip()
+                        or os.environ.get("SLACK_ACCESS_TOKEN", "").strip()
+                    )
+                    if env_token:
+                        logger.info(
+                            "[TokenManager] Refresh permanently failed for "
+                            "team=%s — falling back to SLACK_BOT_TOKEN env var",
+                            team_id,
+                        )
+                        return env_token
+                    # No env var fallback — return None so callers know
+                    # there is NO usable token (instead of returning the
+                    # expired one which will always fail).
+                    logger.error(
+                        "[TokenManager] No usable token for team=%s. "
+                        "Set SLACK_BOT_TOKEN in .env or re-install the "
+                        "Slack app via OAuth.",
+                        team_id,
+                    )
+                    return None
                 else:
                     logger.error(
                         "[TokenManager] Token refresh failed for team=%s: %s",

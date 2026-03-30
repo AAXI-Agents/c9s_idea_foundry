@@ -37,12 +37,18 @@ logger = get_logger(__name__)
 _USER_PREFERENCE_FILE = "user_preference.txt"
 _PROJECT_ARCHITECTURE_FILE = "project_architecture.txt"
 _PRD_GUIDELINES_FILE = "prd_guidelines.txt"
+_IDEA_REFINEMENT_FILE = "idea_refinement.txt"
+_REVIEW_CRITERIA_FILE = "review_criteria.txt"
+_ENGINEERING_STANDARDS_FILE = "engineering_standards.txt"
+_UX_DESIGN_STANDARDS_FILE = "ux_design_standards.txt"
+_AGENT_ROLES_FILE = "agent_roles_and_workflow.txt"
 
 # All knowledge files for PRD-related agents.
 _PRD_KNOWLEDGE_FILES = [
     _USER_PREFERENCE_FILE,
     _PROJECT_ARCHITECTURE_FILE,
     _PRD_GUIDELINES_FILE,
+    _REVIEW_CRITERIA_FILE,
 ]
 
 # ── Knowledge-source cache ───────────────────────────────────────────
@@ -133,6 +139,61 @@ def build_prd_guidelines_knowledge_source() -> TextFileKnowledgeSource:
     return TextFileKnowledgeSource(file_paths=[_PRD_GUIDELINES_FILE])
 
 
+def build_idea_refinement_knowledge_source() -> TextFileKnowledgeSource:
+    """Build a knowledge source from the idea refinement guide.
+
+    Returns:
+        A :class:`TextFileKnowledgeSource` loaded from
+        ``knowledge/idea_refinement.txt``.
+    """
+    logger.debug("Building idea-refinement knowledge source")
+    return TextFileKnowledgeSource(file_paths=[_IDEA_REFINEMENT_FILE])
+
+
+def build_review_criteria_knowledge_source() -> TextFileKnowledgeSource:
+    """Build a knowledge source from the review criteria guide.
+
+    Returns:
+        A :class:`TextFileKnowledgeSource` loaded from
+        ``knowledge/review_criteria.txt``.
+    """
+    logger.debug("Building review-criteria knowledge source")
+    return TextFileKnowledgeSource(file_paths=[_REVIEW_CRITERIA_FILE])
+
+
+def build_engineering_standards_knowledge_source() -> TextFileKnowledgeSource:
+    """Build a knowledge source from the engineering standards guide.
+
+    Returns:
+        A :class:`TextFileKnowledgeSource` loaded from
+        ``knowledge/engineering_standards.txt``.
+    """
+    logger.debug("Building engineering-standards knowledge source")
+    return TextFileKnowledgeSource(file_paths=[_ENGINEERING_STANDARDS_FILE])
+
+
+def build_ux_design_standards_knowledge_source() -> TextFileKnowledgeSource:
+    """Build a knowledge source from the UX design standards guide.
+
+    Returns:
+        A :class:`TextFileKnowledgeSource` loaded from
+        ``knowledge/ux_design_standards.txt``.
+    """
+    logger.debug("Building UX-design-standards knowledge source")
+    return TextFileKnowledgeSource(file_paths=[_UX_DESIGN_STANDARDS_FILE])
+
+
+def build_agent_roles_knowledge_source() -> TextFileKnowledgeSource:
+    """Build a knowledge source from the agent roles & workflow guide.
+
+    Returns:
+        A :class:`TextFileKnowledgeSource` loaded from
+        ``knowledge/agent_roles_and_workflow.txt``.
+    """
+    logger.debug("Building agent-roles knowledge source")
+    return TextFileKnowledgeSource(file_paths=[_AGENT_ROLES_FILE])
+
+
 def build_prd_knowledge_sources() -> list[TextFileKnowledgeSource]:
     """Build all PRD-related knowledge sources.
 
@@ -163,6 +224,7 @@ def build_prd_knowledge_sources() -> list[TextFileKnowledgeSource]:
         build_user_knowledge_source(),
         build_project_knowledge_source(),
         build_prd_guidelines_knowledge_source(),
+        build_review_criteria_knowledge_source(),
     ]
     return _cached_prd_knowledge_sources
 

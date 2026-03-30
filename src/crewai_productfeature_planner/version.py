@@ -2689,6 +2689,70 @@ _CODEX: list[CodexEntry] = [
             "targeted mocks. 2653 tests passing."
         ),
     ),
+    CodexEntry(
+        "0.46.0",
+        date(2026, 3, 30),
+        (
+            "Enhanced knowledge base — created 5 new detailed knowledge "
+            "files based on agent roles and tasks: idea_refinement.txt "
+            "(domain expertise and hard questions framework), "
+            "engineering_standards.txt (engineering plan structure, "
+            "architecture decisions, Jira ticket quality), "
+            "review_criteria.txt (unified scoring criteria across all "
+            "pipeline stages), ux_design_standards.txt (design system "
+            "principles, accessibility, AI slop blacklist), "
+            "agent_roles_and_workflow.txt (full agent roster, pipeline "
+            "execution order, data flow). Wired new sources to agents: "
+            "Idea Refiner gets idea refinement domain knowledge, Staff "
+            "Engineer gets engineering standards, QA Lead and QA "
+            "Engineer get review criteria. Updated project_architecture "
+            ".txt with expanded agent roster and knowledge file listing."
+        ),
+    ),
+    CodexEntry(
+        "0.46.1",
+        date(2026, 3, 30),
+        (
+            "Critical fix: Engagement Manager delivery failure detection "
+            "and startup token validation. Root cause: expired Slack "
+            "OAuth token caused silent message delivery failures — the "
+            "EM generated responses but they were never posted to Slack. "
+            "Fixes: (1) Extracted _validate_slack_token() that calls "
+            "auth.test on startup to verify the token is actually usable, "
+            "not just present — logs ERROR for expired/revoked tokens. "
+            "(2) Added delivery failure tracking in _handle_engagement_"
+            "manager — logs ERROR with 'DELIVERY FAILED' when both Block "
+            "Kit and plain-text fallback fail. (3) Added 28 regression "
+            "tests in test_engagement_manager_response.py covering 7 "
+            "invariants: EM always returns non-empty response, always "
+            "attempts Slack delivery, logs ERROR on complete delivery "
+            "failure, fast-path/CrewAI fallback chain, interpret_and_act "
+            "error recovery, session-context buttons, and startup token "
+            "validation (valid/expired/revoked/missing/network-error). "
+            "2681 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.47.0",
+        date="2026-03-30",
+        summary=(
+            "Background Slack token refresh scheduler — prevents token "
+            "rotation death spiral. Root cause: Slack rotating tokens "
+            "(xoxe.*) expire every 12h and refresh tokens are single-use. "
+            "If the server is down during the refresh window, both tokens "
+            "die permanently (invalid_refresh_token). Fix: (1) Added "
+            "token_refresh_scheduler.py — background daemon thread that "
+            "proactively refreshes tokens when < 1h remaining, runs every "
+            "30 minutes, and attempts an immediate refresh on startup. "
+            "(2) Integrated into server lifespan (start step 7b, shutdown "
+            "hook). (3) Token manager get_valid_token() now returns None "
+            "on permanent invalid_refresh_token instead of the dead "
+            "expired token, with env var fallback (SLACK_BOT_TOKEN). "
+            "(4) Circuit breakers in event handlers skip processing when "
+            "no usable token available. (5) 12 scheduler tests + "
+            "test fixture fix for _get_slack_client. 2699 tests passing."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

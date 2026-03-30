@@ -386,6 +386,7 @@ def _handle_engagement_manager(
         buttons = [BTN_NEW_IDEA, BTN_LIST_IDEAS, BTN_RESUME_PRD, BTN_HELP]
 
     client = _get_slack_client()
+    posted = False
     if client:
         try:
             client.chat_postMessage(
@@ -397,10 +398,44 @@ def _handle_engagement_manager(
                 ],
                 text=fallback_text,
             )
+            posted = True
         except Exception:
-            send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+            logger.warning(
+                "Block Kit post failed for engagement manager response "
+                "(channel=%s thread=%s) — trying plain text fallback",
+                channel, thread_ts, exc_info=True,
+            )
+            try:
+                result = send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+                import json as _json
+                _parsed = _json.loads(result) if isinstance(result, str) else {}
+                if _parsed.get("status") == "ok":
+                    posted = True
+            except Exception:
+                logger.error(
+                    "Plain text fallback also failed (channel=%s thread=%s)",
+                    channel, thread_ts, exc_info=True,
+                )
     else:
-        send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+        try:
+            result = send_tool.run(channel=channel, text=fallback_text, thread_ts=thread_ts)
+            import json as _json
+            _parsed = _json.loads(result) if isinstance(result, str) else {}
+            if _parsed.get("status") == "ok":
+                posted = True
+        except Exception:
+            logger.error(
+                "send_tool.run failed — no Slack client (channel=%s thread=%s)",
+                channel, thread_ts, exc_info=True,
+            )
+
+    if not posted:
+        logger.error(
+            "[EngagementManager] DELIVERY FAILED — response generated but "
+            "could not be delivered to user. channel=%s thread=%s user=%s "
+            "response_len=%d. Check Slack token validity.",
+            channel, thread_ts, user, len(fallback_text),
+        )
 
     append_to_thread(channel, thread_ts, "assistant", fallback_text)
     return fallback_text

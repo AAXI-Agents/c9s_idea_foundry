@@ -1,0 +1,303 @@
+================================================================================
+UX DESIGN STANDARDS — CrewAI Product Feature Planner
+================================================================================
+
+This document defines the UX design standards, design system principles,
+and specification format used by the UX Designer, Design Partner, and
+Senior Designer agents when producing design specifications.
+
+────────────────────────────────────────────────────────────────────────────────
+1. DESIGN SPECIFICATION STRUCTURE
+────────────────────────────────────────────────────────────────────────────────
+
+A complete UX Design Specification has 12 sections:
+
+  1.  Product Context (what, who, comparable products, UI surfaces)
+  2.  Aesthetic Direction (mood, decoration level, reference system)
+  3.  Typography (font families, type scale table, letter spacing)
+  4.  Color (palette, backgrounds, borders, semantic, status, dark mode)
+  5.  Spacing (token scale, density specification)
+  6.  Layout (grid, sidebar, breakpoints, screen inventory, wireframes)
+  7.  Motion (duration tokens, easing curves, motion rules)
+  8.  Shadows (elevation scale with usage)
+  9.  Component Patterns (buttons, badges, cards, tables, toasts, modals)
+  10. Interaction States (global state matrix, page-level states)
+  11. CSS Token Export (complete :root {} block)
+  12. Decisions Log (rationale for each major decision)
+
+Every value must be concrete — hex colors, pixel sizes, millisecond
+durations.  No placeholder values ever.
+
+────────────────────────────────────────────────────────────────────────────────
+2. DESIGN SYSTEM PRINCIPLES
+────────────────────────────────────────────────────────────────────────────────
+
+Component-Driven Design (Atomic Design):
+  • Atoms — smallest units (button, input, icon, label)
+  • Molecules — atom combinations (search bar, form field, nav item)
+  • Organisms — complex components (header, sidebar, data table)
+  • Templates — page layouts with component placeholders
+  • Pages — template instances with real content
+
+Design Token Architecture:
+  • Foundation tokens — raw values (--color-blue-500: #3b82f6)
+  • Semantic tokens — purpose-mapped (--color-primary: var(--color-blue-500))
+  • Component tokens — scoped (--button-bg: var(--color-primary))
+
+Token Naming Convention:
+  --{category}-{property}-{variant}
+  Examples:
+    --color-primary: #3b82f6
+    --color-primary-hover: #2563eb
+    --font-size-heading-1: 32px
+    --spacing-md: 16px
+    --border-radius-sm: 4px
+    --shadow-elevation-1: 0 1px 3px rgba(0,0,0,0.12)
+
+────────────────────────────────────────────────────────────────────────────────
+3. INTERACTION STATE REQUIREMENTS
+────────────────────────────────────────────────────────────────────────────────
+
+Every interactive element must define 6 states:
+  1. Default — resting state, no user interaction
+  2. Hover — cursor over the element (desktop only)
+  3. Focused — keyboard focus (visible focus ring, WCAG compliance)
+  4. Active — being pressed/clicked
+  5. Disabled — not interactive, visually distinct
+  6. Loading — async action in progress (spinner, skeleton, shimmer)
+
+Every page/screen must define 5 states:
+  1. Loading — skeleton or spinner while data loads
+  2. Empty — no data available (empty state illustration + CTA)
+  3. Populated — normal state with data
+  4. Error — API failure, network error (retry button + message)
+  5. Edge case — very long text, zero items, many items, etc.
+
+────────────────────────────────────────────────────────────────────────────────
+4. ACCESSIBILITY REQUIREMENTS (WCAG 2.1 AA)
+────────────────────────────────────────────────────────────────────────────────
+
+Color Contrast:
+  • Normal text: minimum 4.5:1 contrast ratio
+  • Large text (>= 18px or >= 14px bold): minimum 3:1
+  • UI components and graphical objects: minimum 3:1
+  • Verify all color pairings in a contrast table
+
+Keyboard Navigation:
+  • All interactive elements reachable via Tab key
+  • Logical tab order following visual layout
+  • Focus indicator visible (2px solid outline, 3:1 contrast)
+  • Skip-to-content link for screen reader users
+  • Escape key closes modals and dropdowns
+
+Touch Targets:
+  • Minimum 44px × 44px for all interactive elements on touch devices
+  • Adequate spacing between adjacent targets (8px minimum gap)
+
+ARIA Requirements:
+  • Every interactive component has an appropriate ARIA role
+  • Dynamic content changes announced with aria-live regions
+  • Form inputs have associated labels (label element or aria-label)
+  • Error messages linked to inputs via aria-describedby
+  • Navigation landmarks: nav, main, aside, header, footer
+
+Screen Reader Support:
+  • Meaningful alt text for informational images
+  • Decorative images have alt="" (empty alt)
+  • Icon-only buttons have aria-label describing the action
+  • Status changes announced via aria-live="polite" or "assertive"
+
+────────────────────────────────────────────────────────────────────────────────
+5. RESPONSIVE DESIGN BREAKPOINTS
+────────────────────────────────────────────────────────────────────────────────
+
+Standard breakpoints:
+  Mobile:  320px – 767px   (single column, stacked layout)
+  Tablet:  768px – 1023px  (sidebar collapses, 2-column grid)
+  Desktop: 1024px – 1439px (full sidebar, 3-column grid available)
+  Wide:    1440px+         (max content width, centered or side margins)
+
+Responsive behavior rules:
+  • Mobile-first: design for smallest screen, enhance for larger
+  • Navigation: hamburger menu on mobile, sidebar on desktop
+  • Data tables: horizontal scroll on mobile, full display on desktop
+  • Cards: single column on mobile, grid on tablet/desktop
+  • Typography: scale down heading sizes on mobile (but maintain hierarchy)
+  • Touch targets: enlarged on mobile (minimum 44px)
+  • Images: responsive srcset with appropriate sizes
+
+────────────────────────────────────────────────────────────────────────────────
+6. AI SLOP ANTI-PATTERNS (BLACKLIST)
+────────────────────────────────────────────────────────────────────────────────
+
+These patterns indicate generic, thoughtless AI-generated design.  The
+Design Partner and Senior Designer explicitly check for and reject these:
+
+  1. Purple/violet gradient heroes — default AI aesthetic with no
+     connection to brand or product identity
+  2. 3-column icon grids with abstract icons — generic feature
+     showcase that says nothing specific
+  3. Everything centered with no alignment anchor — no visual
+     hierarchy or reading flow
+  4. Rounded-everything with soft shadows — "friendly" aesthetic
+     that looks like every other SaaS landing page
+  5. Stock illustration characters — generic diversity illustrations
+     that feel disconnected from the actual product
+  6. "Powered by AI" badges — unnecessary AI branding that adds no
+     user value
+  7. Glassmorphism cards — frosted glass effect used without purpose
+     or brand alignment
+  8. Animated gradient borders — decorative animation that distracts
+     from content
+  9. Overly generous whitespace with tiny text — low information
+     density that wastes screen real estate
+  10. Generic dashboards with meaningless charts — data visualization
+      with no connection to actual product metrics
+
+For each pattern detected: remove, replace with a product-grounded
+alternative, and document the decision in the Decisions Log.
+
+────────────────────────────────────────────────────────────────────────────────
+7. TYPOGRAPHY STANDARDS
+────────────────────────────────────────────────────────────────────────────────
+
+Type Scale (based on 4px grid):
+  • Display:   40px / 48px line-height / 700 weight — hero headings
+  • Heading 1: 32px / 40px line-height / 700 weight — page titles
+  • Heading 2: 24px / 32px line-height / 600 weight — section titles
+  • Heading 3: 20px / 28px line-height / 600 weight — sub-sections
+  • Heading 4: 16px / 24px line-height / 600 weight — card titles
+  • Body:      16px / 24px line-height / 400 weight — default text
+  • Body Small:14px / 20px line-height / 400 weight — secondary text
+  • Caption:   12px / 16px line-height / 400 weight — labels, hints
+  • Code:      14px / 20px line-height / 400 weight — monospace
+
+Font Family Categories:
+  • Title: system UI font stack or branded display font
+  • Body:  system UI font or high-readability sans-serif
+  • UI:    same as body or condensed variant for dense UI
+  • Code:  monospace stack (SF Mono, Fira Code, Cascadia Code, monospace)
+
+Letter Spacing Rules:
+  • Headings: -0.02em (slight tightening for large text)
+  • Body: 0 (normal)
+  • All-caps labels: 0.05em (looser for readability)
+  • Captions: 0.01em (slightly loose)
+
+────────────────────────────────────────────────────────────────────────────────
+8. COLOR SYSTEM STANDARDS
+────────────────────────────────────────────────────────────────────────────────
+
+Every design must define:
+
+  Core Palette:
+    • Primary — brand color with 5 shades (100-900)
+    • Secondary — complementary color with 5 shades
+    • Neutral — gray scale with 10 steps (50-950)
+
+  Semantic Colors:
+    • Success (green family) — confirmations, completed states
+    • Warning (amber family) — caution, attention needed
+    • Error (red family) — failures, destructive actions
+    • Info (blue family) — informational messages
+
+  Status Colors (mapped to product pipeline stages):
+    • Draft / Not Started — neutral or muted
+    • In Progress / Active — primary or info
+    • Review / Pending — warning
+    • Completed / Published — success
+    • Failed / Paused — error
+    • Cancelled / Archived — neutral with lower opacity
+
+  Surface Colors:
+    • Background (primary, secondary, elevated)
+    • Border (subtle, default, strong)
+    • Text (primary, secondary, disabled, link, inverse)
+
+  Dark Mode Strategy:
+    • Token-based: swap values at the token level, not component level
+    • Maintain contrast ratios in dark mode
+    • Reduce brightness, not just invert colors
+    • Shadows become more subtle; borders become more visible
+
+────────────────────────────────────────────────────────────────────────────────
+9. COMPONENT PATTERN REQUIREMENTS
+────────────────────────────────────────────────────────────────────────────────
+
+Each component must include:
+  • Component name (hierarchical: Category/Name, e.g. Button/Primary)
+  • Variants (default, hover, active, disabled, loading)
+  • Auto-layout direction and padding
+  • Content slots (text, icon, image placeholders)
+  • Complete CSS with hover/focus/active states
+  • Responsive behavior at each breakpoint
+  • Accessibility requirements (ARIA attributes, keyboard behavior)
+
+Standard Components Every Design Must Address:
+  • Buttons (primary, secondary, ghost, destructive, icon-only)
+  • Form inputs (text, textarea, select, checkbox, radio, toggle)
+  • Status badges (each pipeline stage)
+  • Cards (content card, action card, status card)
+  • Data tables (sortable, filterable, paginated, selectable rows)
+  • Toast notifications (success, error, warning, info — auto-dismiss)
+  • Modals/dialogs (confirmation, form, informational)
+  • Sidebar navigation (collapsible, with active state indicators)
+  • Progress indicators (bar, stepper, spinner)
+  • Empty states (illustration + message + CTA)
+  • Error states (message + retry action + help link)
+
+────────────────────────────────────────────────────────────────────────────────
+10. CSS TOKEN EXPORT FORMAT
+────────────────────────────────────────────────────────────────────────────────
+
+Every design specification must end with a complete :root {} block:
+
+  :root {
+    /* Colors */
+    --color-primary: #value;
+    --color-primary-hover: #value;
+    ...
+
+    /* Typography */
+    --font-family-title: ...;
+    --font-family-body: ...;
+    --font-size-heading-1: ...px;
+    --font-size-body: ...px;
+    ...
+
+    /* Spacing */
+    --spacing-xs: ...px;
+    --spacing-sm: ...px;
+    --spacing-md: ...px;
+    --spacing-lg: ...px;
+    --spacing-xl: ...px;
+    ...
+
+    /* Border Radius */
+    --border-radius-sm: ...px;
+    --border-radius-md: ...px;
+    --border-radius-lg: ...px;
+    ...
+
+    /* Shadows */
+    --shadow-elevation-1: ...;
+    --shadow-elevation-2: ...;
+    --shadow-elevation-3: ...;
+    ...
+
+    /* Motion */
+    --duration-fast: ...ms;
+    --duration-normal: ...ms;
+    --duration-slow: ...ms;
+    --easing-default: ...;
+    ...
+
+    /* Layout */
+    --sidebar-width: ...px;
+    --content-max-width: ...px;
+    --grid-gap: ...px;
+    ...
+  }
+
+All values must be concrete — no var() references to undefined tokens,
+no placeholder comments, no "TBD" values.

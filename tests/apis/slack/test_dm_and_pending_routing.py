@@ -47,6 +47,12 @@ def _clean_state(monkeypatch):
         sm._pending_memory_entries.clear()
         sm._pending_project_setup.clear()
 
+    # Patch _get_slack_client so event-handler circuit breakers pass
+    monkeypatch.setattr(
+        "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
+        lambda: MagicMock(),
+    )
+
 
 async def _post(payload: dict):
     """POST a JSON payload to /slack/events and return the response."""

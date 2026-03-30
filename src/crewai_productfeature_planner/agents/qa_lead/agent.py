@@ -71,6 +71,7 @@ def create_qa_lead(
     )
     from crewai_productfeature_planner.scripts.knowledge_sources import (
         build_project_knowledge_source,
+        build_review_criteria_knowledge_source,
         get_google_embedder_config,
     )
     return Agent(
@@ -81,7 +82,10 @@ def create_qa_lead(
         tools=[JiraCreateIssueTool(authoritative_run_id=run_id)],
         verbose=is_verbose(),
         allow_delegation=False,
-        knowledge_sources=[build_project_knowledge_source()],
+        knowledge_sources=[
+            build_project_knowledge_source(),
+            build_review_criteria_knowledge_source(),
+        ],
         embedder=get_google_embedder_config(),
     )
 

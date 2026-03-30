@@ -90,6 +90,16 @@
 | `PRD_SECTION_MAX_ITERATIONS` | Max section refinement cycles |
 | `DEFAULT_MULTI_AGENTS` | Number of parallel agents (default: 1) |
 
+## Scheduler Configuration
+
+| Variable | Purpose |
+|----------|---------|
+| `PUBLISH_SCAN_INTERVAL_SECONDS` | Publish scheduler sweep interval (default: `300` = 5 min) |
+| `PUBLISH_SCHEDULER_ENABLED` | Set to `0` / `false` to disable publish scheduler |
+| `TOKEN_REFRESH_INTERVAL_SECONDS` | Token refresh check interval (default: `1800` = 30 min) |
+| `TOKEN_REFRESH_BUFFER_SECONDS` | Refresh when remaining lifetime < this (default: `3600` = 1 h) |
+| `TOKEN_REFRESH_SCHEDULER_ENABLED` | Set to `0` / `false` to disable token refresh scheduler |
+
 ---
 
 See also: [[Project Overview]], [[LLM Model Tiers]], [[API Overview]]

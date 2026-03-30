@@ -70,6 +70,7 @@ def create_staff_engineer(
         agent_config["backstory"].strip(), project_id,
     )
     from crewai_productfeature_planner.scripts.knowledge_sources import (
+        build_engineering_standards_knowledge_source,
         build_project_knowledge_source,
         get_google_embedder_config,
     )
@@ -81,7 +82,10 @@ def create_staff_engineer(
         tools=[JiraCreateIssueTool(authoritative_run_id=run_id)],
         verbose=is_verbose(),
         allow_delegation=False,
-        knowledge_sources=[build_project_knowledge_source()],
+        knowledge_sources=[
+            build_project_knowledge_source(),
+            build_engineering_standards_knowledge_source(),
+        ],
         embedder=get_google_embedder_config(),
     )
 

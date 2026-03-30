@@ -4,6 +4,86 @@
 
 ---
 
+## Session — 2026-03-30 (v0.47.0)
+
+**Scope**: Background Slack token refresh scheduler
+**Version**: v0.46.1 → v0.47.0
+
+### Problem
+Slack rotating tokens (`xoxe.*`) expire every 12 hours and refresh tokens are **single-use**. The token manager only refreshed lazily (on demand when `get_valid_token()` was called). If the server was down during the refresh window — e.g. overnight — both the access token AND the refresh token expired permanently (`invalid_refresh_token`), bricking the bot until manual re-installation via OAuth.
+
+Timeline from logs: Last successful refresh at 12:48 Mar 29 (12h TTL → 00:48 Mar 30). Server went down after 23:26 Mar 29. Token expired at 00:48 Mar 30 with no server running. First startup attempt at 12:01 Mar 30 → refresh token permanently dead.
+
+### Root Cause
+1. **No proactive refresh**: Token rotation was purely reactive — only triggered when a Slack API call happened and the token was about to expire
+2. **Token manager returned dead tokens**: On `invalid_refresh_token`, `get_valid_token()` fell through to step 4 and returned the expired token instead of None
+3. **No circuit breaker**: Event handlers processed messages even with a dead token, wasting LLM credits on responses that could never be delivered
+
+### Changes
+1. **`tools/token_refresh_scheduler.py`** (NEW) — Background daemon thread that:
+   - Runs every 30 minutes (configurable via `TOKEN_REFRESH_INTERVAL_SECONDS`)
+   - Refreshes tokens when < 1 hour remaining (configurable via `TOKEN_REFRESH_BUFFER_SECONDS`)
+   - Runs an immediate refresh sweep on startup (catches tokens that expired while server was down)
+   - Supports disable via `TOKEN_REFRESH_SCHEDULER_ENABLED=false`
+   - Follows the same pattern as `publishing/scheduler.py` (daemon thread + stop event)
+
+2. **`apis/__init__.py`** — Integrated scheduler into server lifespan:
+   - Step 7b: `start_token_refresh_scheduler()` on startup
+   - Shutdown hook: `stop_token_refresh_scheduler()`
+
+3. **`tools/slack_token_manager.py`** — `get_valid_token()` fix:
+   - `invalid_refresh_token` → tries `SLACK_BOT_TOKEN` env var fallback → returns `None` (not expired token)
+   - Generic refresh failures still fall through to step 4 (backward compat for transient errors)
+
+4. **`apis/slack/_event_handlers.py`** — Circuit breakers:
+   - `_handle_app_mention()`: checks `_get_slack_client()` first, returns early if None
+   - `_handle_thread_message()`: same circuit breaker
+
+5. **Tests**:
+   - `test_token_refresh_scheduler.py` — 12 tests (start/stop lifecycle, refresh logic, multi-team, integration)
+   - `test_dm_and_pending_routing.py` — autouse fixture now patches `_get_slack_client` for circuit breaker compat
+   - 2699 tests passing
+
+### Key Lesson
+**Detection ≠ Resolution.** The v0.46.1 fix only improved logging/detection of the expired token — it logged ERROR messages but still returned the dead token and processed every message. The actual fix needed to: (a) stop returning dead tokens, (b) prevent processing when no token, and (c) proactively prevent token death via background refresh.
+
+---
+
+## Session — 2026-03-30 (v0.46.0)
+
+**Scope**: Enhanced knowledge base for CrewAI agents
+**Version**: v0.45.1 → v0.46.0
+
+### Problem
+The knowledge folder had only 3 files (user_preference, project_architecture, prd_guidelines) — insufficient domain-specific context for the 16+ agent roles. Agents lacked detailed scoring criteria, domain expertise frameworks, engineering standards, and UX design standards that could improve output quality through CrewAI's knowledge/RAG system.
+
+### Changes
+1. **Created 5 new knowledge files** in `knowledge/`:
+   - `idea_refinement.txt` — Domain identification framework, hard questions (user/market, problem/solution, competitive/strategic, technical/feasibility, business model), refinement output standards, common pitfalls
+   - `engineering_standards.txt` — 9-section engineering plan structure, architecture decision principles, technology stack defaults, staff engineer review checklist (N+1 queries, race conditions, trust boundaries, etc.), Jira ticket quality standards, engineering quality gates
+   - `review_criteria.txt` — Unified scoring criteria for all pipeline stages: idea refinement (5 criteria, 1-5 scale), executive summary (7 criteria, 1-10 scale), PRD sections (6 criteria, 1-10 scale), requirements breakdown (6 criteria, 1-5 scale), CEO review expectations, UX 7-pass review methodology, QA review quality gates
+   - `ux_design_standards.txt` — 12-section design spec structure, atomic design principles, design token architecture, 6 interaction states per element, 5 page states, WCAG 2.1 AA accessibility, responsive breakpoints, AI slop blacklist (10 anti-patterns), typography/color/component standards, CSS token export format
+   - `agent_roles_and_workflow.txt` — Full 19-agent roster across 5 functional areas, pipeline execution order (Phase 0-5), LLM model tier assignments, engagement manager orchestration strategy, idea agent capabilities, agent tool assignments, interactive Slack flow, cross-agent data flow diagram
+
+2. **Updated `knowledge_sources.py`** — Added 5 new builder functions, added `review_criteria.txt` to `build_prd_knowledge_sources()` (now returns 4 sources), registered new file path constants
+
+3. **Wired knowledge to agents**:
+   - Idea Refiner: added `idea_refinement.txt` for domain expertise during refinement cycles
+   - Staff Engineer: added `engineering_standards.txt` for production safety audits
+   - QA Lead: added `review_criteria.txt` for test methodology review
+   - QA Engineer: added `review_criteria.txt` for edge case and security testing
+
+4. **Updated `project_architecture.txt`** — Expanded knowledge file listing (3→8 files), expanded agent roster from 5 to 19 with full role descriptions organized by functional area
+
+5. **Updated tests** — Fixed `test_returns_three_sources` → `test_returns_four_sources`, updated ordering test for 4th source
+
+### Result
+- 2653 tests passing in 55.81s
+- Knowledge base expanded from 3 files to 8 files
+- All new knowledge files based on actual agent YAML configs and task definitions
+
+---
+
 ## Session — 2026-03-30 (v0.45.1)
 
 **Scope**: Fix test suite latency — 7.6x speedup
@@ -2660,6 +2740,52 @@ skipped to avoid breaking functionality.
 - 16 new tests (4 thread recovery, 2 phrase detection, 4 summary builder,
   3 integration, 3 MongoDB query)
 - 2571 total (all passing, 0 failures)
+
+---
+
+## Session — 2026-03-30 (v0.46.1)
+
+### Summary
+Critical bug fix: Engagement Manager delivery failure detection and startup
+Slack token validation. User reported EM not responding to messages.
+
+### Root Cause Analysis
+1. **Immediate cause**: Slack OAuth token expired for team T0AEH26MQRJ; refresh
+   token invalid. All Slack API calls failed with `token_expired`.
+2. **False-positive startup**: `get_valid_token()` returns expired tokens as a
+   fallback (step 4), and startup only checked `if token:` (truthy) — never
+   validated with `auth.test`. System reported "Slack token available" when it
+   was unusable.
+3. **Silent delivery failure**: EM agent generated responses correctly, but
+   `chat.postMessage` failed → `send_tool.run()` fallback also failed → user saw
+   NOTHING. No ERROR was logged for complete delivery failure.
+4. **Not a v0.46.0 regression**: Knowledge sources changes did not touch Slack
+   token management or message handler.
+
+### Fixes Applied
+1. **`_validate_slack_token()` in `apis/__init__.py`**: Extracted testable function
+   that calls `auth.test` on startup. Logs ERROR for expired/revoked, WARNING for
+   no token, INFO with team_id/bot_id for valid.
+2. **Delivery failure tracking in `_handle_engagement_manager`**: Block Kit post
+   failure now falls back to `send_tool.run()` with explicit error handling. Logs
+   ERROR with 'DELIVERY FAILED' when both paths fail.
+
+### Files Modified
+- `src/.../apis/__init__.py` — `_validate_slack_token()` function, startup step 0b
+- `src/.../apis/slack/_message_handler.py` — `_handle_engagement_manager` delivery tracking
+- `src/.../version.py` — v0.46.1
+- `tests/apis/slack/test_engagement_manager_response.py` — NEW: 28 regression tests
+
+### Tests
+- 28 new regression tests covering 7 invariants:
+  - INVARIANT 1: EM always returns non-empty response (7 tests)
+  - INVARIANT 2: EM always attempts Slack delivery (4 tests)
+  - INVARIANT 3: ERROR logged on complete delivery failure (4 tests)
+  - INVARIANT 4: Fast path → CrewAI fallback chain (3 tests)
+  - INVARIANT 5: interpret_and_act error recovery (2 tests)
+  - INVARIANT 6: Session context buttons (2 tests)
+  - INVARIANT 7: Startup token validation (6 tests)
+- 2681 total (all passing, 0 failures, 59s)
 
 ---
 

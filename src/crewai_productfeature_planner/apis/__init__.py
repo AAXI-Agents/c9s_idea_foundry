@@ -212,6 +212,67 @@ def _resume_flow_background(
             pass
 
 
+def _validate_slack_token() -> bool:
+    """Validate the Slack bot token is usable via ``auth.test``.
+
+    Returns ``True`` when the token is confirmed valid, ``False``
+    otherwise.  Logs at appropriate levels so administrators can
+    detect expired/revoked tokens immediately on startup.
+    """
+    from crewai_productfeature_planner.tools.slack_token_manager import get_valid_token
+
+    token = get_valid_token()
+    if not token:
+        _logger.warning(
+            "Startup: No Slack token available — set SLACK_BOT_TOKEN in "
+            ".env or complete the OAuth install flow. The bot will receive "
+            "events but cannot respond."
+        )
+        return False
+
+    # Verify token is actually usable — not just present
+    try:
+        from slack_sdk import WebClient
+
+        _test_client = WebClient(token=token)
+        _auth_result = _test_client.auth_test()
+        if _auth_result.get("ok"):
+            _logger.info(
+                "Startup: Slack token validated — bot will respond "
+                "to events (team=%s, bot=%s)",
+                _auth_result.get("team_id", "?"),
+                _auth_result.get("user_id", "?"),
+            )
+            return True
+        _logger.error(
+            "Startup: Slack token exists but auth.test failed "
+            "(error=%s). The bot CANNOT respond to events — "
+            "re-install the Slack app to obtain a new token.",
+            _auth_result.get("error", "unknown"),
+        )
+        return False
+    except Exception as auth_exc:
+        _err_str = str(auth_exc).lower()
+        if any(kw in _err_str for kw in (
+            "token_expired", "token_revoked", "invalid_auth",
+            "not_authed", "account_inactive",
+        )):
+            _logger.error(
+                "Startup: Slack token is EXPIRED or REVOKED — the "
+                "bot CANNOT respond to events. Re-install the Slack "
+                "app to obtain a new token. (error: %s)",
+                auth_exc,
+            )
+            return False
+        # Network blip etc. — assume token might still be OK
+        _logger.warning(
+            "Startup: Slack auth.test check failed (non-token "
+            "error, bot may still work): %s",
+            auth_exc,
+        )
+        return True
+
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     """Startup / shutdown lifecycle hook.
@@ -230,18 +291,9 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Startup: MongoDB collection setup failed: %s", exc)
 
-    # 0b. Validate Slack token availability
+    # 0b. Validate Slack token availability (incl. auth.test check)
     try:
-        from crewai_productfeature_planner.tools.slack_token_manager import get_valid_token
-        token = get_valid_token()
-        if token:
-            _logger.info("Startup: Slack token available — bot will respond to events")
-        else:
-            _logger.warning(
-                "Startup: No Slack token available — set SLACK_BOT_TOKEN in "
-                ".env or complete the OAuth install flow. The bot will receive "
-                "events but cannot respond."
-            )
+        _validate_slack_token()
     except Exception as exc:
         _logger.warning("Startup: Slack token check failed: %s", exc)
 
@@ -358,6 +410,16 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Publish scheduler failed to start: %s", exc)
 
+    # 7b. Token refresh scheduler: proactively refresh Slack tokens
+    try:
+        from crewai_productfeature_planner.tools.token_refresh_scheduler import (
+            start_token_refresh_scheduler,
+        )
+        if start_token_refresh_scheduler():
+            _logger.info("Token refresh scheduler: started")
+    except Exception as exc:
+        _logger.warning("Token refresh scheduler failed to start: %s", exc)
+
     # 8. Notify Slack threads about terminated flows
     try:
         _notify_terminated_flows(terminated_ideas)
@@ -401,6 +463,13 @@ async def _lifespan(application: FastAPI):
     try:
         from crewai_productfeature_planner.apis.publishing.scheduler import stop_scheduler
         stop_scheduler()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from crewai_productfeature_planner.tools.token_refresh_scheduler import (
+            stop_token_refresh_scheduler,
+        )
+        stop_token_refresh_scheduler()
     except Exception:  # noqa: BLE001
         pass
 

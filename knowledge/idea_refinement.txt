@@ -1,0 +1,137 @@
+================================================================================
+IDEA REFINEMENT KNOWLEDGE — CrewAI Product Feature Planner
+================================================================================
+
+This document provides domain expertise for the Idea Refiner agent when
+enriching raw product ideas with industry context, competitive analysis,
+and user pain-points.
+
+────────────────────────────────────────────────────────────────────────────────
+1. IDEA REFINEMENT PROCESS
+────────────────────────────────────────────────────────────────────────────────
+
+The Idea Refiner runs 3–10 iterative cycles to transform a raw idea into a
+richly detailed description suitable for PRD generation.  Each cycle:
+
+  1. Identifies the industry/domain the idea belongs to.
+  2. Adopts the persona of a demanding but constructive expert user.
+  3. Probes the idea with 3–5 hard questions a real stakeholder would ask.
+  4. Answers those questions using domain expertise.
+  5. Produces a refined version incorporating all additional detail.
+
+The refined idea is evaluated on 5 criteria (scored 1–5):
+  • Target audience clarity — Is it clear WHO this is for?
+  • Problem definition — Is the pain-point well-articulated?
+  • Solution specificity — Are key features described concretely?
+  • Competitive context — Is differentiation addressed?
+  • Success criteria — Are measurable outcomes mentioned?
+
+All five criteria must score >= 3 for the idea to be marked IDEA_READY.
+
+────────────────────────────────────────────────────────────────────────────────
+2. DOMAIN IDENTIFICATION FRAMEWORK
+────────────────────────────────────────────────────────────────────────────────
+
+When presented with an idea, classify it into one or more domains:
+
+Industry Domains:
+  • FinTech — payments, lending, banking, trading, insurance, wealth mgmt
+  • HealthTech — EHR, telemedicine, clinical trials, health monitoring
+  • E-commerce — marketplaces, product discovery, checkout, logistics
+  • Developer Tools — IDEs, CI/CD, APIs, SDKs, observability, DevOps
+  • EdTech — LMS, assessment, tutoring, credentialing, content delivery
+  • PropTech — property management, listing, tenant screening, smart home
+  • InsurTech — underwriting, claims processing, policy management
+  • MarTech — advertising, analytics, CRM, personalization, attribution
+  • HR Tech — recruitment, payroll, performance management, L&D
+  • LegalTech — contract management, compliance, e-discovery, IP mgmt
+  • AgriTech — farm management, crop monitoring, supply chain, precision ag
+  • AI/ML Platforms — model training, deployment, monitoring, MLOps
+  • Collaboration — messaging, project management, document co-editing
+  • Security — identity management, SIEM, vulnerability scanning, zero trust
+  • IoT — device management, telemetry, edge computing, digital twins
+
+For each domain, consider:
+  • Market size and growth trajectory
+  • Regulatory requirements (GDPR, HIPAA, PCI-DSS, SOX, etc.)
+  • Common integration points (APIs, data formats, protocols)
+  • Typical user personas and their daily workflows
+  • Incumbent solutions and their limitations
+  • Common failure modes and edge cases
+
+────────────────────────────────────────────────────────────────────────────────
+3. HARD QUESTIONS FRAMEWORK
+────────────────────────────────────────────────────────────────────────────────
+
+When probing an idea, select from these question categories:
+
+User & Market:
+  • Who exactly benefits from this? (Specific roles, not just "businesses")
+  • What is the user's current workaround? How painful is it?
+  • How many potential users exist? What is the TAM/SAM/SOM?
+  • What would make a user switch from their current solution?
+  • Is the user the buyer, or is there a different decision-maker?
+
+Problem & Solution:
+  • What problem does this solve that existing solutions don't?
+  • Is this a vitamin (nice-to-have) or painkiller (must-have)?
+  • What is the minimum viable version that delivers value?
+  • Can this be validated without building the full product?
+  • What assumptions must be true for this to succeed?
+
+Competitive & Strategic:
+  • Who are the top 3 competitors? What do they do well/poorly?
+  • What is the sustainable competitive advantage (moat)?
+  • Could an incumbent build this as a feature? What stops them?
+  • Is this a feature, a product, or a platform?
+  • What market timing factors matter (regulations, tech shifts)?
+
+Technical & Feasibility:
+  • What are the non-obvious technical risks?
+  • Does this require data that may be hard to obtain?
+  • What scale does this need to operate at (users, data volume)?
+  • Are there privacy or security concerns with the data model?
+  • What existing infrastructure can be leveraged?
+
+Business Model:
+  • How does this make money (or save money)?
+  • What is the unit economics model?
+  • What is the expected payback period?
+  • Are there network effects or lock-in mechanisms?
+  • What partnerships or integrations are critical?
+
+────────────────────────────────────────────────────────────────────────────────
+4. REFINEMENT OUTPUT STANDARDS
+────────────────────────────────────────────────────────────────────────────────
+
+A refined idea (400–800 words) must include:
+
+  • Target market definition — specific industry segment and user roles
+  • Problem articulation — concrete pain-points with evidence or examples
+  • Solution description — key features and how they address each pain-point
+  • Competitive landscape — named competitors and differentiation
+  • Success criteria — measurable outcomes tied to business value
+  • Technical context — technology approach and feasibility considerations
+  • Risk factors — non-obvious risks with potential mitigations
+
+Writing style:
+  • Clear, professional prose (not bullet-point fragments)
+  • Active voice, present tense
+  • Concrete examples and data points where possible
+  • Self-contained — a Product Manager can start writing a PRD immediately
+  • No marketing fluff — substance over enthusiasm
+
+────────────────────────────────────────────────────────────────────────────────
+5. COMMON REFINEMENT PITFALLS
+────────────────────────────────────────────────────────────────────────────────
+
+✗ Accepting the idea at face value without challenging assumptions
+✗ Not identifying who pays for the solution (user ≠ buyer)
+✗ Ignoring existing competitors ("first mover" fallacy)
+✗ Vague success criteria ("increase engagement")
+✗ Not addressing regulatory or compliance requirements
+✗ Assuming technical feasibility without validation
+✗ Scope creep — trying to solve every adjacent problem
+✗ Not distinguishing between must-have and nice-to-have features
+✗ Ignoring the switching cost for users of existing solutions
+✗ Not considering the distribution/go-to-market strategy
