@@ -1,15 +1,14 @@
 """Agent provider constants and default-agent helper."""
 
-from crewai_productfeature_planner.agents.product_manager.agent import (
-    PROVIDER_GEMINI,
-    PROVIDER_OPENAI,
-)
-
 # Well-known agent provider identifiers used across the codebase.
 # These match the ``provider`` parameter accepted by
 # ``create_product_manager(provider=...)``.
-AGENT_OPENAI = PROVIDER_OPENAI   # "openai"
-AGENT_GEMINI = PROVIDER_GEMINI   # "gemini"
+#
+# Defined inline (not imported from the agent module) to avoid pulling
+# in the full CrewAI/LangChain import chain at module level, which
+# adds ~60s to application startup.
+AGENT_OPENAI = "openai"
+AGENT_GEMINI = "gemini"
 
 # All recognised provider identifiers (order = display preference).
 VALID_AGENTS: list[str] = [AGENT_GEMINI, AGENT_OPENAI]

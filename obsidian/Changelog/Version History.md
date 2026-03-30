@@ -2,6 +2,18 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.45.1 (2026-03-30)
+
+| Version | Summary |
+|---------|--------|
+| 0.45.1 | Fix test suite latency — full run reduced from 596s to 79s (7.6x speedup). 3 PRD flow tests (`test_callback_true_continues_to_sections`, `test_skip_phase1_when_exec_summary_has_enough_iterations`, `test_phase1_runs_when_below_threshold`) triggered real UX design LLM calls via unmocked `_trigger_ux_design_flow` (154s+137s+131s → <2s total). 3 Slack interaction tracking tests hit real Gemini API via unmocked engagement manager (~11s each → <0.1s). 2 HTTP error tests had real `time.sleep` during retry backoff (~3.5s each → <0.1s). 2653 tests passing |
+
+## v0.45.0 (2026-03-29)
+
+| Version | Summary |
+|---------|--------|
+| 0.45.0 | Complete Figma removal — UX design now produces markdown-only specifications. Removed entire `tools/figma/` package (6 files), `FigmaMakeTool` agent tool. Renamed state fields: `figma_design_prompt` → `ux_design_content`, `figma_design_status` → `ux_design_status`. Removed `figma_design_url`. Removed `figma_api_key`/`figma_team_id` from project config and Slack setup wizard (5→3 steps). Removed Figma env vars. UX Designer agent now produces 7-section markdown design specs with no external tool dependencies. Backward-compatible MongoDB reads use fallback pattern for legacy documents. Updated 30+ source files, 10 test files, 15+ Obsidian docs. All tests passing |
+
 ## v0.44.0 (2026-03-29)
 
 | Version | Summary |

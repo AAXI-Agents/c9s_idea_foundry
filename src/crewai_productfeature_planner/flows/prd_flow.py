@@ -618,7 +618,7 @@ class PRDFlow(Flow[PRDState]):
         # ── User decision gate — proceed to section drafting? ────
         # Fires after all specialist agents (CEO, Eng, UX) have run so
         # the user can review requirements, executive product summary,
-        # engineering plan, and Figma design before committing.
+        # engineering plan, and UX design before committing.
         # On resume, skip the gate when all specialists were already done
         # (user approved in a prior run), or when Phase 2 sections
         # already have content (flow previously entered Phase 2).

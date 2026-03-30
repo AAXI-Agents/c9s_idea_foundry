@@ -1,6 +1,6 @@
 # projectConfig Schema
 
-> Per-project configuration — Confluence, Jira, Figma settings, and reference materials.
+> Per-project configuration — Confluence, Jira settings, and reference materials.
 
 **Collection**: `projectConfig`
 **Primary Key**: `project_id` (unique index)
@@ -31,11 +31,6 @@
 | `confluence_space_key` | `string` | No | `""` | Confluence space key for PRD publishing (e.g. `"PROD"`, `"ENG"`) |
 | `jira_project_key` | `string` | No | `""` | Jira project key for ticket creation (e.g. `"MCR"`, `"FEAT"`) |
 | `confluence_parent_id` | `string` | No | `""` | Confluence parent page ID — PRDs published as child pages under this |
-| `figma_api_key` | `string` | No | `""` | Figma personal access token for design integration. **Write-only** — never exposed in API responses (API returns `figma_api_key_set: bool` instead) |
-| `figma_team_id` | `string` | No | `""` | Figma team ID — used to list and fetch design files |
-| `figma_oauth_token` | `string` | No | `""` | Figma OAuth2 access token (rotating) — managed by OAuth flow |
-| `figma_oauth_refresh_token` | `string` | No | `""` | Figma OAuth2 refresh token — used to obtain new access tokens |
-| `figma_oauth_expires_at` | `string (ISO-8601)` | No | `""` | When the Figma OAuth token expires — triggers auto-refresh |
 | `reference_urls` | `list[string]` | No | `[]` | Public reference URLs for context (specs, design docs, competitor links). Max 20 items |
 | `slack_file_refs` | `list[dict]` | No | `[]` | Documents uploaded via Slack. Each element: `{ file_id: str, name: str, url: str, uploaded_at: str }` |
 | `created_at` | `string (ISO-8601)` | **Yes** | *now* | When the project was created |

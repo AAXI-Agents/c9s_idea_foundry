@@ -25,8 +25,6 @@ def _make_project_doc(**overrides):
         "confluence_space_key": "TP",
         "jira_project_key": "TP",
         "confluence_parent_id": "",
-        "figma_api_key": "",
-        "figma_team_id": "",
         "reference_urls": [],
         "created_at": "2026-01-01T00:00:00Z",
         "updated_at": "2026-01-01T00:00:00Z",

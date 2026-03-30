@@ -262,8 +262,8 @@ def test_generate_idea_page_with_sections(tmp_path, monkeypatch):
     assert "User Personas" in content
 
 
-def test_generate_idea_page_with_figma(tmp_path, monkeypatch):
-    """Should include UX Design section when Figma URL is present."""
+def test_generate_idea_page_with_ux_design(tmp_path, monkeypatch):
+    """Should include UX Design section when ux_design_content is present."""
     monkeypatch.setattr(
         "crewai_productfeature_planner.scripts.project_knowledge._PROJECTS_ROOT",
         tmp_path,
@@ -272,7 +272,7 @@ def test_generate_idea_page_with_figma(tmp_path, monkeypatch):
         "run_id": "run-003",
         "status": "completed",
         "idea": "UX Feature",
-        "figma_design_url": "https://figma.com/proto/abc",
+        "ux_design_content": "Complete design specification with wireframes",
         "section": {},
     }
 
@@ -280,7 +280,7 @@ def test_generate_idea_page_with_figma(tmp_path, monkeypatch):
 
     content = result.read_text()
     assert "UX Design" in content
-    assert "https://figma.com/proto/abc" in content
+    assert "Complete design specification with wireframes" in content
 
 
 def test_generate_idea_page_with_delivery(tmp_path, monkeypatch):

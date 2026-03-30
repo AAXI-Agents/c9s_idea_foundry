@@ -89,14 +89,14 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
         if (
             flow.state.executive_product_summary
             or flow.state.engineering_plan
-            or flow.state.figma_design_status
+            or flow.state.ux_design_status
         ):
             logger.info(
                 "[RequirementsBreakdown] Auto-approving — specialist "
                 "agents already ran (resumed run; eps=%s, eng=%s, ux=%s)",
                 bool(flow.state.executive_product_summary),
                 bool(flow.state.engineering_plan),
-                flow.state.figma_design_status or "(none)",
+                flow.state.ux_design_status or "(none)",
             )
             return False
         return (

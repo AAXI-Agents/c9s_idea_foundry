@@ -22,7 +22,7 @@
 
 ## Goal
 
-Manage end-to-end "idea to PRD" lifecycle by orchestrating all specialist agents through a structured flow. Guide users from raw idea capture through refinement, executive summary, requirements breakdown, CEO review, engineering plan, UX design, and section drafting — all the way to a PRD ready for Confluence, Jira, and Figma publication. Provide continuous heartbeat updates so the user always knows what agents are thinking, planning, working on, completing.
+Manage end-to-end "idea to PRD" lifecycle by orchestrating all specialist agents through a structured flow. Guide users from raw idea capture through refinement, executive summary, requirements breakdown, CEO review, engineering plan, UX design, and section drafting — all the way to a PRD ready for Confluence and Jira publication. Provide continuous heartbeat updates so the user always knows what agents are thinking, planning, working on, completing.
 
 ## Backstory
 

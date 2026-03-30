@@ -23,7 +23,7 @@ Convert the Executive Product Summary into a structured, production-ready design
 
 Called by `_trigger_ux_design_flow()` in `_finalization.py` after finalization:
 - **Required**: Executive Product Summary present
-- **Skip if**: No EPS, or status already `completed` / `prompt_ready`
+- **Skip if**: No EPS, or status already `completed`
 - **Error handling**: `BillingError`/`ModelBusyError`/`ShutdownError` propagate; other errors caught (PRD saved regardless)
 
 ---
@@ -118,16 +118,15 @@ Only 2 files per product idea (fixed names, overwrite on each run):
 
 ## Resume Behaviour
 
-- Skipped if `figma_design_status` is already `completed` or `prompt_ready`
+- Skipped if `ux_design_status` is already `completed`
 - UX design state restored from `working_ideas` document on resume
 
 ---
 
 ## MongoDB Persistence
 
-- `flow.state.figma_design_url` — Figma URL (if created)
-- `flow.state.figma_design_prompt` — Figma Make prompt
-- `flow.state.figma_design_status` — `"completed"` / `"prompt_ready"` / `"failed"`
+- `flow.state.ux_design_content` — Markdown design specification content
+- `flow.state.ux_design_status` — `"completed"` or `""`
 
 ---
 
@@ -137,9 +136,8 @@ Only 2 files per product idea (fixed names, overwrite on each run):
 Input:  flow.state.executive_product_summary (from CEO Review)
         flow.state.idea
         flow.state.requirements_breakdown
-Output: flow.state.figma_design_url (Figma URL)
-        flow.state.figma_design_prompt (prompt text)
-        flow.state.figma_design_status
+Output: flow.state.ux_design_content (markdown design spec)
+        flow.state.ux_design_status
         Files: ux_design_draft.md, ux_design_final.md
 ```
 

@@ -337,28 +337,25 @@ class TestProductListBlocks:
         texts = [e["text"]["text"] for e in elements]
         assert not any("Restart" in t for t in texts)
 
-    # ── Figma UX Design ──────────────────────────────────────
+    # ── UX Design ──────────────────────────────────────────
 
-    def test_figma_url_shows_checkmark_link(self):
-        """Product with Figma URL should show clickable link with checkmark."""
+    def test_ux_completed_shows_checkmark(self):
+        """Product with completed UX design should show checkmark."""
         product = {
             **_PRODUCTS[0],
-            "figma_design_url": "https://www.figma.com/design/abc123",
-            "figma_design_status": "completed",
+            "ux_design_status": "completed",
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         section_blocks = [b for b in blocks if b["type"] == "section"]
         text = section_blocks[0]["text"]["text"]
         assert ":white_check_mark:" in text
-        assert "Figma UX Design" in text
-        assert "figma.com/design/abc123" in text
+        assert "UX Design" in text
 
-    def test_figma_generating_shows_hourglass(self):
+    def test_ux_generating_shows_hourglass(self):
         """Product with generating status should show in-progress indicator."""
         product = {
             **_PRODUCTS[0],
-            "figma_design_url": "",
-            "figma_design_status": "generating",
+            "ux_design_status": "generating",
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         section_blocks = [b for b in blocks if b["type"] == "section"]
@@ -366,55 +363,11 @@ class TestProductListBlocks:
         assert ":hourglass_flowing_sand:" in text
         assert "UX Design in progress" in text
 
-    def test_figma_prompting_shows_hourglass(self):
-        """Product with prompting status should show in-progress indicator."""
+    def test_no_ux_status_shows_start_button(self):
+        """Product without UX status should show Start UX Design button."""
         product = {
             **_PRODUCTS[0],
-            "figma_design_url": "",
-            "figma_design_status": "prompting",
-        }
-        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
-        section_blocks = [b for b in blocks if b["type"] == "section"]
-        text = section_blocks[0]["text"]["text"]
-        assert ":hourglass_flowing_sand:" in text
-
-    def test_figma_prompt_ready_shows_pencil(self):
-        """Product with prompt_ready status should show pencil emoji."""
-        product = {
-            **_PRODUCTS[0],
-            "figma_design_url": "",
-            "figma_design_status": "prompt_ready",
-        }
-        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
-        section_blocks = [b for b in blocks if b["type"] == "section"]
-        text = section_blocks[0]["text"]["text"]
-        assert ":pencil:" in text
-        assert "UX Design prompt ready" in text
-
-    def test_figma_url_has_view_link_button(self):
-        """Product with Figma URL should have View Figma Design link button."""
-        product = {
-            **_PRODUCTS[0],
-            "figma_design_url": "https://www.figma.com/design/xyz",
-            "figma_design_status": "completed",
-        }
-        blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
-        action_blocks = _product_action_blocks(blocks)
-        elements = action_blocks[0]["elements"]
-        figma_btn = next(
-            (e for e in elements if e["action_id"].startswith("product_open_figma_")),
-            None,
-        )
-        assert figma_btn is not None
-        assert figma_btn["url"] == "https://www.figma.com/design/xyz"
-        assert "Figma" in figma_btn["text"]["text"]
-
-    def test_no_figma_status_shows_start_button(self):
-        """Product without Figma status should show Start UX Design + Manual buttons."""
-        product = {
-            **_PRODUCTS[0],
-            "figma_design_url": "",
-            "figma_design_status": "",
+            "ux_design_status": "",
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
@@ -423,17 +376,12 @@ class TestProductListBlocks:
         assert "product_ux_design_1" in action_ids
         ux_btn = next(e for e in elements if e["action_id"] == "product_ux_design_1")
         assert "Start" in ux_btn["text"]["text"]
-        # Manual fallback should always accompany the API button
-        assert "product_manual_ux_1" in action_ids
-        manual_btn = next(e for e in elements if e["action_id"] == "product_manual_ux_1")
-        assert "Manual" in manual_btn["text"]["text"]
 
-    def test_figma_skipped_shows_retry_button(self):
-        """Product with skipped Figma status should show Retry + Manual buttons."""
+    def test_ux_skipped_shows_retry_button(self):
+        """Product with skipped UX status should show Retry button."""
         product = {
             **_PRODUCTS[0],
-            "figma_design_url": "",
-            "figma_design_status": "skipped",
+            "ux_design_status": "skipped",
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
@@ -442,21 +390,18 @@ class TestProductListBlocks:
         assert "product_ux_design_1" in action_ids
         ux_btn = next(e for e in elements if e["action_id"] == "product_ux_design_1")
         assert "Retry" in ux_btn["text"]["text"]
-        assert "product_manual_ux_1" in action_ids
 
-    def test_figma_generating_hides_start_button(self):
-        """Product with in-progress Figma should NOT show Start/Retry/Manual button."""
+    def test_ux_generating_hides_start_button(self):
+        """Product with in-progress UX should NOT show Start/Retry button."""
         product = {
             **_PRODUCTS[0],
-            "figma_design_url": "",
-            "figma_design_status": "generating",
+            "ux_design_status": "generating",
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "product_ux_design_1" not in action_ids
-        assert "product_manual_ux_1" not in action_ids
 
 
 # ---------------------------------------------------------------------------
@@ -1594,8 +1539,8 @@ class TestRunJiraPhaseStateReconstruction:
         assert state.jira_skeleton == ""
         assert state.jira_epics_stories_output == ""
 
-    def test_figma_design_fields_restored_from_doc(self):
-        """figma_design_url and figma_design_prompt must be restored from doc."""
+    def test_ux_design_fields_restored_from_doc(self):
+        """ux_design_content and ux_design_status must be restored from doc."""
         draft = self._make_draft()
         exec_summary = self._make_exec_summary()
         restore_result = ("idea", draft, exec_summary, "", [], [])
@@ -1607,8 +1552,8 @@ class TestRunJiraPhaseStateReconstruction:
 
         with (
             patch(f"{_WI}.find_run_any_status", return_value=self._mongo_doc(
-                figma_design_url="https://www.figma.com/design/fig123",
-                figma_design_prompt="Full design spec with pages",
+                ux_design_content="Full design spec with pages",
+                ux_design_status="completed",
             )),
             patch(f"{_SVC}.restore_prd_state", return_value=restore_result),
             patch(f"{_JIRA}._check_jira_prerequisites", side_effect=capture_flow),
@@ -1618,11 +1563,11 @@ class TestRunJiraPhaseStateReconstruction:
             fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
 
         state = captured_flow["state"]
-        assert state.figma_design_url == "https://www.figma.com/design/fig123"
-        assert state.figma_design_prompt == "Full design spec with pages"
+        assert state.ux_design_content == "Full design spec with pages"
+        assert state.ux_design_status == "completed"
 
-    def test_missing_figma_fields_default_to_empty(self):
-        """When figma fields are absent in MongoDB, they default to empty."""
+    def test_missing_ux_fields_default_to_empty(self):
+        """When ux design fields are absent in MongoDB, they default to empty."""
         draft = self._make_draft()
         exec_summary = self._make_exec_summary()
         restore_result = ("idea", draft, exec_summary, "", [], [])
@@ -1642,8 +1587,8 @@ class TestRunJiraPhaseStateReconstruction:
             fn("run-jira-test", "skeleton", "U1", "C1", "T1", send)
 
         state = captured_flow["state"]
-        assert state.figma_design_url == ""
-        assert state.figma_design_prompt == ""
+        assert state.ux_design_content == ""
+        assert state.ux_design_status == ""
 
 
 # ---------------------------------------------------------------------------

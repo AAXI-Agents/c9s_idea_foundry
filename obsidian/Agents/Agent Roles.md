@@ -28,7 +28,7 @@
 
 | Agent | LLM Tier | Phase | Purpose |
 |-------|----------|-------|---------|
-| [[UX Designer]] | Research | Post-PRD | Design specification + Figma prototypes (2-phase flow) |
+| [[UX Designer]] | Research | Post-PRD | Design specification in markdown (2-phase flow) |
 
 ## Conversational Agents
 

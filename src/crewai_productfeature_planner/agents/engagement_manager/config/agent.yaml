@@ -29,7 +29,7 @@ engagement_manager:
       10-star Executive Product Summary with visionary scope
     - **Engineering Manager** — produces a comprehensive engineering
       plan with architecture, phased implementation, and ASCII diagrams
-    - **UX Designer** — generates Figma Make design prototypes
+    - **UX Designer** — generates UX design specifications in markdown
     - **Product Manager (sections)** — drafts individual PRD sections
       (Problem Statement, User Personas, Functional Requirements, etc.)
     - **Product Manager Critic** — reviews each section for quality

@@ -59,7 +59,7 @@ create_initial_design_draft_task:
         (loading, empty, error, success, partial).
 
     11. **CSS Token Export** — Complete `:root {{}}` block with all
-        design tokens as CSS custom properties, ready for Figma Make.
+        design tokens as CSS custom properties.
 
     12. **Decisions Log** — Rationale for each major decision.
 
@@ -118,7 +118,7 @@ review_and_finalize_design_task:
 
     Your output is the **complete final design** — not just the review
     notes.  It must be a self-contained document that incorporates all
-    fixes and is ready for Figma Make upload.
+    fixes and is production-ready.
 
     Include a "Senior Designer Review Summary" table at the top with
     before/after scores for each pass.
@@ -129,5 +129,5 @@ review_and_finalize_design_task:
     all sections from the initial draft with gaps filled, full CSS
     token export block with any new tokens added, and an updated
     decisions log documenting review fixes.  This is the production-ready
-    design for Figma Make upload.
+    design specification.
   agent: senior_designer

@@ -4,6 +4,78 @@
 
 ---
 
+## Session — 2026-03-30 (v0.45.1)
+
+**Scope**: Fix test suite latency — 7.6x speedup
+**Version**: v0.45.0 → v0.45.1
+
+### Problem
+Full test suite took 596s (9m 55s). Three PRD flow tests each took 130-154s because `_trigger_ux_design_flow` was not mocked, causing real LLM API calls during finalization. Three Slack interaction tracking tests took ~11s each due to unmocked engagement manager hitting real Gemini API. Two HTTP error tests had real `time.sleep` during retry backoff.
+
+### Changes
+
+- `tests/flows/test_prd_flow.py` — Added `@patch("...._finalization._trigger_ux_design_flow")` to 3 tests: `test_callback_true_continues_to_sections`, `test_skip_phase1_when_exec_summary_has_enough_iterations`, `test_phase1_runs_when_below_threshold`
+- `tests/apis/slack/test_interaction_tracking.py` — Added `_handle_engagement_manager` and `find_idea_by_thread` mocks to all 4 `_call_with_intent` helpers. Split `test_with_session_reaches_intent_handler[unknown]` into separate `test_with_session_unknown_reaches_engagement_manager` test
+- `tests/tools/test_gemini_chat.py` — Added `time.sleep` mock to `test_interpret_http_error`
+- `tests/tools/test_openai_chat.py` — Added `time.sleep` mock to `test_interpret_http_error`
+
+### Test Results
+2653 passed in 78.65s (was 595.77s)
+
+---
+
+## Session — 2026-03-29 (v0.45.0)
+
+**Scope**: Complete Figma removal — UX design now produces markdown-only specifications
+**Version**: v0.44.0 → v0.45.0
+
+### Problem
+UX design flow was tightly coupled to Figma Make integration (Playwright browser automation, OAuth, REST API). The `tools/figma/` package added complexity, environmental dependencies (Playwright, Chromium), and fragile external service coupling. UX design should produce pure markdown specifications without external tool dependencies.
+
+### Changes
+
+**Source code (30+ files)**:
+- Deleted entire `tools/figma/` directory (6 files: `_config.py`, `_api.py`, `_client.py`, `figma_make_tool.py`, `login.py`, `__init__.py`)
+- Removed `FigmaMakeTool` from UX Designer agent (`tools=[]`)
+- Renamed state fields: `figma_design_prompt` → `ux_design_content`, `figma_design_status` → `ux_design_status`, removed `figma_design_url`
+- Removed `figma_api_key`/`figma_team_id` from project config API models, MongoDB `create_project()`, and Slack setup wizard (5→3 steps)
+- Removed Figma-specific statuses (`"prompting"`, `"prompt_ready"`)
+- Updated all MongoDB query/status functions with backward-compatible fallback reads
+- Updated CLI state restoration, project knowledge builder, flow handlers, Slack blocks
+- Rewrote UX Designer agent config: role → "Design Specification Specialist", task → `generate_ux_design_spec_task`
+- Updated Engagement Manager agent config references
+
+**Tests (10 files)**:
+- Deleted `tests/tools/test_figma_tool.py`
+- Updated 9 test files across `tests/apis/`, `tests/flows/`, `tests/` root
+- Fixed syntax error in `_requirements.py` (escaped quotes from prior edit)
+- All 2653 tests passing
+
+**Obsidian documentation (15+ files)**:
+- `Agents/UX Designer.md` — Rewrote role, goal, backstory, tools, task sections
+- `APIs/Projects API.md` — Removed all Figma fields from schemas/examples
+- `APIs/Ideas API.md` — Replaced `figma_design_url`/`figma_design_status` with `ux_design_status`
+- `Flows/UX Design Flow.md` — Updated state fields, skip conditions, data flow
+- `Flows/PRD Flow.md` — Updated state field table
+- `Flows/Jira Ticketing Flow.md` — `figma_design_url` → `ux_design_content`
+- `Flows/Requirements Breakdown Flow.md` — Updated skip condition field name
+- `Flows/Engineering Plan Flow.md` — "Figma design" → "UX design"
+- `Architecture/Environment Variables.md` — Removed entire Figma section (5 env vars)
+- `Architecture/Module Map.md` — Removed `figma/` entry
+- `Architecture/Project Overview.md` — Removed Figma from project config description
+- `Architecture/Coding Standards.md` — Updated logging example
+- `Database/projectConfig Schema.md` — Removed 5 Figma fields from schema
+- `Database/workingIdeas Schema.md` — Renamed to UX Design section with backward compat note
+- `Tools/Tools Overview.md` — Moved Figma to Removed Tools section
+- `Agents/Agent Roles.md` — Updated UX Designer description
+- `Agents/Engagement Manager.md` — Removed Figma from publication list
+- `Changelog/Version History.md` — Added v0.45.0 entry
+
+### Test Results
+2653 passed, 61 warnings in 947.84s
+
+---
+
 ## Session — 2026-03-29 (v0.44.0)
 
 **Scope**: PRD Flow Obsidian docs breakdown — individual flow step pages with detailed step-by-step documentation

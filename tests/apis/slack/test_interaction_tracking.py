@@ -46,6 +46,7 @@ def _clean_state():
 _EVENTS_MODULE = "crewai_productfeature_planner.apis.slack.events_router"
 _TOOLS_MODULE = "crewai_productfeature_planner.tools.slack_tools"
 _SESSION_MODULE = "crewai_productfeature_planner.apis.slack.session_manager"
+_MSG_MODULE = "crewai_productfeature_planner.apis.slack._message_handler"
 
 # Default active session dict used by most tests
 _ACTIVE_SESSION = {
@@ -80,6 +81,10 @@ class TestInterpretAndActTracking:
             ),
             patch(f"{_SESSION_MODULE}.get_context_session",
                   return_value=_ACTIVE_SESSION),
+            patch(f"{_MSG_MODULE}._handle_engagement_manager",
+                  return_value="(mocked engagement response)"),
+            patch("crewai_productfeature_planner.mongodb.working_ideas.repository.find_idea_by_thread",
+                  return_value=None),
         ):
             er._interpret_and_act("C1", "T1", "U1", "hello", "E1")
 
@@ -351,6 +356,10 @@ class TestGlobalSessionGate:
                 f"{_EVENTS_MODULE}._handle_create_project_intent",
                 mock_create_project,
             ),
+            patch(f"{_MSG_MODULE}._handle_engagement_manager",
+                  return_value="(mocked engagement response)"),
+            patch("crewai_productfeature_planner.mongodb.working_ideas.repository.find_idea_by_thread",
+                  return_value=None),
         ):
             er._interpret_and_act("C1", "T1", "U1", text, "E1")
 
@@ -398,7 +407,7 @@ class TestGlobalSessionGate:
         assert kw["metadata"] is None
 
     @pytest.mark.parametrize("intent", [
-        "help", "greeting", "unknown",
+        "help", "greeting",
     ])
     def test_with_session_reaches_intent_handler(self, intent):
         """With an active session, intent handlers execute normally."""
@@ -408,6 +417,16 @@ class TestGlobalSessionGate:
         mock_prompt.assert_not_called()
         # The send_tool should have been called for the actual response
         mock_send.run.assert_called_once()
+
+    def test_with_session_unknown_reaches_engagement_manager(self):
+        """With an active session, unknown intent calls the engagement manager."""
+        mock_log, mock_prompt, _, _ = self._call_with_intent(
+            "unknown", session=_ACTIVE_SESSION,
+        )
+        mock_prompt.assert_not_called()
+        mock_log.assert_called_once()
+        kw = mock_log.call_args[1]
+        assert kw["intent"] == "unknown"
 
     # ── create_project intent ──
 
@@ -561,6 +580,10 @@ class TestNewIntentRouting:
             patch(f"{_EVENTS_MODULE}._handle_current_project", mock_current),
             patch(f"{_EVENTS_MODULE}._handle_configure_memory", mock_memory),
             patch(f"{_SESSION_MODULE}.can_manage_memory", return_value=True),
+            patch(f"{_MSG_MODULE}._handle_engagement_manager",
+                  return_value="(mocked engagement response)"),
+            patch("crewai_productfeature_planner.mongodb.working_ideas.repository.find_idea_by_thread",
+                  return_value=None),
         ):
             er._interpret_and_act("C1", "T1", "U1", text, "E1")
 
@@ -785,6 +808,10 @@ class TestListIdeasRouting:
                   return_value=session),
             patch(f"{_EVENTS_MODULE}._handle_list_ideas", mock_list_ideas),
             patch(f"{_EVENTS_MODULE}._prompt_project_selection", mock_prompt),
+            patch(f"{_MSG_MODULE}._handle_engagement_manager",
+                  return_value="(mocked engagement response)"),
+            patch("crewai_productfeature_planner.mongodb.working_ideas.repository.find_idea_by_thread",
+                  return_value=None),
         ):
             er._interpret_and_act("C1", "T1", "U1", text, "E1")
 
@@ -882,16 +909,6 @@ class TestProjectSetupWizard:
         # Step 2: jira_project_key
         entry = advance_pending_setup("U1", "FEAT")
         assert entry["jira_project_key"] == "FEAT"
-        assert entry["step"] == "figma_api_key"
-
-        # Step 3: figma_api_key
-        entry = advance_pending_setup("U1", "figd_test123")
-        assert entry["figma_api_key"] == "figd_test123"
-        assert entry["step"] == "figma_team_id"
-
-        # Step 4: figma_team_id
-        entry = advance_pending_setup("U1", "99999")
-        assert entry["figma_team_id"] == "99999"
         assert entry["step"] == "done"
 
         # After done, the entry is removed
@@ -905,14 +922,10 @@ class TestProjectSetupWizard:
 
         mark_pending_setup("U1", "C1", "T1", "proj1", "Test")
         advance_pending_setup("U1", "")  # skip confluence
-        advance_pending_setup("U1", "")  # skip jira
-        advance_pending_setup("U1", "")  # skip figma api key
-        entry = advance_pending_setup("U1", "")  # skip figma team id
+        entry = advance_pending_setup("U1", "")  # skip jira
         assert entry["step"] == "done"
         assert entry["confluence_space_key"] == ""
         assert entry["jira_project_key"] == ""
-        assert entry["figma_api_key"] == ""
-        assert entry["figma_team_id"] == ""
 
     def test_has_pending_state_includes_setup(self):
         from crewai_productfeature_planner.apis.slack.session_manager import (
@@ -1003,8 +1016,6 @@ class TestProjectSetupWizard:
             name="Test",
             confluence_space_key="ENG",
             jira_project_key="FEAT",
-            figma_api_key="figd_key",
-            figma_team_id="99999",
         )
 
         # Channel session should be activated
@@ -1033,14 +1044,10 @@ class TestProjectSetupWizard:
         blocks = project_setup_complete_blocks("My Project", {
             "confluence_space_key": "ENG",
             "jira_project_key": "FEAT",
-            "figma_api_key": "figd_longkey123",
-            "figma_team_id": "99999",
         })
         text = blocks[0]["text"]["text"]
         assert "ENG" in text
         assert "FEAT" in text
-        assert "figd_lon…" in text
-        assert "99999" in text
         assert "set up and ready" in text
 
     def test_reconfig_wizard_starts_at_project_name(self):
@@ -1055,8 +1062,6 @@ class TestProjectSetupWizard:
             "name": "Old Name",
             "confluence_space_key": "ENG",
             "jira_project_key": "FEAT",
-            "figma_api_key": "figd_old",
-            "figma_team_id": "11111",
         }
         mark_pending_reconfig("U1", "C1", "T1", "proj1", existing)
         entry = get_pending_setup("U1")
@@ -1064,19 +1069,17 @@ class TestProjectSetupWizard:
         assert entry["step"] == "project_name"
         assert entry["project_name"] == "Old Name"
         assert entry["confluence_space_key"] == "ENG"
-        assert entry["figma_api_key"] == "figd_old"
         pop_pending_setup("U1")
 
-    def test_reconfig_advance_through_all_5_steps(self):
-        """Reconfig wizard should walk through all 5 steps including project_name."""
+    def test_reconfig_advance_through_all_3_steps(self):
+        """Reconfig wizard should walk through all 3 steps including project_name."""
         from crewai_productfeature_planner.apis.slack.session_manager import (
             advance_pending_setup,
             get_pending_setup,
             mark_pending_reconfig,
         )
 
-        existing = {"name": "Old", "confluence_space_key": "", "jira_project_key": "",
-                     "figma_api_key": "", "figma_team_id": ""}
+        existing = {"name": "Old", "confluence_space_key": "", "jira_project_key": ""}
         mark_pending_reconfig("U1", "C1", "T1", "proj1", existing)
 
         # Step 1: project_name
@@ -1092,16 +1095,6 @@ class TestProjectSetupWizard:
         # Step 3: jira_project_key
         entry = advance_pending_setup("U1", "NEWPROJ")
         assert entry["jira_project_key"] == "NEWPROJ"
-        assert entry["step"] == "figma_api_key"
-
-        # Step 4: figma_api_key
-        entry = advance_pending_setup("U1", "figd_new")
-        assert entry["figma_api_key"] == "figd_new"
-        assert entry["step"] == "figma_team_id"
-
-        # Step 5: figma_team_id
-        entry = advance_pending_setup("U1", "22222")
-        assert entry["figma_team_id"] == "22222"
         assert entry["step"] == "done"
 
         assert get_pending_setup("U1") is None

@@ -71,8 +71,7 @@ Returned by all GET and PATCH endpoints.
   "iteration": 36,
   "confluence_url": "https://wiki.example.com/pages/12345",
   "jira_phase": "completed",
-  "figma_design_url": "https://figma.com/file/abc123",
-  "figma_design_status": "completed"
+  "ux_design_status": "completed"
 }
 ```
 
@@ -90,8 +89,7 @@ Returned by all GET and PATCH endpoints.
 | `iteration` | `int` | `0` | Total iteration count across all sections — higher means more refinement cycles |
 | `confluence_url` | `string` | `""` | URL of the published Confluence page — empty until published |
 | `jira_phase` | `string` | `""` | Jira ticket creation status — empty, `"in_progress"`, or `"completed"` |
-| `figma_design_url` | `string` | `""` | URL to Figma design file — empty if no design was generated |
-| `figma_design_status` | `string` | `""` | Figma design status — empty, `"in_progress"`, or `"completed"` |
+| `ux_design_status` | `string` | `""` | UX design status — empty, `"generating"`, or `"completed"` |
 
 ---
 

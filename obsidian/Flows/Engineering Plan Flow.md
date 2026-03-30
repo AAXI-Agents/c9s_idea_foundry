@@ -106,7 +106,7 @@ After **both** CEO Review and Engineering Plan complete, a user decision gate fi
 executive_summary_callback(content, idea, run_id, ...)
 ```
 
-- User reviews: requirements, Executive Product Summary, Engineering Plan, Figma design
+- User reviews: requirements, Executive Product Summary, Engineering Plan, UX design
 - Decides: proceed to section-by-section drafting, or stop here
 - On resume: auto-bypassed when all specialists were skipped (already completed) or Phase 2 sections already have content
 

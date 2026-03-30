@@ -430,8 +430,6 @@ _SETUP_STEPS = (
     "project_name",
     "confluence_space_key",
     "jira_project_key",
-    "figma_api_key",
-    "figma_team_id",
 )
 
 # Steps used for new project creation (name already collected)
@@ -459,8 +457,6 @@ def mark_pending_setup(
             "step": _NEW_PROJECT_START_STEP,
             "confluence_space_key": "",
             "jira_project_key": "",
-            "figma_api_key": "",
-            "figma_team_id": "",
         }
 
 
@@ -485,8 +481,6 @@ def mark_pending_reconfig(
             "step": _SETUP_STEPS[0],
             "confluence_space_key": project_config.get("confluence_space_key", ""),
             "jira_project_key": project_config.get("jira_project_key", ""),
-            "figma_api_key": project_config.get("figma_api_key", ""),
-            "figma_team_id": project_config.get("figma_team_id", ""),
         }
 
 

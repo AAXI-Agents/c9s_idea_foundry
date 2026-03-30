@@ -49,8 +49,7 @@ class IdeaItem(BaseModel):
     iteration: int = 0
     confluence_url: str = ""
     jira_phase: str = ""
-    figma_design_url: str = ""
-    figma_design_status: str = ""
+    ux_design_status: str = ""
 
 
 class IdeaListResponse(BaseModel):
@@ -247,6 +246,5 @@ def _idea_fields(doc: dict[str, Any]) -> dict[str, Any]:
         "iteration": effective_iter,
         "confluence_url": doc.get("confluence_url", ""),
         "jira_phase": doc.get("jira_phase", ""),
-        "figma_design_url": doc.get("figma_design_url", ""),
-        "figma_design_status": doc.get("figma_design_status", ""),
+        "ux_design_status": doc.get("ux_design_status", "") or doc.get("figma_design_status", ""),
     }

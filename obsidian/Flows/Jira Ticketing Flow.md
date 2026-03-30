@@ -270,7 +270,7 @@ On resume, each phase checks `jira_phase` state:
 Input:  flow.state.final_prd
         flow.state.executive_product_summary
         flow.state.engineering_plan
-        flow.state.figma_design_url (context)
+        flow.state.ux_design_content (context)
         flow.state.confluence_url (link in tickets)
 Output: flow.state.jira_skeleton
         flow.state.jira_epics_stories_output

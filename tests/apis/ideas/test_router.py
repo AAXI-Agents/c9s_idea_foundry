@@ -31,8 +31,7 @@ def _make_idea_doc(**overrides):
         "section": {},
         "executive_summary": [],
         "jira_phase": "",
-        "figma_design_url": "",
-        "figma_design_status": "",
+        "ux_design_status": "",
     }
     doc.update(overrides)
     return doc

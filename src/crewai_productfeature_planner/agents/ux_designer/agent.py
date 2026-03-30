@@ -2,7 +2,7 @@
 
 Creates agents for the UX design flow:
 - **UX Designer**: Converts executive product summaries into structured
-  Figma Make prompts and designs.  Uses the research model tier.
+  markdown design specifications.  Uses the research model tier.
 - **Design Partner**: Collaborates with UX Designer on the initial draft
   (gstack design-consultation methodology).
 - **Senior Designer**: Reviews and finalizes the design via 7-pass review
@@ -21,7 +21,6 @@ from crewai_productfeature_planner.agents.gemini_utils import (
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.scripts.memory_loader import enrich_backstory
-from crewai_productfeature_planner.tools.figma import FigmaMakeTool
 
 logger = get_logger(__name__)
 CONFIG_DIR = Path(__file__).parent / "config"
@@ -58,16 +57,13 @@ def _build_llm() -> LLM:
 
 def create_ux_designer(
     project_id: str | None = None,
-    project_config: dict | None = None,
 ) -> Agent:
-    """Create a UX Designer agent with FigmaMakeTool.
+    """Create a UX Designer agent that produces markdown design specs.
 
     Parameters
     ----------
     project_id:
         Optional project identifier for memory enrichment.
-    project_config:
-        Optional project config dict with Figma credentials.
     """
     has_api_key = bool(os.environ.get("GOOGLE_API_KEY"))
     has_project = bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
@@ -86,15 +82,12 @@ def create_ux_designer(
         agent_config["backstory"].strip(), project_id,
     )
 
-    figma_tool = FigmaMakeTool()
-    figma_tool._project_config = project_config
-
     return Agent(
         role=agent_config["role"].strip(),
         goal=agent_config["goal"].strip(),
         backstory=backstory,
         llm=_build_llm(),
-        tools=[figma_tool],
+        tools=[],
         verbose=is_verbose(),
         allow_delegation=False,
     )

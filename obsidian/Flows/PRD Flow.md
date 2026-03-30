@@ -165,7 +165,7 @@ Tracks the full lifecycle:
 | `requirements_breakdown` | str | Requirements Breakdown |
 | `executive_product_summary` | str | CEO Review |
 | `engineering_plan` | str | Engineering Plan |
-| `figma_design_url` / `figma_design_prompt` | str | UX Design |
+| `ux_design_content` / `ux_design_status` | str | UX Design |
 | `confluence_url` | str | Confluence Publishing |
 | `jira_skeleton` / `jira_output` / `jira_phase` | str | Jira Ticketing |
 | `status` | `"new"` → `"inprogress"` → `"completed"` | Lifecycle |

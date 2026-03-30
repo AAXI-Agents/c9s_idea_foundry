@@ -146,7 +146,7 @@ consistent namespace prefix.
 | External call sent/received | `INFO` | `logger.info("[Jira] Creating epic project=%s", key)` |
 | State transition (DB update) | `INFO` | `logger.info("[MongoDB] Job %s → %s", job_id, status)` |
 | Recoverable issue | `WARNING` | `logger.warning("[Slack] Retry posting to %s", channel)` |
-| Missing optional config | `WARNING` | `logger.warning("FIGMA_API_KEY not set — skipping UX")` |
+| Missing optional config | `WARNING` | `logger.warning("GEMINI_API_KEY not set — skipping UX")` |
 | Caught exception / failure | `ERROR` | `logger.error("[SSO] Token validation failed", exc_info=True)` |
 | Internal variable state | `DEBUG` | `logger.debug("Payload: %s", payload)` |
 

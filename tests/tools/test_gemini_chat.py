@@ -212,7 +212,7 @@ def test_interpret_http_error(monkeypatch):
             "https://generativelanguage.googleapis.com", 429,
             "Rate limited", {}, body,
         ),
-    ):
+    ), patch("crewai_productfeature_planner.tools.gemini_chat.time.sleep"):
         result = interpret_message("test")
 
     assert result["intent"] == "unknown"

@@ -33,7 +33,7 @@ Both clients share the same backend services (MongoDB, PRD Flow, Publishing).
 
 | Domain | Endpoints | Purpose |
 |--------|-----------|---------|
-| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}` | Project CRUD with Confluence/Jira/Figma config |
+| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}` | Project CRUD with Confluence/Jira config |
 | Ideas | `GET /ideas`, `GET /ideas/{run_id}`, `PATCH /ideas/{run_id}/status` | Idea list, progress, archive/pause |
 | PRD Flow | `POST /flow/prd/kickoff`, `GET /flow/runs/{run_id}`, `POST /flow/prd/approve`, `/pause`, `/resume` | AI-driven PRD generation lifecycle |
 | Publishing | `POST /publishing/confluence/{run_id}`, `POST /publishing/jira/{run_id}`, `GET /publishing/status/{run_id}` | Delivery to Confluence & Jira |

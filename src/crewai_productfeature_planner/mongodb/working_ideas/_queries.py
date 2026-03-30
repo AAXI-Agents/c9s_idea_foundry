@@ -647,9 +647,12 @@ def _doc_to_product_dict(doc: dict[str, Any], delivery: dict[str, Any] | None) -
     else:
         base["jira_completed"] = raw_jira_done
     base["jira_tickets"] = jira_tickets
-    # Figma design fields from the working-idea document.
-    base["figma_design_url"] = doc.get("figma_design_url") or ""
-    base["figma_design_status"] = doc.get("figma_design_status") or ""
+    # UX design status from the working-idea document.
+    base["ux_design_status"] = (
+        doc.get("ux_design_status")
+        or doc.get("figma_design_status")
+        or ""
+    )
     return base
 
 

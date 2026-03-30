@@ -159,7 +159,7 @@ idea_to_prd_orchestration_task:
     **Start after Requirements Breakdown completes:**
     - **Engineering Plan** (Eng Manager) → Architecture + phased plan
       (depends on: requirements + exec product summary)
-    - **UX Design** (UX Designer) → Figma Make prototype
+    - **UX Design** (UX Designer) → Design specification
       (depends on: exec product summary)
 
     **Start after all above complete:**
@@ -207,7 +207,7 @@ idea_to_prd_orchestration_task:
     ### Goal
 
     The output of this orchestration is a complete PRD that is ready
-    for Confluence publication, Jira ticket creation, and Figma design
+    for Confluence publication, Jira ticket creation, and UX design
     handoff.  Every section must be drafted, critiqued, and refined.
 
   expected_output: >
@@ -216,7 +216,7 @@ idea_to_prd_orchestration_task:
     2. Heartbeat messages for each phase transition
     3. A summary of all completed agent outputs
     4. Any user steering that was incorporated
-    5. Final status: PRD ready for publication (Confluence, Jira, Figma)
+    5. Final status: PRD ready for publication (Confluence, Jira, UX Design)
 
     The PRD should contain all sections: Executive Summary, Executive
     Product Summary, Engineering Plan, Problem Statement, User Personas,

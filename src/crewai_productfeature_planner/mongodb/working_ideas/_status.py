@@ -452,26 +452,22 @@ def save_jira_phase(run_id: str, phase: str) -> int:
         return 0
 
 
-def save_figma_design(
+def save_ux_design(
     run_id: str,
     *,
-    url: str = "",
     status: str = "",
 ) -> int:
-    """Persist Figma design fields on a working-idea document.
+    """Persist UX design status on a working-idea document.
 
-    Updates ``figma_design_url`` and/or ``figma_design_status`` on the
-    ``workingIdeas`` document so the product list can show the current
-    design state and provide a clickable link.
+    Updates ``ux_design_status`` on the ``workingIdeas`` document so
+    the product list can show the current design state.
 
     Returns:
         Number of documents modified (0 or 1).
     """
     set_fields: dict = {"update_date": _now_iso()}
-    if url:
-        set_fields["figma_design_url"] = url
     if status:
-        set_fields["figma_design_status"] = status
+        set_fields["ux_design_status"] = status
 
     try:
         result = _common.get_db()[WORKING_COLLECTION].update_one(
@@ -479,16 +475,20 @@ def save_figma_design(
             {"$set": set_fields},
         )
         logger.info(
-            "[MongoDB] Saved figma_design (status=%s, url=%s) for run_id=%s",
-            status or "(unchanged)", bool(url), run_id,
+            "[MongoDB] Saved ux_design (status=%s) for run_id=%s",
+            status or "(unchanged)", run_id,
         )
         return result.modified_count
     except PyMongoError as exc:
         logger.error(
-            "[MongoDB] Failed to save figma_design for run_id=%s: %s",
+            "[MongoDB] Failed to save ux_design for run_id=%s: %s",
             run_id, exc,
         )
         return 0
+
+
+# Keep backward-compatible alias for any code still referencing the old name.
+save_figma_design = save_ux_design
 
 
 def save_jira_skeleton(run_id: str, skeleton: str) -> int:

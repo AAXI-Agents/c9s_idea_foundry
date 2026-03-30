@@ -62,7 +62,7 @@ _get_approval() → bool
 
 Auto-approves (skips gate) if:
 - Sections already have content (resumed run)
-- Specialist agents already produced output (`executive_product_summary`, `engineering_plan`, or `figma_design_status` present)
+- Specialist agents already produced output (`executive_product_summary`, `engineering_plan`, or `ux_design_status` present)
 
 Otherwise:
 - Calls `flow.requirements_approval_callback(requirements_breakdown, idea, run_id, breakdown_history)`

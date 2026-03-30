@@ -1,9 +1,8 @@
-generate_figma_make_prompt_task:
+generate_ux_design_spec_task:
   description: >
-    You are a Senior UX Designer generating a **Figma Make prompt** from a
-    product executive summary.  Your prompt must be detailed enough for
-    Figma Make to generate a complete, clickable prototype with reusable
-    components.
+    You are a Senior UX Designer generating a **UX Design Specification**
+    from a product executive summary.  Your output must be a complete,
+    structured Markdown document covering the full design system.
 
     --- EXECUTIVE PRODUCT SUMMARY ---
     {executive_product_summary}
@@ -49,32 +48,18 @@ generate_figma_make_prompt_task:
        - Scroll behaviour and sticky elements
        - Modal / overlay triggers
 
-    Now, construct a single, comprehensive Figma Make prompt that
-    incorporates ALL of the above.  The prompt should be directly
-    usable inside Figma Make to generate the full design.
+    7. **CSS Token Export** — Complete `:root {{}}` block with all
+       design tokens as CSS custom properties.
 
-    After generating the prompt, use the ``figma_make_design`` tool to
-    submit the prompt to Figma Make and generate the design.
-
-    CRITICAL OUTPUT REQUIREMENT:
-    You MUST ALWAYS output your complete, structured design prompt
-    prefixed with ``FIGMA_PROMPT:`` — regardless of whether the tool
-    succeeds, fails, or is skipped.  The prompt itself is a valuable
-    UX specification that will be included in the PRD document as an
-    appendix and shared with the user.
-
-    After the ``FIGMA_PROMPT:`` block, also include:
-    - ``FIGMA_URL:<url>`` if the tool returned a URL
-    - ``FIGMA_ERROR:<message>`` if the tool returned an error
+    Produce a comprehensive Markdown design specification that covers
+    ALL of the above sections with concrete values (hex, px, ms) for
+    every token.
 
   expected_output: >
-    ALWAYS include ``FIGMA_PROMPT:<prompt>`` with the full structured
-    design specification.  Additionally include ONE of:
-    - ``FIGMA_URL:<url>`` — the Figma file URL (if tool succeeded)
-    - ``FIGMA_ERROR:<message>`` — error detail (if tool failed)
-    - ``FIGMA_SKIPPED:<reason>`` — reason (if tool was skipped)
-
-    The prompt MUST describe a complete design system with reusable
-    components, user flows, and page layouts — this content will be
-    included in the PRD document regardless of Figma API availability.
+    A complete Markdown UX Design Specification document with all 7
+    sections: product analysis, design system tokens, user flow maps,
+    reusable component definitions, page structure layouts, interaction
+    patterns, and a CSS custom properties block.  All values must be
+    concrete (hex colours, pixel sizes, millisecond durations) — no
+    placeholder values.
   agent: ux_designer

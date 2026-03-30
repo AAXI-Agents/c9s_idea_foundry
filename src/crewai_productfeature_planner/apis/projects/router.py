@@ -48,8 +48,6 @@ class ProjectCreate(BaseModel):
     confluence_space_key: str = Field(default="", max_length=50)
     jira_project_key: str = Field(default="", max_length=50)
     confluence_parent_id: str = Field(default="", max_length=50)
-    figma_api_key: str = Field(default="", max_length=256)
-    figma_team_id: str = Field(default="", max_length=50)
     reference_urls: list[str] = Field(default_factory=list, max_length=20)
 
 
@@ -58,8 +56,6 @@ class ProjectUpdate(BaseModel):
     confluence_space_key: str | None = None
     jira_project_key: str | None = None
     confluence_parent_id: str | None = None
-    figma_api_key: str | None = None
-    figma_team_id: str | None = None
 
 
 class ProjectItem(BaseModel):
@@ -68,8 +64,6 @@ class ProjectItem(BaseModel):
     confluence_space_key: str = ""
     jira_project_key: str = ""
     confluence_parent_id: str = ""
-    figma_api_key_set: bool = False
-    figma_team_id: str = ""
     reference_urls: list[str] = Field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
@@ -171,8 +165,6 @@ async def create_project(body: ProjectCreate, user: dict = Depends(require_sso_u
         confluence_space_key=body.confluence_space_key,
         jira_project_key=body.jira_project_key,
         confluence_parent_id=body.confluence_parent_id,
-        figma_api_key=body.figma_api_key,
-        figma_team_id=body.figma_team_id,
         reference_urls=body.reference_urls,
     )
     if not project_id:
@@ -251,8 +243,6 @@ def _project_fields(doc: dict[str, Any]) -> dict[str, Any]:
         "confluence_space_key": doc.get("confluence_space_key", ""),
         "jira_project_key": doc.get("jira_project_key", ""),
         "confluence_parent_id": doc.get("confluence_parent_id", ""),
-        "figma_api_key_set": bool(doc.get("figma_api_key", "")),
-        "figma_team_id": doc.get("figma_team_id", ""),
         "reference_urls": doc.get("reference_urls", []),
         "created_at": doc.get("created_at", ""),
         "updated_at": doc.get("updated_at", ""),

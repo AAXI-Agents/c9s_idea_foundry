@@ -41,9 +41,9 @@ def _build_jira_context(flow: "PRDFlow") -> str:
     """Build the ``{additional_prd_context}`` string for Jira tasks.
 
     Combines the standard additional PRD sections with the Engineering
-    Plan and UX Design (if available) so Jira ticket generation benefits
-    from the Eng Manager's architectural analysis and the UX Designer's
-    Figma prototypes.
+    Plan and UX Design specification (if available) so Jira ticket
+    generation benefits from the Eng Manager's architectural analysis
+    and the UX Designer's design spec.
     """
     base = build_additional_prd_context_from_draft(flow.state.draft)
     blocks: list[str] = []
@@ -57,27 +57,17 @@ def _build_jira_context(flow: "PRDFlow") -> str:
             f"{eng_plan.strip()}"
         )
 
-    # Include UX design context (Figma URL and/or prompt) so Jira tickets
-    # reference the visual design and align implementation with the UI spec.
-    figma_url = getattr(flow.state, "figma_design_url", "")
-    figma_prompt = getattr(flow.state, "figma_design_prompt", "")
-    if figma_url or figma_prompt:
-        ux_parts = ["## UX Design\n"]
-        if figma_url:
-            ux_parts.append(
-                f"Figma prototype: {figma_url}\n"
-                "Reference this Figma design for all UI implementation. "
-                "Each Story and Sub-task MUST link to the relevant Figma "
-                "frame or component when describing the UI.\n"
-            )
-        if figma_prompt:
-            # Truncate long prompts to avoid bloating the Jira context.
-            prompt_preview = figma_prompt[:3000]
-            ux_parts.append(
-                "UX Design specification (use for UI implementation details):\n\n"
-                f"{prompt_preview}"
-            )
-        blocks.append("\n".join(ux_parts))
+    # Include UX design specification so Jira tickets reference the
+    # visual design and align implementation with the UI spec.
+    ux_content = getattr(flow.state, "ux_design_content", "")
+    if ux_content:
+        # Truncate long specs to avoid bloating the Jira context.
+        ux_preview = ux_content[:3000]
+        blocks.append(
+            "## UX Design\n\n"
+            "UX Design specification (use for UI implementation details):\n\n"
+            f"{ux_preview}"
+        )
 
     if blocks:
         combined = "\n\n".join(blocks)

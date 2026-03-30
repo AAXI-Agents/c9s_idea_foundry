@@ -251,17 +251,31 @@ def _restore_prd_state(run_info: dict) -> PRDFlow:
     # ── Restore UX design state ──────────────────────────────
     if docs:
         doc = docs[0]
+        ux_status = (
+            doc.get("ux_design_status")
+            or doc.get("figma_design_status")
+            or ""
+        )
+        ux_content = (
+            doc.get("ux_design_content")
+            or doc.get("figma_design_prompt")
+            or ""
+        )
+        if ux_status:
+            flow.state.ux_design_status = ux_status
+        if ux_content:
+            flow.state.ux_design_content = ux_content
+        # Backward compat: populate deprecated fields for any remaining code
         if doc.get("figma_design_url"):
             flow.state.figma_design_url = doc["figma_design_url"]
         if doc.get("figma_design_status"):
             flow.state.figma_design_status = doc["figma_design_status"]
         if doc.get("figma_design_prompt"):
             flow.state.figma_design_prompt = doc["figma_design_prompt"]
-        if flow.state.figma_design_url or flow.state.figma_design_status:
+        if ux_status:
             logger.info(
-                "Restored UX design state: status=%s, url=%s",
-                flow.state.figma_design_status,
-                bool(flow.state.figma_design_url),
+                "Restored UX design state: status=%s",
+                ux_status,
             )
 
     # Restore specialist section state so Phase 1.5 skip conditions

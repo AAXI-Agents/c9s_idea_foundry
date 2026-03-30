@@ -364,36 +364,15 @@ class TestJiraContext:
         assert result == "PRD sections context"
         assert "Engineering Plan" not in result
 
-    def test_build_jira_context_with_figma_url(self):
-        """_build_jira_context should include Figma URL when available."""
+    def test_build_jira_context_with_ux_design_content(self):
+        """_build_jira_context should include UX design content when available."""
         from crewai_productfeature_planner.orchestrator._jira import (
             _build_jira_context,
         )
 
         flow = _make_flow(
             engineering_plan="",
-            figma_design_url="https://www.figma.com/design/abc123",
-        )
-
-        with patch(
-            "crewai_productfeature_planner.orchestrator._jira.build_additional_prd_context_from_draft",
-        ) as mock_build:
-            mock_build.return_value = ""
-            result = _build_jira_context(flow)
-
-        assert "## UX Design" in result
-        assert "https://www.figma.com/design/abc123" in result
-        assert "Figma frame" in result
-
-    def test_build_jira_context_with_figma_prompt(self):
-        """_build_jira_context should include truncated prompt when available."""
-        from crewai_productfeature_planner.orchestrator._jira import (
-            _build_jira_context,
-        )
-
-        flow = _make_flow(
-            engineering_plan="",
-            figma_design_prompt="Design spec with 12-col grid and sidebar nav",
+            ux_design_content="Design spec with 12-col grid and sidebar nav",
         )
 
         with patch(
@@ -406,16 +385,15 @@ class TestJiraContext:
         assert "12-col grid" in result
         assert "UX Design specification" in result
 
-    def test_build_jira_context_with_figma_url_and_prompt(self):
-        """Both Figma URL and prompt should appear when both available."""
+    def test_build_jira_context_with_ux_content_and_eng_plan(self):
+        """Both UX design content and eng plan should appear when both available."""
         from crewai_productfeature_planner.orchestrator._jira import (
             _build_jira_context,
         )
 
         flow = _make_flow(
             engineering_plan="## Arch\nMonolith",
-            figma_design_url="https://figma.com/design/xy",
-            figma_design_prompt="Detailed design prompt text",
+            ux_design_content="Detailed design prompt text",
         )
 
         with patch(
@@ -426,11 +404,10 @@ class TestJiraContext:
 
         assert "## Engineering Plan" in result
         assert "## UX Design" in result
-        assert "https://figma.com/design/xy" in result
         assert "Detailed design prompt text" in result
         assert "PRD base" in result
 
-    def test_build_jira_context_no_figma_no_eng(self):
+    def test_build_jira_context_no_ux_no_eng(self):
         """No UX Design or Engineering Plan should return only PRD context."""
         from crewai_productfeature_planner.orchestrator._jira import (
             _build_jira_context,
@@ -438,8 +415,7 @@ class TestJiraContext:
 
         flow = _make_flow(
             engineering_plan="",
-            figma_design_url="",
-            figma_design_prompt="",
+            ux_design_content="",
         )
 
         with patch(

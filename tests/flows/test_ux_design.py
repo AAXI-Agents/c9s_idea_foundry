@@ -80,7 +80,7 @@ class TestRunUxDesignDraft:
         ) as mock_ux, patch(
             "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
         ) as mock_dp, patch(
-            f"{_UX_MOD}._persist_figma_design",
+            f"{_UX_MOD}._persist_ux_design_status",
         ), patch(
             f"{_UX_MOD}._write_design_file",
         ) as mock_write:
@@ -89,7 +89,7 @@ class TestRunUxDesignDraft:
             result = run_ux_design_draft(flow)
 
         assert "Design System" in result
-        assert flow.state.figma_design_status == "prompt_ready"
+        assert flow.state.ux_design_status == "completed"
 
         # Draft file should be written with fixed name.
         mock_write.assert_called_once()
@@ -101,17 +101,17 @@ class TestRunUxDesignDraft:
     @patch(f"{_UX_MOD}.save_iteration")
     @patch(f"{_UX_MOD}.crew_kickoff_with_retry")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
-    def test_captures_figma_url(
+    def test_stores_design_content(
         self, mock_proj, mock_kickoff, mock_save, mock_task, mock_crew,
     ):
-        """When agent returns FIGMA_URL, it should be captured."""
+        """Design content should be stored in ux_design_content state."""
         from crewai_productfeature_planner.flows._ux_design import run_ux_design_draft
 
         flow = _make_flow()
         _mock_notify(flow)
 
         mock_result = MagicMock()
-        mock_result.raw = "FIGMA_URL:https://figma.com/design/abc123\nDesign spec."
+        mock_result.raw = "Complete design spec with navigation."
         mock_kickoff.return_value = mock_result
 
         with patch(
@@ -119,7 +119,7 @@ class TestRunUxDesignDraft:
         ) as mock_ux, patch(
             "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
         ) as mock_dp, patch(
-            f"{_UX_MOD}._persist_figma_design",
+            f"{_UX_MOD}._persist_ux_design_status",
         ), patch(
             f"{_UX_MOD}._write_design_file",
         ):
@@ -127,9 +127,8 @@ class TestRunUxDesignDraft:
             mock_dp.return_value = MagicMock()
             result = run_ux_design_draft(flow)
 
-        assert "FIGMA_URL" in result
-        assert flow.state.figma_design_url == "https://figma.com/design/abc123"
-        assert flow.state.figma_design_status == "completed"
+        assert result == "Complete design spec with navigation."
+        assert flow.state.ux_design_status == "completed"
 
     @patch(f"{_UX_MOD}.save_iteration")
     @patch(f"{_UX_MOD}.resolve_project_id", return_value="proj-ux")
@@ -156,7 +155,7 @@ class TestRunUxDesignDraft:
             "crewai_productfeature_planner.agents.ux_designer.create_ux_designer",
             side_effect=EnvironmentError("Missing GOOGLE_API_KEY"),
         ), patch(
-            f"{_UX_MOD}._persist_figma_design",
+            f"{_UX_MOD}._persist_ux_design_status",
         ):
             result = run_ux_design_draft(flow)
 
@@ -187,7 +186,7 @@ class TestRunUxDesignDraft:
             "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
             side_effect=Exception("Partner init failed"),
         ), patch(
-            f"{_UX_MOD}._persist_figma_design",
+            f"{_UX_MOD}._persist_ux_design_status",
         ), patch(
             f"{_UX_MOD}._write_design_file",
         ):
@@ -219,7 +218,7 @@ class TestRunUxDesignDraft:
         ) as mock_ux, patch(
             "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
         ) as mock_dp, patch(
-            f"{_UX_MOD}._persist_figma_design",
+            f"{_UX_MOD}._persist_ux_design_status",
         ), patch(
             f"{_UX_MOD}._write_design_file",
         ):
@@ -231,9 +230,8 @@ class TestRunUxDesignDraft:
             "eps_length": len("The 10-star product vision"),
         })
         notifier.assert_any_call("ux_design_draft_complete", {
-            "figma_url": "",
             "has_prompt": True,
-            "status": "prompt_ready",
+            "status": "completed",
             "prompt_preview": "Design output"[:500],
         })
 
@@ -260,7 +258,7 @@ class TestRunUxDesignDraft:
         ) as mock_ux, patch(
             "crewai_productfeature_planner.agents.ux_designer.create_design_partner",
         ) as mock_dp, patch(
-            f"{_UX_MOD}._persist_figma_design",
+            f"{_UX_MOD}._persist_ux_design_status",
         ), patch(
             f"{_UX_MOD}._write_design_file",
         ):
@@ -398,9 +396,8 @@ class TestRunUxDesignReview:
             "draft_length": len("Draft content"),
         })
         notifier.assert_any_call("ux_design_complete", {
-            "figma_url": "",
             "has_prompt": True,
-            "status": flow.state.figma_design_status,
+            "status": flow.state.ux_design_status,
             "prompt_preview": "Reviewed output"[:500],
         })
 
@@ -451,11 +448,11 @@ class TestRunUxDesignLegacy:
         from crewai_productfeature_planner.flows._ux_design import run_ux_design
 
         flow = _make_flow()
-        mock_flow.return_value = "https://figma.com/design/xyz"
+        mock_flow.return_value = "Final design spec content"
 
         result = run_ux_design(flow)
 
-        assert result == "https://figma.com/design/xyz"
+        assert result == "Final design spec content"
         mock_flow.assert_called_once_with(flow)
 
 
@@ -480,18 +477,17 @@ class TestWriteDesignFile:
         assert "Second draft" in content
         assert "First draft" not in content
 
-    def test_includes_figma_url(self, tmp_path):
-        """Should include Figma URL link when provided."""
+    def test_writes_content(self, tmp_path):
+        """Should write content to the design file."""
         from crewai_productfeature_planner.flows._ux_design import _write_design_file
 
         output_dir = str(tmp_path / "ux_output")
         path = _write_design_file(
             output_dir, "ux_design_final.md", "Content",
-            figma_url="https://figma.com/design/abc",
         )
         content = Path(path).read_text()
-        assert "https://figma.com/design/abc" in content
-        assert "Figma Prototype" in content
+        assert "Content" in content
+        assert "UX Design Specification" in content
 
     def test_creates_directory(self, tmp_path):
         """Should create output directory if it doesn't exist."""
@@ -537,28 +533,13 @@ class TestTriggerUxDesignFlow:
             _trigger_ux_design_flow(flow)
             mock_kick.assert_not_called()
 
-    def test_skips_when_already_prompt_ready(self):
-        """Should skip when UX design already has prompt_ready status."""
-        from crewai_productfeature_planner.flows._finalization import (
-            _trigger_ux_design_flow,
-        )
-
-        flow = _make_flow(figma_design_status="prompt_ready")
-        _mock_notify(flow)
-
-        with patch(
-            "crewai_productfeature_planner.flows.ux_design_flow.kick_off_ux_design_flow",
-        ) as mock_kick:
-            _trigger_ux_design_flow(flow)
-            mock_kick.assert_not_called()
-
     def test_skips_when_already_completed(self):
-        """Should skip when UX design already completed with URL."""
+        """Should skip when UX design already completed."""
         from crewai_productfeature_planner.flows._finalization import (
             _trigger_ux_design_flow,
         )
 
-        flow = _make_flow(figma_design_status="completed")
+        flow = _make_flow(ux_design_status="completed")
         _mock_notify(flow)
 
         with patch(
@@ -716,14 +697,14 @@ class TestUxDesignerAgent:
             create_ux_designer()
 
     def test_get_task_configs_loads_yaml(self):
-        """Task configs should include the Figma Make prompt task."""
+        """Task configs should include the UX design spec task."""
         from crewai_productfeature_planner.agents.ux_designer.agent import (
             get_task_configs,
         )
 
         configs = get_task_configs()
-        assert "generate_figma_make_prompt_task" in configs
-        task = configs["generate_figma_make_prompt_task"]
+        assert "generate_ux_design_spec_task" in configs
+        task = configs["generate_ux_design_spec_task"]
         assert "description" in task
         assert "expected_output" in task
         assert "{executive_product_summary}" in task["description"]

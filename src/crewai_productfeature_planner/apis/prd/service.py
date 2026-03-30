@@ -662,17 +662,16 @@ def resume_prd_flow(
             )
             ux_doc = find_run_any_status(run_id)
             if ux_doc:
-                if ux_doc.get("figma_design_url"):
-                    flow.state.figma_design_url = ux_doc["figma_design_url"]
-                if ux_doc.get("figma_design_status"):
-                    flow.state.figma_design_status = ux_doc["figma_design_status"]
-                if ux_doc.get("figma_design_prompt"):
-                    flow.state.figma_design_prompt = ux_doc["figma_design_prompt"]
-                if any((flow.state.figma_design_url, flow.state.figma_design_status)):
+                ux_status = ux_doc.get("ux_design_status") or ux_doc.get("figma_design_status", "")
+                if ux_status:
+                    flow.state.ux_design_status = ux_status
+                ux_content = ux_doc.get("ux_design_content") or ux_doc.get("figma_design_prompt", "")
+                if ux_content:
+                    flow.state.ux_design_content = ux_content
+                if flow.state.ux_design_status:
                     logger.info(
-                        "Restored UX design state: status=%s, url=%s",
-                        flow.state.figma_design_status,
-                        bool(flow.state.figma_design_url),
+                        "Restored UX design state: status=%s",
+                        flow.state.ux_design_status,
                     )
         except Exception:  # noqa: BLE001
             logger.debug("Failed to restore UX design state for %s", run_id, exc_info=True)

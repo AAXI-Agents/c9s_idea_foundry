@@ -52,7 +52,7 @@ def kick_off_ux_design_flow(
     Returns
     -------
     str
-        The Figma URL if available, otherwise empty string.
+        The UX design content if available, otherwise empty string.
     """
     if progress_callback is not None:
         flow._progress_callback = progress_callback

@@ -367,7 +367,7 @@ def _handle_ux_design(
     send_tool,
     client,
 ) -> None:
-    """Generate a UX design via the UX Designer agent + Figma Make."""
+    """Generate a UX design via the UX Designer agent."""
     _ack(client, channel, thread_ts, user_id,
          f":art: Starting UX Design for product #{idea_number}…")
 
@@ -429,25 +429,14 @@ def _handle_ux_design(
 
             from crewai_productfeature_planner.flows._ux_design import run_ux_design
 
-            figma_url = run_ux_design(flow)
+            run_ux_design(flow)
 
-            if figma_url:
+            if flow.state.ux_design_status == "completed":
                 send_tool.run(
                     channel=channel, thread_ts=thread_ts,
                     text=(
                         f"<@{user_id}> :white_check_mark: UX Design generated!\n"
-                        f":art: <{figma_url}|View Figma Design>"
-                    ),
-                )
-            elif flow.state.figma_design_status == "prompt_ready":
-                prompt_preview = (flow.state.figma_design_prompt or "")[:500]
-                send_tool.run(
-                    channel=channel, thread_ts=thread_ts,
-                    text=(
-                        f"<@{user_id}> :pencil: Figma Make prompt generated but "
-                        "Figma session not configured.\n"
-                        f"Run `python -m crewai_productfeature_planner.tools.figma.login` to authenticate.\n\n"
-                        f"*Prompt preview:*\n```{prompt_preview}```"
+                        ":art: Design specification saved as PRD appendix."
                     ),
                 )
             else:
@@ -455,7 +444,7 @@ def _handle_ux_design(
                     channel=channel, thread_ts=thread_ts,
                     text=(
                         f"<@{user_id}> :warning: UX Design generation skipped — "
-                        f"status: {flow.state.figma_design_status or 'unknown'}"
+                        f"status: {flow.state.ux_design_status or 'unknown'}"
                     ),
                 )
 
@@ -479,7 +468,7 @@ def _handle_manual_ux_design(
     client,
 ) -> None:
     """Generate a Markdown file from executive_product_summary + ux_design
-    section that the user can copy-paste into Figma Make manually."""
+    section that the user can use as a standalone UX design document."""
     _ack(client, channel, thread_ts, user_id,
          f":page_facing_up: Generating manual UX design file for product #{idea_number}…")
 
@@ -537,7 +526,7 @@ def _handle_manual_ux_design(
             lines = [
                 f"# UX Design — {idea_text}",
                 "",
-                "Copy the content below into [Figma Make](https://www.figma.com/make/new) to generate your UX design.",
+                "Use the design specification below as a standalone UX reference document.",
                 "",
                 "---",
                 "",
@@ -571,8 +560,7 @@ def _handle_manual_ux_design(
                     filename=f"ux_design_{run_id[:8]}.md",
                     title=f"UX Design — {idea_text[:80]}",
                     initial_comment=(
-                        f"<@{user_id}> :page_facing_up: Here's your UX design file. "
-                        "Copy the content into Figma Make to generate your design."
+                        f"<@{user_id}> :page_facing_up: Here's your UX design file."
                     ),
                 )
             except Exception:  # noqa: BLE001
@@ -1193,6 +1181,16 @@ def _run_jira_phase(
     flow.state.jira_qa_test_output = doc.get("jira_qa_test_output") or ""
     flow.state.figma_design_url = doc.get("figma_design_url") or ""
     flow.state.figma_design_prompt = doc.get("figma_design_prompt") or ""
+    flow.state.ux_design_content = (
+        doc.get("ux_design_content")
+        or doc.get("figma_design_prompt")
+        or ""
+    )
+    flow.state.ux_design_status = (
+        doc.get("ux_design_status")
+        or doc.get("figma_design_status")
+        or ""
+    )
 
     # Jira tickets require Confluence to be published first.
     # If Confluence is not published, guide the user to publish first.

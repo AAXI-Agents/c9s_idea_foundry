@@ -149,7 +149,7 @@ def test_interpret_http_error(monkeypatch):
         side_effect=urllib.error.HTTPError(
             "https://api.openai.com", 429, "Rate limited", {}, None,
         ),
-    ):
+    ), patch("crewai_productfeature_planner.tools.openai_chat.time.sleep"):
         result = interpret_message("test")
 
     assert result["intent"] == "unknown"

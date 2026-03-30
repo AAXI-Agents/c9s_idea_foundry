@@ -257,20 +257,12 @@ def make_progress_poster(
             msg = ":fast_forward: *Engineering Plan* skipped (no Gemini credentials)."
 
         elif event_type == "ux_design_start":
-            msg = ":art: Starting *UX Design* — generating Figma Make design…"
+            msg = ":art: Starting *UX Design* — generating design specification…"
 
         elif event_type == "ux_design_complete":
-            figma_url = details.get("figma_url", "")
             status = details.get("status", "")
             prompt_preview = details.get("prompt_preview", "")
-            if figma_url:
-                msg = f":white_check_mark: *UX Design* complete! <{figma_url}|View in Figma>"
-                if prompt_preview:
-                    msg += (
-                        "\n\n_UX specification also saved as appendix in the PRD "
-                        "and as a standalone file._"
-                    )
-            elif status == "prompt_ready":
+            if status == "completed":
                 msg = (
                     ":white_check_mark: *UX Design* complete — "
                     "design specification generated.\n\n"

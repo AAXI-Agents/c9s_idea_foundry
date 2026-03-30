@@ -7,13 +7,13 @@ Two-phase flow triggered after PRD completion:
 - **Phase 2** (Final): Senior Designer applies 7-pass review and
   produces the production-ready design → ``ux_design_final.md``
 
-Only two files are ever written per product idea.  The draft is
-overwritten on each iteration; the final is created once.
+Agents produce markdown design specifications only — no external
+tool integrations.  Only two files are ever written per product idea.
+The draft is overwritten on each iteration; the final is created once.
 """
 
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -30,27 +30,21 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Regex patterns for extracting output from the agent.
-_URL_PATTERN = re.compile(r"FIGMA_URL:\s*(\S+)")
-_PROMPT_PATTERN = re.compile(r"FIGMA_PROMPT:\s*(.+)", re.DOTALL)
-_ERROR_PATTERN = re.compile(r"FIGMA_ERROR:\s*(.+)")
-_SKIPPED_PATTERN = re.compile(r"FIGMA_SKIPPED:\s*(.+)")
-
 # Fixed filenames — only 2 files per product idea.
 DRAFT_FILENAME = "ux_design_draft.md"
 FINAL_FILENAME = "ux_design_final.md"
 
 
-def _persist_figma_design(run_id: str, *, url: str = "", status: str = "") -> None:
-    """Persist Figma design fields to the workingIdeas MongoDB document."""
+def _persist_ux_design_status(run_id: str, *, status: str = "") -> None:
+    """Persist UX design status to the workingIdeas MongoDB document."""
     try:
         from crewai_productfeature_planner.mongodb.working_ideas._status import (
-            save_figma_design,
+            save_ux_design,
         )
-        save_figma_design(run_id, url=url, status=status)
+        save_ux_design(run_id, status=status)
     except Exception:  # noqa: BLE001
         logger.debug(
-            "Failed to persist figma design for run_id=%s",
+            "Failed to persist UX design status for run_id=%s",
             run_id, exc_info=True,
         )
 
@@ -66,16 +60,12 @@ def _write_design_file(
     output_dir: str,
     filename: str,
     content: str,
-    figma_url: str = "",
 ) -> str:
     """Write a design markdown file, overwriting any existing file.
 
     Returns the file path written.
     """
-    parts = ["# UX Design Specification\n"]
-    if figma_url:
-        parts.append(f"\n**Figma Prototype:** [{figma_url}]({figma_url})\n")
-    parts.append(f"\n{content}\n")
+    parts = ["# UX Design Specification\n", f"\n{content}\n"]
 
     dir_path = Path(output_dir)
     dir_path.mkdir(parents=True, exist_ok=True)
@@ -93,8 +83,8 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
     """Phase 1: Generate the initial design draft.
 
     UX Designer and Design Partner collaborate to produce a comprehensive
-    design specification.  The result is written to ``ux_design_draft.md``
-    (overwriting any previous draft).
+    markdown design specification.  The result is written to
+    ``ux_design_draft.md`` (overwriting any previous draft).
 
     Returns the draft content, or empty string if skipped.
     """
@@ -108,17 +98,6 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
     eps = flow.state.executive_product_summary
     idea = flow.state.idea
     requirements = flow.state.requirements_breakdown
-
-    # Resolve project config for Figma credentials.
-    project_config = None
-    if project_id:
-        try:
-            from crewai_productfeature_planner.mongodb.project_config import (
-                get_project,
-            )
-            project_config = get_project(project_id)
-        except Exception:  # noqa: BLE001
-            logger.debug("[UX Design] Could not load project config")
 
     if not eps:
         logger.info(
@@ -136,21 +115,18 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
     )
     flow._notify_progress("ux_design_start", {"eps_length": len(eps)})
 
-    flow.state.figma_design_status = "generating"
-    _persist_figma_design(flow.state.run_id, status="generating")
+    flow.state.ux_design_status = "generating"
+    _persist_ux_design_status(flow.state.run_id, status="generating")
 
     # Create agents.
     try:
-        ux_agent = create_ux_designer(
-            project_id=project_id,
-            project_config=project_config,
-        )
+        ux_agent = create_ux_designer(project_id=project_id)
     except EnvironmentError:
         logger.warning(
             "[UX Design Phase 1] Skipping — no Gemini credentials.",
         )
-        flow.state.figma_design_status = ""
-        _persist_figma_design(flow.state.run_id, status="")
+        flow.state.ux_design_status = ""
+        _persist_ux_design_status(flow.state.run_id, status="")
         flow._notify_progress("ux_design_skipped", {
             "reason": "no_credentials",
         })
@@ -205,9 +181,6 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
         verbose=is_verbose(),
     )
 
-    flow.state.figma_design_status = "prompting"
-    _persist_figma_design(flow.state.run_id, status="prompting")
-
     result = crew_kickoff_with_retry(crew, step_label="ux_design_draft")
     raw_output = result.raw.strip()
 
@@ -216,20 +189,10 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
         len(raw_output), raw_output[:200],
     )
 
-    # Parse output for Figma URL.
-    figma_url = ""
-    url_match = _URL_PATTERN.search(raw_output)
-    if url_match:
-        figma_url = url_match.group(1).strip()
-        flow.state.figma_design_url = figma_url
-        flow.state.figma_design_status = "completed"
-        _persist_figma_design(
-            flow.state.run_id, url=figma_url, status="completed",
-        )
-    else:
-        flow.state.figma_design_prompt = raw_output
-        flow.state.figma_design_status = "prompt_ready"
-        _persist_figma_design(flow.state.run_id, status="prompt_ready")
+    # Store the design content and update status.
+    flow.state.ux_design_content = raw_output
+    flow.state.ux_design_status = "completed"
+    _persist_ux_design_status(flow.state.run_id, status="completed")
 
     # Persist to MongoDB.
     save_iteration(
@@ -245,13 +208,12 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
 
     # Write draft file (overwrite any existing).
     output_dir = _resolve_output_dir(project_id)
-    _write_design_file(output_dir, DRAFT_FILENAME, raw_output, figma_url)
+    _write_design_file(output_dir, DRAFT_FILENAME, raw_output)
 
     flow.state.update_date = datetime.now(timezone.utc).isoformat()
     flow._notify_progress("ux_design_draft_complete", {
-        "figma_url": figma_url,
         "has_prompt": bool(raw_output),
-        "status": flow.state.figma_design_status,
+        "status": flow.state.ux_design_status,
         "prompt_preview": raw_output[:500],
     })
 
@@ -338,17 +300,15 @@ def run_ux_design_review(flow: PRDFlow, initial_draft: str) -> str:
     )
 
     # Write final file.
-    figma_url = flow.state.figma_design_url
     output_dir = _resolve_output_dir(project_id)
-    _write_design_file(output_dir, FINAL_FILENAME, final_output, figma_url)
+    _write_design_file(output_dir, FINAL_FILENAME, final_output)
 
     # Update state.
-    flow.state.figma_design_prompt = final_output
+    flow.state.ux_design_content = final_output
     flow.state.update_date = datetime.now(timezone.utc).isoformat()
     flow._notify_progress("ux_design_complete", {
-        "figma_url": figma_url,
         "has_prompt": True,
-        "status": flow.state.figma_design_status,
+        "status": flow.state.ux_design_status,
         "prompt_preview": final_output[:500],
     })
 
@@ -363,11 +323,11 @@ def run_ux_design_flow(flow: PRDFlow) -> str:
     """Run the complete UX design flow: draft → review → final.
 
     Called after PRD finalization when the PRD is ready for Confluence
-    publication.  Produces exactly two files:
+    publication.  Produces exactly two markdown files:
     - ``ux_design_draft.md`` — initial draft (overwritten each run)
     - ``ux_design_final.md`` — reviewed final design
 
-    Returns the Figma URL if available, otherwise empty string.
+    Returns the final UX design content, or empty string on failure.
     """
     logger.info(
         "[UX Design Flow] Starting for run_id=%s",
@@ -383,7 +343,7 @@ def run_ux_design_flow(flow: PRDFlow) -> str:
     # Phase 2: Review
     run_ux_design_review(flow, initial_draft)
 
-    return flow.state.figma_design_url
+    return flow.state.ux_design_content
 
 
 # ------------------------------------------------------------------

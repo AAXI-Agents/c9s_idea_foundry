@@ -2417,8 +2417,9 @@ def test_callback_false_raises_completed(
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
 @patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization._trigger_ux_design_flow")
 def test_callback_true_continues_to_sections(
-    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_ux, _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2539,8 +2540,9 @@ def test_callback_true_continues_to_sections(
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
 @patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization._trigger_ux_design_flow")
 def test_skip_phase1_when_exec_summary_has_enough_iterations(
-    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_ux, _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2663,8 +2665,9 @@ def test_skip_phase1_when_exec_summary_has_enough_iterations(
 @patch("crewai_productfeature_planner.flows.prd_flow.get_task_configs")
 @patch("crewai_productfeature_planner.orchestrator.build_default_pipeline")
 @patch("crewai_productfeature_planner.flows._finalization.run_post_completion")
+@patch("crewai_productfeature_planner.flows._finalization._trigger_ux_design_flow")
 def test_phase1_runs_when_below_threshold(
-    _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
+    _mock_ux, _mock_post, mock_pipeline, mock_task_configs, mock_agents, _mock_task, _mock_crew,
     mock_kickoff, mock_update_crit, mock_save_exec, mock_save_fin,
     mock_save_iter, mock_update_sec_crit,
     mock_mark_completed, mock_writer_cls, monkeypatch,
@@ -2842,7 +2845,7 @@ def test_resume_skips_draft_for_in_progress_section(
     # Also set specialist state so Phase 1.5 is skipped
     flow.state.executive_product_summary = "Approved section 1 content"
     flow.state.engineering_plan = "Approved section 2 content"
-    flow.state.figma_design_status = "prompt_ready"
+    flow.state.ux_design_status = "completed"
 
     # The in-progress section — has content from a prior run
     in_progress = flow.state.draft.sections[4]
@@ -2959,7 +2962,7 @@ def test_resume_wipes_degenerate_restored_content(
     # Also set specialist state so Phase 1.5 is skipped
     flow.state.executive_product_summary = "Approved section 1"
     flow.state.engineering_plan = "Approved section 2"
-    flow.state.figma_design_status = "prompt_ready"
+    flow.state.ux_design_status = "completed"
 
     # Section 4 (user_personas) has DEGENERATE restored content (133k chars of garbage)
     degenerate_section = flow.state.draft.sections[4]
@@ -3691,7 +3694,7 @@ def test_skip_phase1_when_sections_have_content(
     # Also set specialist state so Phase 1.5 is skipped
     flow.state.executive_product_summary = "Approved section 1 content"
     flow.state.engineering_plan = "Approved section 2 content"
-    flow.state.figma_design_status = "prompt_ready"
+    flow.state.ux_design_status = "completed"
 
     # Remaining 4 sections need drafting (draft + critique each)
     section_calls = []

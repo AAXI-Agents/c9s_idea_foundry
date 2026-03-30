@@ -1,6 +1,6 @@
 # Projects API
 
-> CRUD operations for project configuration — Confluence, Jira, and Figma settings.
+> CRUD operations for project configuration — Confluence and Jira settings.
 
 **Base path**: `/projects`
 **Auth**: SSO Bearer token (all endpoints)
@@ -32,8 +32,6 @@
   "confluence_space_key": "PROD",
   "jira_project_key": "MCR",
   "confluence_parent_id": "12345678",
-  "figma_api_key": "figd_abc123...",
-  "figma_team_id": "1234567890",
   "reference_urls": ["https://example.com/spec"]
 }
 ```
@@ -44,8 +42,6 @@
 | `confluence_space_key` | `string` | No | max 50 chars, default `""` | Confluence space key for PRD publishing (e.g. `"PROD"`, `"ENG"`) |
 | `jira_project_key` | `string` | No | max 50 chars, default `""` | Jira project key for ticket creation (e.g. `"MCR"`, `"FEAT"`) |
 | `confluence_parent_id` | `string` | No | max 50 chars, default `""` | Confluence parent page ID — PRDs are published as child pages under this |
-| `figma_api_key` | `string` | No | max 256 chars, default `""` | Figma personal access token for design integration |
-| `figma_team_id` | `string` | No | max 50 chars, default `""` | Figma team ID — used to fetch design files |
 | `reference_urls` | `string[]` | No | max 20 items, default `[]` | Reference URLs for context (specs, design docs, competitor links) |
 
 ---
@@ -69,8 +65,6 @@ Partial update — only include fields you want to change. Omitted fields are le
 | `confluence_space_key` | `string \| null` | No | — | New Confluence space key |
 | `jira_project_key` | `string \| null` | No | — | New Jira project key |
 | `confluence_parent_id` | `string \| null` | No | — | New Confluence parent page ID |
-| `figma_api_key` | `string \| null` | No | — | New Figma API key |
-| `figma_team_id` | `string \| null` | No | — | New Figma team ID |
 
 > **Note**: `reference_urls` is not included in `ProjectUpdate` — use full replacement via the create endpoint or direct MongoDB update if needed.
 
@@ -89,8 +83,6 @@ Returned by all GET, POST, and PATCH endpoints.
   "confluence_space_key": "PROD",
   "jira_project_key": "MCR",
   "confluence_parent_id": "12345678",
-  "figma_api_key_set": true,
-  "figma_team_id": "1234567890",
   "reference_urls": ["https://example.com/spec"],
   "created_at": "2026-03-20T10:30:00Z",
   "updated_at": "2026-03-25T14:15:00Z"
@@ -104,13 +96,9 @@ Returned by all GET, POST, and PATCH endpoints.
 | `confluence_space_key` | `string` | Confluence space key — empty if not configured |
 | `jira_project_key` | `string` | Jira project key — empty if not configured |
 | `confluence_parent_id` | `string` | Confluence parent page ID — empty if not configured |
-| `figma_api_key_set` | `bool` | `true` if a Figma API key is stored (the key itself is never exposed) |
-| `figma_team_id` | `string` | Figma team ID — empty if not configured |
 | `reference_urls` | `string[]` | List of reference URLs attached to this project |
 | `created_at` | `string` | ISO-8601 creation timestamp |
 | `updated_at` | `string` | ISO-8601 last-modification timestamp |
-
-> **Security**: `figma_api_key` is write-only. The response only includes `figma_api_key_set` (boolean) to indicate whether a key is stored, never the key value.
 
 ---
 

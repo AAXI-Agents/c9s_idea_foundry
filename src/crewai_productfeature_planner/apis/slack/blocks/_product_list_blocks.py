@@ -101,22 +101,23 @@ def product_list_blocks(
         jira_completed = product.get("jira_completed", False)
         jira_phase = product.get("jira_phase") or ""
         confluence_url = product.get("confluence_url") or ""
-        figma_url = product.get("figma_design_url") or ""
-        figma_status = product.get("figma_design_status") or ""
+        ux_status = (
+            product.get("ux_design_status")
+            or product.get("figma_design_status")
+            or ""
+        )
 
         # Build status lines — completed steps get a checkmark,
         # in-progress steps show their current phase.
         completed_parts: list[str] = []
 
-        # Figma UX design status
-        if figma_url:
+        # UX design status
+        if ux_status == "completed":
             completed_parts.append(
-                f":white_check_mark: <{figma_url}|Figma UX Design>"
+                ":white_check_mark: UX Design"
             )
-        elif figma_status in ("generating", "prompting"):
+        elif ux_status == "generating":
             completed_parts.append(":hourglass_flowing_sand: UX Design in progress")
-        elif figma_status == "prompt_ready":
-            completed_parts.append(":pencil: UX Design prompt ready")
 
         if conf_published:
             if confluence_url:
@@ -177,32 +178,13 @@ def product_list_blocks(
             )
 
         # UX Design buttons
-        if figma_url:
-            elements.append(
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": ":art: View Figma Design"},
-                    "action_id": f"product_open_figma_{idx}",
-                    "url": figma_url,
-                },
-            )
-        elif figma_status not in ("generating", "prompting"):
-            # Not started or prompt_ready or skipped → allow (re)start
-            btn_text = ":art: Start UX Design" if not figma_status else ":art: Retry UX Design"
+        if ux_status != "generating":
+            btn_text = ":art: Start UX Design" if not ux_status else ":art: Retry UX Design"
             elements.append(
                 {
                     "type": "button",
                     "text": {"type": "plain_text", "text": btn_text},
                     "action_id": f"product_ux_design_{idx}",
-                    "value": btn_value,
-                },
-            )
-            # Always offer the manual fallback alongside the API button
-            elements.append(
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": ":page_facing_up: Manual UX Design"},
-                    "action_id": f"product_manual_ux_{idx}",
                     "value": btn_value,
                 },
             )

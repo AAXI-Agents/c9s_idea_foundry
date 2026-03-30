@@ -61,11 +61,9 @@ def _collect_text_blocks(blocks: list[dict]) -> list[str]:
 
 
 _SETUP_STEPS = [
-    ("confluence_space_key", 1, 5),
-    ("jira_project_key", 2, 5),
-    ("figma_api_key", 3, 5),
-    ("figma_team_id", 4, 5),
-    ("project_name", 5, 5),
+    ("confluence_space_key", 1, 3),
+    ("jira_project_key", 2, 3),
+    ("project_name", 3, 3),
 ]
 
 

@@ -2656,6 +2656,39 @@ _CODEX: list[CodexEntry] = [
             "wikilinks. CODEX updated with per-flow page references."
         ),
     ),
+    CodexEntry(
+        "0.45.0",
+        date(2026, 3, 29),
+        (
+            "Remove Figma integration — UX design now produces pure "
+            "markdown design specifications. Deleted tools/figma/ "
+            "directory (6 files). UX Designer agent no longer uses "
+            "FigmaMakeTool; outputs markdown spec with 7 sections "
+            "(Design System, Navigation, Pages, Components, Responsive, "
+            "Accessibility, Motion). Renamed state fields: "
+            "figma_design_prompt → ux_design_content, "
+            "figma_design_status → ux_design_status. Removed "
+            "figma_api_key/figma_team_id from project config and "
+            "setup wizard. Removed Figma URL display, View Figma "
+            "Design buttons, and Manual UX Design buttons from Slack "
+            "UI. Updated 30+ source files, 10 test files. Backward "
+            "compat: deprecated fields kept in PRDState; MongoDB "
+            "reads fall back to old field names for existing docs."
+        ),
+    ),
+    CodexEntry(
+        "0.45.1",
+        date(2026, 3, 30),
+        (
+            "Fix test suite latency — full run reduced from 596s to 79s "
+            "(7.6x speedup). Root causes: 3 PRD flow tests triggered "
+            "real UX design LLM calls (unmocked _trigger_ux_design_flow); "
+            "3 Slack interaction tracking tests hit real Gemini API via "
+            "unmocked engagement manager; 2 HTTP error tests had real "
+            "time.sleep during retry backoff. All fixed by adding "
+            "targeted mocks. 2653 tests passing."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

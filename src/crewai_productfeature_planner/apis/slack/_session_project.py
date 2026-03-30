@@ -307,8 +307,6 @@ def handle_project_setup_reply(
             "project_name",
             "confluence_space_key",
             "jira_project_key",
-            "figma_api_key",
-            "figma_team_id",
         ):
             if key == "project_name":
                 # The wizard stores the resolved name; persist as "name"

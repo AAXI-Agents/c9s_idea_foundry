@@ -114,7 +114,6 @@ def generate_project_page(
         ("Confluence Space", project_config.get("confluence_space_key", "")),
         ("Jira Project", project_config.get("jira_project_key", "")),
         ("Confluence Parent ID", project_config.get("confluence_parent_id", "")),
-        ("Figma Team ID", project_config.get("figma_team_id", "")),
     ]
     for label, value in config_items:
         if value:
@@ -299,8 +298,7 @@ def generate_idea_page(
                     parts.append(f"{clean.strip()}\n")
 
     # UX Design appendix
-    figma_url = doc.get("figma_design_url", "")
-    figma_prompt = doc.get("figma_design_prompt", "")
+    ux_content_field = doc.get("ux_design_content", "") or doc.get("figma_design_prompt", "")
     ux_section = doc.get("section", {}).get("ux_design", [])
     ux_content = ""
     if isinstance(ux_section, list) and ux_section:
@@ -308,12 +306,10 @@ def generate_idea_page(
         if isinstance(latest, dict):
             ux_content = latest.get("content") or ""
 
-    if figma_url or figma_prompt or ux_content:
+    if ux_content_field or ux_content:
         parts.append("## UX Design\n")
-        if figma_url:
-            parts.append(f"**Figma Prototype:** [{figma_url}]({figma_url})\n")
-        if figma_prompt:
-            parts.append(f"{figma_prompt.strip()}\n")
+        if ux_content_field:
+            parts.append(f"{ux_content_field.strip()}\n")
         elif ux_content:
             parts.append(f"{ux_content.strip()}\n")
 

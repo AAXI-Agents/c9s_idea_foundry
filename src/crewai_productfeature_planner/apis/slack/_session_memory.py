@@ -134,7 +134,7 @@ def handle_update_config(
     """Launch the project configuration wizard for the active project.
 
     Walks the user through all configuration fields (project name,
-    Confluence key, Jira key, Figma API key, Figma team ID) with
+    Confluence key, Jira key) with
     current values shown so the user can update or skip each one.
     """
     from crewai_productfeature_planner.apis.slack.blocks import (

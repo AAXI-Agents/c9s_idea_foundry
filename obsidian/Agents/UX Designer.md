@@ -1,30 +1,30 @@
 # UX Designer
 
-> Converts product vision into structured design specifications and Figma prototypes through a 2-phase collaborative design flow.
+> Converts product vision into structured markdown design specifications through a 2-phase collaborative design flow.
 
 | Field | Value |
 |-------|-------|
 | **LLM Tier** | Research |
 | **Model Env Var** | `GEMINI_UX_DESIGNER_MODEL` → `GEMINI_RESEARCH_MODEL` → `DEFAULT_GEMINI_RESEARCH_MODEL` |
-| **Tools** | FigmaMakeTool |
+| **Tools** | None |
 | **Timeout** | 300 s |
 | **Max Retries** | 3 |
-| **Introduced** | v0.20.0 (refactored v0.41.0) |
+| **Introduced** | v0.20.0 (refactored v0.41.0, Figma removed v0.45.0) |
 | **Source** | `agents/ux_designer/` |
 
 ---
 
 ## Role
 
-> Senior UX Designer & Figma Prototyping Specialist
+> Design Specification Specialist
 
 ## Goal
 
-Transform product executive summaries into structured, production-ready Figma Make prompts that generate clickable prototypes with reusable components, proper design tokens, and complete user flows.
+Transform product executive summaries into structured, production-ready UX design specifications in markdown format, covering design systems, user flows, component architecture, and interaction patterns.
 
 ## Backstory
 
-You are a world-class UX designer with 15+ years of experience shipping products at scale. You think in design systems, not individual screens. Every component you create is reusable. You have deep expertise in: information architecture, component-driven design, design tokens, responsive layout grids, accessibility (WCAG 2.1 AA), interaction design, Figma auto-layout, variants, and component properties.
+You are a world-class UX designer with 15+ years of experience shipping products at scale. You think in design systems, not individual screens. Every component you create is reusable. You have deep expertise in: information architecture, component-driven design, design tokens, responsive layout grids, accessibility (WCAG 2.1 AA), and interaction design.
 
 ---
 
@@ -32,8 +32,8 @@ You are a world-class UX designer with 15+ years of experience shipping products
 
 ### UX Designer (Phase 1 lead)
 
-- **Purpose**: Generate comprehensive Figma Make prompt covering design system, user flows, components, layout, interactions
-- **Tools**: FigmaMakeTool
+- **Purpose**: Generate comprehensive UX design specification covering design system, user flows, components, layout, interactions
+- **Tools**: None
 
 ### Design Partner (v0.41.0)
 
@@ -51,28 +51,19 @@ You are a world-class UX designer with 15+ years of experience shipping products
 
 ## Tasks
 
-### `generate_figma_make_prompt_task`
+### `generate_ux_design_spec_task`
 
-Generate comprehensive Figma Make prompt covering:
+Generate comprehensive UX design specification in markdown covering:
 
 - **Design system**: colour palette, typography, spacing, border radius, shadows, icons
 - **User flows**: entry points, key screens, success/error/empty/loading states, edge cases
-- **Reusable components**: names, variants, auto-layout, content slots
+- **Reusable components**: names, variants, layout, content slots
 - **Page structure**: layout grid, responsive behaviour
 - **Interaction & navigation**: click targets, transitions, scroll behaviour, modals
+- **Accessibility**: WCAG compliance, keyboard navigation, screen reader support
+- **Visual hierarchy**: information architecture, content prioritisation
 
-**Expected output**: Complete design prompt prefixed with `FIGMA_PROMPT:`, plus:
-- `FIGMA_URL:<url>` (if Figma creation succeeded)
-- `FIGMA_ERROR:<message>` (if failed)
-- `FIGMA_SKIPPED:<reason>` (if skipped)
-
----
-
-## Tools
-
-| Tool | Purpose |
-|------|---------|
-| `FigmaMakeTool` | Generate Figma designs from structured design prompts |
+**Expected output**: Complete markdown design specification.
 
 ---
 

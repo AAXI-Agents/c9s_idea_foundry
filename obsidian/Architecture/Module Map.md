@@ -119,7 +119,6 @@
 | `directory_read_tool.py` | Directory listing |
 | `gemini_chat.py` | Gemini LLM intent classification |
 | `openai_chat.py` | OpenAI LLM intent classification |
-| `figma/` | Figma Make integration — Playwright + REST API + OAuth. `_config.py`, `_api.py`, `_client.py`, `figma_make_tool.py`, `login.py` (v0.22.0) |
 
 ## Scripts (`scripts/`)
 
