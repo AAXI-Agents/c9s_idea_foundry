@@ -2017,6 +2017,59 @@ class TestDocToProductDict:
         result = self._call(doc, delivery)
         assert result["jira_completed"] is True
 
+    def test_stale_confluence_url_does_not_imply_published(self):
+        """Regression: A stale confluence_url on the workingIdeas doc
+        must NOT cause confluence_published=True when the delivery
+        record says it's not published.
+
+        This was the root cause of incorrect checkmarks after a
+        one-time script reset the delivery record but missed
+        the workingIdeas confluence_url field.
+        """
+        doc = {
+            **self._BASE_DOC,
+            "confluence_url": "https://wiki.example.com/stale-page",
+        }
+        delivery = {
+            "confluence_published": False,
+            "confluence_url": "",
+            "jira_completed": False,
+            "jira_tickets": [],
+        }
+        result = self._call(doc, delivery)
+        assert result["confluence_published"] is False
+        # The URL should still be available for display purposes
+        assert result["confluence_url"] == "https://wiki.example.com/stale-page"
+
+    def test_confluence_url_only_in_delivery_record(self):
+        """When confluence_url is only in the delivery record, it should be used."""
+        doc = {**self._BASE_DOC}
+        delivery = {
+            "confluence_published": True,
+            "confluence_url": "https://wiki.example.com/published",
+            "jira_completed": False,
+            "jira_tickets": [],
+        }
+        result = self._call(doc, delivery)
+        assert result["confluence_published"] is True
+        assert result["confluence_url"] == "https://wiki.example.com/published"
+
+    def test_no_delivery_record_no_url_not_published(self):
+        """No delivery record and no URL → not published."""
+        result = self._call(self._BASE_DOC, None)
+        assert result["confluence_published"] is False
+        assert result["confluence_url"] == ""
+
+    def test_stale_confluence_url_no_delivery_record(self):
+        """Stale URL on doc but no delivery record → not published."""
+        doc = {
+            **self._BASE_DOC,
+            "confluence_url": "https://wiki.example.com/stale",
+        }
+        result = self._call(doc, None)
+        assert result["confluence_published"] is False
+        assert result["confluence_url"] == "https://wiki.example.com/stale"
+
 
 # ── fail_unfinalized_on_startup ───────────────────────────────
 

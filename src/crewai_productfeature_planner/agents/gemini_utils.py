@@ -1,15 +1,16 @@
 """Shared LLM configuration utilities and model defaults.
 
-Provides default model names for both basic (fast) and research
-(deep-thinking) tasks across Gemini and OpenAI providers:
+The ``DEFAULT_*`` constants provide fallback model names used when
+the corresponding environment variable is absent.  Every call site
+resolves the model via ``os.environ.get("<ENV_VAR>", DEFAULT_*)``,
+so the env var always takes precedence at runtime.
 
-* **Basic models** (``GEMINI_MODEL`` / ``OPENAI_MODEL``) — used for
-  orchestration, intent classification, next-step prediction, and
-  other lightweight interactions.
-* **Research models** (``GEMINI_RESEARCH_MODEL`` / ``OPENAI_RESEARCH_MODEL``)
-  — used for complex tasks: idea refinement iterations, requirements
-  breakdown, PRD section drafting, Confluence generation, and Jira
-  ticket creation.
+Environment variables (checked at runtime, not import time):
+
+* ``GEMINI_MODEL`` — basic/fast Gemini model (fallback: ``gemini-3-flash-preview``)
+* ``GEMINI_RESEARCH_MODEL`` — deep-reasoning Gemini model (fallback: ``gemini-3.1-pro-preview``)
+* ``OPENAI_MODEL`` — basic/fast OpenAI model (fallback: ``gpt-4.1-mini``)
+* ``OPENAI_RESEARCH_MODEL`` — deep-reasoning OpenAI model (fallback: ``o3``)
 
 Also handles Gemini-specific environment setup (Vertex AI).
 """
@@ -20,15 +21,23 @@ from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Default Gemini model.  Override via GEMINI_MODEL env var.
+# ---------------------------------------------------------------------------
+# Model defaults — pure fallback values (no env lookup at import time).
+#
+# Every consumer resolves the active model at runtime via
+# os.environ.get("<ENV_VAR>", DEFAULT_*).
+# ---------------------------------------------------------------------------
+
+#: Basic Gemini model fallback.  Override via ``GEMINI_MODEL`` env var.
 DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
 
-# Default Gemini research model for complex/deep-thinking tasks.
-# Override via GEMINI_RESEARCH_MODEL env var.
+#: Research Gemini model fallback.  Override via ``GEMINI_RESEARCH_MODEL`` env var.
 DEFAULT_GEMINI_RESEARCH_MODEL = "gemini-3.1-pro-preview"
 
-# Default OpenAI research model for complex/deep-thinking tasks.
-# Override via OPENAI_RESEARCH_MODEL env var.
+#: Basic OpenAI model fallback.  Override via ``OPENAI_MODEL`` env var.
+DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+
+#: Research OpenAI model fallback.  Override via ``OPENAI_RESEARCH_MODEL`` env var.
 DEFAULT_OPENAI_RESEARCH_MODEL = "o3"
 
 # Default Vertex AI region when GOOGLE_CLOUD_LOCATION is not set.

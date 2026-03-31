@@ -289,9 +289,13 @@ class PRDFlow(Flow[PRDState]):
     @staticmethod
     def _get_available_agents(
         project_id: str | None = None,
+        *,
+        model_tier: str = "research",
     ) -> dict[str, Agent]:
         """Return a dict of agent-name → Agent for all available LLMs."""
-        return _get_available_agents_fn(project_id=project_id)
+        return _get_available_agents_fn(
+            project_id=project_id, model_tier=model_tier,
+        )
 
     @staticmethod
     def _run_agents_parallel(
@@ -455,6 +459,26 @@ class PRDFlow(Flow[PRDState]):
 
         agents = self._get_available_agents(project_id=project_id)
         task_configs = get_task_configs()
+
+        # Create basic-tier agents for structured/derivative sections.
+        # Sections like Dependencies, Assumptions, Error Handling, and
+        # Success Metrics don't need the expensive research model.
+        basic_agents: dict[str, Agent] | None = None
+        try:
+            basic_agents = self._get_available_agents(
+                project_id=project_id, model_tier="basic",
+            )
+            logger.info(
+                "[Agents] Basic-tier agents created for "
+                "structured sections (%d agent(s))",
+                len(basic_agents),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[Agents] Failed to create basic-tier agents: %s "
+                "— all sections will use research model",
+                exc,
+            )
 
         # Create a lightweight critic agent once; reused for all
         # critique tasks in both Phase 1 (exec summary) and Phase 2
@@ -677,6 +701,10 @@ class PRDFlow(Flow[PRDState]):
             self.state.idea[:80],
         )
 
+        from crewai_productfeature_planner.apis.prd._sections import (
+            get_section_draft_tier,
+        )
+
         for section in self.state.draft.sections:
             # ── Cancellation checkpoint (before each section) ──
             check_cancelled(self.state.run_id)
@@ -699,6 +727,19 @@ class PRDFlow(Flow[PRDState]):
                 "section_step": section.step,
                 "total_sections": total_steps,
             })
+
+            # ── Per-section model tier selection ──────────
+            # Use basic-tier agents for structured/derivative sections
+            # (error_handling, success_metrics, dependencies, assumptions)
+            # and research-tier agents for complex reasoning sections.
+            section_tier = get_section_draft_tier(section.key)
+            section_agents = agents  # default: research
+            if section_tier == "basic" and basic_agents:
+                section_agents = basic_agents
+                logger.info(
+                    "[Phase 2] Section '%s' using basic-tier model",
+                    section.title,
+                )
 
             # ── Resume guard: skip drafting if section already has
             #    content from a prior run (restored from MongoDB).
@@ -732,7 +773,7 @@ class PRDFlow(Flow[PRDState]):
                     if not section.selected_agent:
                         section.selected_agent = get_default_agent()
                     self._section_approval_loop(
-                        section, agents, task_configs,
+                        section, section_agents, task_configs,
                         critic_agent=critic_agent,
                     )
                     self._notify_progress("section_complete", {
@@ -746,12 +787,12 @@ class PRDFlow(Flow[PRDState]):
                     continue
 
             logger.info("[Draft] Step %d/%d — Generating section '%s' with %d agent(s)",
-                        section.step, total_steps, section.title, len(agents))
+                        section.step, total_steps, section.title, len(section_agents))
 
             # --- Parallel agent drafting ---
             try:
                 agent_results, failed_agents = self._run_agents_parallel(
-                    agents=agents,
+                    agents=section_agents,
                     task_configs=task_configs,
                     section_title=section.title,
                     idea=self.state.idea,
@@ -809,6 +850,8 @@ class PRDFlow(Flow[PRDState]):
             for name, error_msg in failed_agents.items():
                 if name != default and name in agents:
                     del agents[name]
+                    if basic_agents and name in basic_agents:
+                        del basic_agents[name]
                     if name not in self.state.dropped_agents:
                         self.state.dropped_agents.append(name)
                     self.state.agent_errors[name] = error_msg
@@ -838,7 +881,7 @@ class PRDFlow(Flow[PRDState]):
 
             # --- Section approval loop ---
             self._section_approval_loop(
-                section, agents, task_configs,
+                section, section_agents, task_configs,
                 critic_agent=critic_agent,
             )
             self._notify_progress("section_complete", {

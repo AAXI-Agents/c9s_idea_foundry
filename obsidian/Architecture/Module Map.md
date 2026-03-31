@@ -128,6 +128,7 @@
 | `logging_config.py` | Structured logging setup |
 | `preflight.py` | Startup environment checks |
 | `retry.py` | Crew kickoff retry wrapper + error classification |
+| `crewai_bus_fix.py` | CrewAI event-bus recovery — detects/repairs dead `crewai_event_bus` singleton |
 | `setup_mongodb.py` | Collection & index bootstrap |
 | `ngrok_tunnel.py` | ngrok tunnel management |
 | `slack_config.py` | Slack manifest validation |

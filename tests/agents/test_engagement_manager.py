@@ -43,6 +43,34 @@ def _mock_engagement_llm():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _skip_fast_path(request):
+    """Mock fast-path functions to return None immediately.
+
+    Without this, tests that call handle_unknown_intent() or
+    detect_user_steering() attempt a real Gemini HTTP call
+    (which fails with the test API key), adding ~1s per test.
+
+    Skipped for TestHandleUnknownIntentFastPath and
+    TestDetectUserSteeringFastPath which explicitly test the fast path.
+    """
+    cls = request.node.cls
+    if cls and cls.__name__ in (
+        "TestHandleUnknownIntentFastPath",
+        "TestDetectUserSteeringFastPath",
+    ):
+        yield
+        return
+    with patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent._handle_unknown_intent_fast",
+        return_value=None,
+    ), patch(
+        "crewai_productfeature_planner.agents.engagement_manager.agent._detect_user_steering_fast",
+        return_value=None,
+    ):
+        yield
+
+
 # ── Factory tests ─────────────────────────────────────────────
 
 

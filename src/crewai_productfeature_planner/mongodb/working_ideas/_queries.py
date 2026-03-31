@@ -613,14 +613,18 @@ def _doc_to_product_dict(doc: dict[str, Any], delivery: dict[str, Any] | None) -
     """
     base = _doc_to_idea_dict(doc)
     base["confluence_url"] = (
-        doc.get("confluence_url")
-        or (delivery.get("confluence_url") if delivery else None)
+        (delivery.get("confluence_url") if delivery else None)
+        or doc.get("confluence_url")
         or ""
     )
     base["jira_phase"] = doc.get("jira_phase") or ""
+    # The delivery record (productRequirements) is the sole authority
+    # for whether Confluence was actually published.  A stale
+    # ``confluence_url`` on the workingIdeas document must NOT be
+    # treated as proof of publication — the URL may be left over
+    # from a prior publish that was subsequently reset/deleted.
     base["confluence_published"] = bool(
-        (delivery and delivery.get("confluence_published"))
-        or base["confluence_url"]
+        delivery and delivery.get("confluence_published")
     )
     # The ``jira_phase`` field on the working-idea document is the
     # authoritative source of truth for the interactive Jira flow.

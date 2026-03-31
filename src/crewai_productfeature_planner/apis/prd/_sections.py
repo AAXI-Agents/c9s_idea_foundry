@@ -27,3 +27,41 @@ SPECIALIST_SECTION_KEYS: set[str] = {
     "executive_product_summary",
     "engineering_plan",
 }
+
+# ---------------------------------------------------------------------------
+# Per-section LLM model tier for draft / refine.
+#
+# "research" — deep-reasoning model (gemini-pro / o3).  Used for sections
+#   that require complex analysis, creative reasoning, or foundational
+#   framing that all subsequent sections build upon.
+# "basic"    — fast model (gemini-flash / gpt-4.1-mini).  Used for
+#   sections that are structured, derivative, or enumerative in nature.
+#
+# The critic always uses the basic (flash) model regardless of tier —
+# evaluation against a rubric doesn't require deep generation.
+# ---------------------------------------------------------------------------
+SECTION_DRAFT_TIER: dict[str, str] = {
+    "problem_statement": "research",
+    "user_personas": "research",
+    "functional_requirements": "research",
+    "no_functional_requirements": "research",
+    "edge_cases": "research",
+    "error_handling": "basic",
+    "success_metrics": "basic",
+    "dependencies": "basic",
+    "assumptions": "basic",
+}
+
+#: Valid model tier identifiers.
+MODEL_TIER_RESEARCH = "research"
+MODEL_TIER_BASIC = "basic"
+
+
+def get_section_draft_tier(section_key: str) -> str:
+    """Return the LLM model tier for drafting/refining a section.
+
+    Returns ``"research"`` for sections requiring deep reasoning and
+    ``"basic"`` for structured/derivative sections.  Defaults to
+    ``"research"`` for unknown keys.
+    """
+    return SECTION_DRAFT_TIER.get(section_key, MODEL_TIER_RESEARCH)

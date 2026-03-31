@@ -277,7 +277,10 @@ def interpret_message(
         logger.warning("[OpenAI] OPENAI_API_KEY not set — falling back to unknown intent")
         return _fallback()
 
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    from crewai_productfeature_planner.agents.gemini_utils import (
+        DEFAULT_OPENAI_MODEL,
+    )
+    model = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
 
     messages: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
     if conversation_history:

@@ -156,6 +156,14 @@ def crew_kickoff_with_retry(
     attempt = 0  # normal-retry counter (excludes rate-limit retries)
     rate_limit_attempts = 0
 
+    # Ensure the CrewAI event bus is alive before the first attempt.
+    # The bus can be left in a dead state after a prior server restart
+    # or atexit handler fires (see crewai_bus_fix.py for details).
+    from crewai_productfeature_planner.scripts.crewai_bus_fix import (
+        ensure_crewai_event_bus,
+    )
+    ensure_crewai_event_bus()
+
     while True:
         try:
             result = crew.kickoff()

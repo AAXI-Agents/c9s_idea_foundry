@@ -297,6 +297,17 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Startup: Slack token check failed: %s", exc)
 
+    # 0c. Fix CrewAI event bus: unregister the atexit shutdown handler
+    #     and reinitialise the bus if it was left in a dead state from
+    #     a prior dirty shutdown.
+    try:
+        from crewai_productfeature_planner.scripts.crewai_bus_fix import (
+            install_crewai_bus_fix,
+        )
+        install_crewai_bus_fix()
+    except Exception as exc:
+        _logger.warning("Startup: CrewAI bus fix failed: %s", exc)
+
     # 1. Kill stale processes
     _logger.info("Startup: killing stale crew processes...")
     try:

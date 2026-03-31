@@ -129,7 +129,7 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
 
         confluence_done = bool(
             record and record.get("confluence_published")
-        ) or bool(doc.get("confluence_url"))
+        )
         # Only reflect *actual* Jira completion from the DB — never
         # infer "done" from missing credentials so the flag stays
         # False until tickets are genuinely created.

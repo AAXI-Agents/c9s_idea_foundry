@@ -314,7 +314,7 @@ class TestEventsRouterExecFeedbackDispatch:
                 er._handle_thread_message_inner(
                     channel="C_EV",
                     thread_ts="T_EV",
-                    user="U_SENDER",
+                    user="U1",
                     clean_text="Add more about scalability",
                     event_ts="9999.1",
                 )

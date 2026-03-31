@@ -31,6 +31,8 @@ logger = get_logger(__name__)
 
 def get_available_agents(
     project_id: str | None = None,
+    *,
+    model_tier: str = "research",
 ) -> dict[str, Agent]:
     """Return a dict of agent-name → Agent for all available LLMs.
 
@@ -46,6 +48,8 @@ def get_available_agents(
 
     Args:
         project_id: Optional project identifier for memory enrichment.
+        model_tier: ``"research"`` (default) or ``"basic"`` — controls
+            the LLM model used by the created agents.
     """
     default = get_default_agent()
     max_agents = int(
@@ -59,11 +63,13 @@ def get_available_agents(
     def _openai() -> Agent:
         return create_product_manager(
             provider=AGENT_OPENAI, project_id=project_id,
+            model_tier=model_tier,
         )
 
     def _gemini() -> Agent:
         return create_product_manager(
             provider=AGENT_GEMINI, project_id=project_id,
+            model_tier=model_tier,
         )
 
     factories: dict[str, tuple[callable, str | list[str] | None]] = {
@@ -74,7 +80,7 @@ def get_available_agents(
     # 1) Create the default agent (required)
     factory_fn, _ = factories[default]
     agents[default] = factory_fn()
-    logger.info("[Agents] Default agent: %s", default)
+    logger.info("[Agents] Default agent: %s (tier=%s)", default, model_tier)
 
     # 2) Create optional secondary agents (if multi-agent is enabled)
     if len(agents) < max_agents:

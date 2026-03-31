@@ -3,6 +3,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 _EVENTS_MODULE = "crewai_productfeature_planner.apis.slack.events_router"
 _SESSION_MODULE = "crewai_productfeature_planner.apis.slack.session_manager"
 _TOOLS_MODULE = "crewai_productfeature_planner.tools.slack_tools"
@@ -12,6 +14,19 @@ _ACTIVE_SESSION = {
     "project_name": "Test Project",
     "active": True,
 }
+
+
+@pytest.fixture(autouse=True)
+def _no_slack_client():
+    """Prevent real Slack WebClient creation and next-step prediction."""
+    with patch(
+        "crewai_productfeature_planner.tools.slack_tools._get_slack_client",
+        return_value=None,
+    ), patch(
+        "crewai_productfeature_planner.apis.slack._next_step.predict_and_post_next_step",
+        return_value=None,
+    ):
+        yield
 
 
 def _make_mocks(intent, reply="", idea=None):

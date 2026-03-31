@@ -389,6 +389,32 @@ def get_pending_create_owner_for_thread(
     return None
 
 
+def get_thread_owner(
+    channel: str, thread_ts: str,
+) -> str | None:
+    """Return the user_id that owns any pending state in this thread.
+
+    Checks all in-process pending-state sources (pending creates,
+    project setup wizard, and pending memory entries) and returns the
+    owning user if exactly one exists.  Returns ``None`` when the
+    thread has no pending state.
+
+    This is the unified guard used by the event handler to reject
+    messages from users who are not the thread-session owner.
+    """
+    with _lock:
+        for uid, entry in _pending_project_creates.items():
+            if entry["channel"] == channel and entry["thread_ts"] == thread_ts:
+                return uid
+        for uid, entry in _pending_project_setup.items():
+            if entry["channel"] == channel and entry["thread_ts"] == thread_ts:
+                return uid
+        for uid, entry in _pending_memory_entries.items():
+            if entry["channel"] == channel and entry["thread_ts"] == thread_ts:
+                return uid
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Pending "Memory Category Reply" tracking
 # ---------------------------------------------------------------------------

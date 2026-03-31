@@ -2,6 +2,26 @@
 
 > Full changelog from v0.1.0 to current. Updated every session.
 
+## v0.48.x (2026-03-31)
+
+| Version | Summary |
+|---------|--------|
+| 0.48.2 | Model defaults & test performance fixes. Reverted `gemini_utils.py` DEFAULT_* constants to pure string fallbacks (env lookup at call sites, not import time). Fixed `openai_chat.py` to use centralized `DEFAULT_OPENAI_MODEL`. Updated `.env.example` with correct model vars. Fast-path autouse mocks in `test_engagement_manager` and `test_idea_agent` prevent real Gemini HTTP calls (EM tests: 20s→3s, IA tests: 5s→2s). Jira intent tests mock `_get_slack_client` and `predict_and_post_next_step`. 2738 tests passing |
+| 0.48.1 | Per-section LLM model tier optimization. Complex sections (Problem Statement, User Personas, Functional Requirements, Non-Functional Requirements, Edge Cases) use research model (pro/o3). Structured sections (Error Handling, Success Metrics, Dependencies, Assumptions) now use basic model (flash/gpt-4.1-mini) — ~44% fewer research-tier LLM calls. New `SECTION_DRAFT_TIER` mapping in `_sections.py`, `model_tier` parameter on `_build_llm()`, `create_product_manager()`, `get_available_agents()`. New `DEFAULT_OPENAI_MODEL` constant. 14 new tests. 2738 tests passing |
+| 0.48.0 | Fix CrewAI event-bus shutdown corruption — all PRD flows were crashing with `cannot schedule new futures after shutdown`. Root cause: CrewAI’s `crewai_event_bus` singleton registers `atexit.register(shutdown)` which permanently kills the `ThreadPoolExecutor`. New `scripts/crewai_bus_fix.py` with `ensure_crewai_event_bus()` detects a dead bus and reinitialises it. `install_crewai_bus_fix()` called at server startup to unregister the atexit handler. Guard added to `run_prd_flow()`, `resume_prd_flow()`, and `crew_kickoff_with_retry()`. 9 new tests. 2724 tests passing |
+
+## v0.47.2 (2026-03-30)
+
+| Version | Summary |
+|---------|--------|
+| 0.47.2 | Thread session isolation — reject non-owner replies. When User A was configuring a project in a Slack thread, User B posting in that thread would be processed instead of ignored. Fixed interactive-run and exec-feedback lookups to check `info.get("user") == user`. Added `get_thread_owner()` in `session_manager.py` as unified guard for all pending states. Final guard before `_interpret_and_act` rejects non-owners. 12 new tests. 2715 tests passing |
+
+## v0.47.1 (2026-03-30)
+
+| Version | Summary |
+|---------|--------|
+| 0.47.1 | Fix Confluence published checkmarks — delivery record is now the sole authority. Stale `confluence_url` on `workingIdeas` documents no longer implies published. Fixed `_doc_to_product_dict()`, `_startup_delivery.py`, and URL source priority (delivery record first). 5 new regression tests + cleanup script. 2703 tests passing |
+
 ## v0.47.0 (2026-03-30)
 
 | Version | Summary |

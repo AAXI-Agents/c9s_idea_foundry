@@ -4,6 +4,83 @@
 
 ---
 
+## Session — 2026-03-31 (v0.48.0)
+
+**Scope**: Fix CrewAI event-bus shutdown corruption — all PRD flows crashing
+**Version**: v0.47.2 → v0.48.0
+
+### Problem
+Every PRD flow since March 26 was crashing with `cannot schedule new futures after shutdown` at the Executive Summary stage (or earlier, during idea refinement). 15 failures on March 30 alone. Zero successful flow completions.
+
+### Root Cause
+CrewAI’s `crewai_event_bus` singleton (in `crewai/events/event_bus.py`) registers `atexit.register(crewai_event_bus.shutdown)` at module import time. The `shutdown()` method permanently kills the internal `ThreadPoolExecutor` (`_sync_executor.shutdown(wait=True)`) and sets `_shutting_down = True`. Once the atexit handler fires (triggered by server restart signals, process fork, or any exit path), the singleton is permanently dead — there is no recovery mechanism in CrewAI. All subsequent `crew.kickoff()` calls crash when the event bus tries to `_sync_executor.submit(...)`.
+
+The singleton is a `__new__`-based singleton that only calls `_initialize()` on first creation. After `shutdown()`, there is no mechanism to reinitialise.
+
+### Changes
+1. **`scripts/crewai_bus_fix.py`** (NEW) — Three functions:
+   - `_is_executor_alive(bus)` — checks if `_sync_executor._shutdown` is False
+   - `ensure_crewai_event_bus()` — detects dead bus and calls `bus._initialize()` to create fresh executor + event loop thread; thread-safe with double-check locking
+   - `install_crewai_bus_fix()` — calls `atexit.unregister(bus.shutdown)` to prevent future corruption, then `ensure_crewai_event_bus()` to repair any existing damage
+2. **`apis/__init__.py`** — Step 0c in lifespan: calls `install_crewai_bus_fix()` at server startup, before any flow resumption
+3. **`apis/prd/service.py`** — `run_prd_flow()` and `resume_prd_flow()` both call `ensure_crewai_event_bus()` before creating the flow
+4. **`scripts/retry.py`** — `crew_kickoff_with_retry()` calls `ensure_crewai_event_bus()` before the retry loop (defense-in-depth)
+5. **Tests**: 9 new tests in `test_crewai_bus_fix.py` covering executor alive/dead detection, reinitialisation after shutdown flag, reinitialisation after dead executor, idempotency, atexit unregistration
+
+### Key Lesson
+CrewAI’s `atexit.register(crewai_event_bus.shutdown)` is fundamentally incompatible with long-running server processes that may receive restart signals. The singleton pattern with no reinitialisation path makes this a permanent poison. The fix works around it by: (a) unregistering the atexit handler, and (b) calling `_initialize()` directly when corruption is detected.
+
+---
+
+## Session — 2026-03-30 (v0.47.2)
+
+**Scope**: Thread session isolation — reject non-owner replies in Slack threads
+**Version**: v0.47.1 → v0.47.2
+
+### Problem
+When an admin was configuring a project in a Slack thread (setup wizard, memory entry, interactive run, or exec feedback), another user posting in that thread (e.g. "nice") would be processed by the LLM intent classifier instead of being ignored. The system only enforced thread ownership for pending-create sessions.
+
+### Root Cause
+`_handle_thread_message_inner()` had three missing user-ownership checks:
+1. **Interactive runs lookup** (lines 305-312): Matched on `(channel, thread_ts)` only — the `"user"` field was stored in `_interactive_runs` but never checked.
+2. **Exec feedback lookup** (lines 342-344): Same pattern — `_pending_exec_feedback` stored `"user"` but only matched on `(channel, thread_ts)`.
+3. **Fallthrough to `_interpret_and_act`**: No guard checked if another user owned a setup wizard or memory entry session in the thread.
+
+### Changes
+1. **`apis/slack/_event_handlers.py`** — Interactive-run lookup now checks `info.get("user") == user`. Non-owner silently ignored.
+2. **`apis/slack/_event_handlers.py`** — Exec-feedback lookup now checks `info.get("user") == user`. Non-owner silently ignored.
+3. **`apis/slack/_event_handlers.py`** — Final guard before `_interpret_and_act` calls `get_thread_owner()` and rejects non-owners.
+4. **`apis/slack/session_manager.py`** — New `get_thread_owner(channel, thread_ts)` checks all pending states (creates, setup wizard, memory entries) and returns the owning user.
+5. **Tests**: 12 new tests in `TestGetThreadOwner`, `TestThreadOwnerGuard`, `TestInteractiveRunIsolation`. Fixed existing `test_thread_reply_sends_feedback` to use matching user.
+
+### Key Lesson
+Thread session ownership must be enforced at every routing point, not just the first pending-create check. The `user` field was already stored in all in-memory state dictionaries but was never validated during message routing.
+
+---
+
+## Session — 2026-03-30 (v0.47.1)
+
+**Scope**: Fix Confluence published checkmarks in Slack product list
+**Version**: v0.47.0 → v0.47.1
+
+### Problem
+After a one-time reset script cleared `confluence_published` in `productRequirements` delivery records, the Slack product list still showed `:white_check_mark: Confluence PRD Page` checkmarks and "View Confluence" buttons for ideas that were not actually published. The "Publish Confluence" button was missing for these ideas.
+
+### Root Cause
+`_doc_to_product_dict()` in `_queries.py` used `or base["confluence_url"]` to infer `confluence_published=True`. The reset script cleared the delivery record but left stale `confluence_url` fields on `workingIdeas` documents. Same pattern existed in `_startup_delivery.py` where `confluence_done` was derived from `doc.get("confluence_url")`.
+
+### Changes
+1. **`mongodb/working_ideas/_queries.py`** — `_doc_to_product_dict()`: `confluence_published` now derives ONLY from `delivery.confluence_published`. Stale URL on workingIdeas doc no longer implies published. Also flipped URL source priority: delivery record first, workingIdeas doc as display-only fallback.
+2. **`orchestrator/_startup_delivery.py`** — `confluence_done` check: Removed `or bool(doc.get("confluence_url"))` fallback. Only delivery record authority.
+3. **Tests**: 5 new regression tests in `TestDocToProductDict` (stale URL not published, URL from delivery only, no record no URL, stale URL no record). Updated 2 existing startup delivery tests to use delivery record authority.
+4. **`scripts/clear_stale_confluence_urls.py`** — One-time cleanup script to `$unset` stale `confluence_url` from `workingIdeas` where delivery record doesn't confirm publication.
+5. **Fixed v0.47.0 CODEX entry**: date was a string instead of `date()` object.
+
+### Key Lesson
+When resetting data with one-time scripts, ALL collections that hold related fields must be updated — not just the "primary" record. The enrichment logic merged data from two collections and the reset script only cleaned one.
+
+---
+
 ## Session — 2026-03-30 (v0.47.0)
 
 **Scope**: Background Slack token refresh scheduler
@@ -2788,5 +2865,69 @@ Slack token validation. User reported EM not responding to messages.
 - 2681 total (all passing, 0 failures, 59s)
 
 ---
+
+---
+
+## Session — 2026-03-31 — Per-Section Model Tier Optimization (v0.48.1)
+
+### Goal
+Optimize section iteration by assigning appropriate LLM model tiers per section — research model for complex sections, basic model for structured/derivative sections.
+
+### Analysis
+All 9 iterable PRD sections were using the same research model (pro/o3) for drafting and refining. Sections like Dependencies and Assumptions are simple enumerative lists that don't need deep reasoning. This wastes ~44% of research-tier LLM calls.
+
+### Changes (v0.48.1)
+- **`apis/prd/_sections.py`** — New `SECTION_DRAFT_TIER` mapping: 5 research sections (problem_statement, user_personas, functional_requirements, no_functional_requirements, edge_cases) and 4 basic sections (error_handling, success_metrics, dependencies, assumptions). Added `get_section_draft_tier()`, `MODEL_TIER_RESEARCH`, `MODEL_TIER_BASIC` constants.
+- **`agents/gemini_utils.py`** — Added `DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"` for basic-tier OpenAI sections.
+- **`agents/product_manager/agent.py`** — `_build_llm()` and `create_product_manager()` accept `model_tier` parameter ("research"/"basic"). Basic tier uses flash/gpt-4.1-mini; research tier unchanged.
+- **`flows/_agents.py`** — `get_available_agents()` accepts `model_tier` parameter, passes through to `create_product_manager()`.
+- **`flows/prd_flow.py`** — Creates both research and basic agent sets at startup. Per-section tier selection via `get_section_draft_tier()` — selects basic or research agents before drafting and approval loop. Failed agent cleanup covers both agent sets.
+
+### Tests
+- 14 new tests in `test_product_manager.py`:
+  - `TestSectionDraftTier` (6 tests): research/basic tier assignments, unknown defaults, all sections covered, constants
+  - `TestBuildLlmModelTier` (7 tests): OpenAI/Gemini × research/basic, env var overrides, tier differentiation
+  - `TestCreateProductManagerTier` (2 tests): basic tier agent creation, research default
+- 2738 total (all passing)
+
+### Documentation Updated
+- `obsidian/Agents/LLM Model Tiers.md` — Added per-section model tier table, updated research model consumers
+- `obsidian/Architecture/Environment Variables.md` — Updated `OPENAI_MODEL` description
+- `obsidian/Changelog/Version History.md` — v0.48.1 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session — 2026-03-31 — Model Defaults & Test Performance Fixes (v0.48.2)
+
+### Goal
+1. Ensure all model names are env-driven (no hardcoded constants resolved at import time).
+2. Fix slow test performance — all tests must run under 3 seconds.
+
+### Root Causes Found
+1. **Import-time env resolution in gemini_utils.py**: `DEFAULT_OPENAI_MODEL = os.environ.get("OPENAI_MODEL", ...)` froze the value at import time. When `.env` had `OPENAI_MODEL=o3`, the constant became `"o3"` forever — breaking PM model tier tests that used `monkeypatch.delenv("OPENAI_MODEL")`.
+2. **Unmocked fast-path HTTP calls**: `handle_unknown_intent()`, `detect_user_steering()`, `handle_idea_query()` all try direct Gemini REST API first. Tests calling these without mocking the fast path attempted real HTTP calls, failing after ~1s each.
+3. **Unmocked `predict_and_post_next_step`**: Jira intent tests called `_interpret_and_act()` which triggers `predict_and_post_next_step()` — makes real Gemini API + MongoDB calls.
+
+### Changes (v0.48.2)
+- **`agents/gemini_utils.py`** — Reverted DEFAULT_* constants to pure string fallbacks (no `os.environ.get()` at module level). Env lookup happens at call sites.
+- **`tools/openai_chat.py`** — Uses centralized `DEFAULT_OPENAI_MODEL` from gemini_utils instead of inline `"gpt-4o-mini"`.
+- **`.env.example`** — `OPENAI_MODEL=gpt-4.1-mini` (was `o3`), added `OPENAI_RESEARCH_MODEL=o3`, `GEMINI_RESEARCH_MODEL=gemini-3.1-pro-preview`.
+- **`tests/agents/test_engagement_manager.py`** — Added `_skip_fast_path` autouse fixture mocking `_handle_unknown_intent_fast` and `_detect_user_steering_fast` to return None. Conditionally skips for `TestHandleUnknownIntentFastPath` and `TestDetectUserSteeringFastPath`.
+- **`tests/agents/test_idea_agent.py`** — Added `_skip_fast_path` autouse fixture mocking `_handle_idea_query_fast`. Skips for `TestHandleIdeaQueryFastPath`.
+- **`tests/apis/slack/test_create_jira_intent.py`** — Added `_no_slack_client` autouse fixture mocking `_get_slack_client` and `predict_and_post_next_step`.
+
+### Performance Results
+- EM tests: 20s → 3s (6.7× faster)
+- IA tests: 5s → 2s (2.5× faster)
+- All tests under 3s threshold in isolated runs
+
+### Tests
+- 158 tests in changed files all passing (0 failures)
+- 2738 total tests passing (3 pre-existing flaky failures unrelated to changes)
+
+### Documentation Updated
+- `obsidian/Changelog/Version History.md` — v0.48.2 entry
+- `obsidian/Sessions/Session Log.md` — This entry
 
 ---

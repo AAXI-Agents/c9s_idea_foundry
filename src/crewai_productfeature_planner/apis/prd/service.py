@@ -225,6 +225,14 @@ def run_prd_flow(
 
     flow: PRDFlow | None = None
     try:
+        # Ensure the CrewAI event bus is alive before kicking off the
+        # flow.  The bus can be left in a dead state after a prior
+        # server restart or atexit handler fires.
+        from crewai_productfeature_planner.scripts.crewai_bus_fix import (
+            ensure_crewai_event_bus,
+        )
+        ensure_crewai_event_bus()
+
         flow = PRDFlow()
         flow.state.idea = idea
         flow.state.run_id = run_id
@@ -616,6 +624,12 @@ def resume_prd_flow(
 
     flow: PRDFlow | None = None
     try:
+        # Ensure the CrewAI event bus is alive before resuming.
+        from crewai_productfeature_planner.scripts.crewai_bus_fix import (
+            ensure_crewai_event_bus,
+        )
+        ensure_crewai_event_bus()
+
         idea, draft, exec_summary, requirements_breakdown, breakdown_history, refinement_history = (
             restore_prd_state(run_id)
         )

@@ -169,18 +169,18 @@ class TestDiscoverPendingDeliveries:
     @patch(_GET_REC)
     @patch(_GET_DB)
     def test_marks_both_done_and_skips(self, mock_db, mock_rec, _asm, mock_upsert):
-        """When confluence_url in doc and jira_completed in record -> mark complete."""
+        """When delivery record has confluence_published=True and jira_completed=True -> mark complete."""
         mock_db.return_value = _mock_db_with_docs([
             {
                 "run_id": "r1",
                 "status": "completed",
                 "idea": "Both done",
-                "confluence_url": "https://wiki.test.com/p/1",
             },
         ])
         mock_rec.return_value = {
             "status": "inprogress",
-            "confluence_published": False,
+            "confluence_published": True,
+            "confluence_url": "https://wiki.test.com/p/1",
             "jira_completed": True,
         }
 
@@ -196,10 +196,10 @@ class TestDiscoverPendingDeliveries:
     @patch(f"{_MOD}._has_jira_credentials", return_value=False)
     @patch(_UPSERT_REC, return_value=True)
     @patch(_ASSEMBLE, return_value="# PRD")
-    @patch(_GET_REC, return_value=None)
+    @patch(_GET_REC)
     @patch(_GET_DB)
     def test_no_jira_creds_does_not_mark_jira_completed(
-        self, mock_db, _rec, _asm, mock_upsert, _jira,
+        self, mock_db, mock_rec, _asm, mock_upsert, _jira,
     ):
         """When Jira creds are absent, jira_completed must stay False."""
         mock_db.return_value = _mock_db_with_docs([
@@ -207,9 +207,14 @@ class TestDiscoverPendingDeliveries:
                 "run_id": "r1",
                 "status": "completed",
                 "idea": "No Jira creds",
-                "confluence_url": "https://wiki.test.com/p/1",
             },
         ])
+        mock_rec.return_value = {
+            "status": "inprogress",
+            "confluence_published": True,
+            "confluence_url": "https://wiki.test.com/p/1",
+            "jira_completed": False,
+        }
         # _has_jira_credentials() returns False (no env vars in tests)
         items = _discover_pending_deliveries()
         assert items == []

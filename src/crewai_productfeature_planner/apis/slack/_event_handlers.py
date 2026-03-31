@@ -210,6 +210,7 @@ def _handle_thread_message_inner(
     # Check if this is a project-name reply after "Create New Project"
     from crewai_productfeature_planner.apis.slack.session_manager import (
         get_pending_create_owner_for_thread,
+        get_thread_owner,
         mark_pending_create,
         pop_pending_create,
         pop_pending_memory,
@@ -301,15 +302,26 @@ def _handle_thread_message_inner(
     )
     _matched_run_id: str | None = None
     _matched_pending: str | None = None
+    _matched_run_owner: str | None = None
     with _ih_lock:
         for run_id, info in _interactive_runs.items():
             if (
                 info.get("channel") == channel
                 and info.get("thread_ts") == thread_ts
             ):
-                _matched_run_id = run_id
-                _matched_pending = info.get("pending_action")
+                _matched_run_owner = info.get("user")
+                if _matched_run_owner == user:
+                    _matched_run_id = run_id
+                    _matched_pending = info.get("pending_action")
                 break
+
+    if _matched_run_owner and _matched_run_owner != user:
+        logger.debug(
+            "Ignoring thread reply from user=%s — interactive run "
+            "belongs to user=%s in %s/%s",
+            user, _matched_run_owner, channel, thread_ts,
+        )
+        return
 
     if _matched_run_id is not None:
         if _matched_pending in _THREAD_REPLY_ACTIONS:
@@ -337,14 +349,35 @@ def _handle_thread_message_inner(
         resolve_exec_feedback,
     )
     _matched_ef_run_id: str | None = None
+    _matched_ef_owner: str | None = None
     with _ef_lock:
         for run_id, info in _pending_exec_feedback.items():
             if info.get("channel") == channel and info.get("thread_ts") == thread_ts:
-                _matched_ef_run_id = run_id
+                _matched_ef_owner = info.get("user")
+                if _matched_ef_owner == user:
+                    _matched_ef_run_id = run_id
                 break
+    if _matched_ef_owner and _matched_ef_owner != user:
+        logger.debug(
+            "Ignoring thread reply from user=%s — exec feedback "
+            "belongs to user=%s in %s/%s",
+            user, _matched_ef_owner, channel, thread_ts,
+        )
+        return
     if _matched_ef_run_id:
         resolve_exec_feedback(_matched_ef_run_id, "feedback", clean_text)
         er.append_to_thread(channel, thread_ts, "user", clean_text)
+        return
+
+    # Final guard: if another user owns any pending state in this
+    # thread (setup wizard, memory entry, etc.) silently ignore.
+    thread_owner = get_thread_owner(channel, thread_ts)
+    if thread_owner and thread_owner != user:
+        logger.debug(
+            "Ignoring thread reply from user=%s — thread owned "
+            "by user=%s in %s/%s",
+            user, thread_owner, channel, thread_ts,
+        )
         return
 
     er._interpret_and_act(channel, thread_ts, user, clean_text, event_ts)

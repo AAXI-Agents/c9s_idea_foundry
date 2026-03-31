@@ -2734,7 +2734,7 @@ _CODEX: list[CodexEntry] = [
     ),
     CodexEntry(
         version="0.47.0",
-        date="2026-03-30",
+        date=date(2026, 3, 30),
         summary=(
             "Background Slack token refresh scheduler — prevents token "
             "rotation death spiral. Root cause: Slack rotating tokens "
@@ -2751,6 +2751,112 @@ _CODEX: list[CodexEntry] = [
             "(4) Circuit breakers in event handlers skip processing when "
             "no usable token available. (5) 12 scheduler tests + "
             "test fixture fix for _get_slack_client. 2699 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.47.1",
+        date=date(2026, 3, 30),
+        summary=(
+            "Fix Confluence published checkmarks — delivery record is "
+            "now the sole authority. Root cause: _doc_to_product_dict() "
+            "treated a stale confluence_url on the workingIdeas document "
+            "as proof of publication ('or base[\"confluence_url\"]'). "
+            "After a one-time reset script cleared confluence_published "
+            "in productRequirements but missed confluence_url in "
+            "workingIdeas, the Slack product list still showed "
+            "checkmarks and 'View Confluence' buttons. Fix: (1) "
+            "_doc_to_product_dict() now checks ONLY "
+            "delivery.confluence_published — stale URL no longer "
+            "implies published. (2) _startup_delivery.py "
+            "confluence_done uses only delivery record. (3) "
+            "confluence_url source priority flipped: delivery record "
+            "first, workingIdeas doc as fallback display-only. "
+            "(4) 5 new regression tests in TestDocToProductDict. "
+            "(5) Cleanup script scripts/clear_stale_confluence_urls.py. "
+            "2704 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.47.2",
+        date=date(2026, 3, 30),
+        summary=(
+            "Thread session isolation — reject non-owner replies. "
+            "Bug: when User A was configuring a project in a Slack "
+            "thread (setup wizard, memory entry, interactive run, or "
+            "exec feedback), User B posting in that thread would be "
+            "processed instead of ignored. Fix: (1) Added user checks "
+            "to interactive-run and exec-feedback lookups in "
+            "_handle_thread_message_inner — info.get('user') == user. "
+            "(2) New get_thread_owner() in session_manager.py checks "
+            "all pending states (creates, setup wizard, memory) for a "
+            "given (channel, thread_ts). (3) Final guard before "
+            "_interpret_and_act rejects non-owners. (4) 12 new tests "
+            "in TestGetThreadOwner, TestThreadOwnerGuard, "
+            "TestInteractiveRunIsolation. 2715 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.48.0",
+        date=date(2026, 3, 31),
+        summary=(
+            "Fix CrewAI event-bus shutdown corruption — all PRD flows "
+            "were crashing. Root cause: CrewAI's crewai_event_bus "
+            "singleton registers atexit.register(shutdown) which "
+            "permanently kills the ThreadPoolExecutor. Once triggered "
+            "(by server restart signals or process exit), all "
+            "subsequent crew.kickoff() calls crash with "
+            "'cannot schedule new futures after shutdown'. Every flow "
+            "on Mar 26-30 failed. Fix: (1) New scripts/crewai_bus_fix.py "
+            "with ensure_crewai_event_bus() that detects a dead bus "
+            "(executor shutdown or _shutting_down=True) and calls "
+            "_initialize() to create fresh executor + event loop. "
+            "(2) install_crewai_bus_fix() called at server lifespan "
+            "startup — unregisters the atexit handler and ensures bus. "
+            "(3) ensure_crewai_event_bus() called in run_prd_flow(), "
+            "resume_prd_flow(), and crew_kickoff_with_retry() before "
+            "each crew kickoff. (4) 9 new tests in "
+            "test_crewai_bus_fix.py. 2724 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.48.1",
+        date=date(2026, 3, 31),
+        summary=(
+            "Per-section LLM model tier optimization. Sections that "
+            "require deep reasoning (Problem Statement, User Personas, "
+            "Functional Requirements, Non-Functional Requirements, "
+            "Edge Cases) continue using the research model (pro/o3). "
+            "Structured/derivative sections (Error Handling, Success "
+            "Metrics, Dependencies, Assumptions) now use the basic "
+            "model (flash/gpt-4.1-mini) — ~44% fewer research-tier "
+            "LLM calls during section iteration. Changes: (1) New "
+            "SECTION_DRAFT_TIER mapping and get_section_draft_tier() "
+            "in _sections.py. (2) _build_llm() and "
+            "create_product_manager() accept model_tier parameter "
+            "(research/basic). (3) get_available_agents() accepts "
+            "model_tier. (4) prd_flow.py creates both research and "
+            "basic agent sets, selects per section. (5) New "
+            "DEFAULT_OPENAI_MODEL constant (gpt-4.1-mini) in "
+            "gemini_utils.py. (6) 14 new tests. 2738 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.48.2",
+        date=date(2026, 3, 31),
+        summary=(
+            "Model defaults & test performance fixes. (1) Reverted "
+            "gemini_utils.py DEFAULT_* constants to pure string "
+            "fallbacks — env lookup happens at call sites, not import "
+            "time. Fixes broken PM model tier tests when .env sets "
+            "OPENAI_MODEL. (2) openai_chat.py uses centralized "
+            "DEFAULT_OPENAI_MODEL instead of inline 'gpt-4o-mini'. "
+            "(3) .env.example updated: OPENAI_MODEL=gpt-4.1-mini, "
+            "added OPENAI_RESEARCH_MODEL and GEMINI_RESEARCH_MODEL. "
+            "(4) Fast-path autouse mocks in test_engagement_manager "
+            "and test_idea_agent prevent real Gemini HTTP calls — "
+            "EM tests: 20s→3s, IA tests: 5s→2s. (5) Jira intent "
+            "tests mock _get_slack_client and predict_and_post_next_step "
+            "to avoid real HTTP/MongoDB calls. 2738 tests passing."
         ),
     ),
 ]

@@ -962,3 +962,323 @@ class TestNoMentionGateForActiveWorkflows:
             resp = await _post(payload)
         assert resp.status_code == 200
         mock_thread.assert_called_once()
+
+
+# ======================================================================
+# get_thread_owner — unified thread ownership lookup
+# ======================================================================
+
+
+class TestGetThreadOwner:
+    """get_thread_owner checks pending creates, setup wizard, and
+    memory entries to determine who owns a given thread.
+    """
+
+    def test_no_pending_state_returns_none(self):
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_thread_owner,
+        )
+        assert get_thread_owner("C1", "T1") is None
+
+    def test_pending_create_returns_owner(self):
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_thread_owner,
+            mark_pending_create,
+        )
+        mark_pending_create("U_ADMIN", "C1", "T1")
+        assert get_thread_owner("C1", "T1") == "U_ADMIN"
+
+    def test_setup_wizard_returns_owner(self):
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_thread_owner,
+        )
+        import crewai_productfeature_planner.apis.slack.session_manager as sm
+        with sm._lock:
+            sm._pending_project_setup["U_ADMIN"] = {
+                "channel": "C1", "thread_ts": "T1",
+                "project_id": "proj-1", "project_name": "Test",
+                "step": "confluence_space_key",
+            }
+        assert get_thread_owner("C1", "T1") == "U_ADMIN"
+
+    def test_memory_entry_returns_owner(self):
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_thread_owner,
+            mark_pending_memory,
+        )
+        mark_pending_memory("U_ADMIN", "C1", "T1", "knowledge", "proj-1")
+        assert get_thread_owner("C1", "T1") == "U_ADMIN"
+
+    def test_different_thread_returns_none(self):
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_thread_owner,
+            mark_pending_create,
+        )
+        mark_pending_create("U_ADMIN", "C1", "T1")
+        assert get_thread_owner("C1", "T_OTHER") is None
+
+
+# ======================================================================
+# Thread session isolation — setup wizard and memory entries
+# ======================================================================
+
+
+class TestThreadOwnerGuard:
+    """Non-owner users replying in threads with active pending state
+    (setup wizard, memory entries) are silently ignored.
+    """
+
+    def test_other_user_ignored_during_setup_wizard(self):
+        """User B's reply in a thread where User A is in the setup
+        wizard is silently ignored — no _interpret_and_act.
+        """
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        import crewai_productfeature_planner.apis.slack.session_manager as sm
+
+        with sm._lock:
+            sm._pending_project_setup["U_ADMIN"] = {
+                "channel": "C1", "thread_ts": "T1",
+                "project_id": "proj-1", "project_name": "Test",
+                "step": "confluence_space_key",
+            }
+
+        event = {
+            "type": "message",
+            "channel": "C1",
+            "user": "U_BYSTANDER",
+            "text": "nice",
+            "ts": "T1.2",
+            "thread_ts": "T1",
+            "_team_id": "TEAM1",
+        }
+
+        with patch(f"{_ER}._interpret_and_act") as mock_interpret, \
+             patch(f"{_ER}._handle_project_setup_reply") as mock_setup:
+            er._handle_thread_message(event)
+
+        mock_interpret.assert_not_called()
+        mock_setup.assert_not_called()
+
+    def test_other_user_ignored_during_memory_entry(self):
+        """User B's reply in a thread where User A is typing memory
+        entries is silently ignored.
+        """
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            mark_pending_memory,
+        )
+
+        mark_pending_memory("U_ADMIN", "C1", "T1", "knowledge", "proj-1")
+
+        event = {
+            "type": "message",
+            "channel": "C1",
+            "user": "U_BYSTANDER",
+            "text": "nice",
+            "ts": "T1.3",
+            "thread_ts": "T1",
+            "_team_id": "TEAM1",
+        }
+
+        with patch(f"{_ER}._interpret_and_act") as mock_interpret, \
+             patch(f"{_ER}.handle_memory_reply") as mock_memory:
+            er._handle_thread_message(event)
+
+        mock_interpret.assert_not_called()
+        mock_memory.assert_not_called()
+
+    def test_owner_can_still_reply_in_own_setup_thread(self):
+        """The setup wizard owner can still provide input."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        import crewai_productfeature_planner.apis.slack.session_manager as sm
+
+        with sm._lock:
+            sm._pending_project_setup["U_ADMIN"] = {
+                "channel": "C1", "thread_ts": "T1",
+                "project_id": "proj-1", "project_name": "Test",
+                "step": "confluence_space_key",
+            }
+
+        event = {
+            "type": "message",
+            "channel": "C1",
+            "user": "U_ADMIN",
+            "text": "MY_SPACE_KEY",
+            "ts": "T1.4",
+            "thread_ts": "T1",
+            "_team_id": "TEAM1",
+        }
+
+        with patch(f"{_ER}._handle_project_setup_reply") as mock_setup, \
+             patch(f"{_ER}._interpret_and_act") as mock_interpret:
+            er._handle_thread_message(event)
+
+        mock_setup.assert_called_once()
+        mock_interpret.assert_not_called()
+
+
+# ======================================================================
+# Thread session isolation — interactive runs and exec feedback
+# ======================================================================
+
+
+class TestInteractiveRunIsolation:
+    """Interactive run threads reject messages from non-owner users."""
+
+    def test_other_user_ignored_during_interactive_run(self):
+        """User B's reply in a thread with an interactive run owned by
+        User A is silently ignored.
+        """
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            _interactive_runs,
+            _lock as _ih_lock,
+        )
+
+        with _ih_lock:
+            _interactive_runs["run-1"] = {
+                "channel": "C1",
+                "thread_ts": "T1",
+                "user": "U_ADMIN",
+                "pending_action": "manual_refinement",
+            }
+
+        event = {
+            "type": "message",
+            "channel": "C1",
+            "user": "U_BYSTANDER",
+            "text": "nice",
+            "ts": "T1.5",
+            "thread_ts": "T1",
+            "_team_id": "TEAM1",
+        }
+
+        _IH = "crewai_productfeature_planner.apis.slack.interactive_handlers"
+        try:
+            with patch(f"{_ER}._interpret_and_act") as mock_interp, \
+                 patch(f"{_IH}.submit_manual_refinement") as mock_submit, \
+                 patch(f"{_IH}.queue_feedback") as mock_queue:
+                er._handle_thread_message(event)
+
+            mock_interp.assert_not_called()
+            mock_submit.assert_not_called()
+            mock_queue.assert_not_called()
+        finally:
+            with _ih_lock:
+                _interactive_runs.pop("run-1", None)
+
+    def test_owner_can_reply_in_interactive_run_thread(self):
+        """The owner can still submit manual refinement feedback."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+            _interactive_runs,
+            _lock as _ih_lock,
+        )
+
+        with _ih_lock:
+            _interactive_runs["run-2"] = {
+                "channel": "C1",
+                "thread_ts": "T1",
+                "user": "U_ADMIN",
+                "pending_action": "manual_refinement",
+            }
+
+        event = {
+            "type": "message",
+            "channel": "C1",
+            "user": "U_ADMIN",
+            "text": "refine the idea further",
+            "ts": "T1.6",
+            "thread_ts": "T1",
+            "_team_id": "TEAM1",
+        }
+
+        _IH = "crewai_productfeature_planner.apis.slack.interactive_handlers"
+        try:
+            with patch(f"{_IH}.submit_manual_refinement") as mock_submit, \
+                 patch(f"{_ER}.append_to_thread"), \
+                 patch(f"{_ER}._interpret_and_act") as mock_interp:
+                er._handle_thread_message(event)
+
+            mock_submit.assert_called_once_with("run-2", "refine the idea further")
+            mock_interp.assert_not_called()
+        finally:
+            with _ih_lock:
+                _interactive_runs.pop("run-2", None)
+
+    def test_other_user_ignored_during_exec_feedback(self):
+        """User B's reply in a thread with pending exec feedback
+        owned by User A is silently ignored.
+        """
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            _exec_feedback_lock as _ef_lock,
+            _pending_exec_feedback,
+        )
+
+        with _ef_lock:
+            _pending_exec_feedback["run-3"] = {
+                "channel": "C1",
+                "thread_ts": "T1",
+                "user": "U_ADMIN",
+            }
+
+        event = {
+            "type": "message",
+            "channel": "C1",
+            "user": "U_BYSTANDER",
+            "text": "nice",
+            "ts": "T1.7",
+            "thread_ts": "T1",
+            "_team_id": "TEAM1",
+        }
+
+        _FH = "crewai_productfeature_planner.apis.slack._flow_handlers"
+        try:
+            with patch(f"{_ER}._interpret_and_act") as mock_interp, \
+                 patch(f"{_FH}.resolve_exec_feedback") as mock_resolve:
+                er._handle_thread_message(event)
+
+            mock_interp.assert_not_called()
+            mock_resolve.assert_not_called()
+        finally:
+            with _ef_lock:
+                _pending_exec_feedback.pop("run-3", None)
+
+    def test_owner_can_reply_to_exec_feedback(self):
+        """The owner can still provide exec summary feedback."""
+        import crewai_productfeature_planner.apis.slack.events_router as er
+        from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            _exec_feedback_lock as _ef_lock,
+            _pending_exec_feedback,
+        )
+
+        with _ef_lock:
+            _pending_exec_feedback["run-4"] = {
+                "channel": "C1",
+                "thread_ts": "T1",
+                "user": "U_ADMIN",
+            }
+
+        event = {
+            "type": "message",
+            "channel": "C1",
+            "user": "U_ADMIN",
+            "text": "add more details",
+            "ts": "T1.8",
+            "thread_ts": "T1",
+            "_team_id": "TEAM1",
+        }
+
+        _FH = "crewai_productfeature_planner.apis.slack._flow_handlers"
+        try:
+            with patch(f"{_FH}.resolve_exec_feedback") as mock_resolve, \
+                 patch(f"{_ER}.append_to_thread"), \
+                 patch(f"{_ER}._interpret_and_act") as mock_interp:
+                er._handle_thread_message(event)
+
+            mock_resolve.assert_called_once_with("run-4", "feedback", "add more details")
+            mock_interp.assert_not_called()
+        finally:
+            with _ef_lock:
+                _pending_exec_feedback.pop("run-4", None)

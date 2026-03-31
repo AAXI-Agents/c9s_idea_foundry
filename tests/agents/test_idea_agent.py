@@ -34,6 +34,27 @@ def _mock_idea_agent_llm():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _skip_fast_path(request):
+    """Mock fast-path function to return None immediately.
+
+    Without this, tests that call handle_idea_query() attempt a real
+    Gemini HTTP call (which fails with the test API key), adding ~1s.
+
+    Skipped for TestHandleIdeaQueryFastPath which explicitly tests
+    the fast path.
+    """
+    cls = request.node.cls
+    if cls and cls.__name__ == "TestHandleIdeaQueryFastPath":
+        yield
+        return
+    with patch(
+        "crewai_productfeature_planner.agents.idea_agent.agent._handle_idea_query_fast",
+        return_value=None,
+    ):
+        yield
+
+
 # ── Factory tests ─────────────────────────────────────────────
 
 

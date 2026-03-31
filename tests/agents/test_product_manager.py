@@ -21,6 +21,12 @@ from crewai_productfeature_planner.agents.product_manager.agent import (
     DEFAULT_CRITIC_TIMEOUT,
     DEFAULT_CRITIC_MAX_RETRIES,
 )
+from crewai_productfeature_planner.apis.prd._sections import (
+    SECTION_DRAFT_TIER,
+    MODEL_TIER_RESEARCH,
+    MODEL_TIER_BASIC,
+    get_section_draft_tier,
+)
 
 
 class _StubToolInput(BaseModel):
@@ -465,3 +471,146 @@ def test_critic_default_constants():
     """Critic module-level defaults should be sensible."""
     assert DEFAULT_CRITIC_TIMEOUT == 120
     assert DEFAULT_CRITIC_MAX_RETRIES == 3
+
+
+# ---------------------------------------------------------------------------
+# Section model tier tests
+# ---------------------------------------------------------------------------
+
+class TestSectionDraftTier:
+    """Tests for SECTION_DRAFT_TIER mapping and get_section_draft_tier()."""
+
+    def test_research_sections(self):
+        """Complex sections should be assigned the research tier."""
+        research_sections = [
+            "problem_statement",
+            "user_personas",
+            "functional_requirements",
+            "no_functional_requirements",
+            "edge_cases",
+        ]
+        for key in research_sections:
+            assert get_section_draft_tier(key) == MODEL_TIER_RESEARCH, (
+                f"{key} should be research tier"
+            )
+
+    def test_basic_sections(self):
+        """Structured/derivative sections should be assigned the basic tier."""
+        basic_sections = [
+            "error_handling",
+            "success_metrics",
+            "dependencies",
+            "assumptions",
+        ]
+        for key in basic_sections:
+            assert get_section_draft_tier(key) == MODEL_TIER_BASIC, (
+                f"{key} should be basic tier"
+            )
+
+    def test_unknown_section_defaults_to_research(self):
+        """Unknown section keys should default to research tier."""
+        assert get_section_draft_tier("unknown_section") == MODEL_TIER_RESEARCH
+
+    def test_all_iterable_sections_have_tier(self):
+        """Every non-specialist section must have a tier assignment."""
+        from crewai_productfeature_planner.apis.prd._sections import (
+            SECTION_KEYS,
+            SPECIALIST_SECTION_KEYS,
+        )
+        iterable = [
+            k for k in SECTION_KEYS
+            if k not in SPECIALIST_SECTION_KEYS and k != "executive_summary"
+        ]
+        for key in iterable:
+            assert key in SECTION_DRAFT_TIER, (
+                f"Section '{key}' missing from SECTION_DRAFT_TIER"
+            )
+
+    def test_tier_constants(self):
+        """Model tier constants should match expected values."""
+        assert MODEL_TIER_RESEARCH == "research"
+        assert MODEL_TIER_BASIC == "basic"
+
+
+# ---------------------------------------------------------------------------
+# Per-tier LLM build tests
+# ---------------------------------------------------------------------------
+
+class TestBuildLlmModelTier:
+    """Tests for _build_llm with model_tier parameter."""
+
+    def test_openai_research_tier_uses_o3(self, monkeypatch):
+        """Research tier with OpenAI should use o3 by default."""
+        monkeypatch.delenv("OPENAI_RESEARCH_MODEL", raising=False)
+        llm = _build_llm(provider=PROVIDER_OPENAI, model_tier="research")
+        assert "o3" in llm.model
+
+    def test_openai_basic_tier_uses_gpt4_mini(self, monkeypatch):
+        """Basic tier with OpenAI should use gpt-4.1-mini by default."""
+        monkeypatch.delenv("OPENAI_MODEL", raising=False)
+        llm = _build_llm(provider=PROVIDER_OPENAI, model_tier="basic")
+        assert "gpt-4.1-mini" in llm.model
+
+    def test_openai_basic_tier_env_override(self, monkeypatch):
+        """OPENAI_MODEL env var should override basic model."""
+        monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini")
+        llm = _build_llm(provider=PROVIDER_OPENAI, model_tier="basic")
+        assert "gpt-4o-mini" in llm.model
+
+    def test_gemini_research_tier_uses_pro(self, monkeypatch):
+        """Research tier with Gemini should use pro by default."""
+        monkeypatch.delenv("GEMINI_PM_MODEL", raising=False)
+        monkeypatch.delenv("GEMINI_RESEARCH_MODEL", raising=False)
+        llm = _build_llm(provider=PROVIDER_GEMINI, model_tier="research")
+        assert "gemini-3.1-pro-preview" in llm.model
+
+    def test_gemini_basic_tier_uses_flash(self, monkeypatch):
+        """Basic tier with Gemini should use flash by default."""
+        monkeypatch.delenv("GEMINI_MODEL", raising=False)
+        llm = _build_llm(provider=PROVIDER_GEMINI, model_tier="basic")
+        assert "gemini-3-flash-preview" in llm.model
+
+    def test_gemini_basic_tier_env_override(self, monkeypatch):
+        """GEMINI_MODEL env var should override basic model."""
+        monkeypatch.setenv("GEMINI_MODEL", "gemini-2.0-flash")
+        llm = _build_llm(provider=PROVIDER_GEMINI, model_tier="basic")
+        assert "gemini-2.0-flash" in llm.model
+
+    def test_basic_tier_different_from_research(self, monkeypatch):
+        """Basic and research tiers should produce different models."""
+        monkeypatch.delenv("OPENAI_RESEARCH_MODEL", raising=False)
+        monkeypatch.delenv("OPENAI_MODEL", raising=False)
+        llm_research = _build_llm(provider=PROVIDER_OPENAI, model_tier="research")
+        llm_basic = _build_llm(provider=PROVIDER_OPENAI, model_tier="basic")
+        assert llm_research.model != llm_basic.model
+
+
+class TestCreateProductManagerTier:
+    """Tests for create_product_manager with model_tier parameter."""
+
+    def test_basic_tier_agent_creation(self, monkeypatch):
+        """Creating a PM agent with basic tier should succeed."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        with _mock_build_tools(), \
+             patch(
+                 "crewai_productfeature_planner.agents.product_manager.agent._build_llm",
+                 return_value="openai/gpt-4.1-mini",
+             ) as mock_llm:
+            agent = create_product_manager(model_tier="basic")
+        mock_llm.assert_called_once_with(
+            provider=PROVIDER_OPENAI, model_tier="basic",
+        )
+        assert agent.role == "Senior Product Manager"
+
+    def test_research_tier_is_default(self, monkeypatch):
+        """Default model_tier should be 'research'."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        with _mock_build_tools(), \
+             patch(
+                 "crewai_productfeature_planner.agents.product_manager.agent._build_llm",
+                 return_value="openai/o3",
+             ) as mock_llm:
+            create_product_manager()
+        mock_llm.assert_called_once_with(
+            provider=PROVIDER_OPENAI, model_tier="research",
+        )

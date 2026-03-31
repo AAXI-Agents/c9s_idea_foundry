@@ -21,7 +21,8 @@ Deep-thinking models for complex, multi-iteration tasks.
 
 | Consumer | File | Purpose |
 |----------|------|---------|
-| Product Manager agent | `agents/product_manager/agent.py` | PRD section drafting, refinement |
+| Product Manager agent (research-tier sections) | `agents/product_manager/agent.py` | PRD section drafting/refinement for complex sections (Problem Statement, User Personas, Functional Requirements, Non-Functional Requirements, Edge Cases) |
+| Product Manager agent (basic-tier sections) | `agents/product_manager/agent.py` | PRD section drafting/refinement for structured sections (Error Handling, Success Metrics, Dependencies, Assumptions) — uses **basic** model via `model_tier="basic"` (v0.48.1) |
 | Idea Refiner agent | `agents/idea_refiner/agent.py` | Iterative idea enrichment (3-10 cycles) |
 | Requirements Breakdown | `agents/requirements_breakdown/agent.py` | Requirements decomposition |
 | Orchestrator agent | `agents/orchestrator/agent.py` | Confluence publish, Jira creation |
@@ -40,8 +41,27 @@ Lightweight model for section critique (v0.8.1+). No tools.
 
 - **User-facing, lightweight, or routing logic** → Basic tier
 - **Content generation, iterative refinement, deep reasoning** → Research tier
+- **Structured/derivative content (enumerative, template-like)** → Basic tier via `model_tier="basic"` (v0.48.1)
 - **Quality scoring without tools** → Critic tier
 - Import defaults from `agents/gemini_utils.py`
+
+## Per-Section Model Tier (v0.48.1)
+
+PRD sections are assigned model tiers based on reasoning complexity:
+
+| Section | Tier | Rationale |
+|---------|------|-----------|
+| Problem Statement | `research` | Foundational framing, sets scope |
+| User Personas | `research` | Empathy modeling, creative analysis |
+| Functional Requirements | `research` | Core technical specification |
+| Non-Functional Requirements | `research` | Performance/security reasoning |
+| Edge Cases | `research` | Adversarial/creative thinking |
+| Error Handling | `basic` | Derivative from Func Reqs + Edge Cases |
+| Success Metrics | `basic` | Structured KPI definition |
+| Dependencies | `basic` | Enumerative listing |
+| Assumptions | `basic` | Enumerative listing |
+
+Configuration: `SECTION_DRAFT_TIER` dict in `apis/prd/_sections.py`
 
 ## Fast Path vs CrewAI Path (v0.43.3)
 

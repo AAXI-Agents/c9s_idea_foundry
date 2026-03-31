@@ -28,7 +28,7 @@
 | `ENGAGEMENT_MANAGER_USE_CREWAI` | Set `true` to force CrewAI path instead of fast direct REST API (v0.43.3) |
 | `IDEA_AGENT_MODEL` | Override Gemini model for Idea Agent (defaults to `GEMINI_MODEL`) |
 | `IDEA_AGENT_USE_CREWAI` | Set `true` to force CrewAI path instead of fast direct REST API (v0.43.3) |
-| `OPENAI_MODEL` | **Basic** OpenAI model — intent classification |
+| `OPENAI_MODEL` | **Basic** OpenAI model — intent classification, basic-tier section drafting (v0.48.1) |
 | `OPENAI_RESEARCH_MODEL` | **Research** OpenAI model — PRD section drafting & critique |
 | `CRITIC_LLM_TIMEOUT` | Timeout for critic agent calls |
 
