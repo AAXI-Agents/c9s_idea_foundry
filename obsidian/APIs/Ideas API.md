@@ -1,4 +1,18 @@
+---
+tags:
+  - api
+  - endpoints
+---
+
 # Ideas API
+
+> [!warning] Deprecated — Use Per-Route Files
+> This monolithic file is superseded by individual per-route files in [[Ideas/]].
+> Each endpoint now has its own file with detailed request, response, and database algorithm.
+> **Edit the per-route files instead.** This file is kept for historical reference only.
+
+---
+
 
 > Read and manage product feature ideas and their lifecycle status.
 
@@ -60,6 +74,7 @@ Returned by all GET and PATCH endpoints.
 ```json
 {
   "run_id": "a1b2c3d4e5f6",
+  "title": "Dark Mode Dashboard",
   "idea": "Add dark mode to the dashboard",
   "finalized_idea": "## Dark Mode Dashboard\n\nA comprehensive dark mode...",
   "status": "completed",
@@ -78,6 +93,7 @@ Returned by all GET and PATCH endpoints.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `run_id` | `string` | — | Unique identifier for this flow run (used across all APIs) |
+| `title` | `string` | `""` | Short display title for the idea. Set during kickoff via the `title` field in `PRDKickoffRequest`. When empty, the first line of `idea` text can be used as a fallback in the UI |
 | `idea` | `string` | `""` | Original idea text submitted by the user |
 | `finalized_idea` | `string` | `""` | Enriched idea after Idea Refinement agent processing — includes structured markdown with problem statement, scope, and constraints. Empty until refinement completes |
 | `status` | `string` | `""` | Current lifecycle status (see Status Lifecycle below) |

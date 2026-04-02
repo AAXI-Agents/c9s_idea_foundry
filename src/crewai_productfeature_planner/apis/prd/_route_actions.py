@@ -34,6 +34,7 @@ from crewai_productfeature_planner.mongodb.crew_jobs import (
     create_job,
     find_active_job,
 )
+from crewai_productfeature_planner.mongodb.working_ideas import save_project_ref
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -131,6 +132,22 @@ async def kickoff_prd_flow(
 
     # Persist job to crewJobs collection (queued status)
     create_job(job_id=run_id, flow_name="prd", idea=request.idea)
+
+    # Link idea to project (if provided)
+    if request.project_id:
+        save_project_ref(run_id, request.project_id, idea=request.idea)
+
+    # Store title in working idea (if provided)
+    if request.title:
+        try:
+            from crewai_productfeature_planner.mongodb.client import get_db
+            get_db()["workingIdeas"].update_one(
+                {"run_id": run_id},
+                {"$set": {"title": request.title}},
+                upsert=True,
+            )
+        except Exception:
+            logger.warning("[API] Failed to save title for run_id=%s", run_id, exc_info=True)
 
     logger.info(
         "[API] Queueing PRD flow (run_id=%s, idea='%s')",

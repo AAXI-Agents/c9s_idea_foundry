@@ -1,4 +1,18 @@
+---
+tags:
+  - api
+  - endpoints
+---
+
 # PRD Flow API
+
+> [!warning] Deprecated — Use Per-Route Files
+> This monolithic file is superseded by individual per-route files in [[PRD Flow/]].
+> Each endpoint now has its own file with detailed request, response, and database algorithm.
+> **Edit the per-route files instead.** This file is kept for historical reference only.
+
+---
+
 
 > Start, monitor, approve, pause, and resume PRD generation flows.
 
@@ -45,6 +59,8 @@ Typical frontend workflow for interactive PRD generation:
 ```json
 {
   "idea": "Add dark mode to the dashboard with system preference detection",
+  "title": "Dark Mode Dashboard",
+  "project_id": "proj-abc123",
   "auto_approve": false
 }
 ```
@@ -52,6 +68,8 @@ Typical frontend workflow for interactive PRD generation:
 | Field | Type | Required | Constraints | Default | Description |
 |-------|------|----------|-------------|---------|-------------|
 | `idea` | `string` | **Yes** | 1–50,000 chars | — | The product feature idea to build a PRD for |
+| `title` | `string` | No | max 256 chars | `""` | Short display title for the idea. Used in dashboards and project views. When empty, the first line of the idea text is used as a fallback |
+| `project_id` | `string` | No | max 50 chars | `""` | Associate this PRD run with an existing project. Links the idea to the project so it inherits Confluence/Jira config. When empty, the idea is created without a project |
 | `auto_approve` | `bool` | No | — | `false` | When `true`, the flow runs end-to-end without pausing for manual approval. Sections auto-iterate between `PRD_SECTION_MIN_ITERATIONS` and `PRD_SECTION_MAX_ITERATIONS` and auto-approve when critique contains `SECTION_READY`. The `/flow/prd/approve` endpoint is not needed — poll `/flow/runs/{run_id}` for progress instead |
 
 ---
@@ -511,4 +529,5 @@ _No pending change requests._
 
 ### Completed
 
-_No completed change requests._
+- [x] **Agent Activity Log endpoint** — Implemented as `GET /flow/runs/{run_id}/activity`. Returns agent interaction events from `agentInteraction` collection. *(completed 2026-04-02)*
+- [x] **UX Design Flow trigger endpoint** — Documented as `[CHANGE] POST /flow/ux-design/{run_id}` pending user feedback on design questions. *(completed 2026-04-02)*

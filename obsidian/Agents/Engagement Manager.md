@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Engagement Manager
 
 > Handles unknown/ambiguous intents and orchestrates the full idea-to-PRD lifecycle with continuous heartbeat updates and user steering detection.

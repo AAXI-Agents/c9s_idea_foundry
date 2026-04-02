@@ -304,3 +304,31 @@ class PRDResumeResponse(BaseModel):
         default=None, description="1-based step number of the next section."
     )
     message: str = Field(..., description="Human-readable status message.")
+
+
+# ── Activity Log ──────────────────────────────────────────────
+
+
+class ActivityEvent(BaseModel):
+    """A single agent activity event."""
+
+    interaction_id: str = Field(..., description="Unique interaction identifier.")
+    source: str = Field(default="", description="Origin: 'slack', 'cli', 'api'.")
+    intent: str = Field(default="", description="Classified intent of the interaction.")
+    agent_response: str = Field(default="", description="Agent response text.")
+    run_id: str | None = Field(default=None, description="Associated flow run ID.")
+    user_id: str | None = Field(default=None, description="User who triggered the interaction.")
+    created_at: str = Field(default="", description="ISO-8601 timestamp.")
+    predicted_next_step: dict | None = Field(
+        default=None, description="LLM-predicted next action."
+    )
+
+
+class ActivityLogResponse(BaseModel):
+    """Response for GET /flow/runs/{run_id}/activity."""
+
+    run_id: str = Field(..., description="The run this activity belongs to.")
+    count: int = Field(default=0, description="Number of activity events returned.")
+    events: list[ActivityEvent] = Field(
+        default_factory=list, description="Activity events, newest first."
+    )

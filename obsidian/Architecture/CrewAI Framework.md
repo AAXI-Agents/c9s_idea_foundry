@@ -1,3 +1,8 @@
+---
+tags:
+  - architecture
+---
+
 # CrewAI Framework Reference
 
 > How this project uses CrewAI's core concepts — Agents, Tasks, Crews, Flows, Tools, Knowledge, and Memory.

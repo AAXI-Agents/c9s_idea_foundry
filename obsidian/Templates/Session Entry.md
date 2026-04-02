@@ -1,3 +1,8 @@
+---
+tags:
+  - templates
+---
+
 # Session Entry Template
 
 > Copy this template when starting a new session entry in [[Session Log]].

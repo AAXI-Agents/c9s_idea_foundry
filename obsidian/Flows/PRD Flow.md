@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # PRD Flow
 
 > End-to-end PRD generation pipeline. Each phase has its own detail page with step-by-step flow, data flow diagrams, skip conditions, approval gates, and source file paths.

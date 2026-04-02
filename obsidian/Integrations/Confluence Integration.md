@@ -1,3 +1,8 @@
+---
+tags:
+  - integrations
+---
+
 # Confluence Integration
 
 > Publishing PRDs to Atlassian Confluence.

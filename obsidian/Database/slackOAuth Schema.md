@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # slackOAuth Schema
 
 > Slack workspace OAuth token persistence — per-team bot tokens with rotation support.

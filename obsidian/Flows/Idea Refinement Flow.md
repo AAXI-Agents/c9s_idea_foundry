@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Step 1 — Idea Refinement Flow
 
 > Pipeline Step 1 — Iterative idea enrichment with domain expertise (3-10 cycles).

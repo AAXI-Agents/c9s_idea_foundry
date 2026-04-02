@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Engineering Manager
 
 > Transforms product vision into a bulletproof engineering plan with architecture, data flows, failure modes, and deployment strategy.

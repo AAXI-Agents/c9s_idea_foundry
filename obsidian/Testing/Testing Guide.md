@@ -1,3 +1,8 @@
+---
+tags:
+  - testing
+---
+
 # Testing Guide
 
 > Test structure, patterns, and common commands.

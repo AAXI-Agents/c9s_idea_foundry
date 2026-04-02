@@ -38,6 +38,7 @@ VALID_STATUSES = {"inprogress", "completed", "paused", "failed", "archived"}
 
 class IdeaItem(BaseModel):
     run_id: str
+    title: str = ""
     idea: str = ""
     finalized_idea: str = ""
     status: str = ""
@@ -235,6 +236,7 @@ def _idea_fields(doc: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "run_id": doc.get("run_id", ""),
+        "title": doc.get("title", ""),
         "idea": doc.get("idea", ""),
         "finalized_idea": doc.get("finalized_idea", ""),
         "status": status_val,

@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # projectConfig Schema
 
 > Per-project configuration — Confluence, Jira settings, and reference materials.
@@ -28,6 +34,7 @@
 |-------|------|----------|---------|-------------|
 | `project_id` | `string` | **Yes** | *UUID hex* | Unique project identifier — generated as UUID hex on creation |
 | `name` | `string` | **Yes** | — | Human-readable project display name (1–256 chars) |
+| `description` | `string` | No | `""` | Project description text — shown on project cards and detail pages (max 2,000 chars) |
 | `confluence_space_key` | `string` | No | `""` | Confluence space key for PRD publishing (e.g. `"PROD"`, `"ENG"`) |
 | `jira_project_key` | `string` | No | `""` | Jira project key for ticket creation (e.g. `"MCR"`, `"FEAT"`) |
 | `confluence_parent_id` | `string` | No | `""` | Confluence parent page ID — PRDs published as child pages under this |

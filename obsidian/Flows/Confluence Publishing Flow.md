@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Confluence Publishing Flow
 
 > Post-PRD — Publish the finalized PRD to Atlassian Confluence.

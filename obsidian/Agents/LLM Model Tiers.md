@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # LLM Model Tiers
 
 > The application uses three model tiers. Defaults live in `agents/gemini_utils.py`.

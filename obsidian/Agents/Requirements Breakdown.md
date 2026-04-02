@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Requirements Breakdown
 
 > Decomposes refined product ideas into granular, implementation-ready requirements with entities, state machines, API contracts, and acceptance criteria.

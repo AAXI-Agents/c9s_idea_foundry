@@ -45,6 +45,7 @@ _VALID_PAGE_SIZES = {int(v) for v in PageSize}
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=256)
+    description: str = Field(default="", max_length=2000)
     confluence_space_key: str = Field(default="", max_length=50)
     jira_project_key: str = Field(default="", max_length=50)
     confluence_parent_id: str = Field(default="", max_length=50)
@@ -53,6 +54,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=256)
+    description: str | None = None
     confluence_space_key: str | None = None
     jira_project_key: str | None = None
     confluence_parent_id: str | None = None
@@ -61,6 +63,7 @@ class ProjectUpdate(BaseModel):
 class ProjectItem(BaseModel):
     project_id: str
     name: str
+    description: str = ""
     confluence_space_key: str = ""
     jira_project_key: str = ""
     confluence_parent_id: str = ""
@@ -162,6 +165,7 @@ async def create_project(body: ProjectCreate, user: dict = Depends(require_sso_u
     logger.info("[Projects] CREATE name=%s user_id=%s", body.name, user.get("user_id"))
     project_id = _create_project(
         name=body.name,
+        description=body.description,
         confluence_space_key=body.confluence_space_key,
         jira_project_key=body.jira_project_key,
         confluence_parent_id=body.confluence_parent_id,
@@ -240,6 +244,7 @@ def _project_fields(doc: dict[str, Any]) -> dict[str, Any]:
     return {
         "project_id": doc.get("project_id", ""),
         "name": doc.get("name", ""),
+        "description": doc.get("description", ""),
         "confluence_space_key": doc.get("confluence_space_key", ""),
         "jira_project_key": doc.get("jira_project_key", ""),
         "confluence_parent_id": doc.get("confluence_parent_id", ""),

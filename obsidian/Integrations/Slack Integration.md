@@ -1,3 +1,8 @@
+---
+tags:
+  - integrations
+---
+
 # Slack Integration
 
 > Full Slack module map and interactive flow details (`apis/slack/`).

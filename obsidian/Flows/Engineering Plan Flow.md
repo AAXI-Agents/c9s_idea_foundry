@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Step 6 — Engineering Plan Flow
 
 > Pipeline Step 6 — Generate a bulletproof engineering plan from the Executive Product Summary, requirements, and all completed PRD sections.

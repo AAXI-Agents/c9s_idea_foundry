@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # UX Design Flow
 
 > Post-PRD — Standalone 2-phase design generation triggered by Finalization (Step 7).

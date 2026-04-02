@@ -34,6 +34,7 @@ from crewai_productfeature_planner.apis.slack.events_router import router as sla
 from crewai_productfeature_planner.apis.slack.interactions_router import router as slack_interactions_router
 from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
 from crewai_productfeature_planner.apis.slack.router import router as slack_router
+from crewai_productfeature_planner.apis.integrations.router import router as integrations_router
 from crewai_productfeature_planner.apis.sso_webhooks import router as sso_webhooks_router
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
 from crewai_productfeature_planner.scripts.logging_config import get_logger
@@ -596,6 +597,7 @@ app.include_router(slack_oauth_router)
 app.include_router(projects_router)
 app.include_router(ideas_router)
 app.include_router(publishing_router)
+app.include_router(integrations_router)
 app.include_router(sso_webhooks_router)
 
 # ── CORS — required for web-based SSO login flows ────────────

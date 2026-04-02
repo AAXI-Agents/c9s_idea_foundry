@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # crewJobs Schema
 
 > Async job tracking for PRD flow runs — status, timing, and lifecycle management.

@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Idea Agent
 
 > Context-aware in-thread analyst for active idea iterations — answers questions, provides steering recommendations, and identifies gaps.

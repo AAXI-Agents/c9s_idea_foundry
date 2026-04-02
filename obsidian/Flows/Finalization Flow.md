@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Step 7 — Finalization Flow
 
 > Pipeline Step 7 — Assemble all sections into the final PRD, trigger UX design and post-completion delivery.

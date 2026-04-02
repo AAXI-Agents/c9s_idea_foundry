@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # MongoDB Schema
 
 > Collections, indexes, and document schemas — each collection has its own detailed page.

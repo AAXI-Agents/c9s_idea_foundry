@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Product Manager
 
 > Drafts, critiques, and refines PRD sections through deep reasoning and iterative review cycles.

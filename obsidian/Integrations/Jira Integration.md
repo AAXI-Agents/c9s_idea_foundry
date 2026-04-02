@@ -1,3 +1,8 @@
+---
+tags:
+  - integrations
+---
+
 # Jira Integration
 
 > Phased Jira ticket creation for completed PRDs.

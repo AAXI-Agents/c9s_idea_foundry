@@ -1,3 +1,9 @@
+---
+tags:
+  - design
+  - ux
+---
+
 # Design System — CrewAI Product Feature Planner
 
 > **Role**: Design Partner (gstack `/design-consultation`)

@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # QA Engineer
 
 > Edge case and security testing — creates QA test counter-tickets for every implementation sub-task.

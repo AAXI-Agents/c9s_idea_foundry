@@ -1,6 +1,68 @@
+---
+tags:
+  - sessions
+---
+
 # Session Log
 
 > AI agent session tracking. Every new session or iteration appends an entry.
+
+---
+
+## Session — 2026-04-02 (v0.51.0)
+
+**Scope**: Obsidian vault restructure — docs-only release
+**Version**: v0.50.0 → v0.51.0
+
+### Changes
+
+- **Changelog restructure**: Rewrote `Version History.md` from per-version
+  sections into 7 weekly groupings with 3-column tables (Version, Date,
+  Summary). Added `> [!info]` callout for version scheme.
+- **YAML frontmatter**: Added frontmatter (tags, aliases) to all 103 markdown
+  files following Obsidian property conventions. Tags derived from folder
+  hierarchy (e.g. APIs→`api, endpoints`, Agents→`agents, crewai`).
+- **6 API docs completed**: Added Database Algorithm sections to 2 Publishing
+  and 4 Slack per-route files with accurate logic traced from source code
+  (`apis/publishing/router.py`, `apis/slack/router.py`).
+- **7 old API files deprecated**: Added `> [!warning] Deprecated` callouts to
+  monolithic API files (Health, Projects, Ideas, PRD Flow, Publishing, Slack,
+  SSO Webhooks) pointing to per-route replacements.
+- **Home.md updated**: Version to 0.51.0, added APIs navigation section with
+  per-route folder links, `> [!tip] Making Changes` callout for Change
+  Requests workflow, expanded vault tree.
+- **Obsidian best practices**: Applied callouts (tip, warning, info, note),
+  wikilinks, consistent formatting throughout vault.
+
+### Stats
+
+- No Python source changes — docs-only release
+- No new tests required
+- 2746 tests still passing
+
+---
+
+## Session — 2026-04-01 (v0.50.0)
+
+**Scope**: Activity Log & Integration Status APIs, obsidian/APIs restructure
+**Version**: v0.49.0 → v0.50.0
+
+### Changes
+
+- **GET /flow/runs/{run_id}/activity**: New endpoint returning agent interaction
+  events from `agentInteraction` collection. Configurable `limit` (1–500,
+  default 50). Models: `ActivityEvent`, `ActivityLogResponse` in `_responses.py`.
+- **GET /integrations/status**: New endpoint returning Confluence/Jira connection
+  status based on env vars. URL masking for security. New `apis/integrations/`
+  router package registered in `apis/__init__.py`.
+- **Obsidian restructure**: Split 8 monolithic API docs into 32 individual
+  per-route files across 8 subdirectories (Health, Projects, Ideas, PRD Flow,
+  Publishing, Slack, SSO Webhooks, Integrations). Each file has clear
+  request/response schemas and database algorithms. Updated `API Overview.md`
+  with full endpoint index (39 endpoints, 11 routers).
+- **[CHANGE] docs**: Created `[CHANGE] POST flow-ux-design-{run_id}.md` and
+  `[CHANGE] PATCH user-profile.md` for 2 low-confidence APIs needing user input.
+- **Tests**: 5 activity log tests + 4 integrations tests (9 new). 2746 passing.
 
 ---
 

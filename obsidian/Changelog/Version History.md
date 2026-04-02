@@ -1,501 +1,242 @@
+---
+tags:
+  - changelog
+  - versions
+aliases:
+  - Changelog
+  - Release Notes
+created: 2026-02-14
+updated: 2026-04-02
+---
+
 # Version History
 
-> Full changelog from v0.1.0 to current. Updated every session.
-
-## v0.48.x (2026-03-31)
-
-| Version | Summary |
-|---------|--------|
-| 0.48.2 | Model defaults & test performance fixes. Reverted `gemini_utils.py` DEFAULT_* constants to pure string fallbacks (env lookup at call sites, not import time). Fixed `openai_chat.py` to use centralized `DEFAULT_OPENAI_MODEL`. Updated `.env.example` with correct model vars. Fast-path autouse mocks in `test_engagement_manager` and `test_idea_agent` prevent real Gemini HTTP calls (EM tests: 20s→3s, IA tests: 5s→2s). Jira intent tests mock `_get_slack_client` and `predict_and_post_next_step`. 2738 tests passing |
-| 0.48.1 | Per-section LLM model tier optimization. Complex sections (Problem Statement, User Personas, Functional Requirements, Non-Functional Requirements, Edge Cases) use research model (pro/o3). Structured sections (Error Handling, Success Metrics, Dependencies, Assumptions) now use basic model (flash/gpt-4.1-mini) — ~44% fewer research-tier LLM calls. New `SECTION_DRAFT_TIER` mapping in `_sections.py`, `model_tier` parameter on `_build_llm()`, `create_product_manager()`, `get_available_agents()`. New `DEFAULT_OPENAI_MODEL` constant. 14 new tests. 2738 tests passing |
-| 0.48.0 | Fix CrewAI event-bus shutdown corruption — all PRD flows were crashing with `cannot schedule new futures after shutdown`. Root cause: CrewAI’s `crewai_event_bus` singleton registers `atexit.register(shutdown)` which permanently kills the `ThreadPoolExecutor`. New `scripts/crewai_bus_fix.py` with `ensure_crewai_event_bus()` detects a dead bus and reinitialises it. `install_crewai_bus_fix()` called at server startup to unregister the atexit handler. Guard added to `run_prd_flow()`, `resume_prd_flow()`, and `crew_kickoff_with_retry()`. 9 new tests. 2724 tests passing |
-
-## v0.47.2 (2026-03-30)
-
-| Version | Summary |
-|---------|--------|
-| 0.47.2 | Thread session isolation — reject non-owner replies. When User A was configuring a project in a Slack thread, User B posting in that thread would be processed instead of ignored. Fixed interactive-run and exec-feedback lookups to check `info.get("user") == user`. Added `get_thread_owner()` in `session_manager.py` as unified guard for all pending states. Final guard before `_interpret_and_act` rejects non-owners. 12 new tests. 2715 tests passing |
-
-## v0.47.1 (2026-03-30)
-
-| Version | Summary |
-|---------|--------|
-| 0.47.1 | Fix Confluence published checkmarks — delivery record is now the sole authority. Stale `confluence_url` on `workingIdeas` documents no longer implies published. Fixed `_doc_to_product_dict()`, `_startup_delivery.py`, and URL source priority (delivery record first). 5 new regression tests + cleanup script. 2703 tests passing |
-
-## v0.47.0 (2026-03-30)
-
-| Version | Summary |
-|---------|--------|
-| 0.47.0 | Background Slack token refresh scheduler — prevents token rotation death spiral. Root cause: Slack rotating tokens (xoxe.*) expire every 12h and refresh tokens are single-use. If the server is down during the refresh window, both tokens die permanently (`invalid_refresh_token`). Fix: (1) Added `token_refresh_scheduler.py` — background daemon thread that proactively refreshes tokens when < 1h remaining, runs every 30min, immediate refresh on startup. (2) Integrated into server lifespan (step 7b + shutdown). (3) Token manager `get_valid_token()` returns None on permanent `invalid_refresh_token` (env var fallback). (4) Circuit breakers in event handlers skip processing when no token. (5) 12 scheduler tests + test fixture fix. 2699 tests passing |
-
-## v0.46.1 (2026-03-30)
-
-| Version | Summary |
-|---------|--------|
-| 0.46.1 | Critical fix — Engagement Manager delivery failure detection and startup token validation. Root cause: expired Slack OAuth token caused silent message delivery failures. Fixes: (1) Extracted `_validate_slack_token()` in `apis/__init__.py` that calls `auth.test` on startup to verify the token is actually usable — logs ERROR for expired/revoked tokens instead of falsely reporting "token available". (2) Added delivery failure tracking in `_handle_engagement_manager` — logs ERROR with 'DELIVERY FAILED' when both Block Kit and plain-text fallback fail. (3) Added 28 regression tests in `test_engagement_manager_response.py` covering 7 invariants. 2681 tests passing |
-
-## v0.46.0 (2026-03-30)
-
-| Version | Summary |
-|---------|--------|
-| 0.46.0 | Enhanced knowledge base — created 5 new detailed knowledge files based on agent roles and tasks: `idea_refinement.txt` (domain expertise, hard questions framework, refinement output standards), `engineering_standards.txt` (engineering plan structure, architecture decisions, staff engineer review checklist, Jira ticket quality), `review_criteria.txt` (unified scoring criteria across all pipeline stages — idea refinement, executive summary, PRD sections, requirements breakdown, CEO review, UX design review, QA review), `ux_design_standards.txt` (design system principles, interaction states, WCAG accessibility, responsive breakpoints, AI slop blacklist, typography/color/component standards), `agent_roles_and_workflow.txt` (full 19-agent roster, pipeline execution order, LLM model tiers, orchestration strategy, data flow diagram). Wired new sources to agents: Idea Refiner gets `idea_refinement.txt`, Staff Engineer gets `engineering_standards.txt`, QA Lead and QA Engineer get `review_criteria.txt`. Updated `knowledge_sources.py` with 5 new builder functions. Updated `project_architecture.txt` with expanded agent roster and knowledge file listing |
-
-## v0.45.1 (2026-03-30)
-
-| Version | Summary |
-|---------|--------|
-| 0.45.1 | Fix test suite latency — full run reduced from 596s to 79s (7.6x speedup). 3 PRD flow tests (`test_callback_true_continues_to_sections`, `test_skip_phase1_when_exec_summary_has_enough_iterations`, `test_phase1_runs_when_below_threshold`) triggered real UX design LLM calls via unmocked `_trigger_ux_design_flow` (154s+137s+131s → <2s total). 3 Slack interaction tracking tests hit real Gemini API via unmocked engagement manager (~11s each → <0.1s). 2 HTTP error tests had real `time.sleep` during retry backoff (~3.5s each → <0.1s). 2653 tests passing |
-
-## v0.45.0 (2026-03-29)
-
-| Version | Summary |
-|---------|--------|
-| 0.45.0 | Complete Figma removal — UX design now produces markdown-only specifications. Removed entire `tools/figma/` package (6 files), `FigmaMakeTool` agent tool. Renamed state fields: `figma_design_prompt` → `ux_design_content`, `figma_design_status` → `ux_design_status`. Removed `figma_design_url`. Removed `figma_api_key`/`figma_team_id` from project config and Slack setup wizard (5→3 steps). Removed Figma env vars. UX Designer agent now produces 7-section markdown design specs with no external tool dependencies. Backward-compatible MongoDB reads use fallback pattern for legacy documents. Updated 30+ source files, 10 test files, 15+ Obsidian docs. All tests passing |
-
-## v0.44.0 (2026-03-29)
-
-| Version | Summary |
-|---------|--------|
-| 0.44.0 | PRD Flow Obsidian docs breakdown — split monolithic PRD Flow page into 10 individual flow step pages with detailed step-by-step documentation. New pages: Idea Refinement Flow, Executive Summary Flow, Requirements Breakdown Flow, CEO Review Flow, Engineering Plan Flow, Section Drafting Flow, Finalization Flow, UX Design Flow, Confluence Publishing Flow, Jira Ticketing Flow. Each page documents every step with skip conditions, approval gates, scoring criteria, progress events, resume behaviour, MongoDB persistence, data flow diagrams, and source file paths. PRD Flow converted to index page with execution flow diagram. CODEX updated with per-flow page references |
-
-## v0.43.9 (2026-03-29)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.9 | Agent Roles Obsidian docs breakdown — split monolithic Agent Roles page into 12 individual agent pages with detailed role, goal, backstory, tasks, tools, LLM model env vars, scoring criteria, PRD flow phases, and source file paths. New pages: Idea Refiner, Product Manager, Requirements Breakdown, Orchestrator, CEO Reviewer, Engineering Manager, Staff Engineer, QA Lead, QA Engineer, UX Designer, Engagement Manager, Idea Agent. Agent Roles converted to index page with execution order diagram and wikilinks. CODEX updated with per-agent page references |
-
-## v0.43.8 (2026-03-29)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.8 | MongoDB Schema Obsidian docs breakdown — split monolithic MongoDB Schema page into 9 individual collection pages: crewJobs, workingIdeas, productRequirements, projectConfig, projectMemory, agentInteraction, userSession, slackOAuth, userSuggestions. Each page documents every field with type, constraints, descriptions, API references, repository functions, indexes, and related collections. MongoDB Schema converted to index page with collection relationship diagram. 2728 tests passing |
-
-## v0.43.7 (2026-03-29)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.7 | API Obsidian docs breakdown — split monolithic API Overview into 7 individual domain pages with detailed field-level request/response schemas: Health API, Projects API, Ideas API, PRD Flow API, Publishing API, Slack API, SSO Webhooks API. Each page documents every field with type, constraints, defaults, and descriptions. API Overview converted to index page with wikilinks. Enables users to edit schemas and Codex to diff and apply code changes. 2728 tests passing |
-
-## v0.43.6 (2026-03-29)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.6 | Comprehensive API and Obsidian documentation update for web app integration. OpenAPI spec: title updated to "Idea Foundry API", added web app integration guide (auth, pagination, error handling, CORS, status lifecycle), 7 new path files (Projects CRUD, Ideas lifecycle, SSO Webhooks), 10 new component schemas, security schemes, API tags. Obsidian: API Overview rewritten as web app reference, Project Overview updated with dual-client architecture, Server Lifecycle updated to current startup sequence, Environment Variables reorganized with web app section, MongoDB Schema added data model mapping. 2728 tests passing |
-
-## v0.43.5 (2026-03-28)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.5 | Fix 47-second server startup regression. (1) Credential checks in `_helpers.py` lazily imported from `tools.confluence_tool`/`tools.jira_tool`, triggering `tools/__init__.py` → `file_read_tool` → `crewai_tools` → full CrewAI framework (~15s). Fixed by inlining env-var checks. (2) `find_completed_without_confluence()` fetched full documents (~100KB each) for all completed ideas from Atlas — ~47s. Fixed with two-phase query: projection first (0.05s), then full docs only for unpublished. Result: startup pipeline ~47s → ~0.9s. 2728 tests passing |
-
-## v0.43.4 (2026-03-28)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.4 | Fix thread-history mention gate — bot now responds to thread follow-ups without @mention when it has already replied (persisted in agentInteractions). After server restarts cleared the in-memory thread cache, the bot silently ignored follow-ups unless re-@mentioned. The `has_bot_thread_history()` check was gated behind `_bot_mentioned` — now ungated (same as the flow_thread fallback). 2728 tests passing |
-
-## v0.43.3 (2026-03-28)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.3 | Engagement Manager & Idea Agent latency optimization — bypass CrewAI Crew.kickoff() overhead (~2-4 s) with direct Gemini REST API calls (~200-800 ms). (1) New `generate_chat_response()` in `gemini_chat.py` — plain-text Gemini REST API helper (thinkingBudget=0, 30s timeout, 2 retries). (2) `handle_unknown_intent()` fast path by default; fallback to CrewAI on failure or `ENGAGEMENT_MANAGER_USE_CREWAI=true`. (3) `detect_user_steering()` same fast/fallback pattern. (4) `handle_idea_query()` same pattern (`IDEA_AGENT_USE_CREWAI=true`). (5) 21 new tests. 2728 tests passing |
-
-## v0.43.2 (2026-03-28)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.2 | Immediate 'Thinking…' acknowledgment on all Slack interactions. (1) New `_post_thinking()` in `_message_handler.py` posts `:thinking_face: Thinking…` before LLM classification. (2) `interpret_and_act()` calls it before `_interpret_and_act_inner()` (all @mention + thread-reply paths). (3) cmd_* button clicks in `_dispatch.py` get a 'Thinking…' ack via `_post_ack()`. 2707 tests passing |
-
-## v0.43.1 (2026-03-27)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.1 | Reduce Slack iteration noise and enhance completion summaries. (1) Suppress section_iteration and exec_summary_iteration progress messages — per-iteration refinement noise no longer floods the Slack thread. (2) section_complete and executive_summary_complete events now include full section content. (3) Completion messages tag user (<@user>) when user ID is available (interactive flows). (4) Completion messages include inline content preview; content exceeding Slack's 2800-char block limit is truncated and full text uploaded as downloadable .md file. (5) Leverages _slack_file_helper.py (truncate_with_file_hint, upload_content_file). 2707 tests passing |
-
-## v0.43.0 (2026-03-27)
-
-| Version | Summary |
-|---------|--------|
-| 0.43.0 | New Idea Agent — context-aware in-thread analyst for active idea iterations. Replaces Engagement Manager during active flows so user questions get rich, specific answers. (1) New agents/idea_agent/ module (agent.yaml, tasks.yaml, agent.py). (2) _extract_iteration_context() builds structured context from working-idea MongoDB doc. (3) handle_idea_query() runs with full iteration context. (4) extract_steering_feedback() parses steering recommendations. (5) _handle_idea_agent() in _message_handler.py. (6) general_question + active flow → Idea Agent (not _build_flow_summary). (7) Unknown intents during active flows → Idea Agent (Engagement Manager disengaged). (8) 21 new tests. 2696 tests passing |
-
-## v0.42.4 (2026-03-27)
-
-| Version | Summary |
-|---------|--------|
-| 0.42.4 | ISO 27001 security audit — all HIGH and MEDIUM findings remediated. (1) XSS fix on OAuth callback. (2) SSRF protection on webhook_url. (3) figma_api_key masked → figma_api_key_set boolean. (4) Error detail redaction (global handler + publishing router). (5) Input validation max_length. (6) Slack verify WARNING on bypass. (7) Path traversal guard. (8) section_key/pipeline_key injection guards. (9) Auth on health token endpoints. (10) Query limit bounds. 2675 tests passing |
-
-## v0.42.3 (2026-03-27)
-
-| Version | Summary |
-|---------|--------|
-| 0.42.3 | Root-cause fix: save_iteration() was unconditionally overwriting status to 'inprogress' via $set — resurrecting archived ideas. (1) save_iteration(), save_executive_summary_iteration(), save_pipeline_step() now guard terminal statuses (archived, completed, failed). (2) resume_prd_flow() queries MongoDB and refuses to resume archived/failed runs. (3) generate_sections() adds early check_cancelled(). (4) Manually archived stale d64725f5e861. 2675 tests |
-
-## v0.42.2 (2026-03-27)
-
-| Version | Summary |
-|---------|--------|
-| 0.42.2 | Fix archive cancellation for resumed/auto-resumed flows. (1) resume_prd_flow() now registers cancel_events and catches FlowCancelled — previously ignored archive cancel signals. (2) _run_slack_resume_flow() registers cancel event before resume. (3) request_cancel() creates event if missing (defensive). (4) REST API archive path calls request_cancel() + _unblock_gates_for_cancel() + archives crew job. (5) _resume_flow_background() checks archived status before resuming. (6) Fixed completed_at None validation in GET /ideas. 2675 tests passing |
-
-## v0.42.1 (2026-03-27)
-
-| Version | Summary |
-|---------|--------|
-| 0.42.1 | Archive stops active flows + scan cleanup. (1) FlowCancelled exception + cancel_events registry in shared.py with request_cancel(), is_cancelled(), check_cancelled() helpers. (2) kick_off_prd_flow() registers cancel event per run_id. (3) execute_archive_idea() signals cancel + unblocks gates. (4) _unblock_gates_for_cancel() sets all pending gate events. (5) PRDFlow.generate_sections() checks cancellation at 6 strategic points. (6) run_prd_flow() catches FlowCancelled → archived status. (7) Interactive flow runner + router handle FlowCancelled. (8) get_run_documents() excludes archived status. (9) archive_stale_jobs_on_startup() — new startup step cleans crew jobs for archived ideas. (10) Cleaned up stale d64725f5e861 'new idea' flow. 17 new tests, 2675+ total |
-
-## v0.42.0 (2026-03-26)
-
-| Version | Summary |
-|---------|--------|
-| 0.42.0 | Summarize ideas, user suggestions, admin config guard, idea command-phrase guard, archive knowledge file. (1) New 'summarize_ideas' intent — AI-powered narrative summary via Engagement Manager; BTN_SUMMARIZE_IDEAS + cmd dispatch. (2) New userSuggestions MongoDB collection — tracks clarification_needed and unknown_intent entries for self-learning. (3) Engagement Manager category D 'clarification needed' for ambiguous intents. (4) product_list_blocks() Config button hidden for non-admin users + handler guard. (5) _is_command_phrase_idea() prevents auto-starting PRD flow for command phrases like 'add new idea'. (6) archive_idea_knowledge() moves idea .md to archives/{YYYY}/{MM}/{DD}/ on archive action. 22 new tests, 2658+ total |
-
-## v0.41.0 (2026-03-26)
-
-| Version | Summary |
-|---------|--------|
-| 0.41.0 | UX Design flow refactor — standalone 2-phase post-PRD flow. (1) Phase 1.5c removed from PRDFlow.generate_sections(); UX design now triggered from finalize() after PRD completion. (2) _ux_design.py fully rewritten: run_ux_design_draft() (Phase 1 — UX Designer + Design Partner), run_ux_design_review() (Phase 2 — Senior Designer 7-pass review), run_ux_design_flow() (orchestrates both). (3) Fixed filenames (ux_design_draft.md, ux_design_final.md) — fixes 30-file proliferation. (4) 3 new YAML configs (design_partner, senior_designer, ux_design_flow_tasks). (5) 3 new agent factories with credential checks. (6) ux_design_flow.py standalone entry point. (7) _finalization.py _trigger_ux_design_flow() with skip guards and error propagation. 37 UX design tests, 2636 total |
-
-## v0.40.0 (2026-03-25)
-
-| Version | Summary |
-|---------|--------|
-| 0.40.0 | Engagement Manager project knowledge awareness. (1) New _build_project_tools() builds FileReadTool + DirectoryReadTool scoped to project knowledge folder, loads completed-ideas context from MongoDB. (2) create_engagement_manager(project_id) gives agent file-reading tools and appends ideas context to backstory. (3) handle_unknown_intent(project_id) passes {project_knowledge} to task template. (4) engagement_response_task rewritten with A/B/C classification (knowledge question / action intent / steering) and duplication/synergy detection instructions. (5) agent.yaml backstory expanded with Project Knowledge & Idea Awareness section. (6) _message_handler.py passes project_id. 12 new tests, 59 EM tests, 2614 total |
-
-## v0.39.0 (2026-03-24)
-
-| Version | Summary |
-|---------|--------|
-| 0.39.0 | Engagement Manager PRD Orchestrator — transforms the engagement manager from a simple intent router into a full idea-to-PRD lifecycle orchestrator. (1) agent.yaml rewritten with expanded role, full agent team knowledge, 2-step orchestration strategy (Step 1 sequential, Step 2 parallel), heartbeat protocol, user steering detection, session isolation. (2) 3 new tasks: idea_to_prd_orchestration_task, heartbeat_update_task, user_steering_detection_task. (3) 5 new functions: generate_heartbeat(), make_heartbeat_progress_callback(), detect_user_steering(), _parse_steering_result(), orchestrate_idea_to_prd(). (4) .gitignore updated to ignore entire output/ folder. (5) conftest.py recursion limit fix for crewai 1.9.x. 32 new tests, 47 engagement manager tests total |
-
-## v0.38.0 (2026-03-24)
-
-| Version | Summary |
-|---------|--------|
-| 0.38.0 | Publication safety overhaul — user-triggered publishing only. (1) Duplicate Confluence fix — publish_to_confluence() accepts page_id; stored confluence_page_id reused for updates instead of creating duplicates. (2) Auto-publish removal — _run_auto_post_completion() no longer calls crews; startup functions discovery-only; file watcher disabled; startup stage always skips. (3) Confluence prerequisite for Jira — all Jira paths check confluence_url first; user guided to publish Confluence with button if not yet published. 23 tests updated, 2571 total |
-
-## v0.37.1 (2026-03-24)
-
-| Version | Summary |
-|---------|--------|
-| 0.37.1 | Slack thread recovery & flow-aware summaries. (1) Flow thread recovery — thread messages no longer silently dropped after in-memory cache expiry; new find_idea_by_thread() MongoDB fallback queries workingIdeas by slack_channel + slack_thread_ts, re-caches on match. (2) Flow-aware summaries — summary/status/progress requests in flow threads return structured flow status (emoji, sections done/total, idea text, section names) instead of generic help. 16 new tests, 2571 total |
-
-## v0.37.0 (2026-03-23)
-
-| Version | Summary |
-|---------|--------|
-| 0.37.0 | Server crash-prevention hardening for 99.99% uptime. _safe_handler() wraps all 13 Slack interaction handler dispatches with crash protection + Slack error notification. Global exception handler enhanced with exc_info=True. PRD router MongoDB calls wrapped (list_resumable, list_jobs, get_job, kickoff). OAuth router, SSO webhooks hardened. Jira & Confluence JSON decode protection. 14 new tests, 2560 total |
-
-## v0.36.0 (2026-03-23)
-
-| Version | Summary |
-|---------|--------|
-| 0.36.0 | Fully automated PRD flow + active-flow config guard. Default mode switched from interactive to automated — all approval gates auto-approve with progress summaries. Enhanced critique summaries in Slack. Auto-resume on server restart via find_resumable_on_startup(). Config guard blocks project configuration during active flows. 29 new tests, 2541 total |
-
-## v0.35.0 (2026-03-22)
-
-| Version | Summary |
-|---------|--------|
-| 0.35.0 | Engagement Manager agent — new CrewAI agent handles unknown intents with context-aware conversational responses. Uses GEMINI_MODEL (basic tier). Integrated into Slack message handler with graceful fallback. General questions retain direct LLM reply. 16 new tests, 2512 total |
-
-## v0.28.x (2026-03-20)
-
-| Version | Summary |
-|---------|--------|
-| 0.28.0 | Confluence/Jira page titles use idea text instead of 'PRD —' prefix. New make_page_title() helper, 12 inline sites replaced across 9 files. 8 new tests, 2328 total |
-| 0.28.1 | Fix Confluence 'not configured' false negative. _has_confluence_credentials() no longer requires CONFLUENCE_SPACE_KEY env var — space key resolved per-project from projectConfig at publish time. 2329 tests |
-| 0.28.2 | Suppress redundant 'PRD Generation Complete' Slack notification when PRD is fully delivered. Granular progress messages suffice; summary banner and next-step skipped in all 3 flow completion paths. 2329 tests |
-
-## v0.29.x (2026-03-20)
-
-| Version | Summary |
-|---------|--------|
-| 0.29.0 | Route Slack thread replies to active PRD flow. Queued feedback mechanism so user replies during section drafting are acknowledged and injected into the next section-loop critique instead of falling through to LLM intent classifier. 2329 tests |
-| 0.29.1 | Fix bot not responding in Slack session threads after cache expiry or server restart. Added `has_bot_thread_history()` fallback checking MongoDB agentInteraction for prior bot participation. Re-registers thread in memory cache on hit. 6 new tests, 2335 total |
-| 0.29.2 | Fix bare 'configure' not recognised as project config intent. Added 'configure' to `_UPDATE_CONFIG_PHRASES` and LLM prompt examples. 5 new tests, 2340 total |
-
-## v0.30.x (2026-03-20)
-
-| Version | Summary |
-|---------|---------|
-| 0.30.0 | All bot commands clickable — replaced every 'Say *command*' text prompt with interactive Slack Block Kit buttons. New `_command_blocks.py` (11 button constants, 10 composite builders), new `_command_handler.py` (cmd_* dispatch). 18 text prompts replaced across 12 files. Help intent now renders Block Kit with action buttons. 33 new tests, 2373 total |
-| 0.30.1 | Complete intent-to-button coverage: added 5 missing cmd_* buttons (publish, create_jira, restart_prd, current_project, create_prd). 16 total button constants. Codified Slack Interaction-First Rule in CODEX.md § Slack Interaction-First Rule and Coding Standards § 9. Unknown-intent fallback now shows New Idea + Help buttons. 7 new tests, 2380 total |
-| 0.30.2 | Admin-gated project configuration: non-admin channel users blocked from configure/switch/create project buttons and update_config text intent. Role-aware help_blocks() hides admin-only buttons for non-admins. Admin gate on configure_memory next-step accept. 18 new tests, 2398 total |
-| 0.30.3 | Defense-in-depth admin gates in handlers: can_manage_memory checks inside handle_update_config, handle_configure_memory, handle_project_name_reply, handle_project_setup_reply. Blocks non-admins at handler level regardless of caller. |
-
-## v0.31.x (2026-03-21)
-
-| Version | Summary |
-|---------|---------|
-| 0.31.0 | Interaction-first rule for ALL prompts: replaced every 'type skip', 'say *command*', 'just tell me' text with clickable Block Kit buttons. Setup wizard Skip button, setup-complete/next-step/greeting/idea-list/empty-ideas all use action buttons. _SETUP_ACTIONS dispatch routing. Interaction-First Testing section in CODEX.md. 26 new tests, 2425 total |
-| 0.31.1 | Fix 'configure tools' misrouted to project config. Added tools phrases to _CONFIGURE_MEMORY_PHRASES and both LLM prompts. Guarded update_config dispatch so memory/tool phrases prevent update_config catch. 4 new tests, 2429 total |
-| 0.31.2 | Slack file-upload fallback for truncated content. When block text exceeds 2800 chars, inline preview truncated and full content uploaded as downloadable text file in thread. All 5 rendered sections: idea approval, manual refinement, requirements breakdown, exec summary feedback, exec summary completion. New _slack_file_helper module. 18 new tests, 2447 total |
-
-## v0.32.x (2026-03-21)
-
-| Version | Summary |
-|---------|--------|
-| 0.32.0 | Bot only responds in threads where it is @mentioned. Fallback conditions (active_session, thread_history) in events_router now require @mention. Active workflow conditions (interactive, pending, conversation) remain unrestricted. 6 new tests, 2453 total |
-| 0.32.1 | Fix files:write scope missing from Slack manifest (file uploads failed). Admin cache now has 5-min TTL so role changes detected without restart. exec_summary_completion truncation limit lowered to 2700. 3 new tests, 2456 total |
-
-## v0.33.x (2026-03-22)
-
-| Version | Summary |
-|---------|--------|
-| 0.33.0 | Output file reorganisation & UX design file fix. UX markdown only generated on successful Figma design (URL available). PRD/UX files now saved under output/{project_id}/product requirement documents/ and output/{project_id}/ux design/. Added ux_output_file MongoDB field. Startup disk scanner covers both legacy and project dirs. Migration script: scripts/migrate_output_dirs.py. 7 new tests, 2463 total |
-
-## v0.34.x (2026-03-22)
-
-| Version | Summary |
-|---------|--------|
-| 0.34.0 | Project knowledge base — Obsidian-style knowledge folders for agent learning. New scripts/project_knowledge.py generates projects/ folders with overview pages (config, memory, tools, references) and completed idea pages (YAML frontmatter, wikilinks, PRD sections). Hooked into create_project() and finalize(). Integrated load_completed_ideas_context() into enrich_backstory() so agents receive completed idea summaries. 34 new tests, 2496 total |
-
-## v0.27.x (2026-03-17)
-
-| Version | Summary |
-|---------|---------|| 0.27.1 | MongoDB database name fully environment-driven. Removed stale legacy vars from .env.example and README. migrate_to_atlas.py imports DEFAULT_DB_NAME. Updated docs for MONGODB_DB switching. 2320 tests || 0.27.0 | SERVER_ENV three-tier public URL resolution. get_server_env(), is_dev(), get_public_url() in ngrok_tunnel.py. DEV→ngrok, UAT→DOMAIN_NAME_UAT, PROD→DOMAIN_NAME_PROD. Rewired main.py and start_server.sh. 11 new tests, 2320 total |
-
-## v0.26.x (2026-03-17)
-
-| Version | Summary |
-|---------|---------|
-| 0.26.0 | Logging standard & incident-trace instrumentation. CODEX § Logging Standard + Coding Standards § 8. Converted 41 files to get_logger(). Added trace logging (run_id, user_id, channel, team_id) to health, projects, ideas, SSO, publishing, Slack tools, OpenAI/Gemini chat, document assembly. 2303 tests |
-
-## v0.25.x (2026-03-17)
-
-| Version | Summary |
-|---------|---------|
-| 0.25.0 | SSO-based user_id on all API endpoints. All auth via external SSO portal; no local user accounts in ideas DB. API endpoints receive user_id from SSO JWT sub claim. 2303 tests |
-
-## v0.24.x (2026-03-16)
-
-| Version | Summary |
-|---------|---------|
-| 0.24.0 | CRUD APIs with pagination for Projects and Ideas — GET/POST/PATCH/DELETE /projects; GET/PATCH /ideas with pagination (10/25/50), project_id & status filters. SSO-protected. 35 new tests, 2307 total |
-
-## v0.23.x (2026-03-16)
-
-| Version | Summary |
-|---------|---------|
-| 0.23.0 | SSO "Idea Foundry" application whitelisting — sso_auth.py rewritten for RS256 JWT (was HS256); app_id claim enforcement via SSO_EXPECTED_APP_ID; sso_webhooks.py handles all 6 SSO events; X-Webhook-Signature header (was X-SSO-Signature); .env.example SSO block; FastAPI title "Idea Foundry"; SSO bootstrap seeds Idea Foundry as registered OAuth app. 2272 tests |
-
-## v0.22.x (2026-03-16)
-
-| Version | Summary |
-|---------|---------|
-| 0.22.3 | Fix UX Design task producing no user-visible output — task YAML mandates FIGMA_PROMPT always; error recovery; PRD appendix; standalone file; Slack preview. 2272 tests |
-| 0.22.2 | LLM token optimisation — critique task uses `approved_context_condensed(char_limit=300)` instead of full `approved_context()`; new `condensed_text()` truncates EPS/eng plan to 1500 chars for critique; removed redundant `critique_section_content` from refine expected_output. Manual UX Design button — product list offers `:page_facing_up: Manual UX Design` alongside API retry; uploads markdown file with EPS + ux_design section for Figma Make copy-paste. 2271 tests |
-| 0.22.1 | Project config wizard + Config button — expanded `_UPDATE_CONFIG_PHRASES` (12→21) with project config/configure/reconfigure/settings phrases; rewrote `handle_update_config` to launch 5-step setup wizard with pre-populated current values; added `:gear: Config` button to product list header; new `mark_pending_reconfig()` in session_manager; `product_config` dispatch → `_handle_product_config`; `project_name` as step 1 (skipped for new projects). 2260 tests |
-| 0.22.0 | Figma project config + OAuth + REST API — 5 Figma fields in `projectConfig` schema; `_api.py` REST client; project-level credential resolution (API key → OAuth → session); OAuth cookie injection in `_client.py`; dual-mode `login.py` (--oauth flag); setup wizard 2→4 steps; agent/flow pipeline wiring. 2253 tests |
-
-## v0.21.x (2026-03-16)
-
-| Version | Summary |
-|---------|---------|
-| 0.21.1 | Fix 12/10 section count in idea list — `total_sections` hardcoded to 10 since v0.18.0 added 2 specialist sections; updated `_queries.py`, `_flow_handlers.py`, `_idea_list_blocks.py` to use 12. 2221 tests |
-| 0.21.0 | Figma Make — Playwright browser automation — replaced non-existent `/v1/ai/make` REST API with headless Chromium automation against `figma.com/make/new`. New `_client.py` (Playwright), `_config.py` (session-based auth), `login.py` (one-time interactive login). Removed `FIGMA_ACCESS_TOKEN`/`FIGMA_TEAM_ID`/`FIGMA_API_BASE`; added `FIGMA_SESSION_DIR`/`FIGMA_MAKE_TIMEOUT`/`FIGMA_HEADLESS`. 32 Figma tests rewritten. 2221 tests |
-
-## v0.20.x (2026-03-13)
-
-| Version | Summary |
-|---------|---------|
-| 0.20.2 | Retry UX Design dispatch fix + test performance — added `product_ux_design_` to `_PRODUCT_PREFIXES`; mocked `_run_ux_design` in 6 slow tests (199s → 32s total). 2205 tests |
-| 0.20.1 | Resume gate bypass fix — requirements approval gate and user decision gate no longer block on resume when specialist agents already ran. `_requires_approval()` checks specialist state; user decision gate skipped when all specialists were skipped or Phase 2 started |
-| 0.20.0 | UX Designer agent & Figma Make integration — Phase 1.5c converts Executive Product Summary into Figma Make prompt; Figma tool package (submit/poll/BaseTool); graceful fallback when FIGMA_ACCESS_TOKEN absent; Figma URL/status in MongoDB + product list; UX design feeds into all Jira stages. 55 new tests (2217 total) |
-
-## v0.19.x (2026-03-13)
-
-| Version | Summary |
-|---------|---------|
-| 0.19.0 | Jira Review & QA Test sub-tasks — extended 3-phase Jira pipeline to 5 phases. Phase 4: Staff Eng + QA Lead review sub-tasks per Story. Phase 5: QA Engineer test counter-tickets per dev sub-task (edge cases, security, rendering). 3 stub agents activated. Slack approval buttons for phases 4–5. 2162 tests |
-
-## v0.18.x (2026-03-13)
-
-| Version | Summary |
-|---------|---------|
-| 0.18.0 | GStack agent integration — 7 new agent roles (CEO Reviewer, Eng Manager + 5 stubs). Phase 1.5: CEO Reviewer → `executive_product_summary`, Eng Manager → `engineering_plan`. Both auto-approved specialist sections feed Phase 2 drafting + Jira context. SECTION_ORDER 10→12. 12 new tests; 2162 total |
-
-## v0.17.x (2026-03-13)
-
-| Version | Summary |
-|---------|---------|
-| 0.17.1 | Fix intent misclassification — idea text containing "jira tickets" or "jira epics" in the body was reclassified from `create_prd` to `create_jira` by the phrase override chain. Reordered phrase overrides (`has_idea_phrase` before `has_create_jira_phrase`) and added LLM trust guard; 3 new regression tests (605 Slack tests total) |
-| 0.17.0 | MongoDB Atlas migration — replaced localhost MongoDB with cloud-hosted Atlas; refactored `mongodb.client` to use `MONGODB_ATLAS_URI`; removed old connection env vars; created one-time migration script with dry-run support |
-
-## v0.16.x (2026-03-10)
-
-| Version | Summary |
-|---------|---------|
-| 0.16.2 | Server crash resilience and log-driven bug fixes — (1) `start_server_watchdog.sh` auto-restart with circuit breaker; (2) fix LLM run_id hallucination via `authoritative_run_id` on JiraCreateIssueTool; (3) fix ShutdownError/BillingError/ModelBusyError swallowed in `run_post_completion()`; (4) fix 7 pre-existing flaky retry tests; 12 new tests (2175 total) |
-| 0.16.1 | Fix post-completion flow not prompting user after resume — `handle_resume_prd()` was missing Jira callbacks, causing auto-publish instead of interactive phased flow; added `jira_skeleton_approval_callback` and `jira_review_callback` to `resume_prd_flow()`; 5 new tests (2150 total) |
-| 0.16.0 | Optimise PRD section generation performance — condensed prior-section context for refine tasks (titles+500 chars vs full text), exclude exec summary from approved_sections (dedup), remove knowledge_sources from critic agent; 4 new tests (2158 total) |
-
-## v0.15.x (2026-03-08 – 2026-03-10)
-
-| Version | Summary |
-|---------|---------|
-| 0.15.15 | Fix progress heartbeat not firing during interactive PRD flows — `run_interactive_slack_flow()` was missing `make_progress_poster()` callback; wired progress_cb to flow and callback registry; 3 new tests (2154 total) |
-| 0.15.14 | Add archive button to product list — completed ideas show `:file_folder: Archive` button; confirmation prompt reuses existing archive flow; wired in dispatch, handler, and Block Kit builder; 11 new tests (2151 total) |
-| 0.15.13 | Eliminate 'unknown' Jira ticket types — `_normalise_issue_type()` in `_tool.py` maps LLM variants ('task', 'Sub-Task', 'unknown') to canonical types; context-aware default (parent_key → Sub-task); 18 new tests (2140 total) |
-| 0.15.12 | Persist Jira Epics & Stories output to MongoDB for crash resilience — Sub-tasks stage can now resume after server restart; restores jira_skeleton and jira_epics_stories_output in _run_jira_phase(); 14 new tests (2122 total) |
-| 0.15.11 | Remove autonomous Jira detection — `persist_post_completion()`, `_cli_startup.py`, `components/startup.py` no longer set `jira_phase` / `jira_completed`; fixed stale data via one-time script; added data fix pattern to Coding Standards |
-| 0.15.10 | Fix delivery state reset — scheduler scan was overwriting `confluence_published` with False on every sweep |
-| 0.15.9 | Fix Confluence publish notification — heartbeat progress, Jira skeleton next-step button, button label corrected to "Create Jira Skeleton" |
-| 0.15.8 | Critical fix: Jira approval gate — 5 autonomous Jira paths blocked, 23 regression tests, `confluence_only` propagated to all callers |
-| 0.15.6 | Fix shutdown error handling — ShutdownError stops retries immediately, pauses flow for auto-resume |
-| 0.15.5 | Improve LLM error handling for HTTP 500 and transient errors |
-| 0.15.4 | Fix thread-reply intent regression — pending_memory state consumed commands; phrase-based command detection in pending_memory handler |
-| 0.15.3 | Fix 'create idea' not recognised — added to phrase list |
-| 0.15.2 | Fix 'configure memory' intent — phrase override before LLM dispatch |
-| 0.15.1 | Fix Slack bot not responding — env var token fallback for dev setups |
-| 0.15.0 | MongoDB collection & index bootstrap on startup; dev_setup.sh script |
-
-## v0.14.x (2026-03-07 – 2026-03-08)
-
-| Version | Summary |
-|---------|---------|
-| 0.14.6 | Fix product list UX for skeleton_pending — 'Review Jira Skeleton' button |
-| 0.14.5 | Persist Jira skeleton to MongoDB; show existing skeleton on resume |
-| 0.14.4 | Fix product list showing 'Jira complete' when interactive flow in progress |
-| 0.14.3 | Fix 'list ideas' showing 'No ideas found' when completed products exist |
-| 0.14.2 | Fix Flow.state read-only property crash in _run_jira_phase() |
-| 0.14.1 | Fix Jira skeleton failing for completed PRDs — fall back to find_run_any_status() |
-| 0.14.0 | Delivery action buttons & create_jira intent; Block Kit delivery buttons |
-
-## v0.13.x (2026-03-07 – 2026-03-08)
-
-| Version | Summary |
-|---------|---------|
-| 0.13.2 | Fix TokenManager/CrewJobs resume bugs from log review |
-| 0.13.1 | Fix hallucinated Confluence URLs in Jira tickets — resolve from MongoDB |
-| 0.13.0 | Remove unused web research tools (SerperDev, Scrape, WebsiteSearch) |
-
-## v0.12.x (2026-03-05 – 2026-03-07)
-
-| Version | Summary |
-|---------|---------|
-| 0.12.5 | Fix thread_broadcast messages being silently dropped |
-| 0.12.4 | Acknowledge user feedback on executive summary |
-| 0.12.3 | Fix flow ordering — requirements after exec summary approval |
-| 0.12.2 | Fix interactive agent-mode flow skipping exec summary review gate |
-| 0.12.1 | Fix Jira ticket persistence to productRequirements |
-| 0.12.0 | Fix Jira API v3 400 errors — Atlassian Document Format (ADF) |
-
-## v0.11.x (2026-03-05)
-
-| Version | Summary |
-|---------|---------|
-| 0.11.2 | Fix PRD section pausing prematurely on 429 rate-limit errors |
-| 0.11.1 | Fix 'update knowledge' intent misclassification |
-| 0.11.0 | Fix autonomous Jira re-creating tickets on restart; auto-populate ticket URLs |
-
-## v0.10.x (2026-03-05)
-
-| Version | Summary |
-|---------|---------|
-| 0.10.2 | Migrate Jira API from v2 to v3 (fix 410 Gone) |
-| 0.10.1 | Fix missing Jira skeleton button — smart jira_completed check |
-| 0.10.0 | Jira phased-approval overhaul: reject/regenerate, immediate epics, sub-task review |
-
-## v0.9.x (2026-03-04 – 2026-03-05)
-
-| Version | Summary |
-|---------|---------|
-| 0.9.16 | Confluence URL as native Slack button; Jira type resolution via API |
-| 0.9.15 | Fix product list display: confluence_published check, Sub-task type |
-| 0.9.14 | Product list: incomplete steps as buttons only |
-| 0.9.13 | Fix 3 product list issues: URL fallback, status icons, ticket counts |
-| 0.9.12 | Add 'list products' intent with delivery manager buttons |
-| 0.9.11 | Fix autonomous Jira bypassing user approval; persist jira_phase |
-| 0.9.10 | Fix idea list: exclude completed/archived; fix sections_done count |
-| 0.9.9 | Fix 503 retry resume — ModelBusyError propagation |
-| 0.9.8 | Standardise productRequirements status (new/inprogress/completed) |
-| 0.9.7 | Fix Confluence data persisted to wrong collection |
-| 0.9.6 | Fix KeyError 'approved_skeleton' in startup delivery |
-| 0.9.5 | Jira skeleton next-step hint after Confluence publish |
-| 0.9.4 | Remove Confluence parent page ID from LLM-facing surfaces |
-| 0.9.3 | Remove parent page ID from project setup wizard (3→2 steps) |
-| 0.9.2 | 503 model-busy errors pause immediately instead of retrying |
-| 0.9.1 | Idea refinement saves as 'refine_idea' pipeline key |
-| 0.9.0 | Interactive mode by default + orchestrator progress notifications |
-
-## v0.8.x (2026-03-04)
-
-| Version | Summary |
-|---------|---------|
-| 0.8.8 | Fix MongoDB upsert conflict in save_slack_context/save_project_ref |
-| 0.8.7 | Fix in-progress ideas invisible to 'list ideas' (3rd fix) |
-| 0.8.6 | Fix exec summary callbacks lost by CrewAI asyncio.to_thread |
-| 0.8.5 | Requirements approval gate for auto-approve Slack flows |
-| 0.8.4 | Fix original idea not persisted in workingIdeas |
-| 0.8.3 | Prevent incomplete PRDs from polluting output/prds/ |
-| 0.8.2 | Interactive exec summary completion gate |
-| 0.8.1 | PRD critique performance optimisation — dedicated critic agent |
-| 0.8.0 | Manual archive interaction for idea list |
-
-## v0.7.x (2026-03-02 – 2026-03-04)
-
-| Version | Summary |
-|---------|---------|
-| 0.7.4 | Rescan exec-summary review gate & failed-idea titles |
-| 0.7.3 | Resume flow exec-summary user gates |
-| 0.7.2 | Backfill orphaned working ideas |
-| 0.7.1 | Fix in-progress ideas invisible to 'list ideas' |
-| 0.7.0 | Large-file modular refactoring (10 files split into sub-modules) |
-
-## v0.6.x (2026-03-02)
-
-| Version | Summary |
-|---------|---------|
-| 0.6.5 | Exec summary completion gate + JSON bloat fix |
-| 0.6.4 | Fix premature 'Suggested next step' on create_prd |
-| 0.6.3 | Fix '(unknown idea)' on restart |
-| 0.6.2 | Fix Slack invalid_blocks on restart — truncate idea text |
-| 0.6.1 | Fix empty idea title in listing |
-| 0.6.0 | Kill old runs on restart (replaced auto-resume) |
-
-## v0.5.0 (2026-03-02)
-
-Flow-paused retry button + crash-prevention hardening.
-
-## v0.4.x (2026-03-01 – 2026-03-02)
-
-| Version | Summary |
-|---------|---------|
-| 0.4.7 | Non-interactive exec summary feedback gate |
-| 0.4.6 | Ignore messages at other users; general_question intent |
-| 0.4.5 | Fix rescan/restart of completed ideas |
-| 0.4.4 | Refactor interactions_router + interactive_handlers into packages |
-| 0.4.3 | Refactor blocks.py into blocks/ package |
-| 0.4.2 | Interactive idea list with Resume/Restart buttons |
-| 0.4.1 | list_ideas intent; find_ideas_by_project; 'iterate on an idea' language |
-| 0.4.0 | Executive summary interactive feedback loop |
-
-## v0.3.x (2026-03-01)
-
-| Version | Summary |
-|---------|---------|
-| 0.3.1 | Restart PRD flow intent |
-| 0.3.0 | PRD output sanitization, Slack file upload, next-step fix |
-
-## v0.2.x (2026-03-01)
-
-| Version | Summary |
-|---------|---------|
-| 0.2.2 | Fix PostCompletion delivery crew crash (unescaped curly braces) |
-| 0.2.1 | Post-completion next-step prompts |
-| 0.2.0 | Auto-resume & observability; heartbeat tracking; CODEX.md |
-
-## v0.1.x (2026-02-14 – 2026-02-28)
-
-| Version | Summary |
-|---------|---------|
-| 0.1.6 | Comprehensive intent audit — 5 new LLM intents |
-| 0.1.5 | Intent fix & project setup wizard |
-| 0.1.4 | Thread reply awareness |
-| 0.1.3 | Version control & codex module |
-| 0.1.2 | Intent classification fix for create_project |
-| 0.1.1 | Slack OAuth refactoring — per-team tokens in MongoDB |
-| 0.1.0 | Initial release — PRD generation, MongoDB, FastAPI |
+> Weekly changelog from v0.1.0 to current. Each week groups all version bumps with summaries.
 
 ---
+
+## Week of 2026-03-31
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.51.0 | 04-02 | Obsidian vault restructure (docs-only). Weekly changelog, YAML frontmatter on 103 files, 6 API docs completed (DB algorithms for Slack/Publishing), 7 old API files deprecated, Home.md updated with API nav |
+| 0.50.0 | 04-01 | Activity Log & Integration Status APIs + obsidian restructure. `GET /flow/runs/{run_id}/activity` — agent interaction events. `GET /integrations/status` — Confluence/Jira connection check. 32 per-route API docs. 9 new tests. 2746 passing |
+| 0.49.0 | 04-01 | Web app gap analysis API updates. `title` + `project_id` on kickoff; `description` on projects; `title` on ideas. [CHANGE] markers for 4 low-confidence APIs |
+| 0.48.2 | 03-31 | Model defaults & test perf fixes. Reverted DEFAULT_* to string fallbacks; fast-path mocks. 2738 passing |
+| 0.48.1 | 03-31 | Per-section LLM model tier optimisation. Complex sections use research model; structured use basic (~44% fewer research calls). 2738 passing |
+| 0.48.0 | 03-31 | Fix CrewAI event-bus shutdown corruption (`cannot schedule new futures after shutdown`). New `crewai_bus_fix.py`. 2724 passing |
+
+---
+
+## Week of 2026-03-24
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.47.2 | 03-30 | Thread session isolation — reject non-owner replies in Slack threads. 2715 passing |
+| 0.47.1 | 03-30 | Fix Confluence published checkmarks — delivery record as sole authority. 2703 passing |
+| 0.47.0 | 03-30 | Background Slack token refresh scheduler — prevents token rotation death spiral. 2699 passing |
+| 0.46.1 | 03-30 | Engagement Manager delivery failure detection + startup token validation. 2681 passing |
+| 0.46.0 | 03-30 | Enhanced knowledge base — 5 new knowledge files for agents |
+| 0.45.1 | 03-30 | Fix test suite latency — 596s to 79s (7.6x speedup). 2653 passing |
+| 0.45.0 | 03-29 | Complete Figma removal — UX design markdown-only. Removed `tools/figma/` |
+| 0.44.0 | 03-29 | PRD Flow obsidian docs breakdown — 10 individual flow step pages |
+| 0.43.9 | 03-29 | Agent Roles obsidian docs breakdown — 12 individual agent pages |
+| 0.43.8 | 03-29 | MongoDB Schema obsidian docs breakdown — 9 individual collection pages |
+| 0.43.7 | 03-29 | API Obsidian docs breakdown — 7 domain pages with field-level schemas |
+| 0.43.6 | 03-29 | Comprehensive API + Obsidian docs for web app integration |
+| 0.43.5 | 03-28 | Fix 47-second server startup regression — lazy imports + two-phase query |
+| 0.43.4 | 03-28 | Fix thread-history mention gate — bot responds to follow-ups |
+| 0.43.3 | 03-28 | EM & Idea Agent latency — direct Gemini REST (~200-800ms vs ~2-4s) |
+| 0.43.2 | 03-28 | Immediate 'Thinking...' acknowledgment on all Slack interactions |
+| 0.43.1 | 03-27 | Reduce Slack iteration noise; completion summaries with content preview |
+| 0.43.0 | 03-27 | New Idea Agent — context-aware in-thread analyst for active flows |
+| 0.42.4 | 03-27 | ISO 27001 security audit — all HIGH/MEDIUM findings remediated |
+| 0.42.3 | 03-27 | Root-cause fix: `save_iteration()` resurrecting archived ideas |
+| 0.42.2 | 03-27 | Fix archive cancellation for resumed/auto-resumed flows |
+| 0.42.1 | 03-27 | Archive stops active flows + `FlowCancelled` exception system |
+| 0.42.0 | 03-26 | Summarize ideas intent, userSuggestions collection, admin config guard |
+| 0.41.0 | 03-26 | UX Design flow refactor — standalone 2-phase post-PRD flow |
+| 0.40.0 | 03-25 | Engagement Manager project knowledge awareness |
+| 0.39.0 | 03-24 | Engagement Manager PRD Orchestrator — full idea-to-PRD lifecycle |
+| 0.38.0 | 03-24 | Publication safety overhaul — user-triggered publishing only |
+
+---
+
+## Week of 2026-03-17
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.37.1 | 03-24 | Slack thread recovery & flow-aware summaries |
+| 0.37.0 | 03-23 | Server crash-prevention hardening — `_safe_handler()` wraps 13 dispatches |
+| 0.36.0 | 03-23 | Fully automated PRD flow + active-flow config guard |
+| 0.35.0 | 03-22 | Engagement Manager agent — context-aware conversational responses |
+| 0.34.0 | 03-22 | Project knowledge base — Obsidian-style folders for agent learning |
+| 0.33.0 | 03-22 | Output file reorganisation — project-scoped dirs |
+| 0.32.1 | 03-21 | Fix files:write Slack scope; admin cache TTL; truncation limit |
+| 0.32.0 | 03-21 | Bot only responds in threads where @mentioned |
+| 0.31.2 | 03-21 | Slack file-upload fallback for truncated content |
+| 0.31.1 | 03-21 | Fix 'configure tools' misrouted to project config |
+| 0.31.0 | 03-21 | Interaction-first rule for ALL prompts — Block Kit only |
+| 0.30.3 | 03-20 | Defense-in-depth admin gates in handlers |
+| 0.30.2 | 03-20 | Admin-gated project configuration |
+| 0.30.1 | 03-20 | Complete intent-to-button coverage (16 button constants) |
+| 0.30.0 | 03-20 | All bot commands clickable — Block Kit buttons replace text |
+| 0.29.2 | 03-20 | Fix bare 'configure' not recognised |
+| 0.29.1 | 03-20 | Fix bot not responding after cache expiry |
+| 0.29.0 | 03-20 | Route Slack thread replies to active PRD flow |
+| 0.28.2 | 03-20 | Suppress redundant 'PRD Generation Complete' notification |
+| 0.28.1 | 03-20 | Fix Confluence 'not configured' false negative |
+| 0.28.0 | 03-20 | Confluence/Jira titles use idea text |
+| 0.27.1 | 03-17 | MongoDB database name fully environment-driven |
+| 0.27.0 | 03-17 | SERVER_ENV three-tier public URL resolution |
+| 0.26.0 | 03-17 | Logging standard & incident-trace instrumentation |
+| 0.25.0 | 03-17 | SSO-based user_id on all API endpoints |
+
+---
+
+## Week of 2026-03-10
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.24.0 | 03-16 | CRUD APIs with pagination for Projects and Ideas |
+| 0.23.0 | 03-16 | SSO "Idea Foundry" whitelisting — RS256 JWT |
+| 0.22.3 | 03-16 | Fix UX Design task producing no output |
+| 0.22.2 | 03-16 | LLM token optimisation; Manual UX Design button |
+| 0.22.1 | 03-16 | Project config wizard + Config button |
+| 0.22.0 | 03-16 | Figma project config + OAuth + REST API |
+| 0.21.1 | 03-16 | Fix 12/10 section count in idea list |
+| 0.21.0 | 03-16 | Figma Make — Playwright browser automation |
+| 0.20.2 | 03-13 | Retry UX Design dispatch fix + test performance |
+| 0.20.1 | 03-13 | Resume gate bypass fix |
+| 0.20.0 | 03-13 | UX Designer agent & Figma Make integration |
+| 0.19.0 | 03-13 | Jira Review & QA Test sub-tasks (5-phase pipeline) |
+| 0.18.0 | 03-13 | GStack agent integration — 7 new roles, Phase 1.5 |
+| 0.17.1 | 03-13 | Fix intent misclassification (jira in idea text) |
+| 0.17.0 | 03-13 | MongoDB Atlas migration |
+| 0.16.2 | 03-10 | Server crash resilience — watchdog, run_id fix, error handling |
+| 0.16.1 | 03-10 | Fix post-completion flow not prompting user |
+| 0.16.0 | 03-10 | PRD section generation performance — condensed context |
+
+---
+
+## Week of 2026-03-03
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.15.15 | 03-10 | Fix progress heartbeat in interactive flows |
+| 0.15.14 | 03-10 | Archive button on product list |
+| 0.15.13 | 03-10 | Eliminate 'unknown' Jira ticket types |
+| 0.15.12 | 03-08 | Persist Jira Epics & Stories for crash resilience |
+| 0.15.11 | 03-08 | Remove autonomous Jira detection |
+| 0.15.10 | 03-08 | Fix delivery state reset by scheduler |
+| 0.15.9 | 03-08 | Fix Confluence publish notification |
+| 0.15.8 | 03-08 | Critical fix: Jira approval gate — 23 regression tests |
+| 0.15.6 | 03-08 | Fix shutdown error handling |
+| 0.15.5 | 03-08 | Improve LLM error handling for HTTP 500 |
+| 0.15.4 | 03-07 | Fix thread-reply intent regression |
+| 0.15.3 | 03-07 | Fix 'create idea' not recognised |
+| 0.15.2 | 03-07 | Fix 'configure memory' intent |
+| 0.15.1 | 03-07 | Fix Slack bot not responding — env var fallback |
+| 0.15.0 | 03-07 | MongoDB bootstrap on startup; dev_setup.sh |
+| 0.14.6 | 03-07 | Fix product list UX for skeleton_pending |
+| 0.14.5 | 03-07 | Persist Jira skeleton to MongoDB |
+| 0.14.4 | 03-07 | Fix product list 'Jira complete' in progress |
+| 0.14.3 | 03-07 | Fix 'list ideas' showing 'No ideas found' |
+| 0.14.2 | 03-07 | Fix Flow.state read-only crash |
+| 0.14.1 | 03-07 | Fix Jira skeleton for completed PRDs |
+| 0.14.0 | 03-07 | Delivery action buttons & create_jira intent |
+| 0.13.2 | 03-07 | Fix TokenManager/CrewJobs resume bugs |
+| 0.13.1 | 03-07 | Fix hallucinated Confluence URLs in Jira |
+| 0.13.0 | 03-07 | Remove unused web research tools |
+| 0.12.5 | 03-05 | Fix thread_broadcast dropped messages |
+| 0.12.4 | 03-05 | Acknowledge user feedback on exec summary |
+| 0.12.3 | 03-05 | Fix flow ordering — requirements after exec summary |
+| 0.12.2 | 03-05 | Fix interactive flow skipping exec summary gate |
+| 0.12.1 | 03-05 | Fix Jira ticket persistence |
+| 0.12.0 | 03-05 | Fix Jira API v3 400 errors — ADF format |
+| 0.11.2 | 03-05 | Fix PRD section pausing on 429 rate-limit |
+| 0.11.1 | 03-05 | Fix 'update knowledge' misclassification |
+| 0.11.0 | 03-05 | Fix autonomous Jira re-creating tickets |
+| 0.10.2 | 03-05 | Migrate Jira API v2 to v3 |
+| 0.10.1 | 03-05 | Fix missing Jira skeleton button |
+| 0.10.0 | 03-05 | Jira phased-approval overhaul |
+| 0.9.16 | 03-04 | Confluence URL as native Slack button |
+| 0.9.15 | 03-04 | Fix product list: confluence_published |
+| 0.9.14 | 03-04 | Product list: incomplete steps as buttons |
+| 0.9.13 | 03-04 | Fix product list: URL fallback, status icons |
+| 0.9.12 | 03-04 | 'list products' intent with delivery buttons |
+| 0.9.11 | 03-04 | Fix autonomous Jira bypassing approval |
+| 0.9.10 | 03-04 | Fix idea list: exclude completed/archived |
+| 0.9.9 | 03-04 | Fix 503 retry resume |
+| 0.9.8 | 03-04 | Standardise productRequirements status |
+| 0.9.7 | 03-04 | Fix Confluence data to wrong collection |
+| 0.9.6 | 03-04 | Fix KeyError 'approved_skeleton' |
+| 0.9.5 | 03-04 | Jira skeleton next-step hint |
+| 0.9.4 | 03-04 | Remove parent page ID from LLM surfaces |
+| 0.9.3 | 03-04 | Remove parent page ID from setup wizard |
+| 0.9.2 | 03-04 | 503 model-busy pauses immediately |
+| 0.9.1 | 03-04 | Idea refinement saves as 'refine_idea' |
+| 0.9.0 | 03-04 | Interactive mode + orchestrator progress |
+| 0.8.8 | 03-04 | Fix MongoDB upsert conflict |
+| 0.8.7 | 03-04 | Fix in-progress ideas invisible (3rd fix) |
+| 0.8.6 | 03-04 | Fix exec summary callbacks lost by asyncio |
+| 0.8.5 | 03-04 | Requirements approval gate for auto-approve |
+| 0.8.4 | 03-04 | Fix original idea not persisted |
+| 0.8.3 | 03-04 | Prevent incomplete PRDs in output/prds/ |
+| 0.8.2 | 03-04 | Interactive exec summary completion gate |
+| 0.8.1 | 03-04 | PRD critique performance — dedicated critic agent |
+| 0.8.0 | 03-04 | Manual archive interaction for idea list |
+
+---
+
+## Week of 2026-02-24
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.7.4 | 03-02 | Rescan exec-summary review gate & failed-idea titles |
+| 0.7.3 | 03-02 | Resume flow exec-summary user gates |
+| 0.7.2 | 03-02 | Backfill orphaned working ideas |
+| 0.7.1 | 03-02 | Fix in-progress ideas invisible to 'list ideas' |
+| 0.7.0 | 03-02 | Large-file modular refactoring (10 files split) |
+| 0.6.5 | 03-02 | Exec summary completion gate + JSON bloat fix |
+| 0.6.4 | 03-02 | Fix premature 'Suggested next step' |
+| 0.6.3 | 03-02 | Fix '(unknown idea)' on restart |
+| 0.6.2 | 03-02 | Fix Slack invalid_blocks — truncate idea text |
+| 0.6.1 | 03-02 | Fix empty idea title in listing |
+| 0.6.0 | 03-02 | Kill old runs on restart |
+| 0.5.0 | 03-02 | Flow-paused retry button + crash hardening |
+| 0.4.7 | 03-02 | Non-interactive exec summary feedback gate |
+| 0.4.6 | 03-01 | Ignore messages at other users; general_question intent |
+| 0.4.5 | 03-01 | Fix rescan/restart of completed ideas |
+| 0.4.4 | 03-01 | Refactor interactions_router + interactive_handlers |
+| 0.4.3 | 03-01 | Refactor blocks.py into blocks/ package |
+| 0.4.2 | 03-01 | Interactive idea list with Resume/Restart buttons |
+| 0.4.1 | 03-01 | list_ideas intent; 'iterate on an idea' phrasing |
+| 0.4.0 | 03-01 | Executive summary interactive feedback loop |
+| 0.3.1 | 03-01 | Restart PRD flow intent |
+| 0.3.0 | 03-01 | PRD output sanitization, Slack file upload, next-step fix |
+| 0.2.2 | 03-01 | Fix PostCompletion delivery crew crash |
+| 0.2.1 | 03-01 | Post-completion next-step prompts |
+| 0.2.0 | 03-01 | Auto-resume & observability; heartbeat; CODEX.md |
+
+---
+
+## Week of 2026-02-10
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.1.6 | 02-28 | Comprehensive intent audit — 5 new LLM intents |
+| 0.1.5 | 02-28 | Intent fix & project setup wizard |
+| 0.1.4 | 02-28 | Thread reply awareness |
+| 0.1.3 | 02-28 | Version control & codex module |
+| 0.1.2 | 02-28 | Intent classification fix for create_project |
+| 0.1.1 | 02-25 | Slack OAuth refactoring — per-team tokens in MongoDB |
+| 0.1.0 | 02-14 | Initial release — PRD generation, MongoDB, FastAPI |
+
+---
+
+> [!info] Version Scheme
+> **X.Y.Z** — X = release (user), Y = major feature (agent), Z = bug fix (agent).
+> Version source: `version.py` `_CODEX` list.
 
 See also: [[Session Log]], [[Coding Standards]]

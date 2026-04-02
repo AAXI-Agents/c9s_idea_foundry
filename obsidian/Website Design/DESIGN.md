@@ -1,3 +1,9 @@
+---
+tags:
+  - design
+  - ux
+---
+
 # Design System — CrewAI Product Feature Planner
 
 > **Version**: 1.0 — Final  

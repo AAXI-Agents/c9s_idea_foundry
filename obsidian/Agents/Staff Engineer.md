@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Staff Engineer
 
 > Paranoid structural audit — reviews every user story for production incident patterns and creates review sub-tasks.

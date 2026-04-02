@@ -57,6 +57,7 @@ def _now_iso() -> str:
 def create_project(
     *,
     name: str,
+    description: str = "",
     confluence_space_key: str = "",
     jira_project_key: str = "",
     confluence_parent_id: str = "",
@@ -67,6 +68,7 @@ def create_project(
 
     Args:
         name: Human-readable project name.
+        description: Optional project description text.
         confluence_space_key: Confluence space key for publishing.
         jira_project_key: Jira project key for ticket creation.
         confluence_parent_id: Optional Confluence parent page ID.
@@ -83,6 +85,7 @@ def create_project(
     doc: dict[str, Any] = {
         "project_id": project_id,
         "name": name,
+        "description": description,
         "confluence_space_key": confluence_space_key,
         "jira_project_key": jira_project_key,
         "confluence_parent_id": confluence_parent_id,

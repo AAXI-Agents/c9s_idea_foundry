@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Step 2 — Executive Summary Flow
 
 > Pipeline Step 2 — Multi-agent draft→critique→refine loop for the PRD executive summary.

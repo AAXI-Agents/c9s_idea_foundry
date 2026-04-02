@@ -2859,6 +2859,68 @@ _CODEX: list[CodexEntry] = [
             "to avoid real HTTP/MongoDB calls. 2738 tests passing."
         ),
     ),
+    CodexEntry(
+        version="0.49.0",
+        date=date(2026, 4, 1),
+        summary=(
+            "Web app gap analysis API updates. (1) PRDKickoffRequest: "
+            "added optional `title` (max 256 chars) and `project_id` "
+            "(max 50 chars) fields — backward-compatible. Kickoff now "
+            "links idea to project via save_project_ref() and stores "
+            "title in workingIdeas. (2) ProjectCreate/ProjectUpdate/ "
+            "ProjectItem: added `description` field (max 2000 chars) — "
+            "stored in projectConfig and returned in all project "
+            "responses. (3) IdeaItem: added `title` field to response "
+            "schema. (4) Obsidian docs updated: PRD Flow API, Projects "
+            "API, Ideas API, workingIdeas Schema, projectConfig Schema. "
+            "(5) [CHANGE] markers added for 4 new endpoints requiring "
+            "user feedback: Agent Activity Log, UX Design Flow trigger, "
+            "Integration Status, User Profile Update."
+        ),
+    ),
+    CodexEntry(
+        version="0.50.0",
+        date=date(2026, 4, 1),
+        summary=(
+            "Activity Log & Integration Status APIs + obsidian restructure. "
+            "(1) Implemented GET /flow/runs/{run_id}/activity endpoint — "
+            "returns agent interaction events from agentInteraction "
+            "collection with configurable limit (1-500). "
+            "(2) Implemented GET /integrations/status endpoint — returns "
+            "Confluence/Jira connection status based on env vars, with "
+            "URL masking for security. New apis/integrations/ router. "
+            "(3) Restructured obsidian/APIs/ into 32 individual per-route "
+            "files across 8 subdirectories (Health, Projects, Ideas, "
+            "PRD Flow, Publishing, Slack, SSO Webhooks, Integrations), "
+            "each with clear request/response schemas and database "
+            "algorithms. (4) Created [CHANGE] docs for UX Design Flow "
+            "trigger and User Profile Update APIs requiring user input. "
+            "(5) Added 9 new tests (5 activity log + 4 integrations). "
+            "2746 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.51.0",
+        date=date(2026, 4, 2),
+        summary=(
+            "Obsidian vault restructure — docs-only release. "
+            "(1) Rewrote Version History.md from per-version to weekly "
+            "groupings (7 weekly sections). "
+            "(2) Added YAML frontmatter (tags, aliases) to all 103 "
+            "markdown files using Obsidian conventions. "
+            "(3) Completed 6 incomplete API per-route docs — added "
+            "Database Algorithm sections to 2 Publishing and 4 Slack "
+            "endpoint pages with accurate logic from source code. "
+            "(4) Added deprecation callouts to 7 old monolithic API "
+            "files pointing to per-route replacements. "
+            "(5) Updated Home.md — version to 0.50.0, added APIs "
+            "navigation section with per-route folder links, added "
+            "Change Requests tip callout, expanded vault tree. "
+            "(6) Applied Obsidian best practices throughout: callouts "
+            "(tip, warning, info, note), wikilinks, consistent "
+            "formatting."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

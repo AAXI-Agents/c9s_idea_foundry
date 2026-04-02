@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Idea Refiner
 
 > Enriches raw product ideas with domain expertise through iterative refinement cycles.

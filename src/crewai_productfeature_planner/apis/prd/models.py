@@ -35,6 +35,8 @@ from ._requests import (
 
 # API response models
 from ._responses import (
+    ActivityEvent,
+    ActivityLogResponse,
     PRDActionResponse,
     PRDDraftDetail,
     PRDKickoffResponse,

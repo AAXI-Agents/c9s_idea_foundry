@@ -1,3 +1,8 @@
+---
+tags:
+  - knowledge
+---
+
 # PRD Guidelines
 
 > 10-section template, quality criteria, and iteration protocol for PRD generation.

@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # CEO Reviewer
 
 > Applies founder-mode thinking to transform the executive summary into a 10-star product vision document.

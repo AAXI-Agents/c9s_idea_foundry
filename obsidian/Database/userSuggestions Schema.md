@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # userSuggestions Schema
 
 > Tracks ambiguous user intents and clarification requests — self-learning data for improving intent classification.

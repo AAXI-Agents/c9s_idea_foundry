@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # QA Lead
 
 > Test methodology review — validates acceptance criteria coverage and creates QA review sub-tasks.

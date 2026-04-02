@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Jira Ticketing Flow
 
 > Post-PRD — 5-phase interactive Jira ticket creation with approval gates at each phase.

@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Step 5 — Section Drafting Flow
 
 > Pipeline Step 5 — Sequential draft→critique→refine loop for each PRD section.

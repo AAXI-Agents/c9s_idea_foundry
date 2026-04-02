@@ -1,4 +1,18 @@
+---
+tags:
+  - api
+  - endpoints
+---
+
 # SSO Webhooks API
+
+> [!warning] Deprecated — Use Per-Route Files
+> This monolithic file is superseded by individual per-route files in [[SSO Webhooks/]].
+> Each endpoint now has its own file with detailed request, response, and database algorithm.
+> **Edit the per-route files instead.** This file is kept for historical reference only.
+
+---
+
 
 > Receive SSO lifecycle events — user provisioning, login tracking, and token revocation.
 

@@ -1,3 +1,8 @@
+---
+tags:
+  - architecture
+---
+
 # Project Overview
 
 > Idea Foundry — AI-powered platform that transforms raw product ideas into implementation-ready PRDs using multi-agent orchestration.

@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # productRequirements Schema
 
 > Completed PRD delivery records — tracks Confluence publishing and Jira ticket creation.

@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # workingIdeas Schema
 
 > In-progress PRD persistence — every iteration, section draft, and lifecycle state is saved here.
@@ -32,6 +38,7 @@
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `run_id` | `string` | **Yes** | — | Unique identifier for this flow run. Links to `crewJobs.job_id`. Primary key |
+| `title` | `string` | No | `""` | Short display title for the idea. Set during kickoff via the `title` field in the web API. When empty, the first line of `idea` text is used as a fallback in the UI |
 | `idea` | `string` | **Yes** | — | Original user-submitted idea text (never modified after creation) |
 | `finalized_idea` | `string \| null` | No | `null` | Approved executive summary content — copy of the last executive summary iteration once Phase 1 completes. Empty until executive summary is approved |
 | `status` | `string` | **Yes** | `"inprogress"` | Workflow lifecycle status (see Status Values below) |

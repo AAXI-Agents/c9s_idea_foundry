@@ -13,6 +13,26 @@ class PRDKickoffRequest(BaseModel):
         description="The product feature idea to build a PRD for.",
         examples=["Add dark mode to the dashboard"],
     )
+    title: str = Field(
+        default="",
+        max_length=256,
+        description=(
+            "Short display title for the idea. Used in dashboards and "
+            "project views. When empty, the first line of the idea text "
+            "is used as a fallback."
+        ),
+        examples=["Smart onboarding flow with personalization"],
+    )
+    project_id: str = Field(
+        default="",
+        max_length=50,
+        description=(
+            "Associate this PRD run with an existing project. Links the "
+            "idea to the project so it inherits Confluence/Jira config. "
+            "When empty, the idea is created without a project."
+        ),
+        examples=["proj-abc123"],
+    )
     auto_approve: bool = Field(
         default=False,
         description=(

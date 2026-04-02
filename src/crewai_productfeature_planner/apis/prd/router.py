@@ -7,6 +7,8 @@ Action endpoints (kickoff, approve, pause, resume) live in
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from crewai_productfeature_planner.apis.prd.models import (
+    ActivityEvent,
+    ActivityLogResponse,
     ErrorResponse,
     JobDetail,
     JobListResponse,
@@ -80,6 +82,66 @@ async def get_run_status(run_id: str, user: dict = Depends(require_sso_user)):
     data["sections_total"] = total_sections
     data["current_step"] = current_step
     return data
+
+
+@router.get(
+    "/flow/runs/{run_id}/activity",
+    tags=["Flow Runs"],
+    summary="Get agent activity log for a run",
+    response_model=ActivityLogResponse,
+    description=(
+        "Returns agent interaction events associated with a flow run. "
+        "Events are returned newest-first from the ``agentInteraction`` "
+        "MongoDB collection. Use ``limit`` to control the number of "
+        "events returned."
+    ),
+    responses={
+        200: {"description": "Activity log returned successfully."},
+        **_ERROR_RESPONSES,
+    },
+)
+async def get_run_activity(
+    run_id: str,
+    limit: int = Query(default=50, ge=1, le=500),
+    user: dict = Depends(require_sso_user),
+):
+    """Return agent activity events for a flow run."""
+    from crewai_productfeature_planner.mongodb.agent_interactions import (
+        find_interactions,
+    )
+
+    try:
+        docs = find_interactions(run_id=run_id, limit=limit)
+    except Exception as exc:
+        logger.error(
+            "[PRD] Failed to query activity for run_id=%s: %s",
+            run_id, exc, exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to query activity log",
+        ) from exc
+
+    events = []
+    for doc in docs:
+        created = doc.get("created_at")
+        if hasattr(created, "isoformat"):
+            created = created.isoformat()
+        events.append(ActivityEvent(
+            interaction_id=doc.get("interaction_id", ""),
+            source=doc.get("source", ""),
+            intent=doc.get("intent", ""),
+            agent_response=doc.get("agent_response", ""),
+            run_id=doc.get("run_id"),
+            user_id=doc.get("user_id"),
+            created_at=str(created) if created else "",
+            predicted_next_step=doc.get("predicted_next_step"),
+        ))
+
+    return ActivityLogResponse(
+        run_id=run_id,
+        count=len(events),
+        events=events,
+    )
 
 
 @router.get(

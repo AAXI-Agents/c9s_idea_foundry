@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # userSession Schema
 
 > User and channel session management — tracks which project a user or channel is currently working in.

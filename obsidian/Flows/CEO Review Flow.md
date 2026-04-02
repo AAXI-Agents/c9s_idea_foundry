@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Step 4 — CEO Review Flow
 
 > Pipeline Step 4 — Transform the executive summary into a 10-star Executive Product Summary.

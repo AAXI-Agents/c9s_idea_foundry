@@ -1,3 +1,9 @@
+---
+tags:
+  - flows
+  - pipeline
+---
+
 # Step 3 — Requirements Breakdown Flow
 
 > Pipeline Step 3 — Decompose the refined idea into granular, implementation-ready requirements.

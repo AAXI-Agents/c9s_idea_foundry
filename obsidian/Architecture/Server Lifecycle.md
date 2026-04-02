@@ -1,3 +1,8 @@
+---
+tags:
+  - architecture
+---
+
 # Server Lifecycle
 
 > FastAPI startup and shutdown sequence in `apis/__init__.py`.

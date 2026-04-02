@@ -1,3 +1,8 @@
+---
+tags:
+  - architecture
+---
+
 # Coding Standards
 
 > Development conventions and quality requirements.

@@ -1,3 +1,8 @@
+---
+tags:
+  - knowledge
+---
+
 # User Preferences
 
 > User profile and PRD generation preferences.

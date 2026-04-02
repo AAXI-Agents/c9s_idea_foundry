@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # agentInteraction Schema
 
 > Slack interaction logging — captures every user message, LLM intent classification, and agent response for analytics and fine-tuning.

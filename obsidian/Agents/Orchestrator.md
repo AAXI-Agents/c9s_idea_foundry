@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Orchestrator
 
 > Coordinates end-to-end delivery pipeline — publishes PRDs to Confluence and creates Jira tickets for every actionable requirement.

@@ -1,3 +1,8 @@
+---
+tags:
+  - orchestrator
+---
+
 # Orchestrator Overview
 
 > Pipeline runner and stage factories in `orchestrator/`.

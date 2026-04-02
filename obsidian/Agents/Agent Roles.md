@@ -1,3 +1,9 @@
+---
+tags:
+  - agents
+  - crewai
+---
+
 # Agent Roles
 
 > Index of all CrewAI agent configurations used in the PRD Planner.

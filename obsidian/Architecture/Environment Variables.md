@@ -1,3 +1,8 @@
+---
+tags:
+  - architecture
+---
+
 # Environment Variables
 
 > Key environment variables for Idea Foundry (CrewAI PRD Planner).

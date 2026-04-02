@@ -1,3 +1,9 @@
+---
+tags:
+  - database
+  - mongodb
+---
+
 # projectMemory Schema
 
 > Project-level memory store — behavioural guardrails, domain knowledge, and tools for agent context.
