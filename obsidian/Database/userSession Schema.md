@@ -18,11 +18,11 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[Slack API]] | `cmd_switch_project` | Switches user's active session to a different project |
-| [[Slack API]] | `cmd_end_session` | Ends user's active session |
-| [[Slack API]] | Events router | Checks for active channel session (smart thread routing) |
-| [[Slack API]] | Interactions router | Reads active session to determine project context |
-| [[Ideas API]] | `GET /ideas` | Filters ideas by active session's project |
+| [[Slack/]] | `cmd_switch_project` | Switches user's active session to a different project |
+| [[Slack/]] | `cmd_end_session` | Ends user's active session |
+| [[Slack/]] | Events router | Checks for active channel session (smart thread routing) |
+| [[Slack/]] | Interactions router | Reads active session to determine project context |
+| [[Ideas/]] | `GET /ideas` | Filters ideas by active session's project |
 
 ---
 
@@ -100,7 +100,7 @@ Channel sessions provide channel-wide project context (e.g. "this channel is for
 
 ---
 
-See also: [[MongoDB Schema]], [[Slack API]], [[Slack Integration]]
+See also: [[MongoDB Schema]], [[Slack/]], [[Slack Integration]]
 
 
 ---

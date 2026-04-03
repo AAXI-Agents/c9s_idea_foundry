@@ -9,6 +9,135 @@ tags:
 
 ---
 
+## Session — 2026-04-03 (v0.54.1)
+
+**Scope**: User Feedback gap ticket system
+**Version**: v0.54.0 → v0.54.1
+
+### Changes
+
+- Created `obsidian/User Feedback/_template.md` — structured gap ticket
+  template with frontmatter (status, priority, domain, created), context,
+  current/expected behaviour, affected area checklist, acceptance criteria,
+  and resolution tracking sections.
+
+- Updated `CODEX.md`:
+  - Added `User Feedback/` to Obsidian Knowledge Base table
+  - Added `Gap / missing feature found` to "When to Update Which Page" table
+  - Added new **Gap Ticket Workflow** section with naming convention,
+    priority/status values, and Codex processing instructions.
+
+### Testing
+
+No code changes — documentation only. Tests unaffected.
+
+---
+
+## Session — 2026-04-03 (v0.54.0)
+
+**Scope**: Obsidian API docs cleanup — deprecate redundant summary files
+**Version**: v0.53.0 → v0.54.0
+
+### Changes
+
+- **Deleted 7 summary files**: Health API.md, Ideas API.md, Projects
+  API.md, PRD Flow API.md, Publishing API.md, SSO Webhooks API.md,
+  Slack API.md — all superseded by per-route files in domain folders.
+
+- **Migrated unique content**:
+  - Status Lifecycle table + PRD Sections → Ideas/GET ideas-{run_id}.md
+  - ExecutiveSummaryDraft, PRDDraftDetail, PRDSectionDetail schemas +
+    ErrorResponse → PRD Flow/GET flow-runs-{run_id}.md
+  - Web App Integration Flow + Agent Providers + PRD Sections Reference
+    → PRD Flow/POST flow-prd-kickoff.md
+  - PublishingErrorResponse schema → Publishing/POST publishing-confluence-{run_id}.md
+  - Block Kit action ID tables (with descriptions) → Slack/POST slack-interactions.md
+  - Thread State + Smart Thread Routing → Slack/POST slack-events.md
+  - Webhook Delivery schema → Slack/POST slack-kickoff.md
+
+- **Fixed 50+ stale wiki links** across Database schema pages:
+  `[[PRD Flow API]]` → `[[PRD Flow/]]`, etc. for all 7 deleted files.
+
+- **Updated CODEX.md** doc-update rules to reference per-route folders
+  instead of deleted summary files.
+
+- **Kept**: API Overview.md (master index), SSO API.md (sole docs for
+  18 SSO endpoints, no per-route folder).
+
+### Testing
+
+No code changes — documentation only. Tests unaffected.
+
+---
+
+## Session — 2026-04-03 (v0.53.0)
+
+**Scope**: API per-route restructuring for agent-friendly updates
+**Version**: v0.52.0 → v0.53.0
+
+### Changes
+
+- **Health API**: Split `apis/health/router.py` (313 lines, 5 endpoints)
+  into per-route files: `get_health.py`, `get_version.py`,
+  `get_slack_token.py`, `post_slack_token_exchange.py`,
+  `post_slack_token_refresh.py`. Router.py now assembles sub-routers.
+
+- **Ideas API**: Split `apis/ideas/router.py` (255 lines, 3 endpoints)
+  into per-route files: `get_ideas.py`, `get_idea.py`,
+  `patch_idea_status.py`. Shared models extracted to `models.py`.
+
+- **Projects API**: Split `apis/projects/router.py` (300 lines, 5 endpoints)
+  into per-route files: `get_projects.py`, `get_project.py`,
+  `post_project.py`, `patch_project.py`, `delete_project.py`.
+  Shared models extracted to `models.py`.
+
+- **SSO Webhooks**: Moved top-level `apis/sso_webhooks.py` into
+  `apis/sso_webhooks/` package with `router.py` and `post_events.py`.
+
+- **Obsidian docs**: Updated 14 per-route API docs to point to new
+  source files. Updated Module Map with all new files.
+
+### Not Changed (Already Well-Structured)
+
+- **Publishing** (9 endpoints): Thin router delegates to `service.py` — no split needed.
+- **PRD Flow** (10 endpoints): Already split into `router.py` + `_route_actions.py` + `service.py`.
+- **Slack** (highly modular): 3 routers + 23 handler files — gold standard.
+- **SSO** (18 endpoints): All thin httpx proxies — no DB logic to separate.
+- **Integrations** (1 endpoint): Too small to split further.
+
+### Test Results
+
+- 1115 API tests passing (0 failures)
+
+---
+
+## Session — 2026-04-02 (v0.52.0)
+
+**Scope**: SSO authentication router — full C9S Single Sign-On integration
+**Version**: v0.51.0 → v0.52.0
+
+### Changes
+
+- **New SSO router**: Created `apis/sso/` package with 18 `/auth/sso/*`
+  endpoints mirroring the Executive Assistant SSO API:
+  - OAuth2 redirect login (`GET /auth/sso/login`)
+  - Direct email/password login (`POST /auth/sso/login`)
+  - 2FA verification (`POST /auth/sso/login/verify-2fa`)
+  - Google Sign-In (`POST /auth/sso/google`)
+  - Registration: redirect, direct, verify-2fa, resend-2fa
+  - OAuth2 callback (`GET /auth/sso/callback`)
+  - Status check, userinfo (Bearer required)
+  - Password reset + confirm
+  - Token refresh
+  - Re-authentication + 2FA (Bearer required)
+  - Logout + logout-all (Bearer required)
+- **Tests**: 29 new tests in `tests/apis/sso/test_sso_router.py`
+- **Resolves**: 404 on `POST /auth/sso/login` (endpoint didn't exist)
+- **Docs**: New `obsidian/APIs/SSO API.md`, updated API Overview,
+  Module Map, Environment Variables, Version History, .env.example
+
+---
+
 ## Session — 2026-04-02 (v0.51.0)
 
 **Scope**: Obsidian vault restructure — docs-only release

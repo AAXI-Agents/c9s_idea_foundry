@@ -17,12 +17,12 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[PRD Flow API]] | `POST /flow/prd/kickoff` | Creates job in `queued` status |
-| [[PRD Flow API]] | `POST /flow/prd/resume` | Reactivates paused job |
-| [[PRD Flow API]] | `POST /flow/prd/approve` | Updates status during approval |
-| [[PRD Flow API]] | `GET /flow/jobs` | Lists jobs with filters |
-| [[PRD Flow API]] | `GET /flow/jobs/{job_id}` | Fetches single job record |
-| [[Slack API]] | `POST /slack/kickoff` | Creates job for Slack-triggered flow |
+| [[PRD Flow/]] | `POST /flow/prd/kickoff` | Creates job in `queued` status |
+| [[PRD Flow/]] | `POST /flow/prd/resume` | Reactivates paused job |
+| [[PRD Flow/]] | `POST /flow/prd/approve` | Updates status during approval |
+| [[PRD Flow/]] | `GET /flow/jobs` | Lists jobs with filters |
+| [[PRD Flow/]] | `GET /flow/jobs/{job_id}` | Fetches single job record |
+| [[Slack/]] | `POST /slack/kickoff` | Creates job for Slack-triggered flow |
 
 ---
 
@@ -98,7 +98,7 @@ tags:
 
 ---
 
-See also: [[MongoDB Schema]], [[PRD Flow API]], [[Server Lifecycle]]
+See also: [[MongoDB Schema]], [[PRD Flow/]], [[Server Lifecycle]]
 
 
 ---

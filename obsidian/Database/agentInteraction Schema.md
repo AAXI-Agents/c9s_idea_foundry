@@ -17,10 +17,10 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[Slack API]] | Events router (`app_mention`) | Logs interaction after intent classification |
-| [[Slack API]] | Events router (`message`) | Logs threaded conversation interactions |
-| [[Slack API]] | Interactions router | Logs button click interactions |
-| [[Slack API]] | Events router (smart routing) | Checks `has_bot_thread_history()` for thread routing |
+| [[Slack/]] | Events router (`app_mention`) | Logs interaction after intent classification |
+| [[Slack/]] | Events router (`message`) | Logs threaded conversation interactions |
+| [[Slack/]] | Interactions router | Logs button click interactions |
+| [[Slack/]] | Events router (smart routing) | Checks `has_bot_thread_history()` for thread routing |
 | Agent feedback loop | Next-step prediction | Records whether user followed LLM predictions |
 
 ---
@@ -99,7 +99,7 @@ The `predicted_next_step` field (when present):
 
 ---
 
-See also: [[MongoDB Schema]], [[Slack API]], [[Slack Integration]]
+See also: [[MongoDB Schema]], [[Slack/]], [[Slack Integration]]
 
 
 ---

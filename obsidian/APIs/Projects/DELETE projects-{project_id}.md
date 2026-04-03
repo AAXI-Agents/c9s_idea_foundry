@@ -44,7 +44,8 @@ Project not found.
 
 ## Source
 
-- **Router**: `apis/projects/router.py`
+- **Router**: `apis/projects/delete_project.py`
+- **Models**: `apis/projects/models.py`
 - **Repository**: `mongodb/project_config/repository.py` → `delete_project()`
 - **Collection**: `projectConfig`
 

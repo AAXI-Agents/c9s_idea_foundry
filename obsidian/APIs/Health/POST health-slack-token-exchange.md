@@ -62,7 +62,7 @@ Exchange failed (missing code or invalid state).
 
 ## Source
 
-- **Router**: `apis/health/router.py`
+- **Router**: `apis/health/post_slack_token_exchange.py`
 - **Token Manager**: `tools/slack_token_manager.py`
 
 ---

@@ -59,7 +59,7 @@ No refresh token available.
 
 ## Source
 
-- **Router**: `apis/health/router.py`
+- **Router**: `apis/health/post_slack_token_refresh.py`
 - **Token Manager**: `tools/slack_token_manager.py`
 
 ---

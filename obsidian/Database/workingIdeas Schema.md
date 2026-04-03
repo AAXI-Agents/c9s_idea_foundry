@@ -18,16 +18,16 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[PRD Flow API]] | `POST /flow/prd/kickoff` | Creates initial document |
-| [[PRD Flow API]] | `GET /flow/runs/{run_id}` | Reads full run state for polling |
-| [[PRD Flow API]] | `GET /flow/prd/resumable` | Queries unfinalized documents |
-| [[PRD Flow API]] | `POST /flow/prd/approve` | Updates section state |
-| [[PRD Flow API]] | `POST /flow/prd/resume` | Reads + resumes paused document |
-| [[Ideas API]] | `GET /ideas` | Lists ideas by project/status |
-| [[Ideas API]] | `GET /ideas/{run_id}` | Reads single idea with progress |
-| [[Ideas API]] | `PATCH /ideas/{run_id}/status` | Updates status (archive/pause) |
-| [[Slack API]] | Events router | Finds idea by thread for smart routing |
-| [[Publishing API]] | Publishing endpoints | Reads completed ideas for delivery |
+| [[PRD Flow/]] | `POST /flow/prd/kickoff` | Creates initial document |
+| [[PRD Flow/]] | `GET /flow/runs/{run_id}` | Reads full run state for polling |
+| [[PRD Flow/]] | `GET /flow/prd/resumable` | Queries unfinalized documents |
+| [[PRD Flow/]] | `POST /flow/prd/approve` | Updates section state |
+| [[PRD Flow/]] | `POST /flow/prd/resume` | Reads + resumes paused document |
+| [[Ideas/]] | `GET /ideas` | Lists ideas by project/status |
+| [[Ideas/]] | `GET /ideas/{run_id}` | Reads single idea with progress |
+| [[Ideas/]] | `PATCH /ideas/{run_id}/status` | Updates status (archive/pause) |
+| [[Slack/]] | Events router | Finds idea by thread for smart routing |
+| [[Publishing/]] | Publishing endpoints | Reads completed ideas for delivery |
 
 ---
 
@@ -77,7 +77,7 @@ tags:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `section` | `dict[str, list]` | No | `{}` | Section key → array of iteration records. Keys are section slugs (e.g. `"executive_summary"`, `"engineering_plan"`). Each iteration: `{ content: str, iteration: int, critique: str \| null, updated_date: str }`. See [[Ideas API]] for the 12 section keys |
+| `section` | `dict[str, list]` | No | `{}` | Section key → array of iteration records. Keys are section slugs (e.g. `"executive_summary"`, `"engineering_plan"`). Each iteration: `{ content: str, iteration: int, critique: str \| null, updated_date: str }`. See [[Ideas/]] for the 12 section keys |
 
 ### Output Files
 
@@ -207,7 +207,7 @@ tags:
 
 ---
 
-See also: [[MongoDB Schema]], [[PRD Flow API]], [[Ideas API]], [[PRD Flow]]
+See also: [[MongoDB Schema]], [[PRD Flow/]], [[Ideas/]], [[PRD Flow]]
 
 
 ---

@@ -46,7 +46,7 @@ No database access. Returns hardcoded status and the version from `version.py`.
 
 ## Source
 
-- **Router**: `apis/health/router.py`
+- **Router**: `apis/health/get_health.py`
 - **Model**: Inline dict response
 
 ---

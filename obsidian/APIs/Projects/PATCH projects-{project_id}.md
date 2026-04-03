@@ -58,7 +58,8 @@ Project not found.
 
 ## Source
 
-- **Router**: `apis/projects/router.py`
+- **Router**: `apis/projects/patch_project.py`
+- **Models**: `apis/projects/models.py`
 - **Repository**: `mongodb/project_config/repository.py` → `update_project()`
 - **Collection**: `projectConfig`
 

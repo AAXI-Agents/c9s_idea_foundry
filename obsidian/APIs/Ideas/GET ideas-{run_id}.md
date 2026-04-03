@@ -70,12 +70,41 @@ Run not found.
 
 ## Status Lifecycle
 
+| Status | Meaning | Can transition to |
+|--------|---------|-------------------|
+| `inprogress` | PRD flow is actively running | `completed`, `paused`, `failed`, `archived` |
+| `completed` | PRD generation finished successfully | `archived` |
+| `paused` | Flow paused (user-initiated or error) — can be resumed | `inprogress` (via resume), `archived` |
+| `failed` | Flow failed — can be resumed after fixing the issue | `inprogress` (via resume), `archived` |
+| `archived` | Soft-deleted — hidden from default views | (terminal) |
+
 ```
 inprogress → completed → archived
 inprogress → paused → inprogress (resume)
 inprogress → failed → inprogress (resume)
 any status → archived
 ```
+
+---
+
+## PRD Sections
+
+The 12 PRD sections tracked by `sections_done`:
+
+| Step | Key | Title |
+|------|-----|-------|
+| 1 | `executive_summary` | Executive Summary |
+| 2 | `executive_product_summary` | Executive Product Summary |
+| 3 | `engineering_plan` | Engineering Plan |
+| 4 | `problem_statement` | Problem Statement |
+| 5 | `user_personas` | User Personas |
+| 6 | `functional_requirements` | Functional Requirements |
+| 7 | `no_functional_requirements` | Non-Functional Requirements |
+| 8 | `edge_cases` | Edge Cases |
+| 9 | `error_handling` | Error Handling |
+| 10 | `success_metrics` | Success Metrics |
+| 11 | `dependencies` | Dependencies |
+| 12 | `assumptions` | Assumptions |
 
 ---
 
@@ -91,7 +120,8 @@ any status → archived
 
 ## Source
 
-- **Router**: `apis/ideas/router.py`
+- **Router**: `apis/ideas/get_idea.py`
+- **Models**: `apis/ideas/models.py`
 - **Repository**: `mongodb/working_ideas/repository.py`
 - **Collection**: `workingIdeas`
 

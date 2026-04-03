@@ -22,9 +22,10 @@ tags:
 | **Publishing** | [[Publishing/]] | 9 | SSO |
 | **Integrations** | [[Integrations/]] | 1 | SSO |
 | **Slack** | [[Slack/]] | 5 | Slack HMAC |
+| **SSO** | [[SSO API]] | 18 | None / Bearer |
 | **SSO Webhooks** | [[SSO Webhooks/]] | 1 | Webhook HMAC |
 
-**Total**: 39 endpoints across 11 routers
+**Total**: 57 endpoints across 12 routers
 
 ---
 
@@ -103,6 +104,31 @@ tags:
 | `POST /slack/interactions` | [[Slack/POST slack-interactions]] |
 | `GET /slack/oauth/callback` | [[Slack/GET slack-oauth-callback]] |
 
+### SSO (18 endpoints)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /auth/sso/login` | Start SSO sign-in (OAuth2 redirect) |
+| `POST /auth/sso/login` | Direct login — credentials → tokens or 2FA |
+| `POST /auth/sso/login/verify-2fa` | Complete login with 2FA code |
+| `POST /auth/sso/google` | Google Sign-In (ID token → JWT tokens) |
+| `GET /auth/sso/register` | Redirect to SSO registration |
+| `POST /auth/sso/register` | Register — create account → 2FA |
+| `POST /auth/sso/register/verify-2fa` | Verify registration email code |
+| `POST /auth/sso/register/resend-2fa` | Resend registration 2FA code |
+| `GET /auth/sso/callback` | OAuth2 callback (code → tokens) |
+| `GET /auth/sso/status` | Check SSO auth status |
+| `GET /auth/sso/userinfo` | Get SSO user profile (Bearer) |
+| `POST /auth/sso/password-reset` | Request password reset email |
+| `POST /auth/sso/password-reset/confirm` | Confirm password reset |
+| `POST /auth/sso/token/refresh` | Refresh access token |
+| `POST /auth/sso/reauth` | Re-auth step 1 (Bearer + password) |
+| `POST /auth/sso/reauth/verify-2fa` | Re-auth step 2 (verify code) |
+| `POST /auth/sso/logout` | Revoke current token (Bearer) |
+| `POST /auth/sso/logout-all` | Revoke all sessions (Bearer) |
+
+See [[SSO API]] for detailed request/response schemas.
+
 ### SSO Webhooks (1 endpoint)
 
 | Endpoint | Page |
@@ -166,7 +192,7 @@ Responses include: `items`, `total`, `page`, `page_size`, `total_pages`.
 5. Continue polling until `status = "completed"`
 6. Optionally publish: `POST /publishing/confluence/{run_id}` and `POST /publishing/jira/{run_id}`
 
-→ Full request/response details: [[PRD Flow API]]
+→ Full request/response details: [[PRD Flow/POST flow-prd-kickoff]]
 
 ---
 

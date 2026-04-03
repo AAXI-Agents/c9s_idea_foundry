@@ -17,10 +17,10 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[Slack API]] | `GET /slack/oauth/callback` | Stores tokens after OAuth code exchange |
-| [[Health API]] | `GET /health/slack-token` | Reads token metadata for diagnostics (no secrets) |
-| [[Health API]] | `POST /health/slack-token/exchange` | Updates tokens after manual exchange |
-| [[Health API]] | `POST /health/slack-token/refresh` | Updates tokens after refresh cycle |
+| [[Slack/]] | `GET /slack/oauth/callback` | Stores tokens after OAuth code exchange |
+| [[Health/]] | `GET /health/slack-token` | Reads token metadata for diagnostics (no secrets) |
+| [[Health/]] | `POST /health/slack-token/exchange` | Updates tokens after manual exchange |
+| [[Health/]] | `POST /health/slack-token/refresh` | Updates tokens after refresh cycle |
 | Slack event handlers | All Slack endpoints | Reads bot token for `WebClient` authentication |
 
 ---
@@ -73,7 +73,7 @@ None — independent workspace authentication. No foreign keys to other collecti
 
 ---
 
-See also: [[MongoDB Schema]], [[Slack API]], [[Health API]], [[Environment Variables]]
+See also: [[MongoDB Schema]], [[Slack/]], [[Health/]], [[Environment Variables]]
 
 
 ---

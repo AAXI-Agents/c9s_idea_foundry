@@ -6,7 +6,7 @@ aliases:
   - Changelog
   - Release Notes
 created: 2026-02-14
-updated: 2026-04-02
+updated: 2026-04-03
 ---
 
 # Version History
@@ -19,6 +19,10 @@ updated: 2026-04-02
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 0.54.1 | 04-03 | User Feedback gap ticket system. Created `User Feedback/_template.md` with structured template. Updated CODEX.md with Gap Ticket Workflow section |
+| 0.54.0 | 04-03 | Obsidian API docs cleanup. Deleted 7 redundant domain summary files, migrated unique content (schemas, tables, reference data) to per-route files, fixed 50+ stale wiki links across Database pages, updated CODEX.md references |
+| 0.53.0 | 04-03 | API per-route restructuring. Split monolithic router files into individual route modules: Health (5 files), Ideas (3 + models), Projects (5 + models), SSO Webhooks (moved to package). Each route file has docstring with request/response/DB algorithm. 1115 API tests passing |
+| 0.52.0 | 04-02 | SSO authentication router — full C9S SSO integration. 18 `/auth/sso/*` endpoints: OAuth2 login, direct login, 2FA, Google Sign-In, registration, password reset, token refresh, re-auth, logout. All proxy to SSO server via httpx. 29 new tests |
 | 0.51.0 | 04-02 | Obsidian vault restructure (docs-only). Weekly changelog, YAML frontmatter on 103 files, 6 API docs completed (DB algorithms for Slack/Publishing), 7 old API files deprecated, Home.md updated with API nav |
 | 0.50.0 | 04-01 | Activity Log & Integration Status APIs + obsidian restructure. `GET /flow/runs/{run_id}/activity` — agent interaction events. `GET /integrations/status` — Confluence/Jira connection check. 32 per-route API docs. 9 new tests. 2746 passing |
 | 0.49.0 | 04-01 | Web app gap analysis API updates. `title` + `project_id` on kickoff; `description` on projects; `title` on ideas. [CHANGE] markers for 4 low-confidence APIs |

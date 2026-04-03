@@ -70,10 +70,10 @@ The web app interacts with these collections through the REST API:
 
 | Collection | API Page | Web App Purpose |
 |-----------|----------|-----------------|
-| `projectConfig` | [[Projects API]] | Project CRUD (name, Confluence/Jira/Figma config) |
-| `workingIdeas` | [[Ideas API]], [[PRD Flow API]] | Idea lifecycle (progress, sections, iterations) |
-| `crewJobs` | [[PRD Flow API]] | Job tracking (status, timing, output) |
-| `productRequirements` | [[Publishing API]] | Delivery records (Confluence URLs, Jira tickets) |
+| `projectConfig` | [[Projects/]] | Project CRUD (name, Confluence/Jira/Figma config) |
+| `workingIdeas` | [[Ideas/]], [[PRD Flow/]] | Idea lifecycle (progress, sections, iterations) |
+| `crewJobs` | [[PRD Flow/]] | Job tracking (status, timing, output) |
+| `productRequirements` | [[Publishing/]] | Delivery records (Confluence URLs, Jira tickets) |
 
 ---
 

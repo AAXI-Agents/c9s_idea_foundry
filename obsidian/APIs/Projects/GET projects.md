@@ -71,7 +71,8 @@ tags:
 
 ## Source
 
-- **Router**: `apis/projects/router.py`
+- **Router**: `apis/projects/get_projects.py`
+- **Models**: `apis/projects/models.py`
 - **Repository**: `mongodb/project_config/repository.py`
 - **Collection**: `projectConfig`
 

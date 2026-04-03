@@ -35,6 +35,7 @@ from crewai_productfeature_planner.apis.slack.interactions_router import router 
 from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
 from crewai_productfeature_planner.apis.slack.router import router as slack_router
 from crewai_productfeature_planner.apis.integrations.router import router as integrations_router
+from crewai_productfeature_planner.apis.sso.router import router as sso_auth_router
 from crewai_productfeature_planner.apis.sso_webhooks import router as sso_webhooks_router
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
 from crewai_productfeature_planner.scripts.logging_config import get_logger
@@ -570,6 +571,17 @@ app = FastAPI(
             ),
         },
         {
+            "name": "SSO",
+            "description": (
+                "C9S Single Sign-On integration (OAuth2 + RS256 JWT). "
+                "Provides login, registration, password reset, token "
+                "refresh, re-authentication, and logout. All auth flows "
+                "use email-based 6-digit 2FA codes. Login, registration, "
+                "and password-reset are public (no Bearer). Re-auth, "
+                "logout, and userinfo require a valid Bearer token."
+            ),
+        },
+        {
             "name": "Projects",
             "description": (
                 "CRUD operations for project configurations. "
@@ -598,6 +610,7 @@ app.include_router(projects_router)
 app.include_router(ideas_router)
 app.include_router(publishing_router)
 app.include_router(integrations_router)
+app.include_router(sso_auth_router)
 app.include_router(sso_webhooks_router)
 
 # ── CORS — required for web-based SSO login flows ────────────

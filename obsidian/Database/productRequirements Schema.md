@@ -17,11 +17,11 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[Publishing API]] | `GET /publishing/pending` | Queries records with status `new` or `inprogress` |
-| [[Publishing API]] | `GET /publishing/status/{run_id}` | Reads full delivery status |
-| [[Publishing API]] | `POST /publishing/confluence/{run_id}` | Updates Confluence fields on publish |
-| [[Publishing API]] | `POST /publishing/jira/{run_id}` | Appends Jira tickets on creation |
-| [[Publishing API]] | `POST /publishing/all` | Batch update Confluence + Jira |
+| [[Publishing/]] | `GET /publishing/pending` | Queries records with status `new` or `inprogress` |
+| [[Publishing/]] | `GET /publishing/status/{run_id}` | Reads full delivery status |
+| [[Publishing/]] | `POST /publishing/confluence/{run_id}` | Updates Confluence fields on publish |
+| [[Publishing/]] | `POST /publishing/jira/{run_id}` | Appends Jira tickets on creation |
+| [[Publishing/]] | `POST /publishing/all` | Batch update Confluence + Jira |
 | Orchestrator | Startup delivery | Checks for pending deliveries on server start |
 | Orchestrator | Post-completion | Creates record when PRD flow completes |
 
@@ -100,7 +100,7 @@ Each element in the `jira_tickets` array:
 
 ---
 
-See also: [[MongoDB Schema]], [[Publishing API]], [[Confluence Integration]], [[Jira Integration]]
+See also: [[MongoDB Schema]], [[Publishing/]], [[Confluence Integration]], [[Jira Integration]]
 
 
 ---

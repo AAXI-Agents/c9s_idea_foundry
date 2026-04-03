@@ -50,6 +50,24 @@ tags:
 
 Run not found, or Confluence credentials not configured.
 
+### PublishingErrorResponse
+
+Shared error schema used across all Publishing API error responses.
+
+```json
+{
+  "error_code": "CONFLUENCE_NOT_CONFIGURED",
+  "message": "Confluence credentials are not configured",
+  "detail": "Set CONFLUENCE_URL, CONFLUENCE_USERNAME, and CONFLUENCE_API_TOKEN"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `error_code` | `string` | Machine-readable error code |
+| `message` | `string` | Human-readable error message |
+| `detail` | `string` | Additional diagnostic information |
+
 ---
 
 ## Database Algorithm

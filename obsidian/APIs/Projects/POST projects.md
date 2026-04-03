@@ -61,7 +61,8 @@ Validation failed (e.g. name too long, missing required field).
 
 ## Source
 
-- **Router**: `apis/projects/router.py`
+- **Router**: `apis/projects/post_project.py`
+- **Models**: `apis/projects/models.py`
 - **Repository**: `mongodb/project_config/repository.py` → `create_project()`
 - **Collection**: `projectConfig`
 

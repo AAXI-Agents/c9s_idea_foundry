@@ -2921,6 +2921,74 @@ _CODEX: list[CodexEntry] = [
             "formatting."
         ),
     ),
+    CodexEntry(
+        version="0.52.0",
+        date=date(2026, 4, 2),
+        summary=(
+            "SSO authentication router — full C9S Single Sign-On "
+            "integration. (1) Added /auth/sso/* router with 18 "
+            "endpoints mirroring the Executive Assistant SSO API: "
+            "OAuth2 redirect login, direct email/password login, "
+            "2FA verification, Google Sign-In, registration (with "
+            "2FA + resend), OAuth2 callback, status check, userinfo, "
+            "password reset + confirm, token refresh, re-auth + 2FA, "
+            "logout, and logout-all. (2) All endpoints proxy to the "
+            "C9 SSO server via httpx — no credentials stored locally. "
+            "(3) Added 29 tests covering input validation, SSO proxy "
+            "behaviour, and error handling. 35 API tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.53.0",
+        date=date(2026, 4, 3),
+        summary=(
+            "API per-route restructuring — split monolithic router "
+            "files into individual route modules for easier agent "
+            "updates. (1) Health: split 5 endpoints from router.py "
+            "into get_health.py, get_version.py, get_slack_token.py, "
+            "post_slack_token_exchange.py, post_slack_token_refresh.py. "
+            "(2) Ideas: split 3 endpoints into get_ideas.py, "
+            "get_idea.py, patch_idea_status.py with shared models.py. "
+            "(3) Projects: split 5 endpoints into get_projects.py, "
+            "get_project.py, post_project.py, patch_project.py, "
+            "delete_project.py with shared models.py. "
+            "(4) SSO Webhooks: moved top-level sso_webhooks.py into "
+            "sso_webhooks/ package with router.py and post_events.py. "
+            "Each route file includes docstring with request, response, "
+            "and database algorithm. 1115 API tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.54.0",
+        date=date(2026, 4, 3),
+        summary=(
+            "Obsidian API docs cleanup — deleted 7 redundant domain "
+            "summary files (Health API.md, Ideas API.md, Projects "
+            "API.md, PRD Flow API.md, Publishing API.md, SSO Webhooks "
+            "API.md, Slack API.md) and migrated unique content to "
+            "per-route files: Status Lifecycle + PRD Sections tables "
+            "→ Ideas/GET ideas-{run_id}.md, nested schemas + Web App "
+            "Flow + Agent Providers → PRD Flow per-route files, "
+            "PublishingErrorResponse → Publishing per-route file, "
+            "Block Kit action tables + Thread State + Smart Routing "
+            "→ Slack per-route files. Fixed 50+ stale wiki links "
+            "across Database schema pages. Updated CODEX.md doc "
+            "references to point to per-route folders."
+        ),
+    ),
+    CodexEntry(
+        version="0.54.1",
+        date=date(2026, 4, 3),
+        summary=(
+            "Added User Feedback gap ticket system. Created "
+            "obsidian/User Feedback/_template.md with structured "
+            "gap ticket template (frontmatter fields, context, "
+            "current/expected behaviour, affected area, acceptance "
+            "criteria, resolution tracking). Updated CODEX.md with "
+            "Gap Ticket Workflow section and knowledge base + "
+            "when-to-update table references."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

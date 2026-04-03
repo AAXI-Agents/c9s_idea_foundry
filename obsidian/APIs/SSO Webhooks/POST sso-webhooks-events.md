@@ -76,7 +76,7 @@ Missing or invalid `X-Webhook-Signature`.
 
 ## Source
 
-- **Router**: `apis/sso_webhooks/`
+- **Router**: `apis/sso_webhooks/post_events.py`
 - **Collections**: `users`, `userSession`
 
 ---

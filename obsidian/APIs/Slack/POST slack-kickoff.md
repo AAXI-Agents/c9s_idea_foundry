@@ -63,7 +63,16 @@ tags:
 7. Return immediately with `{ run_id, status: "pending", idea }`
 
 > [!note] Webhook Callback
-> When `webhook_url` is provided, the server POSTs a JSON payload on completion or failure: `{ run_id, status, result, error }`. URL must be HTTPS (SSRF protection).
+> When `webhook_url` is provided, the server POSTs a JSON payload on completion or failure:
+> ```json
+> {
+>   "run_id": "a1b2c3d4e5f6",
+>   "status": "completed",
+>   "result": { "...": "..." },
+>   "error": null
+> }
+> ```
+> URL must be HTTPS with SSRF protection (blocks private/loopback IPs).
 
 ---
 

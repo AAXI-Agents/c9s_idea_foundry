@@ -17,7 +17,7 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[Slack API]] | `cmd_configure_memory` | Admin configures memory entries via Block Kit |
+| [[Slack/]] | `cmd_configure_memory` | Admin configures memory entries via Block Kit |
 | CrewAI agents | Agent initialization | Loads memories into agent backstory via `get_memories_for_agent()` |
 | Orchestrator | PRD flow | Enriches agent context with project-specific knowledge |
 
@@ -91,7 +91,7 @@ Each element in `idea_iteration`, `knowledge`, and `tools` arrays:
 
 ---
 
-See also: [[MongoDB Schema]], [[Projects API]], [[Agent Roles]]
+See also: [[MongoDB Schema]], [[Projects/]], [[Agent Roles]]
 
 
 ---

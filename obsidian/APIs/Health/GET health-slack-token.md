@@ -54,7 +54,7 @@ No database access. Reads from `SlackTokenManager` in-memory state and `.slack_t
 
 ## Source
 
-- **Router**: `apis/health/router.py`
+- **Router**: `apis/health/get_slack_token.py`
 - **Token Manager**: `tools/slack_token_manager.py`
 
 ---

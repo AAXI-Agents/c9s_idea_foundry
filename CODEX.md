@@ -55,6 +55,7 @@ when you need deep context on a topic.
 | **Orchestrator pipelines** | `Orchestrator/Orchestrator Overview.md` |
 | **Test patterns & patches** | `Testing/Testing Guide.md` |
 | **CrewAI tools** | `Tools/Tools Overview.md` |
+| **User feedback / gap tickets** | `User Feedback/` (use `_template.md`) |
 | **Session log** | `Sessions/Session Log.md` |
 
 ### When to Update Which Page
@@ -62,17 +63,18 @@ when you need deep context on a topic.
 | Change type | Pages to update |
 |------------|----------------|
 | New module / file added | `Architecture/Module Map.md` |
-| New API endpoint | `APIs/API Overview.md` + affected domain page (`APIs/Health API.md`, `APIs/Projects API.md`, `APIs/Ideas API.md`, `APIs/PRD Flow API.md`, `APIs/Publishing API.md`, `APIs/Slack API.md`, `APIs/SSO Webhooks API.md`) |
-| Changed API request/response schema | Affected `APIs/<Domain> API.md` page — update field tables |
+| New API endpoint | `APIs/API Overview.md` + affected per-route file in `APIs/<Domain>/` (Health, Projects, Ideas, PRD Flow, Publishing, Slack, SSO Webhooks) |
+| Changed API request/response schema | Affected per-route file in `APIs/<Domain>/` — update field tables |
 | New agent or model change | `Agents/Agent Roles.md` + affected agent page (`Agents/Idea Refiner.md`, `Agents/Product Manager.md`, `Agents/Requirements Breakdown.md`, `Agents/Orchestrator.md`, `Agents/CEO Reviewer.md`, `Agents/Engineering Manager.md`, `Agents/Staff Engineer.md`, `Agents/QA Lead.md`, `Agents/QA Engineer.md`, `Agents/UX Designer.md`, `Agents/Engagement Manager.md`, `Agents/Idea Agent.md`), `Agents/LLM Model Tiers.md` |
 | Changed agent role/goal/backstory/task | Affected `Agents/<Agent>.md` page — update role, goal, backstory, or task sections |
-| New Slack intent or action | `Integrations/Slack Integration.md`, `APIs/Slack API.md` |
+| New Slack intent or action | `Integrations/Slack Integration.md`, affected file in `APIs/Slack/` |
 | MongoDB schema change | `Database/MongoDB Schema.md` + affected collection page (`Database/crewJobs Schema.md`, `Database/workingIdeas Schema.md`, `Database/productRequirements Schema.md`, `Database/projectConfig Schema.md`, `Database/projectMemory Schema.md`, `Database/agentInteraction Schema.md`, `Database/userSession Schema.md`, `Database/slackOAuth Schema.md`, `Database/userSuggestions Schema.md`) |
 | New MongoDB field or index | Affected `Database/<collection> Schema.md` page — update field tables |
 | New env var | `Architecture/Environment Variables.md` |
 | Pipeline stage change | `Orchestrator/Orchestrator Overview.md`, `Flows/PRD Flow.md` + affected flow page (`Flows/Idea Refinement Flow.md`, `Flows/Executive Summary Flow.md`, `Flows/Requirements Breakdown Flow.md`, `Flows/CEO Review Flow.md`, `Flows/Engineering Plan Flow.md`, `Flows/Section Drafting Flow.md`, `Flows/Finalization Flow.md`, `Flows/UX Design Flow.md`, `Flows/Confluence Publishing Flow.md`, `Flows/Jira Ticketing Flow.md`) |
 | Changed flow step/approval gate/skip condition | Affected `Flows/<Flow>.md` page — update step details, skip conditions, data flow |
 | Version bump | `Changelog/Version History.md` |
+| Gap / missing feature found | `User Feedback/<gap-name>.md` (copy from `_template.md`) |
 | Every session | `Sessions/Session Log.md` |
 
 ---
@@ -283,6 +285,37 @@ Every code change **must** update the relevant documentation artifacts:
 | Changed flow approval gate or skip condition | Affected `obsidian/Flows/<Flow>.md` — update approval gates, skip conditions |
 | Any code change | Affected Obsidian pages (see "When to Update Which Page" table above) |
 
+### Gap Ticket Workflow (User Feedback)
+
+When a gap is discovered — missing API endpoint, incomplete feature,
+broken flow, missing UI component — create a ticket in `obsidian/User Feedback/`.
+
+**Creating a gap ticket:**
+
+1. Copy `obsidian/User Feedback/_template.md` to a new file:
+   `obsidian/User Feedback/GAP-<short-name>.md`
+2. Fill in the frontmatter: `status`, `priority`, `domain`, `created`.
+3. Describe current vs expected behaviour, affected area, and acceptance
+   criteria.
+
+**Codex workflow (when processing gap tickets):**
+
+1. Scan `User Feedback/` for files with `status: open` in frontmatter.
+2. For each open gap:
+   a. Implement the fix or new feature.
+   b. Update the `## Resolution` section with version, date, and summary.
+   c. Change frontmatter `status: open` → `status: resolved`.
+3. Bump version in `version.py` and update `Changelog/Version History.md`.
+
+**Naming convention:** `GAP-<domain>-<short-description>.md`
+(e.g. `GAP-api-missing-pagination-on-jobs.md`, `GAP-slack-no-error-feedback.md`)
+
+**Priority values:** `critical`, `high`, `medium`, `low`
+
+**Status values:** `open`, `in-progress`, `resolved`, `wont-fix`
+
+---
+
 ### Change Request Workflow (APIs, Database, Flows)
 
 Every page in `obsidian/APIs/`, `obsidian/Database/`, and `obsidian/Flows/`
@@ -291,7 +324,7 @@ has a **## Change Requests** section at the bottom with **Pending** and
 
 **User workflow:**
 
-1. Open the relevant Obsidian page (e.g. `APIs/Slack API.md`).
+1. Open the relevant Obsidian page (e.g. `APIs/Slack/POST slack-kickoff.md`).
 2. Under `### Pending`, add a checkbox item:
    ```
    - [ ] Add a new query param `limit` to GET /slack/channels

@@ -17,7 +17,7 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[Slack API]] | Events router | Logs suggestion when intent is ambiguous or unknown |
+| [[Slack/]] | Events router | Logs suggestion when intent is ambiguous or unknown |
 | Analytics | Monitoring | Reviews unrecognized patterns over time |
 
 ---
@@ -78,7 +78,7 @@ tags:
 
 ---
 
-See also: [[MongoDB Schema]], [[Slack API]], [[Slack Integration]]
+See also: [[MongoDB Schema]], [[Slack/]], [[Slack Integration]]
 
 
 ---

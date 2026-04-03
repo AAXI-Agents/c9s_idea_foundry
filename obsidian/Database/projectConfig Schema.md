@@ -17,14 +17,14 @@ tags:
 
 | API | Endpoint | Operation |
 |-----|----------|-----------|
-| [[Projects API]] | `GET /projects` | Lists all projects (paginated) |
-| [[Projects API]] | `GET /projects/{project_id}` | Reads single project |
-| [[Projects API]] | `POST /projects` | Creates new project |
-| [[Projects API]] | `PATCH /projects/{project_id}` | Partial update |
-| [[Projects API]] | `DELETE /projects/{project_id}` | Deletes project |
-| [[PRD Flow API]] | All flow endpoints | Reads project config for Confluence/Jira keys |
-| [[Slack API]] | Session management | Reads project config for active session context |
-| [[Publishing API]] | Publishing endpoints | Reads Confluence space key and Jira project key |
+| [[Projects/]] | `GET /projects` | Lists all projects (paginated) |
+| [[Projects/]] | `GET /projects/{project_id}` | Reads single project |
+| [[Projects/]] | `POST /projects` | Creates new project |
+| [[Projects/]] | `PATCH /projects/{project_id}` | Partial update |
+| [[Projects/]] | `DELETE /projects/{project_id}` | Deletes project |
+| [[PRD Flow/]] | All flow endpoints | Reads project config for Confluence/Jira keys |
+| [[Slack/]] | Session management | Reads project config for active session context |
+| [[Publishing/]] | Publishing endpoints | Reads Confluence space key and Jira project key |
 
 ---
 
@@ -97,7 +97,7 @@ Each element in the `slack_file_refs` array:
 
 ---
 
-See also: [[MongoDB Schema]], [[Projects API]], [[Environment Variables]]
+See also: [[MongoDB Schema]], [[Projects/]], [[Environment Variables]]
 
 
 ---

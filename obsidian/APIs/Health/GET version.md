@@ -61,7 +61,7 @@ No database access. Reads from the in-memory `_CODEX` list in `version.py`.
 
 ## Source
 
-- **Router**: `apis/health/router.py`
+- **Router**: `apis/health/get_version.py`
 - **Model**: `version.py` → `get_version()`, `get_codex()`
 
 ---

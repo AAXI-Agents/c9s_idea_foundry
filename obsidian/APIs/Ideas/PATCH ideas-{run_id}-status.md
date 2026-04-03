@@ -58,7 +58,8 @@ Invalid status value.
 
 ## Source
 
-- **Router**: `apis/ideas/router.py`
+- **Router**: `apis/ideas/patch_idea_status.py`
+- **Models**: `apis/ideas/models.py`
 - **Repository**: `mongodb/working_ideas/repository.py`
 - **Collection**: `workingIdeas`
 

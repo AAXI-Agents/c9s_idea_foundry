@@ -85,6 +85,74 @@ tags:
 | `finalized_idea` | `string` | Enriched idea after Phase 1 |
 | `requirements_breakdown` | `string` | Structured requirements after breakdown phase |
 
+---
+
+### ExecutiveSummaryDraft
+
+Nested in `executive_summary`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `iterations` | `ExecutiveSummaryIteration[]` | Full iteration history |
+| `is_approved` | `bool` | Whether the executive summary has been approved |
+
+#### ExecutiveSummaryIteration
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | `string` | Markdown content of this iteration |
+| `iteration` | `int` | 1-based iteration number |
+| `critique` | `string \| null` | Critique feedback from `critique_prd_task` — `null` on first iteration |
+| `updated_date` | `string` | ISO-8601 timestamp of this iteration |
+
+---
+
+### PRDDraftDetail
+
+Nested in `current_draft`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sections` | `PRDSectionDetail[]` | Ordered list of PRD sections with their current state |
+| `all_approved` | `bool` | `true` when every section has been approved |
+
+#### PRDSectionDetail
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | Section identifier slug (e.g. `"executive_summary"`) |
+| `title` | `string` | — | Human-readable section title (e.g. `"Executive Summary"`) |
+| `step` | `int` | `0` | 1-based step number in the PRD workflow (1–12) |
+| `content` | `string` | `""` | Current markdown content of this section |
+| `critique` | `string` | `""` | Latest critique text from the critique agent |
+| `iteration` | `int` | `0` | How many times this section has been iterated |
+| `updated_date` | `string` | `""` | ISO-8601 timestamp of the last update |
+| `is_approved` | `bool` | `false` | Whether the user has approved this section |
+| `agent_results` | `dict[string, string]` | `{}` | Per-agent draft results. Keys are provider IDs (e.g. `"openai"`), values are the markdown content each agent produced |
+| `selected_agent` | `string` | `""` | Which agent's result was selected by the user. Empty = no selection made |
+
+---
+
+### ErrorResponse
+
+Standard error envelope returned by all PRD Flow API errors.
+
+```json
+{
+  "error_code": "LLM_ERROR",
+  "message": "LLM timeout after 4 attempts",
+  "run_id": "a1b2c3d4e5f6",
+  "detail": "Connection refused: api.openai.com"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `error_code` | `string` | **Yes** | Machine-readable code: `"LLM_ERROR"`, `"BILLING_ERROR"`, or `"INTERNAL_ERROR"` |
+| `message` | `string` | **Yes** | Human-readable description |
+| `run_id` | `string \| null` | No | Affected `run_id` — `null` if not applicable |
+| `detail` | `string \| null` | No | Additional diagnostic detail |
+
 ## Error — 404
 
 Run not found in in-memory `runs` dict.

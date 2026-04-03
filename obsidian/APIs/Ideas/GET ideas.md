@@ -76,7 +76,8 @@ See [[GET ideas-{run_id}]] for `IdeaItem` field descriptions.
 
 ## Source
 
-- **Router**: `apis/ideas/router.py`
+- **Router**: `apis/ideas/get_ideas.py`
+- **Models**: `apis/ideas/models.py`
 - **Repository**: `mongodb/working_ideas/repository.py`
 - **Collection**: `workingIdeas`
 

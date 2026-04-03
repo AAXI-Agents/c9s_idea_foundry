@@ -75,6 +75,31 @@ In-memory `event_id` tracking with 5-minute TTL.
 
 ---
 
+## Thread State Management
+
+The bot maintains in-memory conversation state for threaded conversations:
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| **TTL** | 10 minutes | Thread state expires after 10 minutes of inactivity |
+| **Max messages** | 20 per thread | Oldest messages are dropped when limit is reached |
+| **Thread key** | `(channel, thread_ts)` | Unique identifier for each conversation thread |
+
+---
+
+## Smart Thread Routing
+
+Threaded messages are only processed if **any** of these conditions are met:
+
+1. Thread exists in in-memory conversation cache
+2. Thread is part of an active interactive run
+3. User has pending session state (e.g. awaiting input)
+4. Channel has an active project session in MongoDB (requires @mention)
+5. Bot has previously replied in this thread (checked via `agentInteractions` collection)
+6. Working-idea document is linked to this thread via `slack_channel + slack_thread_ts`
+
+---
+
 ## Source
 
 - **Router**: `apis/slack/events_router.py`

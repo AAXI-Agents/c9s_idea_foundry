@@ -52,18 +52,35 @@ tags:
 |-----------|---------|
 | `__init__.py` | FastAPI app factory, router registration, lifespan hooks |
 | `shared.py` | FlowRun, FlowStatus, FlowCancelled, approval state, cancel_events |
-| `health/router.py` | `/health`, token management endpoints |
+| `health/router.py` | Assembles health route modules |
+| `health/get_health.py` | GET /health — liveness probe |
+| `health/get_version.py` | GET /version — version + codex |
+| `health/get_slack_token.py` | GET /health/slack-token — token diagnostics |
+| `health/post_slack_token_exchange.py` | POST /health/slack-token/exchange — rotate tokens |
+| `health/post_slack_token_refresh.py` | POST /health/slack-token/refresh — force refresh |
+| `ideas/router.py` | Assembles ideas route modules |
+| `ideas/models.py` | IdeaItem, IdeaListResponse, IdeaStatusUpdate, idea_fields() |
+| `ideas/get_ideas.py` | GET /ideas — paginated list with filters |
+| `ideas/get_idea.py` | GET /ideas/{run_id} — single idea |
+| `ideas/patch_idea_status.py` | PATCH /ideas/{run_id}/status — archive/pause |
+| `projects/router.py` | Assembles projects route modules |
+| `projects/models.py` | ProjectCreate, ProjectUpdate, ProjectItem, project_fields() |
+| `projects/get_projects.py` | GET /projects — paginated list |
+| `projects/get_project.py` | GET /projects/{project_id} — single project |
+| `projects/post_project.py` | POST /projects — create project |
+| `projects/patch_project.py` | PATCH /projects/{project_id} — update project |
+| `projects/delete_project.py` | DELETE /projects/{project_id} — delete project |
 | `prd/router.py` | `/flow/prd/*` — kickoff, approve, pause, resume, runs, jobs |
 | `prd/models.py` | Pydantic request/response schemas |
 | `prd/service.py` | Flow execution helpers (run, resume, restore state) |
 | `publishing/` | Publishing automation (router, service, watcher, scheduler) |
-| `projects/` | Projects CRUD router (list/get/create/update/delete with pagination) |
-| `ideas/` | Ideas CRUD router (paginated list, get, archive/pause with filters) |
 | `slack/` | Full Slack integration (see [[Slack Integration]]) |
 | `slack/_slack_file_helper.py` | Truncation + file upload for long Slack content (v0.31.2) |
 | `integrations/` | Integration status endpoint (Confluence/Jira connection check) |
+| `sso/` | SSO auth router — 18 endpoints (login, register, 2FA, logout, etc.) |
 | `sso_auth.py` | SSO JWT validation + require_sso_user dependency |
-| `sso_webhooks.py` | SSO webhook receiver for user lifecycle events |
+| `sso_webhooks/router.py` | Assembles SSO webhook route modules |
+| `sso_webhooks/post_events.py` | POST /sso/webhooks/events — lifecycle events |
 
 ## Flows (`flows/`)
 

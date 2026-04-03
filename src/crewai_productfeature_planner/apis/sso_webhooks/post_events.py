@@ -1,6 +1,13 @@
-"""SSO webhook receiver — handles user lifecycle events from the SSO service.
+"""POST /sso/webhooks/events — Receive SSO user lifecycle events.
 
-Listens for the SSO webhook event types:
+Request:  JSON body containing ``event`` type and ``data`` payload.
+          Verified via HMAC-SHA256 (X-Webhook-Signature) using
+          ``SSO_WEBHOOK_SECRET``.
+Response: { "status": "ok", "event": "<event_type>" }
+Database: Currently logs only. Future handlers may write to
+          ``userSession`` or ``slackOAuth`` collections.
+
+Event types:
     user.created       — log new user registration
     user.updated       — log profile changes
     user.deleted       — revoke active sessions
@@ -16,12 +23,11 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from crewai_productfeature_planner.apis.sso_auth import verify_sso_webhook
-
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/sso/webhooks", tags=["SSO Webhooks"])
+router = APIRouter()
 
 
 @router.post(
