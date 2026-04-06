@@ -534,3 +534,107 @@ def make_slack_jira_review_callback(run_id: str):
         return True
 
     return _callback
+
+
+def make_slack_ceo_review_callback(run_id: str):
+    """Create a ``ceo_review_approval_callback`` that prompts via Slack.
+
+    Returns a callable: ``(eps_content, run_id) -> (action, edited)``
+    where action is ``"approve"`` or ``"reject"``.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks import ceo_review_blocks
+
+    def _callback(
+        content: str,
+        cb_run_id: str,
+    ) -> tuple[str, str | None]:
+        info = get_interactive_run(run_id)
+        if not info:
+            return ("approve", None)
+
+        blocks, was_truncated = ceo_review_blocks(run_id, content)
+        _post_blocks(
+            info["channel"], info["thread_ts"], blocks,
+            text="Executive Product Summary — approve or skip?",
+        )
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                info["channel"], info["thread_ts"], content,
+                f"executive_product_summary_{run_id[:8]}.md",
+                "Executive Product Summary",
+            )
+
+        decision = _wait_for_decision(run_id, "ceo_review_approval")
+
+        if decision == "ceo_review_approve":
+            logger.info("CEO review approved for run_id=%s", run_id)
+            return ("approve", None)
+
+        if decision == "ceo_review_reject":
+            logger.info("CEO review skipped for run_id=%s", run_id)
+            return ("reject", None)
+
+        # Timeout -> auto-approve
+        logger.warning(
+            "CEO review approval timeout for run_id=%s — auto-approving",
+            run_id,
+        )
+        return ("approve", None)
+
+    return _callback
+
+
+def make_slack_ux_design_review_callback(run_id: str):
+    """Create a ``ux_design_review_approval_callback`` that prompts via Slack.
+
+    Returns a callable: ``(design_content, run_id) -> (action, edited)``
+    where action is ``"approve"`` or ``"reject"``.
+    """
+    from crewai_productfeature_planner.apis.slack.blocks import ux_design_review_blocks
+
+    def _callback(
+        content: str,
+        cb_run_id: str,
+    ) -> tuple[str, str | None]:
+        info = get_interactive_run(run_id)
+        if not info:
+            return ("approve", None)
+
+        blocks, was_truncated = ux_design_review_blocks(run_id, content)
+        _post_blocks(
+            info["channel"], info["thread_ts"], blocks,
+            text="UX Design — approve or skip?",
+        )
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                info["channel"], info["thread_ts"], content,
+                f"ux_design_final_{run_id[:8]}.md",
+                "UX Design — Final",
+            )
+
+        decision = _wait_for_decision(run_id, "ux_design_review_approval")
+
+        if decision == "ux_design_review_approve":
+            logger.info("UX design review approved for run_id=%s", run_id)
+            return ("approve", None)
+
+        if decision == "ux_design_review_reject":
+            logger.info("UX design review skipped for run_id=%s", run_id)
+            return ("reject", None)
+
+        # Timeout -> auto-approve
+        logger.warning(
+            "UX design review timeout for run_id=%s — auto-approving",
+            run_id,
+        )
+        return ("approve", None)
+
+    return _callback

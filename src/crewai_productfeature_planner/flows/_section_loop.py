@@ -225,6 +225,10 @@ def section_approval_loop(
                 process=Process.sequential,
                 verbose=is_verbose(),
             )
+            flow._notify_progress("agent_activity", {
+                "agent": "Quality Critic",
+                "action": f"evaluating _{section.title}_",
+            })
             try:
                 critique_result = crew_kickoff_with_retry(
                     crew, step_label=f"critique_{section.key}",
@@ -324,6 +328,10 @@ def section_approval_loop(
             process=Process.sequential,
             verbose=is_verbose(),
         )
+        flow._notify_progress("agent_activity", {
+            "agent": "Product Manager",
+            "action": f"refining _{section.title}_",
+        })
         try:
             refine_result = crew_kickoff_with_retry(
                 crew, step_label=f"refine_{section.key}",

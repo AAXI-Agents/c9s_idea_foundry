@@ -148,32 +148,41 @@ def make_progress_poster(
         if event_type == "pipeline_stage_start":
             stage = details.get("stage", "")
             desc = details.get("description", "")
+            step = details.get("step", 0)
+            total_steps = details.get("total_steps", 0)
+            step_tag = f"[{step}/{total_steps}] " if step and total_steps else ""
             if stage == "idea_refinement":
-                msg = ":bulb: Starting *Idea Refinement* — iterating until the idea is polished…"
+                msg = f":bulb: {step_tag}Starting *Idea Refinement* — iterating until the idea is polished…"
             elif stage == "requirements_breakdown":
-                msg = ":mag: Starting *Requirements Breakdown* — decomposing idea into detailed requirements…"
+                msg = f":mag: {step_tag}Starting *Requirements Breakdown* — decomposing idea into detailed requirements…"
             else:
-                msg = f":gear: Starting *{desc or stage}*…"
+                msg = f":gear: {step_tag}Starting *{desc or stage}*…"
 
         elif event_type == "pipeline_stage_complete":
             stage = details.get("stage", "")
             iters = details.get("iterations", 0)
+            step = details.get("step", 0)
+            total_steps = details.get("total_steps", 0)
+            step_tag = f"[{step}/{total_steps}] " if step and total_steps else ""
             if stage == "idea_refinement":
                 msg = (
-                    f":white_check_mark: *Idea Refinement* complete "
+                    f":white_check_mark: {step_tag}*Idea Refinement* complete "
                     f"({iters} iteration(s)). Moving to requirements breakdown…"
                 )
             elif stage == "requirements_breakdown":
                 msg = (
-                    f":white_check_mark: *Requirements Breakdown* complete "
+                    f":white_check_mark: {step_tag}*Requirements Breakdown* complete "
                     f"({iters} iteration(s))."
                 )
             else:
-                msg = f":white_check_mark: *{stage}* complete ({iters} iteration(s))."
+                msg = f":white_check_mark: {step_tag}*{stage}* complete ({iters} iteration(s))."
 
         elif event_type == "pipeline_stage_skipped":
             stage = details.get("stage", "")
-            msg = f":fast_forward: *{stage}* skipped (already done or not needed)."
+            step = details.get("step", 0)
+            total_steps = details.get("total_steps", 0)
+            step_tag = f"[{step}/{total_steps}] " if step and total_steps else ""
+            msg = f":fast_forward: {step_tag}*{stage}* skipped (already done or not needed)."
 
         elif event_type == "section_start":
             title = details.get("section_title", "")
@@ -208,6 +217,20 @@ def make_progress_poster(
             # shown to avoid flooding the thread with per-iteration noise.
             pass
 
+        elif event_type == "exec_summary_critique":
+            # Transparent critique — share the Critic's reasoning with
+            # the user so they can follow the AI's quality assessment.
+            critique_text = details.get("critique", "")
+            iteration_num = details.get("iteration", 0)
+            if critique_text:
+                preview = critique_text[:1500]
+                if len(critique_text) > 1500:
+                    preview += "\n\n_(critique truncated)_"
+                msg = (
+                    f":mag: *AI Critique — Iteration {iteration_num}*\n\n"
+                    f"{preview}"
+                )
+
         elif event_type == "executive_summary_complete":
             iters = details.get("iterations", 0)
             content = details.get("content", "")
@@ -236,12 +259,42 @@ def make_progress_poster(
 
         # ── Phase 1.5 — Specialist agent events ──────────────
 
+        elif event_type == "agent_activity":
+            agent = details.get("agent", "")
+            action = details.get("action", "")
+            _AGENT_EMOJIS = {
+                "Product Manager": ":memo:",
+                "Quality Critic": ":mag:",
+                "CEO Reviewer": ":briefcase:",
+                "Engineering Manager": ":hammer_and_wrench:",
+                "UX Designer": ":art:",
+                "Senior Designer": ":artist:",
+            }
+            emoji = _AGENT_EMOJIS.get(agent, ":robot_face:")
+            msg = f"{emoji} *{agent}* is {action}\u2026"
+
+        elif event_type == "requirements_assumptions":
+            preview = details.get("evaluation_preview", "")
+            iters = details.get("iterations", 0)
+            if preview:
+                truncated = preview[:1500]
+                if len(preview) > 1500:
+                    truncated += "\n\n_(evaluation truncated)_"
+                msg = (
+                    f":crystal_ball: *Requirements Evaluation* "
+                    f"({iters} iteration(s))\n\n{truncated}"
+                )
+
         elif event_type == "ceo_review_start":
             msg = ":briefcase: Starting *CEO Review* — generating Executive Product Summary…"
 
         elif event_type == "ceo_review_complete":
             length = details.get("content_length", 0)
             msg = f":white_check_mark: *CEO Review* complete ({length:,} chars)."
+
+        elif event_type == "ceo_review_awaiting_approval":
+            length = details.get("content_length", 0)
+            msg = f":hourglass_flowing_sand: *CEO Review* awaiting your approval ({length:,} chars)."
 
         elif event_type == "ceo_review_skipped":
             msg = ":fast_forward: *CEO Review* skipped (no Gemini credentials)."
@@ -286,6 +339,26 @@ def make_progress_poster(
                 msg = ":fast_forward: *UX Design* skipped (no Gemini credentials)."
             else:
                 msg = ":fast_forward: *UX Design* skipped."
+
+        elif event_type == "ux_design_draft_complete":
+            prompt_preview = details.get("prompt_preview", "")
+            msg = ":white_check_mark: *UX Design Draft* complete."
+            if prompt_preview:
+                preview = prompt_preview[:300]
+                if len(prompt_preview) > 300:
+                    preview += "\u2026"
+                msg += f"\n\n>>>{preview}"
+
+        elif event_type == "ux_design_review_start":
+            draft_len = details.get("draft_length", 0)
+            msg = (
+                f":artist: Starting *UX Design Review* \u2014 "
+                f"Senior Designer applying 7-pass review ({draft_len:,} chars)\u2026"
+            )
+
+        elif event_type == "ux_design_review_awaiting_approval":
+            length = details.get("content_length", 0)
+            msg = f":hourglass_flowing_sand: *UX Design Review* awaiting your approval ({length:,} chars)."
 
         elif event_type == "section_iteration":
             # Suppressed — only section_start and section_complete are
@@ -949,6 +1022,359 @@ def make_requirements_approval_gate(
         except Exception:  # noqa: BLE001
             pass
         return False
+
+    return _callback
+
+
+# ---------------------------------------------------------------------------
+# CEO Review approval gate (Executive Product Summary)
+# ---------------------------------------------------------------------------
+
+# Module-level state for CEO review approval.  Keyed by run_id.
+_pending_ceo_review: dict[str, dict] = {}
+_ceo_review_lock = threading.Lock()
+
+
+def resolve_ceo_review(run_id: str, action: str) -> bool:
+    """Signal a pending CEO-review gate for *run_id*.
+
+    Called by the interactions router when the user clicks
+    "Approve" (``ceo_review_approve``) or "Skip"
+    (``ceo_review_reject``).
+
+    Returns ``True`` if the gate was found and signalled.
+    """
+    with _ceo_review_lock:
+        info = _pending_ceo_review.get(run_id)
+        if not info:
+            return False
+        info["decision"] = action
+        info["event"].set()
+        return True
+
+
+def make_ceo_review_gate(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str], tuple[str, str | None]]":
+    """Return a ``ceo_review_approval_callback`` for auto-approve flows.
+
+    Posts the Executive Product Summary with Approve / Skip buttons
+    so the user can review before the Engineering Plan runs.
+
+    Returns ``("approve", None)``  → accepted as-is.
+    Returns ``("reject", None)``   → skip EPS (use exec summary only).
+    """
+
+    def _callback(
+        content: str,
+        cb_run_id: str,
+    ) -> tuple[str, str | None]:
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            ceo_review_blocks,
+        )
+
+        blocks, was_truncated = ceo_review_blocks(cb_run_id, content)
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+            if client:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text="Executive Product Summary — awaiting your review",
+                    blocks=blocks,
+                )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to post CEO review blocks", exc_info=True)
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                channel, thread_ts, content,
+                f"executive_product_summary_{cb_run_id[:8]}.md",
+                "Executive Product Summary",
+            )
+
+        # Register the pending gate
+        gate_event = threading.Event()
+        with _ceo_review_lock:
+            _pending_ceo_review[cb_run_id] = {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "user": user,
+                "event": gate_event,
+                "decision": None,
+            }
+
+        # Wait for user response (10 minutes max)
+        gate_event.wait(timeout=600.0)
+
+        with _ceo_review_lock:
+            info = _pending_ceo_review.pop(cb_run_id, {})
+
+        decision = info.get("decision")
+
+        if decision == "ceo_review_reject":
+            logger.info(
+                "[CEOReviewGate] User skipped EPS for run_id=%s",
+                cb_run_id,
+            )
+            return ("reject", None)
+
+        if decision == "ceo_review_approve":
+            logger.info(
+                "[CEOReviewGate] User approved EPS for run_id=%s",
+                cb_run_id,
+            )
+            return ("approve", None)
+
+        # Timeout — auto-approve to avoid blocking forever
+        logger.warning(
+            "[CEOReviewGate] Timeout for run_id=%s — auto-approving",
+            cb_run_id,
+        )
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    ":hourglass: No response received — auto-approving "
+                    "Executive Product Summary and continuing."
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return ("approve", None)
+
+    return _callback
+
+
+def make_auto_ceo_review_gate(
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str], tuple[str, str | None]]":
+    """Return a ``ceo_review_approval_callback`` that auto-approves.
+
+    Posts the Executive Product Summary to Slack for visibility but
+    does not block.
+    """
+
+    def _callback(
+        content: str,
+        cb_run_id: str,
+    ) -> tuple[str, str | None]:
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+            if client:
+                from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                    truncate_with_file_hint,
+                )
+                preview, was_truncated = truncate_with_file_hint(content, 2700)
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=(
+                        ":star: *Executive Product Summary (auto-approved)*\n\n"
+                        f"{preview}"
+                    ),
+                )
+                if was_truncated:
+                    from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                        upload_content_file,
+                    )
+                    upload_content_file(
+                        channel, thread_ts, content,
+                        f"executive_product_summary_{cb_run_id[:8]}.md",
+                        "Executive Product Summary",
+                    )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to post auto CEO review", exc_info=True)
+
+        return ("approve", None)
+
+    return _callback
+
+
+# ---------------------------------------------------------------------------
+# UX Design Review gate
+# ---------------------------------------------------------------------------
+
+_pending_ux_design_review: dict[str, dict] = {}
+_ux_design_review_lock = threading.Lock()
+
+
+def resolve_ux_design_review(run_id: str, action: str) -> bool:
+    """Signal a pending UX-design-review gate for *run_id*.
+
+    Called by the interactions router when the user clicks
+    "Approve" (``ux_design_review_approve``) or "Skip"
+    (``ux_design_review_reject``).
+
+    Returns ``True`` if the gate was found and signalled.
+    """
+    with _ux_design_review_lock:
+        info = _pending_ux_design_review.get(run_id)
+        if not info:
+            return False
+        info["decision"] = action
+        info["event"].set()
+        return True
+
+
+def make_ux_design_review_gate(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str], tuple[str, str | None]]":
+    """Return a ``ux_design_review_approval_callback`` for blocking flows.
+
+    Posts the finalized UX Design with Approve / Skip buttons so the
+    user can review before the design is appended to the PRD.
+    """
+
+    def _callback(
+        content: str,
+        cb_run_id: str,
+    ) -> tuple[str, str | None]:
+        from crewai_productfeature_planner.apis.slack.blocks import (
+            ux_design_review_blocks,
+        )
+
+        blocks, was_truncated = ux_design_review_blocks(cb_run_id, content)
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+            if client:
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text="UX Design — awaiting your review",
+                    blocks=blocks,
+                )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to post UX design review blocks", exc_info=True)
+
+        if was_truncated:
+            from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                upload_content_file,
+            )
+            upload_content_file(
+                channel, thread_ts, content,
+                f"ux_design_final_{cb_run_id[:8]}.md",
+                "UX Design — Final",
+            )
+
+        gate_event = threading.Event()
+        with _ux_design_review_lock:
+            _pending_ux_design_review[cb_run_id] = {
+                "channel": channel,
+                "thread_ts": thread_ts,
+                "user": user,
+                "event": gate_event,
+                "decision": None,
+            }
+
+        gate_event.wait(timeout=600.0)
+
+        with _ux_design_review_lock:
+            info = _pending_ux_design_review.pop(cb_run_id, {})
+
+        decision = info.get("decision")
+
+        if decision == "ux_design_review_reject":
+            logger.info(
+                "[UXDesignReviewGate] User skipped UX design for run_id=%s",
+                cb_run_id,
+            )
+            return ("reject", None)
+
+        if decision == "ux_design_review_approve":
+            logger.info(
+                "[UXDesignReviewGate] User approved UX design for run_id=%s",
+                cb_run_id,
+            )
+            return ("approve", None)
+
+        # Timeout — auto-approve
+        logger.warning(
+            "[UXDesignReviewGate] Timeout for run_id=%s — auto-approving",
+            cb_run_id,
+        )
+        try:
+            send_tool.run(
+                channel=channel,
+                text=(
+                    ":hourglass: No response received — auto-approving "
+                    "UX Design and continuing."
+                ),
+                thread_ts=thread_ts,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return ("approve", None)
+
+    return _callback
+
+
+def make_auto_ux_design_review_gate(
+    channel: str,
+    thread_ts: str,
+    send_tool,
+    *,
+    run_id: str = "",
+) -> "Callable[[str, str], tuple[str, str | None]]":
+    """Return a ``ux_design_review_approval_callback`` that auto-approves.
+
+    Posts the UX Design to Slack for visibility but does not block.
+    """
+
+    def _callback(
+        content: str,
+        cb_run_id: str,
+    ) -> tuple[str, str | None]:
+        try:
+            from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+            client = _get_slack_client()
+            if client:
+                from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                    truncate_with_file_hint,
+                )
+                preview, was_truncated = truncate_with_file_hint(content, 2700)
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=(
+                        ":art: *UX Design (auto-approved)*\n\n"
+                        f"{preview}"
+                    ),
+                )
+                if was_truncated:
+                    from crewai_productfeature_planner.apis.slack._slack_file_helper import (
+                        upload_content_file,
+                    )
+                    upload_content_file(
+                        channel, thread_ts, content,
+                        f"ux_design_final_{cb_run_id[:8]}.md",
+                        "UX Design — Final",
+                    )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to post auto UX design review", exc_info=True)
+
+        return ("approve", None)
 
     return _callback
 
@@ -1884,6 +2310,18 @@ def _unblock_gates_for_cancel(run_id: str) -> None:
     evt = approval_events.get(run_id)
     if evt is not None:
         evt.set()
+
+    # CEO review gate
+    with _ceo_review_lock:
+        info = _pending_ceo_review.get(run_id)
+        if info and "event" in info:
+            info["event"].set()
+
+    # UX design review gate
+    with _ux_design_review_lock:
+        info = _pending_ux_design_review.get(run_id)
+        if info and "event" in info:
+            info["event"].set()
 
     logger.info("[Cancel] Unblocked approval gates for run_id=%s", run_id)
 

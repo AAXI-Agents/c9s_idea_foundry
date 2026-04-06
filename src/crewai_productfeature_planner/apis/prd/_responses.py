@@ -241,6 +241,20 @@ class PRDRunStatusResponse(BaseModel):
             "Empty until the flow finalizes."
         ),
     )
+    ux_design_status: str = Field(
+        default="",
+        description=(
+            "UX design generation status: '' (not started), "
+            "'generating', or 'completed'."
+        ),
+    )
+    ux_design_content: str = Field(
+        default="",
+        description=(
+            "UX design markdown content. Empty until UX design "
+            "generation completes."
+        ),
+    )
     current_draft: PRDDraftDetail = Field(
         default_factory=PRDDraftDetail,
         description="Full structured draft with per-section state.",

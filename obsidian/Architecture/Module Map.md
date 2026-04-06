@@ -73,6 +73,8 @@ tags:
 | `prd/router.py` | `/flow/prd/*` — kickoff, approve, pause, resume, runs, jobs |
 | `prd/models.py` | Pydantic request/response schemas |
 | `prd/service.py` | Flow execution helpers (run, resume, restore state) |
+| `prd/_route_timeline.py` | `GET /flow/runs/{run_id}/timeline` — unified PRD journey timeline |
+| `prd/_route_versions.py` | `GET /flow/runs/{run_id}/versions` — PRD version history |
 | `publishing/` | Publishing automation (router, service, watcher, scheduler) |
 | `slack/` | Full Slack integration (see [[Slack Integration]]) |
 | `slack/_slack_file_helper.py` | Truncation + file upload for long Slack content (v0.31.2) |

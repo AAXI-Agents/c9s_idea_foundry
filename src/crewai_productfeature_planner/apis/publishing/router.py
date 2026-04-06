@@ -20,6 +20,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from crewai_productfeature_planner.apis.publishing.models import (
     CombinedPublishResult,
     ConfluenceBatchResult,
+    ConfluencePreviewResponse,
     ConfluencePublishResult,
     DeliveryStatusResponse,
     JiraBatchResult,
@@ -154,6 +155,45 @@ async def publish_confluence_single_endpoint(run_id: str, user: dict = Depends(r
         raise HTTPException(status_code=503, detail=_safe_detail(exc)) from exc
     except Exception as exc:
         logger.error("publish_confluence_single failed for %s: %s", run_id, exc)
+        raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# GET /publishing/confluence/{run_id}/preview
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/confluence/{run_id}/preview",
+    response_model=ConfluencePreviewResponse,
+    summary="Preview Confluence-formatted PRD before publishing",
+    description=(
+        "Renders the PRD as Confluence XHTML without actually publishing. "
+        "Returns both the raw markdown and the formatted XHTML so the "
+        "user can review before committing. Also identifies which "
+        "sections changed since the last publish."
+    ),
+    responses={
+        404: {
+            "description": "No completed PRD found for the run_id.",
+            "model": PublishingErrorResponse,
+        },
+        **_ERROR_RESPONSES,
+    },
+)
+async def preview_confluence(run_id: str, user: dict = Depends(require_sso_user)):
+    """Preview Confluence-formatted PRD content without publishing."""
+    from crewai_productfeature_planner.apis.publishing.service import (
+        preview_confluence_content,
+    )
+
+    try:
+        result = preview_confluence_content(run_id)
+        return ConfluencePreviewResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=_safe_detail(exc)) from exc
+    except Exception as exc:
+        logger.error("preview_confluence failed for %s: %s", run_id, exc)
         raise HTTPException(status_code=500, detail=_safe_detail(exc)) from exc
 
 

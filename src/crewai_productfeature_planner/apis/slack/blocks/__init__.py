@@ -14,6 +14,7 @@ Action ID conventions (used in :mod:`interactions_router`):
     requirements_approve – Approve requirements breakdown
     requirements_cancel  – Cancel the flow after requirements breakdown
     flow_cancel        – Cancel an in-progress flow at any point
+    flow_pause         – Pause an in-progress flow (saves progress)
 
     exec_summary_approve  – Approve the executive summary and continue
     exec_summary_skip     – Skip initial guidance (pre-draft prompt)
@@ -59,6 +60,7 @@ _jira_blocks         – Jira phased approval (skeleton, review)
 _idea_list_blocks    – Idea listing with interactive per-idea buttons
 _product_list_blocks – Product listing for delivery manager actions
 _retry_blocks        – Flow-paused notification with retry button
+_flow_control_blocks – Persistent flow control panel (Pause / Cancel)
 """
 
 from crewai_productfeature_planner.apis.slack.blocks._flow_blocks import (
@@ -92,6 +94,12 @@ from crewai_productfeature_planner.apis.slack.blocks._exec_summary_blocks import
     exec_summary_feedback_blocks,
     exec_summary_pre_feedback_blocks,
 )
+from crewai_productfeature_planner.apis.slack.blocks._ceo_review_blocks import (
+    ceo_review_blocks,
+)
+from crewai_productfeature_planner.apis.slack.blocks._ux_design_review_blocks import (
+    ux_design_review_blocks,
+)
 from crewai_productfeature_planner.apis.slack.blocks._jira_blocks import (
     jira_review_blocks,
     jira_skeleton_approval_blocks,
@@ -107,6 +115,9 @@ from crewai_productfeature_planner.apis.slack.blocks._product_list_blocks import
 from crewai_productfeature_planner.apis.slack.blocks._retry_blocks import (
     flow_paused_blocks,
 )
+from crewai_productfeature_planner.apis.slack.blocks._flow_control_blocks import (
+    flow_control_panel_blocks,
+)
 from crewai_productfeature_planner.apis.slack.blocks._delivery_action_blocks import (
     delivery_next_step_blocks,
     jira_only_blocks,
@@ -121,6 +132,7 @@ from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
     BTN_CURRENT_PROJECT,
     BTN_END_SESSION,
     BTN_HELP,
+    BTN_ITERATE_IDEA,
     BTN_LIST_IDEAS,
     BTN_LIST_PRODUCTS,
     BTN_LIST_PROJECTS,
@@ -169,6 +181,8 @@ __all__ = [
     "exec_summary_completion_blocks",
     "exec_summary_pre_feedback_blocks",
     "exec_summary_feedback_blocks",
+    # CEO review
+    "ceo_review_blocks",
     # Jira
     "jira_skeleton_approval_blocks",
     "jira_review_blocks",
@@ -180,6 +194,8 @@ __all__ = [
     "product_list_blocks",
     # Retry / resume
     "flow_paused_blocks",
+    # Flow control panel
+    "flow_control_panel_blocks",
     # Delivery actions (post-completion)
     "delivery_next_step_blocks",
     "jira_only_blocks",
@@ -193,6 +209,7 @@ __all__ = [
     "BTN_CURRENT_PROJECT",
     "BTN_END_SESSION",
     "BTN_HELP",
+    "BTN_ITERATE_IDEA",
     "BTN_LIST_IDEAS",
     "BTN_LIST_PRODUCTS",
     "BTN_LIST_PROJECTS",

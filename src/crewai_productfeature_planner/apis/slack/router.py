@@ -191,13 +191,17 @@ def _run_slack_prd_flow(
         SlackSendMessageTool,
     )
     from crewai_productfeature_planner.apis.slack._flow_handlers import (
+        make_auto_ceo_review_gate,
         make_auto_exec_completion_gate,
         make_auto_exec_summary_gate,
         make_auto_requirements_gate,
+        make_auto_ux_design_review_gate,
+        make_ceo_review_gate,
         make_exec_summary_completion_gate,
         make_exec_summary_gate,
         make_progress_poster,
         make_requirements_approval_gate,
+        make_ux_design_review_gate,
     )
 
     send_tool = SlackSendMessageTool()
@@ -232,6 +236,18 @@ def _run_slack_prd_flow(
             send_tool=send_tool,
             run_id=run_id,
         )
+        ceo_review_cb = make_auto_ceo_review_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+        ux_design_review_cb = make_auto_ux_design_review_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
     else:
         # Blocking gates — user must click Approve/Feedback
         exec_summary_cb = make_exec_summary_gate(
@@ -249,6 +265,20 @@ def _run_slack_prd_flow(
             run_id=run_id,
         )
         requirements_cb = make_requirements_approval_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            user="",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+        ceo_review_cb = make_ceo_review_gate(
+            channel=channel,
+            thread_ts=thread_ts or "",
+            user="",
+            send_tool=send_tool,
+            run_id=run_id,
+        )
+        ux_design_review_cb = make_ux_design_review_gate(
             channel=channel,
             thread_ts=thread_ts or "",
             user="",
@@ -296,6 +326,8 @@ def _run_slack_prd_flow(
             exec_summary_user_feedback_callback=exec_summary_cb,
             executive_summary_callback=exec_completion_cb,
             requirements_approval_callback=requirements_cb,
+            ceo_review_approval_callback=ceo_review_cb,
+            ux_design_review_approval_callback=ux_design_review_cb,
         )
 
         # Link working idea to project (safety-net re-apply after flow
@@ -424,13 +456,21 @@ def _run_slack_prd_flow(
         )
 
     finally:
-        # Clean up any pending exec summary gate for this run
+        # Clean up any pending gates for this run
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
+            _ceo_review_lock,
             _exec_feedback_lock,
+            _pending_ceo_review,
             _pending_exec_feedback,
+            _ux_design_review_lock,
+            _pending_ux_design_review,
         )
         with _exec_feedback_lock:
             _pending_exec_feedback.pop(run_id, None)
+        with _ceo_review_lock:
+            _pending_ceo_review.pop(run_id, None)
+        with _ux_design_review_lock:
+            _pending_ux_design_review.pop(run_id, None)
 
         if webhook_url:
             run = runs.get(run_id)

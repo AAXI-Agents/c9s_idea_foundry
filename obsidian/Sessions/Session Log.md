@@ -9,6 +9,174 @@ tags:
 
 ---
 
+## Session — 2026-04-06 (v0.57.0)
+
+**Focus**: Review and clean up User Feedback gap tickets; implement agent transparency features
+
+### Changes
+1. **Agent activity messages** — New `agent_activity` progress events fired before every crew kickoff in:
+   - `_executive_summary.py` (draft, critique, refine — 3 events)
+   - `_section_loop.py` (critique, refine — 2 events per section)
+   - `_ceo_eng_review.py` (CEO review, Engineering plan — 2 events)
+   - `_ux_design.py` (Phase 1 draft, Phase 2 review — 2 events)
+   - `_flow_handlers.py` — handler with agent-specific emojis (📝 PM, 🔍 Critic, 💼 CEO, 🛠️ Eng, 🎨 UX, 🧑‍🎨 Senior Designer)
+
+2. **Requirements assumptions display** — After requirements breakdown completes, final evaluation posted to Slack via `requirements_assumptions` progress event, showing ambiguities/assumptions
+
+3. **UX Design phase events** — `ux_design_draft_complete` and `ux_design_review_start` events now handled in Slack progress poster (previously fired but silently dropped)
+
+4. **Gap ticket cleanup** — Deleted 9 resolved tickets (8 from v0.55.0 + AUDIT index). Updated 4 in-progress tickets with v0.57.0 implementation details
+
+### Files Modified
+- `src/.../flows/_executive_summary.py` — 3 `agent_activity` events
+- `src/.../flows/_section_loop.py` — 2 `agent_activity` events
+- `src/.../flows/_ceo_eng_review.py` — 2 `agent_activity` events
+- `src/.../flows/_ux_design.py` — 2 `agent_activity` events
+- `src/.../apis/slack/_flow_handlers.py` — handlers for `agent_activity`, `requirements_assumptions`, `ux_design_draft_complete`, `ux_design_review_start`
+- `src/.../orchestrator/_requirements.py` — `requirements_assumptions` event in `_apply()`
+- `src/.../version.py` — v0.57.0 CodexEntry
+
+### Gap Tickets
+- **Deleted (9)**: api-user-profile, api-ux-design, config-report-md-cleanup, docs-boilerplate-cr-cleanup, docs-readme-intent-sync, docs-readme-version-history, slack-iterate-idea-intent, webapp-design-decisions, AUDIT-flow-interactivity-plan
+- **Updated (4)**: realtime-progress-streaming, executive-review-interactivity, ux-design-integration, engineering-plan-context
+- **Remaining (11)**: 3 with unanswered follow-up questions, 4 pure future work, 4 partially implemented
+
+### Tests
+- **2419 passed**, 1 pre-existing failure (test_retry.py — rate limit backoff assertion)
+- 243 targeted tests pass (flow + orchestrator + progress poster)
+
+### Version
+- `version.py`: CodexEntry for v0.57.0
+- `Changelog/Version History.md`: v0.57.0 row added
+
+---
+
+## Session — 2026-04-05 (v0.56.0)
+
+**Focus**: Implement flow audit gap ticket answers (10 tickets)
+
+### Changes
+1. **CEO Review approval gate** — Full plumbing across 8 files:
+   - `prd_flow.py`: `ceo_review_approval_callback` field
+   - `_ceo_eng_review.py`: approval gate after EPS generation (approve/reject/edit)
+   - `_ceo_review_blocks.py` (NEW): Block Kit blocks with Approve/Skip buttons
+   - `blocks/__init__.py`: export `ceo_review_blocks`
+   - `_flow_handlers.py`: `resolve_ceo_review()`, `make_ceo_review_gate()`, `make_auto_ceo_review_gate()`, `ceo_review_awaiting_approval` progress event
+   - `router.py`: wired CEO gate in `_run_slack_prd_flow()`, cleanup in finally block
+   - `service.py`: `ceo_review_approval_callback` parameter on `run_prd_flow()` and `resume_prd_flow()`
+   - `_dispatch.py`: `ceo_review_approve`/`ceo_review_reject` in `_KNOWN_ACTIONS`, ack labels, dispatch routing
+   - `_callbacks.py`: `make_slack_ceo_review_callback()` factory
+   - `_flow_runner.py`: wired CEO callback in interactive flow
+   - `interactive_handlers/__init__.py`: export `make_slack_ceo_review_callback`
+
+2. **Transparent critique** — `exec_summary_critique` progress event in `_executive_summary.py`, handled by progress poster to post Critic reasoning to Slack
+
+3. **Pipeline step counter** — `orchestrator.py` passes `step`/`total_steps` to progress events, progress poster shows `[1/3]` tags
+
+4. **Project config fields** — `design_preferences`, `review_checklists`, `technical_profile` dict/list fields added to `projectConfig` schema and `create_project()`
+
+5. **Gap ticket updates** — All 10 flow audit tickets updated:
+   - 3 marked `in-progress` with partial implementation (executive-review, realtime-progress, engineering-plan)
+   - 3 marked `in-progress` with follow-up questions (idea-refinement Q3, jira-ticketing Q1, engineering-plan Q2)
+   - 4 marked `in-progress` with user decisions recorded (section-drafting, confluence-publishing, journey-dashboard, prd-versioning)
+   - 4 more marked `in-progress` with partial implementation (ux-design, jira-ticketing, idea-refinement)
+
+### Tests
+- All **2777 tests pass** (0 failures)
+
+### Version
+- `version.py`: appended CodexEntry for v0.56.0
+- `Changelog/Version History.md`: added v0.56.0 row
+
+## Session — 2026-04-04 (v0.55.0)
+
+**Scope**: Implement all user-answered gap tickets
+**Version**: v0.54.2 → v0.55.0
+
+### Changes
+
+- **Resolved 8 gap tickets**, 1 moved to in-progress:
+
+  **New features (3):**
+  1. `GET/PATCH /user/profile` — merged SSO identity + local preferences.
+     New `userPreferences` MongoDB collection with `user_id` unique index.
+     Fields: `display_name`, `default_project_id`, `timezone`,
+     `notification_preferences`.
+  2. `POST /flow/ux-design/{run_id}` — triggers UX design generation
+     for completed PRDs. Returns 202, background task via existing
+     `ux_design_flow.py`. Added `ux_design_status` and `ux_design_content`
+     to `GET /flow/runs/{run_id}` response.
+  3. `iterate_idea` — distinct Slack flow (list → pick → re-refine).
+     New `BTN_ITERATE_IDEA` button, `cmd_iterate_idea` command handler,
+     `handle_iterate_idea()` session handler, `idea_iterate_<N>`
+     interaction dispatch. Separated iterate phrases from create_prd.
+
+  **Documentation fixes (5):**
+  4. README intent table: 12 → 20 intents synced with Slack Integration doc.
+  5. README version history: updated from v0.9.4 to 15 recent significant
+     versions (v0.25.0–v0.54.1) with link to full history.
+  6. DESIGN.md Section 15: resolved all 8 design decisions per user answers
+     (SSE, Milkdown, C9S SSO, sidebar dropdown, fixed columns, icons+text,
+     both notifications, both dark mode). Added 10 Decisions Log entries.
+  7. Boilerplate CR cleanup: removed example `- [ ]` items from 22
+     obsidian pages across Database/, Flows/, APIs/.
+  8. Deleted `report.md` from repo root (unrelated LLM research paper).
+
+  **Analysis (1):**
+  9. Web app screen gap analysis in GAP-webapp-frontend-framework.md:
+     5 missing screen designs identified (Project Detail, Idea Detail,
+     PRD Editor, Publishing, Activity Feed).
+
+### New Files
+
+- `src/.../mongodb/user_preferences/__init__.py`
+- `src/.../mongodb/user_preferences/repository.py`
+- `src/.../apis/user_profile/__init__.py`
+- `src/.../apis/user_profile/router.py`
+- `src/.../apis/prd/_route_ux_design.py`
+
+### Testing
+
+All existing tests passing. New endpoints follow established patterns.
+
+---
+
+## Session — 2026-04-03 (v0.54.2)
+
+**Scope**: User Feedback — full gap audit and ticket creation
+**Version**: v0.54.1 → v0.54.2
+
+### Changes
+
+- Performed full codebase audit across APIs, Slack, Database, Flows,
+  Web App, README, source code TODOs, and environment variables.
+
+- Created **9 gap tickets** in `obsidian/User Feedback/`:
+
+  **Gaps requiring user input (5):**
+  1. `GAP-api-user-profile-endpoint.md` — 5 design questions for `PATCH /user/profile`
+  2. `GAP-api-ux-design-endpoint.md` — 4 design questions for `POST /flow/ux-design/{run_id}`
+  3. `GAP-slack-iterate-idea-intent.md` — Is `iterate_idea` an alias or distinct flow?
+  4. `GAP-webapp-frontend-framework.md` — Framework, hosting, priority, repo structure
+  5. `GAP-webapp-design-decisions.md` — 8 unresolved DESIGN.md decisions (SSE, editor, auth, etc.)
+
+  **Quick-win gaps (4, no user input needed):**
+  6. `GAP-docs-readme-intent-sync.md` — README shows 12/20 intents
+  7. `GAP-docs-boilerplate-cr-cleanup.md` — Template CRs polluting 15+ pages
+  8. `GAP-docs-readme-version-history.md` — Version table stale at v0.9.4
+  9. `GAP-config-report-md-cleanup.md` — Unrelated report.md at repo root
+
+- Updated `_template.md` to include the agent-suggested answer format
+  for user-facing questions.
+
+- Each gap ticket includes agent-suggested answers prefilled for user review.
+
+### Testing
+
+No code changes — documentation only. Tests unaffected.
+
+---
+
 ## Session — 2026-04-03 (v0.54.1)
 
 **Scope**: User Feedback gap ticket system
@@ -3119,6 +3287,52 @@ All 9 iterable PRD sections were using the same research model (pro/o3) for draf
 
 ### Documentation Updated
 - `obsidian/Changelog/Version History.md` — v0.48.2 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session: 2026-04-08 — Gap Ticket Backend Features (v0.59.0)
+
+### Goal
+Implement backend features for 4 open gap tickets with complete user answers. Fix test patch targets. Update all documentation.
+
+### Changes (v0.59.0)
+
+**New Files:**
+- `apis/prd/_route_timeline.py` — `GET /flow/runs/{run_id}/timeline` unified PRD journey timeline. Stitches workingIdeas, crewJobs, agentInteraction, productRequirements into chronological TimelineEvent list.
+- `apis/prd/_route_versions.py` — `GET /flow/runs/{run_id}/versions` PRD version history. Returns VersionHistoryResponse with section content snapshots and changelogs.
+- `tests/apis/prd/test_timeline.py` — 9 tests for timeline builder and response models.
+- `tests/apis/publishing/test_confluence_preview.py` — 5 tests for confluence preview service.
+- `tests/mongodb/test_version_tracking.py` — 5 tests for version snapshot repository functions.
+- `tests/mongodb/test_section_conversations.py` — 11 tests for section conversation storage.
+
+**Modified Files:**
+- `apis/prd/router.py` — Added timeline_router and versions_router includes.
+- `apis/publishing/router.py` — Added `GET /publishing/confluence/{run_id}/preview` endpoint.
+- `apis/publishing/service.py` — Added `preview_confluence_content()` function.
+- `apis/publishing/models.py` — Added `ConfluencePreviewResponse` model.
+- `mongodb/product_requirements/repository.py` — Added `save_version_snapshot()`, `get_version_history()`, `get_current_version()`.
+- `mongodb/product_requirements/__init__.py` — Re-exports for version functions.
+- `mongodb/working_ideas/_sections.py` — Added `save_section_message()`, `get_section_conversation()`, `get_section_summary_notes()`, `save_section_summary_note()` with injection guards.
+- `mongodb/working_ideas/repository.py` — Re-exports for section conversation functions.
+- `version.py` — v0.59.0 CodexEntry.
+
+**Gap Tickets Updated:**
+- `GAP-flow-confluence-publishing-preview.md` — status: in-progress, v0.59.0 backend foundation
+- `GAP-flow-journey-dashboard-history.md` — status: in-progress, v0.59.0 backend foundation
+- `GAP-flow-prd-iteration-versioning.md` — status: in-progress, v0.59.0 backend foundation
+- `GAP-flow-section-drafting-conversation.md` — status: in-progress, v0.59.0 backend foundation
+
+### Tests
+- 30 new tests all passing
+- 2807 total tests passing (0 failures) in 481s
+
+### Documentation Updated
+- `obsidian/Architecture/Module Map.md` — Added _route_timeline.py, _route_versions.py
+- `obsidian/Changelog/Version History.md` — v0.59.0 entry
+- `obsidian/APIs/PRD Flow/GET flow-runs-{run_id}-timeline.md` — New per-route doc
+- `obsidian/APIs/PRD Flow/GET flow-runs-{run_id}-versions.md` — New per-route doc
+- `obsidian/APIs/Publishing/GET publishing-confluence-{run_id}-preview.md` — New per-route doc
 - `obsidian/Sessions/Session Log.md` — This entry
 
 ---

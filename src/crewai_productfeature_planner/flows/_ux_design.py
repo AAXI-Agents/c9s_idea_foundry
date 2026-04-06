@@ -181,6 +181,10 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
         verbose=is_verbose(),
     )
 
+    flow._notify_progress("agent_activity", {
+        "agent": "UX Designer",
+        "action": "creating design specification draft",
+    })
     result = crew_kickoff_with_retry(crew, step_label="ux_design_draft")
     raw_output = result.raw.strip()
 
@@ -279,6 +283,10 @@ def run_ux_design_review(flow: PRDFlow, initial_draft: str) -> str:
         verbose=is_verbose(),
     )
 
+    flow._notify_progress("agent_activity", {
+        "agent": "Senior Designer",
+        "action": "reviewing and finalizing design (7-pass review)",
+    })
     result = crew_kickoff_with_retry(crew, step_label="ux_design_review")
     final_output = result.raw.strip()
 
@@ -302,6 +310,36 @@ def run_ux_design_review(flow: PRDFlow, initial_draft: str) -> str:
     # Write final file.
     output_dir = _resolve_output_dir(project_id)
     _write_design_file(output_dir, FINAL_FILENAME, final_output)
+
+    # ── UX Design review gate ────────────────────────────────────
+    # Let the user review the final design before it is appended to
+    # the PRD. Mirrors the CEO Review approval gate pattern.
+    ux_cb = flow._resolve_callback("ux_design_review_approval_callback")
+    if ux_cb is not None:
+        logger.info("[UX Design Phase 2] Waiting for user review")
+        flow._notify_progress("ux_design_review_awaiting_approval", {
+            "content_length": len(final_output),
+        })
+        try:
+            decision, _edited = ux_cb(final_output, flow.state.run_id)
+        except Exception:
+            logger.exception("[UX Design Phase 2] Review callback failed")
+            decision = "approve"
+
+        if decision == "reject":
+            logger.info("[UX Design Phase 2] User skipped UX design")
+            flow.state.ux_design_content = ""
+            flow.state.ux_design_status = "skipped"
+            flow._notify_progress("ux_design_skipped", {
+                "reason": "user_rejected",
+            })
+            return ""
+        else:
+            logger.info("[UX Design Phase 2] User approved UX design")
+    else:
+        logger.info(
+            "[UX Design Phase 2] No review callback — auto-approving",
+        )
 
     # Update state.
     flow.state.ux_design_content = final_output

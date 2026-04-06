@@ -32,11 +32,23 @@ from crewai_productfeature_planner.apis.prd._route_actions import (
     _ERROR_RESPONSES,
     action_router,
 )
+from crewai_productfeature_planner.apis.prd._route_timeline import (
+    router as timeline_router,
+)
+from crewai_productfeature_planner.apis.prd._route_ux_design import (
+    ux_design_router,
+)
+from crewai_productfeature_planner.apis.prd._route_versions import (
+    router as versions_router,
+)
 
 logger = get_logger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_sso_user)])
 router.include_router(action_router)
+router.include_router(timeline_router)
+router.include_router(versions_router)
+router.include_router(ux_design_router)
 
 
 @router.get(

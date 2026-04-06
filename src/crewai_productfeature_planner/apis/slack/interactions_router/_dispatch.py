@@ -82,10 +82,15 @@ _KNOWN_ACTIONS = frozenset({
     "requirements_approve",
     "requirements_cancel",
     "flow_cancel",
+    "flow_pause",
     "exec_summary_approve",
     "exec_summary_skip",
     "exec_summary_continue",
     "exec_summary_stop",
+    "ceo_review_approve",
+    "ceo_review_reject",
+    "ux_design_review_approve",
+    "ux_design_review_reject",
 })
 
 # Project session action IDs — handled by the session manager
@@ -180,10 +185,15 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "requirements_approve": ":white_check_mark: Requirements approved",
         "requirements_cancel": ":no_entry_sign: Flow cancelled",
         "flow_cancel": ":no_entry_sign: Flow cancelled",
+        "flow_pause": ":double_vertical_bar: Flow paused — saving progress…",
         "exec_summary_approve": ":white_check_mark: Executive summary approved",
         "exec_summary_skip": ":fast_forward: Initial guidance skipped",
         "exec_summary_continue": ":arrow_forward: Continuing to section drafting",
         "exec_summary_stop": ":stop_button: Stopped after executive summary",
+        "ceo_review_approve": ":white_check_mark: Executive Product Summary approved",
+        "ceo_review_reject": ":fast_forward: Executive Product Summary skipped",
+        "ux_design_review_approve": ":white_check_mark: UX Design approved",
+        "ux_design_review_reject": ":fast_forward: UX Design skipped",
         "project_create": ":heavy_plus_sign: Creating new project",
         "project_continue": ":arrow_forward: Continuing with project",
         "project_switch": ":twisted_rightwards_arrows: Switching project",
@@ -219,6 +229,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         label = f":arrows_counterclockwise: Restarting idea #{action_id.removeprefix('idea_restart_')}"
     elif action_id.startswith("idea_archive_"):
         label = f":file_folder: Archiving idea #{action_id.removeprefix('idea_archive_')}"
+    elif action_id.startswith("idea_iterate_"):
+        label = f":repeat: Iterating on idea #{action_id.removeprefix('idea_iterate_')}"
     elif action_id.startswith("product_confluence_"):
         label = ":confluence: Publishing to Confluence"
     elif action_id.startswith("product_jira_skeleton_"):
@@ -503,6 +515,37 @@ async def slack_interactions(request: Request) -> JSONResponse:
                 partial(
                     _safe_handler, _team_id,
                     _handle_idea_list_action,
+                    action_id, run_id, user_id, channel_id, thread_ts,
+                    channel=channel_id, thread_ts=thread_ts,
+                ),
+            )
+
+            return JSONResponse({"ok": True})
+
+        # ── Idea iterate action (re-refine existing idea) ──
+        if action_id.startswith("idea_iterate_"):
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+
+            logger.info(
+                "Slack idea iterate action: action=%s user=%s value=%s",
+                action_id, user_name, run_id,
+            )
+
+            import asyncio
+
+            from crewai_productfeature_planner.apis.slack.interactions_router._idea_list_handler import (
+                _handle_idea_iterate_action,
+            )
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                partial(
+                    _safe_handler, _team_id,
+                    _handle_idea_iterate_action,
                     action_id, run_id, user_id, channel_id, thread_ts,
                     channel=channel_id, thread_ts=thread_ts,
                 ),
@@ -865,6 +908,112 @@ async def slack_interactions(request: Request) -> JSONResponse:
                         ),
                     )
                 return JSONResponse({"ok": True})
+
+        # Check CEO review approval gate
+        if action_id in ("ceo_review_approve", "ceo_review_reject"):
+            from crewai_productfeature_planner.apis.slack._flow_handlers import (
+                resolve_ceo_review,
+            )
+            if resolve_ceo_review(run_id, action_id):
+                channel_info = payload.get("channel", {})
+                channel_id = channel_info.get("id", "")
+                message = payload.get("message", {})
+                thread_ts = message.get("thread_ts") or message.get("ts", "")
+                if channel_id:
+                    ack_text = _ack_action(action_id, user_name)
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    loop.run_in_executor(
+                        None,
+                        partial(
+                            _with_team, _team_id,
+                            _post_ack, channel_id, thread_ts, ack_text,
+                        ),
+                    )
+                return JSONResponse({"ok": True})
+
+        # Check UX design review approval gate
+        if action_id in ("ux_design_review_approve", "ux_design_review_reject"):
+            from crewai_productfeature_planner.apis.slack._flow_handlers import (
+                resolve_ux_design_review,
+            )
+            if resolve_ux_design_review(run_id, action_id):
+                channel_info = payload.get("channel", {})
+                channel_id = channel_info.get("id", "")
+                message = payload.get("message", {})
+                thread_ts = message.get("thread_ts") or message.get("ts", "")
+                if channel_id:
+                    ack_text = _ack_action(action_id, user_name)
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    loop.run_in_executor(
+                        None,
+                        partial(
+                            _with_team, _team_id,
+                            _post_ack, channel_id, thread_ts, ack_text,
+                        ),
+                    )
+                return JSONResponse({"ok": True})
+
+        # ── Flow pause (control panel) ──
+        if action_id == "flow_pause":
+            from crewai_productfeature_planner.apis.shared import pause_requested
+            pause_requested[run_id] = True
+
+            from crewai_productfeature_planner.apis.slack._flow_handlers import (
+                _unblock_gates_for_cancel,
+            )
+            _unblock_gates_for_cancel(run_id)
+
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+            if channel_id:
+                ack_text = _ack_action(action_id, user_name)
+                import asyncio
+                loop = asyncio.get_event_loop()
+                loop.run_in_executor(
+                    None,
+                    partial(
+                        _with_team, _team_id,
+                        _post_ack, channel_id, thread_ts, ack_text,
+                    ),
+                )
+            return JSONResponse({"ok": True})
+
+        # ── Flow cancel (control panel — also triggers request_cancel) ──
+        if action_id == "flow_cancel":
+            from crewai_productfeature_planner.apis.shared import request_cancel
+            request_cancel(run_id)
+
+            from crewai_productfeature_planner.apis.slack._flow_handlers import (
+                _unblock_gates_for_cancel,
+            )
+            _unblock_gates_for_cancel(run_id)
+
+            # Also resolve interactive handler if one is waiting
+            from crewai_productfeature_planner.apis.slack.interactive_handlers import (
+                resolve_interaction,
+            )
+            resolve_interaction(run_id, action_id, user_id)
+
+            channel_info = payload.get("channel", {})
+            channel_id = channel_info.get("id", "")
+            message = payload.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts", "")
+            if channel_id:
+                ack_text = _ack_action(action_id, user_name)
+                import asyncio
+                loop = asyncio.get_event_loop()
+                loop.run_in_executor(
+                    None,
+                    partial(
+                        _with_team, _team_id,
+                        _post_ack, channel_id, thread_ts, ack_text,
+                    ),
+                )
+            return JSONResponse({"ok": True})
 
         # Check non-interactive requirements approval gate
         if action_id in ("requirements_approve", "requirements_cancel"):

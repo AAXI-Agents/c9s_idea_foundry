@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from crewai_productfeature_planner.apis.slack.interactive_handlers._callbacks import (
+    make_slack_ceo_review_callback,
+    make_slack_ux_design_review_callback,
     make_slack_exec_summary_completion_callback,
     make_slack_exec_summary_feedback_callback,
     make_slack_idea_callback,
@@ -142,6 +144,14 @@ def run_interactive_slack_flow(
             _post_blocks(channel, thread_ts, blocks,
                          text=f"PRD flow started for: {idea[:80]}")
 
+            # Post persistent control panel with [Pause] / [Cancel]
+            from crewai_productfeature_planner.apis.slack.blocks import (
+                flow_control_panel_blocks,
+            )
+            _post_blocks(channel, thread_ts,
+                         flow_control_panel_blocks(run_id),
+                         text="Flow Control Panel")
+
         # Run the PRD flow — use Slack callbacks for idea/requirements approval
         # The flow will call these callbacks at the appropriate points
         from crewai_productfeature_planner.flows.prd_flow import (
@@ -186,6 +196,8 @@ def run_interactive_slack_flow(
             make_slack_jira_skeleton_callback(run_id)
         )
         flow.jira_review_callback = make_slack_jira_review_callback(run_id)
+        flow.ceo_review_approval_callback = make_slack_ceo_review_callback(run_id)
+        flow.ux_design_review_approval_callback = make_slack_ux_design_review_callback(run_id)
 
         # Progress heartbeat — posts section-by-section updates to Slack
         from crewai_productfeature_planner.apis.slack._flow_handlers import (
@@ -209,6 +221,8 @@ def run_interactive_slack_flow(
             "executive_summary_callback": flow.executive_summary_callback,
             "jira_skeleton_approval_callback": flow.jira_skeleton_approval_callback,
             "jira_review_callback": flow.jira_review_callback,
+            "ceo_review_approval_callback": flow.ceo_review_approval_callback,
+            "ux_design_review_approval_callback": flow.ux_design_review_approval_callback,
             "progress_callback": progress_cb,
         }
         if flow.idea_approval_callback is not None:

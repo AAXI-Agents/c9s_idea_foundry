@@ -1,11 +1,36 @@
 """Tests for SSO authentication router — /auth/sso/* endpoints."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from crewai_productfeature_planner.apis import app
+
+
+def _mock_proxy(response_json: dict, status_code: int = 200):
+    """Return a patch context that replaces _sso_proxy_post with an async mock."""
+    async def _fake_proxy(*args, **kwargs):
+        return JSONResponse(response_json, status_code=status_code)
+    return patch(
+        "crewai_productfeature_planner.apis.sso.router._sso_proxy_post",
+        side_effect=_fake_proxy,
+    )
+
+
+def _mock_proxy_error(exc: Exception | None = None):
+    """Return a patch context simulating an SSO proxy failure (502)."""
+    async def _fake_proxy(*args, **kwargs):
+        return JSONResponse(
+            {"error": f"SSO server unreachable: {exc or 'Connection refused'}"},
+            status_code=502,
+        )
+    return patch(
+        "crewai_productfeature_planner.apis.sso.router._sso_proxy_post",
+        side_effect=_fake_proxy,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -98,17 +123,13 @@ class TestSSODirectLogin:
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
         monkeypatch.setenv("SSO_CLIENT_ID", "test-client")
 
-        mock_response = type("R", (), {
-            "json": lambda self: {"access_token": "tok", "refresh_token": "rt"},
-            "status_code": 200,
-        })()
-
-        with patch("crewai_productfeature_planner.apis.sso.router.httpx.post", return_value=mock_response) as mock_post:
+        with _mock_proxy({"access_token": "tok", "refresh_token": "rt"}) as mock_post:
             resp = client.post("/auth/sso/login", json={"email": "a@b.com", "password": "pass"})
             assert resp.status_code == 200
             assert resp.json()["access_token"] == "tok"
+            # Verify the proxy was called with the login path
             call_args = mock_post.call_args
-            assert "sso.example.com/sso/auth/login" in call_args[0][0]
+            assert "/sso/auth/login" in call_args[0][0]
             assert call_args[1]["json"]["client_id"] == "test-client"
 
     def test_returns_502_when_sso_unreachable(self, client, monkeypatch):
@@ -116,7 +137,7 @@ class TestSSODirectLogin:
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
         monkeypatch.setenv("SSO_CLIENT_ID", "test-client")
 
-        with patch("crewai_productfeature_planner.apis.sso.router.httpx.post", side_effect=Exception("Connection refused")):
+        with _mock_proxy_error():
             resp = client.post("/auth/sso/login", json={"email": "a@b.com", "password": "pass"})
             assert resp.status_code == 502
             assert "unreachable" in resp.json()["error"]
@@ -137,12 +158,7 @@ class TestSSOLoginVerify2FA:
         """Should proxy 2FA verification to SSO server."""
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
 
-        mock_resp = type("R", (), {
-            "json": lambda self: {"access_token": "tok"},
-            "status_code": 200,
-        })()
-
-        with patch("crewai_productfeature_planner.apis.sso.router.httpx.post", return_value=mock_resp):
+        with _mock_proxy({"access_token": "tok"}):
             resp = client.post("/auth/sso/login/verify-2fa", json={
                 "email": "a@b.com", "login_token": "lt-123", "code": "123456",
             })
@@ -251,12 +267,7 @@ class TestSSOPasswordReset:
         """Should proxy to SSO server."""
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
 
-        mock_resp = type("R", (), {
-            "json": lambda self: {"status": "sent"},
-            "status_code": 200,
-        })()
-
-        with patch("crewai_productfeature_planner.apis.sso.router.httpx.post", return_value=mock_resp):
+        with _mock_proxy({"status": "sent"}):
             resp = client.post("/auth/sso/password-reset", json={"email": "a@b.com"})
             assert resp.status_code == 200
 
@@ -288,12 +299,7 @@ class TestSSOTokenRefresh:
         """Should proxy refresh to SSO server."""
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
 
-        mock_resp = type("R", (), {
-            "json": lambda self: {"access_token": "new-tok"},
-            "status_code": 200,
-        })()
-
-        with patch("crewai_productfeature_planner.apis.sso.router.httpx.post", return_value=mock_resp):
+        with _mock_proxy({"access_token": "new-tok"}):
             resp = client.post("/auth/sso/token/refresh", json={"refresh_token": "rt-123"})
             assert resp.status_code == 200
             assert resp.json()["access_token"] == "new-tok"
@@ -369,12 +375,7 @@ class TestSSOLogout:
         """Should proxy logout to SSO server."""
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
 
-        mock_resp = type("R", (), {
-            "json": lambda self: {"status": "ok"},
-            "status_code": 200,
-        })()
-
-        with patch("crewai_productfeature_planner.apis.sso.router.httpx.post", return_value=mock_resp):
+        with _mock_proxy({"status": "ok"}):
             resp = client.post(
                 "/auth/sso/logout",
                 headers={"Authorization": "Bearer test-token"},
@@ -385,12 +386,7 @@ class TestSSOLogout:
         """Should proxy logout-all to SSO server."""
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
 
-        mock_resp = type("R", (), {
-            "json": lambda self: {"status": "ok"},
-            "status_code": 200,
-        })()
-
-        with patch("crewai_productfeature_planner.apis.sso.router.httpx.post", return_value=mock_resp):
+        with _mock_proxy({"status": "ok"}):
             resp = client.post(
                 "/auth/sso/logout-all",
                 headers={"Authorization": "Bearer test-token"},

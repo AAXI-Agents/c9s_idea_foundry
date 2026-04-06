@@ -32,7 +32,7 @@ class TestCMDActions:
             assert action.startswith("cmd_")
 
     def test_expected_count(self):
-        assert len(CMD_ACTIONS) == 17
+        assert len(CMD_ACTIONS) == 18
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +162,13 @@ class TestDispatchRouting:
             _handle_command_action("cmd_create_prd", "U1", "C1", "T1")
             mock.assert_called_once()
             assert "idea" in mock.call_args[0][2].lower()
+
+    def test_iterate_idea(self):
+        with patch(
+            "crewai_productfeature_planner.apis.slack._session_ideas.handle_iterate_idea"
+        ) as mock:
+            _handle_command_action("cmd_iterate_idea", "U1", "C1", "T1")
+            mock.assert_called_once_with("C1", "T1", "U1", None)
 
 
 # ---------------------------------------------------------------------------

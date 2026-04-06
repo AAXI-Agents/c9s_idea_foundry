@@ -39,6 +39,9 @@ from crewai_productfeature_planner.mongodb.user_session import (
 from crewai_productfeature_planner.mongodb.user_suggestions import (
     USER_SUGGESTIONS_COLLECTION,
 )
+from crewai_productfeature_planner.mongodb.user_preferences import (
+    USER_PREFERENCES_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
 )
@@ -92,6 +95,9 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("suggestion_id", ASCENDING)], unique=True),
         IndexModel([("project_id", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+    ],
+    USER_PREFERENCES_COLLECTION: [
+        IndexModel([("user_id", ASCENDING)], unique=True),
     ],
 }
 

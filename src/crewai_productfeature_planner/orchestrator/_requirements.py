@@ -73,6 +73,17 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
         flow.state.breakdown_history = result.history
         flow.state.requirements_broken_down = True
 
+        # Fire a progress event with the final evaluation's key
+        # assumptions so the user can see what the AI considers
+        # ambiguous or underspecified.
+        if result.history:
+            last_eval = result.history[-1].get("evaluation", "")
+            if last_eval:
+                flow._notify_progress("requirements_assumptions", {
+                    "evaluation_preview": last_eval[:2000],
+                    "iterations": len(result.history),
+                })
+
     def _requires_approval() -> bool:
         # On resume: if section content already exists, the user
         # previously approved requirements — skip the gate so they

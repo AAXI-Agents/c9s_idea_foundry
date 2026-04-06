@@ -2989,6 +2989,121 @@ _CODEX: list[CodexEntry] = [
             "when-to-update table references."
         ),
     ),
+    CodexEntry(
+        version="0.54.2",
+        date=date(2026, 4, 3),
+        summary=(
+            "Full codebase audit — created 9 gap tickets in "
+            "obsidian/User Feedback/ covering APIs, Slack, Database, "
+            "Web App, README, config. 5 gaps require user input; "
+            "4 are quick-win doc fixes. Agent-suggested answers "
+            "prefilled in all tickets."
+        ),
+    ),
+    CodexEntry(
+        version="0.55.0",
+        date=date(2026, 4, 4),
+        summary=(
+            "Resolved 8 gap tickets + 1 in-progress based on user "
+            "answers. New features: GET/PATCH /user/profile with "
+            "userPreferences MongoDB collection; POST /flow/ux-design/"
+            "{run_id} endpoint; iterate_idea distinct Slack flow "
+            "(list→pick→re-refine) with BTN_ITERATE_IDEA button. "
+            "Docs: DESIGN.md 8 decisions resolved + 10 Decisions Log "
+            "entries, README 20-intent list + 15-version history, "
+            "cleaned boilerplate CRs from 22 obsidian pages. "
+            "Deleted report.md. Web app screen gap analysis (5 missing "
+            "screens identified)."
+        ),
+    ),
+    CodexEntry(
+        version="0.56.0",
+        date=date(2026, 4, 5),
+        summary=(
+            "Flow audit gap ticket implementation (v0.56.0). "
+            "CEO Review approval gate: new ceo_review_approval_callback "
+            "on PRDFlow, Slack Block Kit blocks (Approve/Skip), "
+            "make_ceo_review_gate / make_auto_ceo_review_gate factories, "
+            "dispatch routing, interactive handler callback. "
+            "Transparent critique: exec_summary_critique progress event "
+            "posts the Critic's per-criterion reasoning to Slack. "
+            "Pipeline step counter: orchestrator emits step/total_steps "
+            "in pipeline_stage events, progress poster shows [1/3] tags. "
+            "Project config schema: added design_preferences, "
+            "review_checklists, technical_profile fields to projectConfig. "
+            "Updated all 10 flow audit gap tickets with user decisions, "
+            "implementation status, and 3 follow-up questions."
+        ),
+    ),
+    CodexEntry(
+        version="0.57.0",
+        date=date(2026, 4, 6),
+        summary=(
+            "Agent activity messages and requirements transparency. "
+            "New agent_activity progress events show which agent is "
+            "working (Product Manager, Quality Critic, CEO Reviewer, "
+            "Engineering Manager, UX Designer, Senior Designer) with "
+            "agent-specific emojis in Slack. Requirements assumptions "
+            "display: after breakdown, the AI's evaluation of ambiguities "
+            "is posted to Slack via requirements_assumptions event. "
+            "New UX Design phase events: ux_design_draft_complete and "
+            "ux_design_review_start handled in Slack progress poster. "
+            "Deleted 9 resolved gap tickets. Updated 4 gap tickets "
+            "with v0.57.0 implementation details."
+        ),
+    ),
+    CodexEntry(
+        version="0.58.0",
+        date=date(2026, 4, 7),
+        summary=(
+            "UX Design review gate and flow control panel. "
+            "New UX Design summary review gate (Q3/B): after Phase 2 "
+            "7-pass review, consolidated design summary posted to Slack "
+            "with Approve/Skip buttons; 11-file implementation across "
+            "flow state, Block Kit, dispatch, flow handlers, callbacks, "
+            "and router. Flow control panel (Q3/B): persistent Slack "
+            "message with [Pause Flow] and [Cancel] buttons posted at "
+            "flow start; Pause sets shared.pause_requested and unblocks "
+            "gates; Cancel signals request_cancel. CEO and UX design "
+            "review gates added to _unblock_gates_for_cancel. "
+            "Fixed version.py date bug (string vs date object). "
+            "Updated gap tickets with v0.58.0 implementation details."
+        ),
+    ),
+    CodexEntry(
+        version="0.59.0",
+        date=date(2026, 4, 8),
+        summary=(
+            "Gap ticket backend features. "
+            "Timeline API (GET /flow/runs/{run_id}/timeline): unified "
+            "PRD journey view stitching workingIdeas, crewJobs, and "
+            "agentInteraction into chronological TimelineEvent list. "
+            "PRD version tracking: save_version_snapshot, "
+            "get_version_history, get_current_version in "
+            "product_requirements repo + GET /flow/runs/{run_id}/versions "
+            "endpoint. Confluence preview (GET /publishing/confluence/"
+            "{run_id}/preview): renders XHTML without publishing, "
+            "identifies changed sections vs last version snapshot. "
+            "Section conversation schema: save_section_message, "
+            "get_section_conversation, get_section_summary_notes, "
+            "save_section_summary_note in working_ideas repo with "
+            "injection guards on section keys. 30 new tests."
+        ),
+    ),
+    CodexEntry(
+        version="0.59.1",
+        date=date(2026, 4, 8),
+        summary=(
+            "SSO proxy async refactor — fix 502 login errors. "
+            "Converted all 15 synchronous httpx.post calls in "
+            "SSO router to async httpx.AsyncClient via shared "
+            "_sso_proxy_post helper. Eliminates event-loop blocking "
+            "on SSO proxy calls (10s timeout would freeze entire "
+            "server). Added structured error handling: ConnectError "
+            "→ 502, TimeoutException → 504, generic → 502. "
+            "Updated 29 SSO tests to mock async proxy."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

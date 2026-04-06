@@ -245,3 +245,80 @@ def get_jira_tickets(run_id: str) -> list[dict]:
     if record is None:
         return []
     return record.get("jira_tickets") or []
+
+
+# ── Version tracking ──────────────────────────────────────────────────
+
+
+def save_version_snapshot(
+    run_id: str,
+    *,
+    version: int,
+    sections_snapshot: dict[str, str],
+    changelog_entry: str = "",
+) -> bool:
+    """Save a full PRD version snapshot.
+
+    Pushes a new entry to the ``version_history`` array and sets the
+    ``current_version`` field.  Each snapshot stores the complete section
+    content so diffs can be computed between any two versions.
+
+    Args:
+        run_id: The flow run identifier.
+        version: Version number (1, 2, 3, ...).
+        sections_snapshot: ``{section_key: content}`` mapping.
+        changelog_entry: Human-readable description of what changed.
+
+    Returns:
+        ``True`` on success, ``False`` on error.
+    """
+    now = _now_iso()
+    snapshot = {
+        "version": version,
+        "sections": sections_snapshot,
+        "changelog": changelog_entry,
+        "created_at": now,
+    }
+    try:
+        db = get_db()
+        col = db[PRODUCT_REQUIREMENTS_COLLECTION]
+        result = col.update_one(
+            {"run_id": run_id},
+            {
+                "$push": {"version_history": snapshot},
+                "$set": {
+                    "current_version": version,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"run_id": run_id, "created_at": now},
+            },
+            upsert=True,
+        )
+        modified = result.upserted_id is not None or result.modified_count > 0
+        logger.info(
+            "[MongoDB] Saved version %d snapshot for run_id=%s",
+            version, run_id,
+        )
+        return modified
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save version snapshot for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def get_version_history(run_id: str) -> list[dict]:
+    """Return the ``version_history`` array for *run_id*, or ``[]``."""
+    record = get_delivery_record(run_id)
+    if record is None:
+        return []
+    return record.get("version_history") or []
+
+
+def get_current_version(run_id: str) -> int:
+    """Return the ``current_version`` for *run_id*, or ``0``."""
+    record = get_delivery_record(run_id)
+    if record is None:
+        return 0
+    return record.get("current_version", 0)

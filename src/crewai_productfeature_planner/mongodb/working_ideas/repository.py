@@ -52,11 +52,15 @@ from crewai_productfeature_planner.mongodb.working_ideas._queries import (  # no
 
 # -- Iteration save / update operations -------------------------------------
 from crewai_productfeature_planner.mongodb.working_ideas._sections import (  # noqa: F401
+    get_section_conversation,
+    get_section_summary_notes,
     save_executive_summary,
     save_failed,
     save_finalized_idea,
     save_iteration,
     save_pipeline_step,
+    save_section_message,
+    save_section_summary_note,
     update_executive_summary_critique,
     update_section_critique,
 )
@@ -92,11 +96,15 @@ __all__ = [
     "get_run_documents",
     "has_active_idea_flow",
     # _sections
+    "get_section_conversation",
+    "get_section_summary_notes",
     "save_executive_summary",
     "save_failed",
     "save_finalized_idea",
     "save_iteration",
     "save_pipeline_step",
+    "save_section_message",
+    "save_section_summary_note",
     "update_executive_summary_critique",
     "update_section_critique",
 ]

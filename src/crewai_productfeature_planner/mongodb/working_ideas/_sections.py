@@ -507,3 +507,157 @@ def save_failed(
             exc,
         )
         return None
+
+
+# ── Section conversation persistence ──────────────────────────────────
+
+
+def save_section_message(
+    run_id: str,
+    section_key: str,
+    role: str,
+    content: str,
+) -> bool:
+    """Append a message to a section's conversation history.
+
+    Stores conversational turns (user feedback, agent clarifications)
+    in ``section_conversations.<section_key>`` as an array of message
+    dicts.  This enables multi-turn dialogue during section drafting.
+
+    Args:
+        run_id: Flow run identifier.
+        section_key: PRD section key (e.g. ``functional_requirements``).
+        role: Message author — ``"user"`` or ``"agent"``.
+        content: Message text.
+
+    Returns:
+        ``True`` on success, ``False`` on error.
+    """
+    if "." in section_key or "$" in section_key:
+        logger.error(
+            "[MongoDB] Invalid section_key %r — contains '.' or '$'", section_key,
+        )
+        return False
+
+    now = _now_iso()
+    message = {
+        "role": role,
+        "content": content,
+        "timestamp": now,
+    }
+    try:
+        result = _common.get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$push": {f"section_conversations.{section_key}": message},
+                "$set": {"update_date": now},
+            },
+        )
+        modified = result.modified_count > 0
+        logger.debug(
+            "[MongoDB] Saved conversation message for run_id=%s section=%s role=%s",
+            run_id, section_key, role,
+        )
+        return modified
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save conversation message for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def get_section_conversation(
+    run_id: str,
+    section_key: str,
+) -> list[dict]:
+    """Return the conversation history for a section.
+
+    Args:
+        run_id: Flow run identifier.
+        section_key: PRD section key.
+
+    Returns:
+        List of message dicts ``[{role, content, timestamp}, ...]``,
+        or ``[]`` on error or if no conversation exists.
+    """
+    if "." in section_key or "$" in section_key:
+        return []
+    try:
+        doc = _common.get_db()[WORKING_COLLECTION].find_one(
+            {"run_id": run_id},
+            {f"section_conversations.{section_key}": 1},
+        )
+        if doc is None:
+            return []
+        convos = doc.get("section_conversations", {})
+        return convos.get(section_key, [])
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to get conversation for run_id=%s section=%s: %s",
+            run_id, section_key, exc,
+        )
+        return []
+
+
+def get_section_summary_notes(run_id: str) -> dict[str, str]:
+    """Return per-section summary notes for cross-section context.
+
+    After each section is approved, a brief summary of key decisions
+    can be stored.  These summaries are fed into subsequent section
+    prompts so that later sections build on earlier decisions.
+
+    Returns:
+        ``{section_key: summary_text}`` mapping, or ``{}`` on error.
+    """
+    try:
+        doc = _common.get_db()[WORKING_COLLECTION].find_one(
+            {"run_id": run_id},
+            {"section_summary_notes": 1},
+        )
+        if doc is None:
+            return {}
+        return doc.get("section_summary_notes", {})
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to get summary notes for run_id=%s: %s",
+            run_id, exc,
+        )
+        return {}
+
+
+def save_section_summary_note(
+    run_id: str,
+    section_key: str,
+    summary: str,
+) -> bool:
+    """Save a summary note for a section (for cross-section context).
+
+    Args:
+        run_id: Flow run identifier.
+        section_key: PRD section key.
+        summary: 3-5 bullet key decisions summary.
+
+    Returns:
+        ``True`` on success, ``False`` on error.
+    """
+    if "." in section_key or "$" in section_key:
+        return False
+    now = _now_iso()
+    try:
+        result = _common.get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    f"section_summary_notes.{section_key}": summary,
+                    "update_date": now,
+                },
+            },
+        )
+        return result.modified_count > 0
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save summary note for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False

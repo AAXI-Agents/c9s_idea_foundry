@@ -46,13 +46,24 @@ run_ceo_review(flow) → str
   - `{idea}`: `flow.state.idea`
 - Agent applies reasoning mode with up to 3 attempts
 
-### Step 3 — Output Processing
+### Step 3 — User Approval Gate (v0.56.0)
+
+If `ceo_review_approval_callback` is set:
+- Posts the EPS to Slack with Approve / Skip buttons (`ceo_review_blocks`)
+- Blocks on `threading.Event` until user responds (10-min timeout)
+- **Approve** → accept EPS as-is, continue to Engineering Plan
+- **Approve with edits** → accept user-modified version
+- **Reject/Skip** → clear EPS, use exec summary only for downstream
+- **Timeout** → auto-approve
+
+If no callback is set, the EPS is auto-approved (autonomous mode).
+
+### Step 4 — Output Processing
 
 - `result.raw` → `flow.state.executive_product_summary`
 - Populates draft section `"executive_product_summary"` with `is_approved=True`
-- No user approval gate — auto-approved as specialist section
 
-### Step 4 — Persistence
+### Step 5 — Persistence
 
 - `save_iteration(run_id, step="ceo_review", section_key="executive_product_summary")`
 - Content stored in `working_ideas.executive_product_summary`
@@ -76,6 +87,8 @@ The CEO Reviewer evaluates the product through these lenses:
 |-------|------|
 | `ceo_review_start` | CEO review begins |
 | `ceo_review_complete` | Executive Product Summary generated |
+| `ceo_review_awaiting_approval` | EPS posted for user review |
+| `ceo_review_skipped` | Skipped (no credentials) |
 
 ---
 
@@ -121,11 +134,8 @@ Codex will implement each request, update this page, bump the
 version, and move the completed item to the "Completed" list.
 
 FORMAT:
-- [ ] <your change request here>
 
 EXAMPLE:
-- [ ] Add a new field `priority` (string, optional) to the response
-- [ ] Rename endpoint from /v1/old to /v2/new
 -->
 
 ### Pending

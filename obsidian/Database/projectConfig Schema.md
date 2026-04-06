@@ -40,6 +40,9 @@ tags:
 | `confluence_parent_id` | `string` | No | `""` | Confluence parent page ID — PRDs published as child pages under this |
 | `reference_urls` | `list[string]` | No | `[]` | Public reference URLs for context (specs, design docs, competitor links). Max 20 items |
 | `slack_file_refs` | `list[dict]` | No | `[]` | Documents uploaded via Slack. Each element: `{ file_id: str, name: str, url: str, uploaded_at: str }` |
+| `design_preferences` | `dict` | No | `{}` | UX/UI design style preferences: `{ style: str, brand_colors: [str], typography: str }` |
+| `review_checklists` | `list[dict]` | No | `[]` | Custom review checklists: `{ name: str, items: [str] }` |
+| `technical_profile` | `dict` | No | `{}` | Tech stack profile: `{ languages: [str], frameworks: [str], infra: [str] }` |
 | `created_at` | `string (ISO-8601)` | **Yes** | *now* | When the project was created |
 | `updated_at` | `string (ISO-8601)` | **Yes** | *now* | Last modification timestamp |
 
@@ -110,11 +113,8 @@ Codex will implement each request, update this page, bump the
 version, and move the completed item to the "Completed" list.
 
 FORMAT:
-- [ ] <your change request here>
 
 EXAMPLE:
-- [ ] Add a new field `priority` (string, optional) to the response
-- [ ] Rename endpoint from /v1/old to /v2/new
 -->
 
 ### Pending

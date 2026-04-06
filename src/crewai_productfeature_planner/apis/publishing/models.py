@@ -78,6 +78,19 @@ class CombinedPublishResult(BaseModel):
     jira: dict = Field(default_factory=dict, description="Jira creation result.")
 
 
+class ConfluencePreviewResponse(BaseModel):
+    """Preview of Confluence-formatted content before publishing."""
+
+    run_id: str = Field(..., description="Run identifier.")
+    title: str = Field(..., description="Page title.")
+    markdown: str = Field(default="", description="Raw markdown content.")
+    xhtml: str = Field(default="", description="Confluence storage-format XHTML.")
+    sections_changed: list[str] = Field(
+        default_factory=list,
+        description="Section keys that changed since last publish.",
+    )
+
+
 class DeliveryStatusResponse(BaseModel):
     """Full delivery status for a run_id from the productRequirements collection."""
 

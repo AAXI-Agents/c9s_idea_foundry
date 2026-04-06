@@ -52,6 +52,48 @@ def _sso_proxy_headers(*, auth: str | None = None) -> dict[str, str]:
     return headers
 
 
+async def _sso_proxy_post(
+    path: str,
+    *,
+    json: dict | None = None,
+    auth: str | None = None,
+    label: str = "SSO proxy",
+) -> JSONResponse:
+    """Async proxy POST to the SSO server.
+
+    Returns a ``JSONResponse`` mirroring the upstream status code and body.
+    On connection failure returns 502; on timeout returns 504.
+    """
+    sso_base = _sso_base_url()
+    url = f"{sso_base}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                url,
+                json=json,
+                headers=_sso_proxy_headers(auth=auth),
+            )
+        return JSONResponse(resp.json(), status_code=resp.status_code)
+    except httpx.ConnectError as exc:
+        logger.error("[SSO] %s connect failed: %s", label, exc, exc_info=True)
+        return JSONResponse(
+            {"error": f"SSO server unreachable: {exc}"},
+            status_code=502,
+        )
+    except httpx.TimeoutException as exc:
+        logger.error("[SSO] %s timed out: %s", label, exc, exc_info=True)
+        return JSONResponse(
+            {"error": f"SSO server timed out: {exc}"},
+            status_code=504,
+        )
+    except Exception as exc:
+        logger.error("[SSO] %s failed: %s", label, exc, exc_info=True)
+        return JSONResponse(
+            {"error": f"SSO server unreachable: {exc}"},
+            status_code=502,
+        )
+
+
 def _get_public_url() -> str:
     """Resolve this server's public URL for OAuth callbacks.
 
@@ -176,17 +218,17 @@ async def sso_callback(
 
     # Exchange code for tokens
     try:
-        resp = httpx.post(
-            f"{sso_base}/sso/oauth/token",
-            json={
-                "grant_type": "authorization_code",
-                "code": code,
-                "client_id": os.environ.get("SSO_CLIENT_ID", ""),
-                "client_secret": os.environ.get("SSO_CLIENT_SECRET", ""),
-                "redirect_uri": callback_url,
-            },
-            timeout=10.0,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as ac:
+            resp = await ac.post(
+                f"{sso_base}/sso/oauth/token",
+                json={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "client_id": os.environ.get("SSO_CLIENT_ID", ""),
+                    "client_secret": os.environ.get("SSO_CLIENT_SECRET", ""),
+                    "redirect_uri": callback_url,
+                },
+            )
         resp.raise_for_status()
         tokens = resp.json()
     except Exception as exc:
@@ -253,7 +295,6 @@ async def sso_direct_login(request: Request):
     The SSO server returns tokens directly (when 2FA is disabled)
     or a ``login_token`` for the 2FA challenge.
     """
-    sso_base = _sso_base_url()
     client_id = os.environ.get("SSO_CLIENT_ID", "").strip()
 
     try:
@@ -269,20 +310,11 @@ async def sso_direct_login(request: Request):
 
     payload = {**body, "client_id": client_id}
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/login",
-            json=payload,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Direct login proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/login",
+        json=payload,
+        label="Direct login",
+    )
 
 
 # ── Login 2FA verification ───────────────────────────────────
@@ -303,8 +335,6 @@ async def sso_login_verify_2fa(request: Request):
 
     Expects JSON body: ``{"email": "...", "login_token": "...", "code": "123456"}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -316,20 +346,11 @@ async def sso_login_verify_2fa(request: Request):
             status_code=400,
         )
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/login/verify-2fa",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Login verify-2fa proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/login/verify-2fa",
+        json=body,
+        label="Login verify-2fa",
+    )
 
 
 # ── Google Sign-In ────────────────────────────────────────────
@@ -350,8 +371,6 @@ async def sso_google_login(request: Request):
 
     Expects JSON body: ``{"id_token": "eyJhbGci..."}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -363,20 +382,11 @@ async def sso_google_login(request: Request):
             status_code=400,
         )
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/google",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Google login proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/google",
+        json=body,
+        label="Google login",
+    )
 
 
 # ── Registration ──────────────────────────────────────────────
@@ -418,8 +428,6 @@ async def sso_register_user(request: Request):
 
     Expects JSON body: ``{"email": "...", "password": "..."}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -437,20 +445,11 @@ async def sso_register_user(request: Request):
         if app_id:
             body["app_id"] = app_id
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/users/register",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Register proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/users/register",
+        json=body,
+        label="Register",
+    )
 
 
 @router.post(
@@ -467,8 +466,6 @@ async def sso_register_verify_2fa(request: Request):
 
     Expects JSON body: ``{"email": "...", "code": "123456"}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -480,20 +477,11 @@ async def sso_register_verify_2fa(request: Request):
             status_code=400,
         )
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/users/register/verify-2fa",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Register verify-2fa proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/users/register/verify-2fa",
+        json=body,
+        label="Register verify-2fa",
+    )
 
 
 @router.post(
@@ -510,8 +498,6 @@ async def sso_register_resend_2fa(request: Request):
 
     Expects JSON body: ``{"email": "..."}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -520,20 +506,11 @@ async def sso_register_resend_2fa(request: Request):
     if not body.get("email"):
         return JSONResponse({"error": "email is required"}, status_code=400)
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/users/register/resend-2fa",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Register resend-2fa proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/users/register/resend-2fa",
+        json=body,
+        label="Register resend-2fa",
+    )
 
 
 # ── SSO status / userinfo ────────────────────────────────────
@@ -633,8 +610,6 @@ async def sso_password_reset_request(request: Request):
 
     Expects JSON body: ``{"email": "..."}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -643,20 +618,11 @@ async def sso_password_reset_request(request: Request):
     if not body.get("email"):
         return JSONResponse({"error": "email is required"}, status_code=400)
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/users/password-reset",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Password-reset proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/users/password-reset",
+        json=body,
+        label="Password-reset",
+    )
 
 
 @router.post(
@@ -673,8 +639,6 @@ async def sso_password_reset_confirm(request: Request):
 
     Expects JSON body: ``{"email": "...", "code": "123456", "new_password": "..."}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -686,20 +650,11 @@ async def sso_password_reset_confirm(request: Request):
             status_code=400,
         )
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/users/password-reset/confirm",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Password-reset confirm proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/users/password-reset/confirm",
+        json=body,
+        label="Password-reset confirm",
+    )
 
 
 # ── Token refresh ────────────────────────────────────────────
@@ -720,8 +675,6 @@ async def sso_token_refresh(request: Request):
 
     Expects JSON body: ``{"refresh_token": "..."}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -733,20 +686,11 @@ async def sso_token_refresh(request: Request):
             status_code=400,
         )
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/refresh",
-            json=body,
-            headers=_sso_proxy_headers(),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Token refresh proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/refresh",
+        json=body,
+        label="Token refresh",
+    )
 
 
 # ── Re-authentication ────────────────────────────────────────
@@ -768,8 +712,6 @@ async def sso_reauth(request: Request):
     Requires Bearer token AND password.
     Expects JSON body: ``{"password": "..."}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -783,20 +725,12 @@ async def sso_reauth(request: Request):
 
     auth_header = request.headers.get("authorization")
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/reauth",
-            json=body,
-            headers=_sso_proxy_headers(auth=auth_header),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Reauth proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/reauth",
+        json=body,
+        auth=auth_header,
+        label="Reauth",
+    )
 
 
 @router.post(
@@ -815,8 +749,6 @@ async def sso_reauth_verify_2fa(request: Request):
     Requires Bearer token.
     Expects JSON body: ``{"reauth_token": "...", "code": "123456"}``
     """
-    sso_base = _sso_base_url()
-
     try:
         body = await request.json()
     except Exception:
@@ -830,20 +762,12 @@ async def sso_reauth_verify_2fa(request: Request):
 
     auth_header = request.headers.get("authorization")
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/reauth/verify-2fa",
-            json=body,
-            headers=_sso_proxy_headers(auth=auth_header),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Reauth verify-2fa proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/reauth/verify-2fa",
+        json=body,
+        auth=auth_header,
+        label="Reauth verify-2fa",
+    )
 
 
 # ── Logout ────────────────────────────────────────────────────
@@ -863,22 +787,13 @@ async def sso_logout(request: Request):
 
     Revokes the current access token.  Requires ``Authorization: Bearer``.
     """
-    sso_base = _sso_base_url()
     auth_header = request.headers.get("authorization")
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/logout",
-            headers=_sso_proxy_headers(auth=auth_header),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Logout proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/logout",
+        auth=auth_header,
+        label="Logout",
+    )
 
 
 @router.post(
@@ -895,19 +810,10 @@ async def sso_logout_all(request: Request):
 
     Revokes all access and refresh tokens.  Requires ``Authorization: Bearer``.
     """
-    sso_base = _sso_base_url()
     auth_header = request.headers.get("authorization")
 
-    try:
-        resp = httpx.post(
-            f"{sso_base}/sso/auth/logout-all",
-            headers=_sso_proxy_headers(auth=auth_header),
-            timeout=10.0,
-        )
-        return JSONResponse(resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.error("[SSO] Logout-all proxy failed: %s", exc, exc_info=True)
-        return JSONResponse(
-            {"error": f"SSO server unreachable: {exc}"},
-            status_code=502,
-        )
+    return await _sso_proxy_post(
+        "/sso/auth/logout-all",
+        auth=auth_header,
+        label="Logout-all",
+    )

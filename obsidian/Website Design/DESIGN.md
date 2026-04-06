@@ -994,20 +994,20 @@ Complete design token set for Figma Make import:
 
 ---
 
-## 15. Unresolved Design Decisions (Review Addition — Pass 7)
+## 15. Resolved Design Decisions
 
-Open questions requiring product/engineering input. Each includes a recommended default.
+All 8 previously-open decisions have been resolved (2026-04-04).
 
-| # | Decision | Options | Recommended Default | Impact if Deferred |
-|---|----------|---------|--------------------|--------------------|
-| 1 | **Real-time updates** — WebSocket vs. polling for board status changes? | WebSocket (instant) vs. 5s polling vs. SSE | SSE (Server-Sent Events) — simpler than WS, real-time enough, already have FastAPI backend | Board feels stale if deferred; polling is fine for MVP |
-| 2 | **Markdown editor** — Which editor for PRD editing? | Monaco (VS Code engine), Milkdown, Tiptap, plain textarea | Milkdown — WYSIWYG markdown, lighter than Monaco, better for non-developers | PRD Editor screen blocked until decided |
-| 3 | **Authentication** — SSO provider for web dashboard? | Slack SSO (already integrated), Google, GitHub, custom | Slack SSO — users already authenticate via Slack bot | Blocking for any public deployment |
-| 4 | **Sidebar: project switcher** — Dropdown in sidebar or full-screen selector? | Sidebar dropdown, overlay panel, dedicated page | Sidebar dropdown (monday.com pattern) — one click, no navigation | Low impact — either works |
-| 5 | **Board view: column customization** — Fixed columns or user-configurable? | Fixed set, drag-reorder, full show/hide | Fixed set for v1, drag-reorder for v2 | Low — fixed is fine for MVP |
-| 6 | **Empty state illustrations** — Custom line art or icon-based? | Custom illustration, product icons, text-only | Product icons with text — faster to ship, consistent with Vibe | Purely cosmetic; text-only fallback works |
-| 7 | **Notification preference** — Where do web notifications go vs. Slack notifications? | Web only, Slack only, both with preferences | Both — web for dashboard users, Slack for existing users. Preference toggle in Settings. | Needs settings UI before launch |
-| 8 | **Dark mode trigger** — System preference, manual toggle, or both? | System only, manual only, both with override | Both — respect `prefers-color-scheme` with manual override stored in user settings | Dark mode not usable without this decision |
+| # | Decision | Resolution |
+|---|----------|------------|
+| 1 | **Real-time updates** | **SSE (Server-Sent Events)** — FastAPI native `StreamingResponse`, unidirectional server→client, auto-reconnect. Polling as fallback. |
+| 2 | **Markdown editor** | **Milkdown** — WYSIWYG markdown, ~200KB, supports custom plugins for PRD section structure. |
+| 3 | **Authentication** | **C9S SSO** — already implemented with 18 `/auth/sso/*` endpoints, JWT tokens, `require_sso_user` dependency. Zero additional backend work. |
+| 4 | **Sidebar: project switcher** | **Sidebar dropdown** — monday.com/Linear pattern. Quick context switch without leaving current page. |
+| 5 | **Board view: columns** | **Fixed columns for v1** — columns map directly to idea statuses (`New`, `Refining`, `Ready`, `In Progress`, `Done`). Revisit in v2. |
+| 6 | **Empty state illustrations** | **Product icons + text** — icon + one-liner + primary action button per empty state. |
+| 7 | **Notification preference** | **Both (web + Slack)** — default to Slack (existing behaviour), add optional web notifications. Preference toggle in user profile. |
+| 8 | **Dark mode trigger** | **Both** — respect `prefers-color-scheme` with manual override stored in user profile. |
 
 ---
 
@@ -1027,6 +1027,16 @@ Open questions requiring product/engineering input. Each includes a recommended 
 | 10 | 2026-03-25 | Added full interaction state matrix | No component ships without all 6 states defined (Senior Designer review fix) |
 | 11 | 2026-03-25 | `--motion-timing-emphasize` marked as rare use | Bounce/overshoot only for specific delight moments (approval celebration), never for navigation (Senior Designer review fix) |
 | 12 | 2026-03-25 | Dark theme as CSS variable override | Single `[data-theme="dark"]` selector; no separate token file needed (Senior Designer review fix) |
+| 13 | 2026-04-04 | SSE for real-time updates | Simpler than WebSocket, unidirectional fits PRD progress feed, FastAPI native support |
+| 14 | 2026-04-04 | Milkdown markdown editor | WYSIWYG editing matches user intent (edit PRD, not code), lightweight ~200KB |
+| 15 | 2026-04-04 | C9S SSO authentication | Already fully implemented — 18 endpoints, JWT, user webhooks. Zero additional work |
+| 16 | 2026-04-04 | Sidebar dropdown project switcher | Quick context switch, matches sidebar navigation already in design system |
+| 17 | 2026-04-04 | Fixed board columns for v1 | Direct mapping to idea statuses, no mapping logic needed |
+| 18 | 2026-04-04 | Product icons + text empty states | Friendly, low-cost, consistent with Vibe design system |
+| 19 | 2026-04-04 | Both web + Slack notifications | Default Slack, optional web. Preference via user profile |
+| 20 | 2026-04-04 | Both system + manual dark mode | Respect prefers-color-scheme with manual override in user settings |
+| 21 | 2026-04-04 | React + Next.js framework | Component-based design maps to React, Next.js provides SSR + API routes |
+| 22 | 2026-04-04 | Vercel deployment | Separate deployment with CORS to backend. Simple CI/CD |
 
 ---
 

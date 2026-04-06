@@ -240,6 +240,28 @@ class PRDFlow(Flow[PRDState]):
         Callable[[str, str], bool] | None
     ) = None
 
+    # CEO Review approval callback (Phase 1.5a gate).
+    # Called after the CEO Reviewer generates the Executive Product Summary.
+    # Lets the user review and accept/modify/reject the 10-star vision
+    # before it flows into the Engineering Plan and section drafting.
+    # Signature: (eps_content, run_id) -> tuple[str, str | None]
+    # Return ("approve", None)            → accept as-is.
+    # Return ("approve", edited_content)  → accept with user edits.
+    # Return ("reject", None)             → skip EPS (use exec summary only).
+    ceo_review_approval_callback: (
+        Callable[[str, str], tuple[str, str | None]] | None
+    ) = None
+
+    # UX Design Review approval callback (post-Phase 2 gate).
+    # Called after the Senior Designer completes the 7-pass review.
+    # Lets the user review design findings before appending to PRD.
+    # Signature: (design_content, run_id) -> tuple[str, str | None]
+    # Return ("approve", None)           → accept as-is.
+    # Return ("reject", None)            → skip UX design appendix.
+    ux_design_review_approval_callback: (
+        Callable[[str, str], tuple[str, str | None]] | None
+    ) = None
+
     # ------------------------------------------------------------------
     # Callback resolution — instance attribute with registry fallback
     # ------------------------------------------------------------------

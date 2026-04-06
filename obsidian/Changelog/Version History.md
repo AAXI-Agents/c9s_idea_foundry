@@ -6,7 +6,7 @@ aliases:
   - Changelog
   - Release Notes
 created: 2026-02-14
-updated: 2026-04-03
+updated: 2026-04-07
 ---
 
 # Version History
@@ -19,6 +19,12 @@ updated: 2026-04-03
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 0.59.1 | 04-08 | SSO proxy async refactor — fix 502 login errors. Converted all 15 synchronous httpx.post calls to async httpx.AsyncClient via _sso_proxy_post helper. ConnectError → 502, TimeoutException → 504. Updated 29 SSO tests |\n| 0.59.0 | 04-08 | Gap ticket backend features. Timeline API (GET /flow/runs/{run_id}/timeline): unified PRD journey view. PRD version tracking (save/get version snapshots + GET /flow/runs/{run_id}/versions). Confluence preview (GET /publishing/confluence/{run_id}/preview). Section conversation schema (per-section message threading + summary notes). 30 new tests |
+| 0.58.0 | 04-07 | UX Design review gate + flow control panel. Summary review gate after Phase 2 (Approve/Skip). Persistent control panel with [Pause Flow] / [Cancel] buttons. CEO + UX design gates added to cancel unblock. Fixed version.py date bug. Updated gap tickets |
+| 0.57.0 | 04-06 | Agent activity messages + requirements transparency. `agent_activity` progress events for all 6 agents (PM, Critic, CEO, Eng Manager, UX Designer, Senior Designer) with agent-specific emojis in Slack. `requirements_assumptions` event shows AI evaluation after breakdown. `ux_design_draft_complete` and `ux_design_review_start` events handled in Slack. Deleted 9 resolved gap tickets. 4 gap tickets updated with v0.57.0 implementation |
+| 0.56.0 | 04-05 | Flow audit gap implementation. CEO Review approval gate (callback + Block Kit + dispatch + auto/blocking factories). Transparent critique (Critic reasoning posted to Slack). Pipeline step counter ([1/3] in progress messages). Project config: `design_preferences`, `review_checklists`, `technical_profile` fields. All 10 audit gap tickets updated with user decisions + 3 follow-up questions |
+| 0.55.0 | 04-04 | Resolved 8 gap tickets + 1 in-progress. New `GET/PATCH /user/profile` with `userPreferences` collection, `POST /flow/ux-design/{run_id}` endpoint, `iterate_idea` distinct Slack flow. DESIGN.md 8 decisions resolved, README 20-intent list + 15-version history, 22 boilerplate CRs cleaned. Web app screen gap analysis |
+| 0.54.2 | 04-03 | Full codebase audit — 9 gap tickets created (5 needing user input, 4 quick-win doc fixes) |
 | 0.54.1 | 04-03 | User Feedback gap ticket system. Created `User Feedback/_template.md` with structured template. Updated CODEX.md with Gap Ticket Workflow section |
 | 0.54.0 | 04-03 | Obsidian API docs cleanup. Deleted 7 redundant domain summary files, migrated unique content (schemas, tables, reference data) to per-route files, fixed 50+ stale wiki links across Database pages, updated CODEX.md references |
 | 0.53.0 | 04-03 | API per-route restructuring. Split monolithic router files into individual route modules: Health (5 files), Ideas (3 + models), Projects (5 + models), SSO Webhooks (moved to package). Each route file has docstring with request/response/DB algorithm. 1115 API tests passing |

@@ -200,6 +200,10 @@ def iterate_executive_summary(
             )
 
     # ── Initial draft (iteration 1) ───────────────────────
+    flow._notify_progress("agent_activity", {
+        "agent": "Product Manager",
+        "action": "drafting executive summary",
+    })
     draft_description = task_configs["draft_prd_task"]["description"].format(
         idea=flow.state.idea,
         executive_summary="(initial draft — first iteration)",
@@ -295,6 +299,10 @@ def iterate_executive_summary(
             "[ExecSummary] Critique iteration %d/%d (agent=%s)",
             iteration, max_iter, critic_name,
         )
+        flow._notify_progress("agent_activity", {
+            "agent": "Quality Critic",
+            "action": f"evaluating executive summary (iteration {iteration})",
+        })
         critique_task = Task(
             description=task_configs["critique_prd_task"]["description"].format(
                 critique="(generate critique)",
@@ -350,6 +358,12 @@ def iterate_executive_summary(
         current_iter.critique = critique_text
         flow.state.critique = critique_text
 
+        # ── Transparent critique — share reasoning with user ──
+        flow._notify_progress("exec_summary_critique", {
+            "iteration": iteration,
+            "critique": critique_text[:2000],
+        })
+
         # --- Check termination ----
         is_ready = "READY_FOR_DEV" in critique_text.upper()
         past_min = iteration >= min_iter
@@ -386,6 +400,10 @@ def iterate_executive_summary(
                 "Also incorporate the user's feedback above."
             )
             pending_user_feedback = None  # consumed
+        flow._notify_progress("agent_activity", {
+            "agent": "Product Manager",
+            "action": f"refining executive summary (iteration {iteration})",
+        })
         refine_task = Task(
             description=refine_desc,
             expected_output=task_configs["draft_prd_task"][

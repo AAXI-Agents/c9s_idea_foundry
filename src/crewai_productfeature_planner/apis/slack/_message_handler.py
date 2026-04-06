@@ -46,6 +46,7 @@ from crewai_productfeature_planner.apis.slack._intent_phrases import (
     _CURRENT_PROJECT_PHRASES,
     _END_SESSION_PHRASES,
     _IDEA_PHRASES,
+    _ITERATE_IDEA_PHRASES,
     _LIST_IDEAS_PHRASES,
     _LIST_PRODUCTS_PHRASES,
     _LIST_PROJECTS_PHRASES,
@@ -98,12 +99,13 @@ def _is_command_phrase_idea(idea_text: str) -> bool:
     """
     stripped = idea_text.strip().lower()
     # Direct match against known command phrases
-    if any(stripped == p for p in _IDEA_PHRASES):
+    _all_idea_phrases = _IDEA_PHRASES + _ITERATE_IDEA_PHRASES
+    if any(stripped == p for p in _all_idea_phrases):
         return True
     # Very short "ideas" are almost certainly just commands
     if len(stripped.split()) < _MIN_IDEA_WORDS:
         # Check if it's a substring of any command phrase or vice versa
-        if any(p in stripped or stripped in p for p in _IDEA_PHRASES):
+        if any(p in stripped or stripped in p for p in _all_idea_phrases):
             return True
     return False
 
@@ -686,7 +688,8 @@ def _interpret_and_act_inner(
     # Strip Slack mrkdwn formatting chars (*bold* _italic_ ~strike~)
     lower_text_bare = lower_text.strip("*_~ \t")
 
-    has_idea_phrase = any(p in lower_text_bare for p in _IDEA_PHRASES)
+    has_idea_phrase = any(p in lower_text_bare for p in _IDEA_PHRASES) or \
+        any(p in lower_text_bare for p in _ITERATE_IDEA_PHRASES)
     has_project_phrase = any(p in lower_text_bare for p in _CREATE_PROJECT_PHRASES)
     has_list_phrase = any(p in lower_text_bare for p in _LIST_PROJECTS_PHRASES)
     has_list_ideas_phrase = any(p in lower_text_bare for p in _LIST_IDEAS_PHRASES)
@@ -1016,6 +1019,24 @@ def _interpret_and_act_inner(
             idea_number=idea_num,
         )
         tracked_response = "(restart_prd triggered)"
+        log_tracked_interaction(
+            log_interaction, "slack", clean_text, intent,
+            tracked_response, idea, None, session_project_id,
+            channel, thread_ts, user, history, tracked_metadata,
+        )
+        return
+
+    if intent == "iterate_idea":
+        # Distinct flow: show ideas list → user picks → re-refine
+        from crewai_productfeature_planner.apis.slack._session_ideas import (
+            handle_iterate_idea,
+        )
+        from crewai_productfeature_planner.apis.slack.session_manager import (
+            get_context_session,
+        )
+        session = get_context_session(user, channel)
+        handle_iterate_idea(channel, thread_ts, user, session)
+        tracked_response = "(iterate_idea — showing idea picker)"
         log_tracked_interaction(
             log_interaction, "slack", clean_text, intent,
             tracked_response, idea, None, session_project_id,

@@ -106,6 +106,10 @@ def run_ceo_review(flow: PRDFlow) -> str:
         verbose=is_verbose(),
     )
 
+    flow._notify_progress("agent_activity", {
+        "agent": "CEO Reviewer",
+        "action": "generating executive product summary",
+    })
     result = crew_kickoff_with_retry(crew, step_label="ceo_review")
     content = result.raw.strip()
 
@@ -116,6 +120,37 @@ def run_ceo_review(flow: PRDFlow) -> str:
 
     # Store in flow state
     flow.state.executive_product_summary = content
+
+    # ── CEO Review approval gate ─────────────────────────────────
+    # Let the user review the Executive Product Summary before it
+    # cascades into the Engineering Plan and section drafting.
+    ceo_cb = flow._resolve_callback("ceo_review_approval_callback")
+    if ceo_cb is not None:
+        logger.info("[CEO Review] Waiting for user review of EPS")
+        flow._notify_progress("ceo_review_awaiting_approval", {
+            "content_length": len(content),
+        })
+        try:
+            decision, edited = ceo_cb(content, flow.state.run_id)
+        except Exception:
+            logger.exception("[CEO Review] Approval callback failed")
+            decision, edited = "approve", None
+
+        if decision == "reject":
+            logger.info("[CEO Review] User rejected EPS — clearing")
+            flow.state.executive_product_summary = ""
+            content = ""
+        elif decision == "approve" and edited:
+            logger.info(
+                "[CEO Review] User approved EPS with edits (%d chars)",
+                len(edited),
+            )
+            flow.state.executive_product_summary = edited
+            content = edited
+        else:
+            logger.info("[CEO Review] User approved EPS as-is")
+    else:
+        logger.info("[CEO Review] No approval callback — auto-approving")
 
     # Populate and approve the draft section
     section = flow.state.draft.get_section("executive_product_summary")
@@ -218,6 +253,10 @@ def run_eng_plan(flow: PRDFlow) -> str:
         verbose=is_verbose(),
     )
 
+    flow._notify_progress("agent_activity", {
+        "agent": "Engineering Manager",
+        "action": "generating engineering plan",
+    })
     result = crew_kickoff_with_retry(crew, step_label="eng_plan")
     content = result.raw.strip()
 

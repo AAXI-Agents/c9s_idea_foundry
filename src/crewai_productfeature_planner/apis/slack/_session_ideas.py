@@ -147,3 +147,111 @@ def handle_list_ideas(
         except Exception as exc:
             logger.error("Failed to post product list blocks: %s", exc)
             reply(channel, thread_ts, f"<@{user}> Failed to list products.")
+
+
+def handle_iterate_idea(
+    channel: str,
+    thread_ts: str,
+    user: str,
+    session: dict | None,
+) -> None:
+    """Show ideas list with Iterate buttons so the user can re-refine.
+
+    Distinct from ``handle_list_ideas`` — this shows only ideas that
+    can be iterated on (non-archived) and each entry gets a
+    ":repeat: Iterate" button instead of resume/restart.
+    """
+    project_id = session.get("project_id") if session else None
+    project_name = session.get("project_name", "your project") if session else None
+
+    if not project_id:
+        prompt_project_selection(channel, thread_ts, user)
+        return
+
+    from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+        find_completed_ideas_by_project,
+        find_ideas_by_project,
+    )
+
+    ideas = find_ideas_by_project(project_id, channel=channel)
+    products = find_completed_ideas_by_project(project_id, channel=channel)
+    all_ideas = ideas + products
+
+    if not all_ideas:
+        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import BTN_NEW_IDEA
+        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+        client = _get_slack_client()
+        text = (
+            f"<@{user}> :page_facing_up: No ideas found for *{project_name}*. "
+            "Create a new idea first!"
+        )
+        if client:
+            try:
+                client.chat_postMessage(
+                    channel=channel, thread_ts=thread_ts,
+                    blocks=[
+                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+                        {"type": "actions", "elements": [BTN_NEW_IDEA]},
+                    ],
+                    text=text,
+                )
+            except Exception:
+                reply(channel, thread_ts, text)
+        else:
+            reply(channel, thread_ts, text)
+        return
+
+    _backfill_missing_idea_titles(all_ideas)
+
+    from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+    client = _get_slack_client()
+    if not client:
+        reply(channel, thread_ts, f"<@{user}> No Slack client available.")
+        return
+
+    # Build blocks with iterate buttons
+    blocks: list[dict] = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"<@{user}> :repeat: Pick an idea to iterate on "
+                    f"(*{project_name}*):"
+                ),
+            },
+        },
+        {"type": "divider"},
+    ]
+
+    for idx, idea_doc in enumerate(all_ideas, 1):
+        idea_text = idea_doc.get("idea") or idea_doc.get("title") or "Untitled"
+        status = idea_doc.get("status", "unknown")
+        # Truncate long ideas
+        if len(idea_text) > 100:
+            idea_text = idea_text[:97] + "..."
+
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{idx}.* {idea_text}\n_Status: {status}_",
+            },
+            "accessory": {
+                "type": "button",
+                "text": {"type": "plain_text", "text": ":repeat: Iterate", "emoji": True},
+                "action_id": f"idea_iterate_{idx}",
+                "value": f"{project_id}|{idx}",
+            },
+        })
+
+    try:
+        client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            blocks=blocks,
+            text=f"Pick an idea to iterate on ({project_name})",
+        )
+    except Exception as exc:
+        logger.error("Failed to post iterate idea list: %s", exc)
+        reply(channel, thread_ts, f"<@{user}> Failed to list ideas for iteration.")

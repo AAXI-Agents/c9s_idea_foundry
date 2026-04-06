@@ -146,23 +146,31 @@ When a `webhook_url` is provided on `/slack/kickoff` or `/slack/kickoff/sync`, t
 
 ## Slack Integration
 
-The bot supports natural language interaction in Slack, powered by a 12-intent LLM classification system with text-phrase safety nets.
+The bot supports natural language interaction in Slack, powered by a 20-intent LLM classification system with text-phrase safety nets.
 
-### Intent Classification (v0.9.4)
+### Intent Classification
 
-Every message mentioning the bot is classified by Gemini (with OpenAI fallback) into one of 12 intents:
+Every message mentioning the bot is classified by Gemini (with OpenAI fallback) into one of 20 intents:
 
 | Intent | Description | Example phrases |
 |---|---|---|
-| `create_project` | Create a new project workspace | "create a new project", "set up a project" |
+| `create_prd` | Create a new PRD from an idea | "create a PRD for...", "new idea" |
+| `iterate_idea` | Pick an existing idea and re-refine it | "iterate on an idea", "refine idea #2" |
+| `publish` | Publish PRDs to Confluence | "publish", "push to confluence" |
+| `create_jira` | Create Jira tickets from a PRD | "create jira tickets", "generate tickets" |
+| `check_publish` | Check publishing status | "check publish", "what's pending" |
+| `resume_prd` | Resume a paused PRD flow | "resume", "continue where I left off" |
+| `restart_prd` | Restart a PRD flow from scratch | "restart PRD", "start over" |
+| `list_ideas` | Show ideas for the current project | "list ideas", "show my ideas" |
+| `summarize_ideas` | Summarize ideas with AI analysis | "summarize ideas", "analyze my ideas" |
+| `list_products` | Show completed products with delivery status | "list products", "show completed" |
 | `list_projects` | Show available projects | "show me available projects", "list projects" |
 | `switch_project` | Change to a different project | "switch project", "use a different project" |
-| `current_project` | Show which project is active | "current project", "which project am I on" |
-| `end_session` | End the active session | "end session", "I'm done" |
+| `create_project` | Create a new project workspace | "create a new project", "set up a project" |
 | `configure_memory` | View or edit project memory | "configure memory", "show memory" |
-| `create_prd` | Create/iterate a PRD or idea | "create a PRD for...", "iterate an idea" |
-| `publish` | Publish PRDs to Confluence/Jira | "publish", "push to confluence" |
-| `check_publish` | Check publishing status | "check publish", "what's pending" |
+| `end_session` | End the active session | "end session", "I'm done" |
+| `current_project` | Show which project is active | "current project", "which project am I on" |
+| `general_question` | Ask a question about an active flow | "what's the status?", "explain this section" |
 | `help` | Show available commands | "help", "what can you do" |
 | `greeting` | Conversational greeting | "hi", "hello" |
 | `unknown` | Unrecognised input | (fallback) |
@@ -284,16 +292,22 @@ The crewai_productfeature_planner Crew is composed of multiple AI agents, each w
 
 ## Version History
 
-The application uses semantic versioning (`Major.Minor.Iteration`). The full codex is available at `GET /version`.
+The application uses semantic versioning (`Major.Minor.Iteration`). The full codex is available at `GET /version`. Full history: `obsidian/Changelog/Version History.md`.
 
 | Version | Date | Summary |
 |---|---|---|
-| 0.9.4 | 2026-03-05 | LLM prompts no longer request Confluence parent page IDs; publishing proceeds without parent ID |
-| 0.9.3 | 2026-03-05 | Project setup wizard simplified to Confluence space key + Jira project key (parent ID optional) |
-| 0.1.6 | 2026-02-28 | Comprehensive intent audit — 5 new LLM intents (`list_projects`, `switch_project`, `end_session`, `current_project`, `configure_memory`), phrase-based routing, improved help text |
-| 0.1.5 | 2026-02-28 | Intent fix & project setup wizard — "iterate an idea" fix, 3-step Confluence/Jira setup |
-| 0.1.4 | 2026-02-28 | Thread reply awareness — pending-state routing, session isolation |
-| 0.1.3 | 2026-02-28 | Version control & codex — `GET /version`, version in health response |
-| 0.1.2 | 2026-02-28 | Intent classification fix — `create_project` intent with few-shot examples |
-| 0.1.1 | 2026-02-25 | Slack OAuth refactoring — per-team tokens in MongoDB |
-| 0.1.0 | 2026-02-14 | Initial release — PRD flow, MongoDB, FastAPI server |
+| 0.54.1 | 2026-04-03 | User Feedback gap ticket system — structured template, Codex workflow |
+| 0.54.0 | 2026-04-03 | Obsidian API docs cleanup — deleted 7 redundant summaries, migrated content to per-route files |
+| 0.53.0 | 2026-04-03 | API per-route restructuring — split monolithic routers into individual route modules |
+| 0.52.0 | 2026-04-02 | SSO authentication router — 18 `/auth/sso/*` endpoints for C9S SSO |
+| 0.50.0 | 2026-04-01 | Activity Log & Integration Status APIs + obsidian restructure |
+| 0.48.0 | 2026-03-31 | Fix CrewAI event-bus shutdown corruption |
+| 0.47.0 | 2026-03-30 | Background Slack token refresh scheduler |
+| 0.45.0 | 2026-03-29 | Complete Figma removal — UX design markdown-only |
+| 0.43.0 | 2026-03-27 | New Idea Agent — context-aware in-thread analyst |
+| 0.42.0 | 2026-03-26 | Summarize ideas intent, userSuggestions collection |
+| 0.41.0 | 2026-03-26 | UX Design flow refactor — standalone 2-phase post-PRD flow |
+| 0.39.0 | 2026-03-24 | Engagement Manager PRD Orchestrator |
+| 0.35.0 | 2026-03-22 | Engagement Manager agent — conversational responses |
+| 0.31.0 | 2026-03-21 | Interaction-first rule for ALL prompts — Block Kit only |
+| 0.25.0 | 2026-03-17 | SSO-based user_id on all API endpoints |

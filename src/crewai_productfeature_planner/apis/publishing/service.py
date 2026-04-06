@@ -185,6 +185,71 @@ def publish_confluence_single(run_id: str) -> dict[str, Any]:
     }
 
 
+def preview_confluence_content(run_id: str) -> dict[str, Any]:
+    """Render a PRD as Confluence XHTML without publishing.
+
+    Returns ``run_id``, ``title``, ``markdown``, ``xhtml``, and
+    ``sections_changed`` (section keys that differ from the last
+    published version).
+
+    Raises ``ValueError`` when no completed PRD exists for *run_id*.
+    """
+    from crewai_productfeature_planner.components.document import assemble_prd_from_doc
+    from crewai_productfeature_planner.mongodb.product_requirements import (
+        get_delivery_record,
+        get_version_history,
+    )
+    from crewai_productfeature_planner.mongodb.working_ideas import (
+        find_run_any_status,
+    )
+    from crewai_productfeature_planner.scripts.confluence_xhtml import (
+        md_to_confluence_xhtml,
+    )
+
+    doc = find_run_any_status(run_id)
+    if doc is None:
+        raise ValueError(f"No PRD found for run_id={run_id}")
+
+    content = assemble_prd_from_doc(doc)
+    if not content:
+        raise ValueError(f"Could not assemble PRD content for run_id={run_id}")
+
+    xhtml = md_to_confluence_xhtml(content)
+    idea = doc.get("idea", "")
+    title = make_page_title(idea)
+
+    # Identify changed sections by comparing to last version snapshot
+    sections_changed: list[str] = []
+    history = get_version_history(run_id)
+    if history:
+        last_snapshot = history[-1].get("sections", {})
+        section_obj = doc.get("section", {})
+        if isinstance(section_obj, dict):
+            for key, iterations in section_obj.items():
+                if isinstance(iterations, list) and iterations:
+                    current = iterations[-1].get("content", "")
+                    if current != last_snapshot.get(key, ""):
+                        sections_changed.append(key)
+    else:
+        # No previous version — all sections are "new"
+        section_obj = doc.get("section", {})
+        if isinstance(section_obj, dict):
+            sections_changed = list(section_obj.keys())
+
+    logger.info(
+        "[Publishing] Preview generated for run_id=%s (%d changed sections)",
+        run_id, len(sections_changed),
+    )
+
+    return {
+        "run_id": run_id,
+        "title": title,
+        "markdown": content,
+        "xhtml": xhtml,
+        "sections_changed": sections_changed,
+    }
+
+
 def publish_confluence_all() -> dict[str, Any]:
     """Publish all pending PRDs to Confluence.
 

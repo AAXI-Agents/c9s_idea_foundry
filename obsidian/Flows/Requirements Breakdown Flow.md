@@ -153,11 +153,8 @@ Codex will implement each request, update this page, bump the
 version, and move the completed item to the "Completed" list.
 
 FORMAT:
-- [ ] <your change request here>
 
 EXAMPLE:
-- [ ] Add a new field `priority` (string, optional) to the response
-- [ ] Rename endpoint from /v1/old to /v2/new
 -->
 
 ### Pending

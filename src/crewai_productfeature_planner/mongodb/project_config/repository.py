@@ -23,6 +23,22 @@ Document schema::
                 "uploaded_at": str,    # ISO-8601
             }
         ],
+        "design_preferences":        {      # UX/UI design style preferences
+            "style":       str,              # e.g. "material", "minimal"
+            "brand_colors": [str],           # hex colour codes
+            "typography":  str,              # font family or style
+        },
+        "review_checklists":         [      # custom review checklists
+            {
+                "name":   str,               # checklist name
+                "items":  [str],             # checklist items
+            }
+        ],
+        "technical_profile":         {      # detected/configured tech stack
+            "languages":  [str],             # e.g. ["Python", "TypeScript"]
+            "frameworks": [str],             # e.g. ["FastAPI", "React"]
+            "infra":      [str],             # e.g. ["AWS", "Docker"]
+        },
         "created_at":                str,   # ISO-8601
         "updated_at":                str,   # ISO-8601
     }
@@ -63,6 +79,9 @@ def create_project(
     confluence_parent_id: str = "",
     reference_urls: list[str] | None = None,
     slack_file_refs: list[dict[str, str]] | None = None,
+    design_preferences: dict[str, Any] | None = None,
+    review_checklists: list[dict[str, Any]] | None = None,
+    technical_profile: dict[str, Any] | None = None,
 ) -> str | None:
     """Create a new project configuration document.
 
@@ -91,6 +110,9 @@ def create_project(
         "confluence_parent_id": confluence_parent_id,
         "reference_urls": reference_urls or [],
         "slack_file_refs": slack_file_refs or [],
+        "design_preferences": design_preferences or {},
+        "review_checklists": review_checklists or [],
+        "technical_profile": technical_profile or {},
         "created_at": now,
         "updated_at": now,
     }

@@ -15,14 +15,20 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _IDEA_PHRASES = (
-    "iterate an idea", "iterate a new idea", "iterate idea",
     "new idea", "start an idea", "brainstorm an idea",
     "refine my idea", "refine an idea", "plan an idea",
     "work on an idea", "create a prd", "create prd",
-    "plan a feature", "build a prd", "help me iterate",
-    "let's iterate", "let's brainstorm",
+    "plan a feature", "build a prd",
+    "let's brainstorm",
     "create idea", "create an idea", "create new idea",
     "create a new idea",
+)
+_ITERATE_IDEA_PHRASES = (
+    "iterate an idea", "iterate a new idea", "iterate idea",
+    "iterate on an idea", "help me iterate",
+    "let's iterate", "refine idea #",
+    "re-refine", "iterate on idea",
+    "rework an idea", "revisit an idea",
 )
 _CREATE_PROJECT_PHRASES = (
     "create a project", "create project", "new project",
@@ -142,6 +148,7 @@ _PHRASE_INTENT_MAP: list[tuple[tuple[str, ...], str]] = [
     (_RESTART_PRD_PHRASES, "restart_prd"),
     (_RESUME_PRD_PHRASES, "resume_prd"),
     (_CREATE_JIRA_PHRASES, "create_jira"),
+    (_ITERATE_IDEA_PHRASES, "iterate_idea"),
     (_IDEA_PHRASES, "create_prd"),
     (_CONFIGURE_MEMORY_PHRASES, "configure_memory"),
     (_UPDATE_CONFIG_PHRASES, "update_config"),

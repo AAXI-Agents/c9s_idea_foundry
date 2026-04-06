@@ -50,9 +50,28 @@ created: YYYY-MM-DD
 
 ---
 
+## Questions for User (if applicable)
+
+<!-- When the gap needs user decisions before implementation, list each
+     question with an agent-suggested answer. Use the format below for
+     each question:
+
+### Q1: <Question title>
+
+<Description of the decision needed>
+
+**Agent Suggested Answer**: <Prefilled recommendation>
+
+**Your Answer**: <!-- Replace this with your decision -- >
+
+-->
+
+---
+
 ## Proposed Solution
 
-<!-- Optional — describe the fix or new feature needed -->
+<!-- Optional — describe the fix or new feature needed. For gaps without
+     user questions, describe the fix directly. -->
 
 ---
 

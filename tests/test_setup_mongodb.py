@@ -34,6 +34,7 @@ class TestAllCollections:
         "crewJobs",
         "userSession",
         "userSuggestions",
+        "userPreferences",
         "productRequirements",
         "slackOAuth",
         "projectConfig",

@@ -143,8 +143,9 @@ class AgentOrchestrator:
             len(self._stages),
             ", ".join(s.name for s in self._stages),
         )
-        for stage in self._stages:
-            self._execute_stage(stage)
+        total_stages = len(self._stages)
+        for idx, stage in enumerate(self._stages, 1):
+            self._execute_stage(stage, step=idx, total_steps=total_stages)
         logger.info(
             "[Orchestrator] Pipeline complete — "
             "completed=%s  skipped=%s  failed=%s",
@@ -166,7 +167,7 @@ class AgentOrchestrator:
                     exc_info=True,
                 )
 
-    def _execute_stage(self, stage: AgentStage) -> None:
+    def _execute_stage(self, stage: AgentStage, *, step: int = 0, total_steps: int = 0) -> None:
         """Run a single stage: skip → execute → apply → approve.
 
         The approval gate fires for both *completed* and *skipped*
@@ -181,6 +182,8 @@ class AgentOrchestrator:
             self._skipped.append(stage.name)
             self._fire_progress("pipeline_stage_skipped", {
                 "stage": stage.name,
+                "step": step,
+                "total_steps": total_steps,
             })
         else:
             # 2. Execute
@@ -192,6 +195,8 @@ class AgentOrchestrator:
             self._fire_progress("pipeline_stage_start", {
                 "stage": stage.name,
                 "description": stage.description,
+                "step": step,
+                "total_steps": total_steps,
             })
             try:
                 result = stage.run()
@@ -211,6 +216,8 @@ class AgentOrchestrator:
             self._fire_progress("pipeline_stage_complete", {
                 "stage": stage.name,
                 "iterations": len(result.history) if result.history else 0,
+                "step": step,
+                "total_steps": total_steps,
             })
 
         # 4. Approval gate — fires for completed AND skipped stages

@@ -179,6 +179,8 @@ def run_prd_flow(
     exec_summary_user_feedback_callback: "Callable | None" = None,
     executive_summary_callback: "Callable | None" = None,
     requirements_approval_callback: "Callable | None" = None,
+    ceo_review_approval_callback: "Callable | None" = None,
+    ux_design_review_approval_callback: "Callable | None" = None,
 ) -> None:
     """Execute the PRD flow in background and update the run record.
 
@@ -221,6 +223,8 @@ def run_prd_flow(
         exec_summary_user_feedback_callback=exec_summary_user_feedback_callback,
         executive_summary_callback=executive_summary_callback,
         requirements_approval_callback=requirements_approval_callback,
+        ceo_review_approval_callback=ceo_review_approval_callback,
+        ux_design_review_approval_callback=ux_design_review_approval_callback,
     )
 
     flow: PRDFlow | None = None
@@ -244,6 +248,10 @@ def run_prd_flow(
             flow.executive_summary_callback = executive_summary_callback
         if requirements_approval_callback is not None:
             flow.requirements_approval_callback = requirements_approval_callback
+        if ceo_review_approval_callback is not None:
+            flow.ceo_review_approval_callback = ceo_review_approval_callback
+        if ux_design_review_approval_callback is not None:
+            flow.ux_design_review_approval_callback = ux_design_review_approval_callback
         if not auto_approve:
             flow.approval_callback = make_approval_callback(run_id)
 
@@ -548,6 +556,8 @@ def resume_prd_flow(
     requirements_approval_callback: "Callable | None" = None,
     jira_skeleton_approval_callback: "Callable | None" = None,
     jira_review_callback: "Callable | None" = None,
+    ceo_review_approval_callback: "Callable | None" = None,
+    ux_design_review_approval_callback: "Callable | None" = None,
 ) -> None:
     """Resume a previously paused/unfinalized PRD flow from MongoDB state.
 
@@ -620,6 +630,10 @@ def resume_prd_flow(
         _cb_kwargs["jira_skeleton_approval_callback"] = jira_skeleton_approval_callback
     if jira_review_callback is not None:
         _cb_kwargs["jira_review_callback"] = jira_review_callback
+    if ceo_review_approval_callback is not None:
+        _cb_kwargs["ceo_review_approval_callback"] = ceo_review_approval_callback
+    if ux_design_review_approval_callback is not None:
+        _cb_kwargs["ux_design_review_approval_callback"] = ux_design_review_approval_callback
     register_callbacks(run_id, **_cb_kwargs)
 
     flow: PRDFlow | None = None
@@ -656,6 +670,10 @@ def resume_prd_flow(
             flow.jira_skeleton_approval_callback = jira_skeleton_approval_callback
         if jira_review_callback is not None:
             flow.jira_review_callback = jira_review_callback
+        if ceo_review_approval_callback is not None:
+            flow.ceo_review_approval_callback = ceo_review_approval_callback
+        if ux_design_review_approval_callback is not None:
+            flow.ux_design_review_approval_callback = ux_design_review_approval_callback
 
         # Set finalized_idea from the last executive summary iteration
         if exec_summary.latest_content:
