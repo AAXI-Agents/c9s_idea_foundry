@@ -287,7 +287,7 @@ if [[ "$DEPLOY_ENV" == "dev" ]]; then
     fi
 
     if [[ -z "${NGROK_AUTHTOKEN:-}" ]]; then
-        record_warn "NGROK_AUTHTOKEN not set — ngrok tunnel will fail if SERVER_ENV=DEV"
+        record_warn "NGROK_AUTHTOKEN not set — ngrok tunnel will fail when SERVER_ENV=DEV (set in .env)"
     else
         pass "NGROK_AUTHTOKEN is set"
     fi

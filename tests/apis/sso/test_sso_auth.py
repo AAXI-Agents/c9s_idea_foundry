@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 import pytest
-from starlette.testclient import TestClient
+from starlette.requests import Request
 
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 
@@ -12,6 +12,16 @@ from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 def _enable_sso(monkeypatch):
     monkeypatch.setenv("SSO_ENABLED", "true")
     monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
+
+
+def _make_request() -> Request:
+    """Build a minimal Starlette Request with a dummy Bearer token."""
+    return Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/test",
+        "headers": [(b"authorization", b"Bearer fake-token")],
+    })
 
 
 class TestDisplayNameExtraction:
@@ -31,15 +41,7 @@ class TestDisplayNameExtraction:
             "crewai_productfeature_planner.apis.sso_auth._decode_jwt_locally",
             return_value=claims,
         ):
-            from starlette.requests import Request
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/test",
-                "headers": [(b"authorization", b"Bearer fake-token")],
-            }
-            request = Request(scope)
-            user = await require_sso_user(request)
+            user = await require_sso_user(_make_request())
         assert user["display_name"] == "Alice Smith"
 
     @pytest.mark.asyncio
@@ -55,13 +57,5 @@ class TestDisplayNameExtraction:
             "crewai_productfeature_planner.apis.sso_auth._decode_jwt_locally",
             return_value=claims,
         ):
-            from starlette.requests import Request
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/test",
-                "headers": [(b"authorization", b"Bearer fake-token")],
-            }
-            request = Request(scope)
-            user = await require_sso_user(request)
+            user = await require_sso_user(_make_request())
         assert user["display_name"] == "bob@example.com"
