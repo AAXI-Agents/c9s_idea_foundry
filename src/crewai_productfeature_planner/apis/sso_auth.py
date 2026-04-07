@@ -237,7 +237,7 @@ async def require_sso_user(request: Request) -> dict[str, Any]:
         "app_name": APP_NAME,
         "enterprise_id": claims.get("enterprise_id", ""),
         "organization_id": claims.get("organization_id", ""),
-        "display_name": claims.get("email", ""),
+        "display_name": claims.get("display_name", claims.get("email", "")),
     }
 
 

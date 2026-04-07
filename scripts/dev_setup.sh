@@ -236,6 +236,63 @@ if [[ "$DEPLOY_ENV" == "prod" ]]; then
     fi
 fi
 
+# ── SSO Authentication ──────────────────────────────────────
+header "SSO Authentication"
+
+SSO_ON="${SSO_ENABLED:-false}"
+SSO_ON=$(echo "$SSO_ON" | tr '[:upper:]' '[:lower:]')
+
+if [[ "$SSO_ON" == "true" || "$SSO_ON" == "1" || "$SSO_ON" == "yes" ]]; then
+    pass "SSO_ENABLED=true"
+
+    if [[ -z "${SSO_BASE_URL:-}" ]]; then
+        record_fail "SSO_BASE_URL is not set (required when SSO is enabled)"
+    else
+        pass "SSO_BASE_URL is set"
+    fi
+
+    if [[ -z "${SSO_CLIENT_ID:-}" ]]; then
+        record_fail "SSO_CLIENT_ID is not set (required for OAuth login/register)"
+    else
+        pass "SSO_CLIENT_ID is set"
+    fi
+
+    if [[ -z "${SSO_CLIENT_SECRET:-}" ]]; then
+        record_fail "SSO_CLIENT_SECRET is not set (required for OAuth token exchange)"
+    else
+        pass "SSO_CLIENT_SECRET is set"
+    fi
+
+    if [[ -n "${SSO_JWT_PUBLIC_KEY_PATH:-}" ]]; then
+        if [[ -f "${SSO_JWT_PUBLIC_KEY_PATH}" ]]; then
+            pass "SSO_JWT_PUBLIC_KEY_PATH points to existing file"
+        else
+            record_warn "SSO_JWT_PUBLIC_KEY_PATH is set but file not found (will use remote introspection)"
+        fi
+    else
+        info "SSO_JWT_PUBLIC_KEY_PATH not set — will use remote introspection"
+    fi
+else
+    info "SSO_ENABLED is not set or false — SSO auth bypassed (dev mode)"
+fi
+
+# DEV + ngrok: validate ngrok vars
+if [[ "$DEPLOY_ENV" == "dev" ]]; then
+    header "Ngrok (DEV Tunnel)"
+
+    if [[ -n "${NGROK_DOMAIN:-}" ]]; then
+        pass "NGROK_DOMAIN is set (${NGROK_DOMAIN})"
+    else
+        info "NGROK_DOMAIN not set — ngrok will assign a random URL each restart"
+    fi
+
+    if [[ -z "${NGROK_AUTHTOKEN:-}" ]]; then
+        record_warn "NGROK_AUTHTOKEN not set — ngrok tunnel will fail if SERVER_ENV=DEV"
+    else
+        pass "NGROK_AUTHTOKEN is set"
+    fi
+fi
+
 # ── 4. MongoDB Atlas — DNS & network ping ───────────────────
 header "MongoDB Atlas — Network Connectivity"
 

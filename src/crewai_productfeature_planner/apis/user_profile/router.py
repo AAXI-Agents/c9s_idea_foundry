@@ -38,6 +38,14 @@ class UserProfileResponse(BaseModel):
     user_id: str = Field(..., description="SSO user ID (read-only).")
     email: str = Field(default="", description="SSO-managed email (read-only).")
     sso_display_name: str = Field(default="", description="Display name from SSO (read-only).")
+    profile_managed_by: str = Field(
+        default="sso",
+        description="Indicates how the core identity fields are managed.",
+    )
+    sso_profile_note: str = Field(
+        default="Profile managed by your SSO provider.",
+        description="Human-readable note for UI display.",
+    )
 
     # Local preferences (editable)
     display_name: str | None = Field(default=None, description="Local display name override.")
