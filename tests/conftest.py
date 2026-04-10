@@ -27,10 +27,11 @@ _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 5000))
 
 import logging
 from logging.handlers import TimedRotatingFileHandler
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import crewai_productfeature_planner.mongodb.async_client as _async_mongo_client
 import crewai_productfeature_planner.mongodb.client as _mongo_client
 import crewai_productfeature_planner.mongodb as _mongo_pkg
 import crewai_productfeature_planner.mongodb.working_ideas._common as _wi_repo
@@ -150,6 +151,30 @@ def _no_real_mongodb():
         _mongo_client._client = None
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _no_real_async_mongodb():
+    """Prevent any test from reaching a live MongoDB via Motor.
+
+    Patches ``get_async_db`` on the async_client module so no real
+    ``AsyncIOMotorClient`` is ever created.
+    """
+    mock_async_db = MagicMock()
+    with patch.object(
+        _async_mongo_client, "get_async_db", return_value=mock_async_db
+    ):
+        yield mock_async_db
+    # Reset singleton
+    _async_mongo_client._async_client = None
+
+
+@pytest.fixture(autouse=True)
+def _clear_response_cache():
+    """Clear the API response cache between tests."""
+    yield
+    from crewai_productfeature_planner.apis._response_cache import response_cache
+    response_cache.invalidate()
+
+
 @pytest.fixture()
 def fresh_mock_db():
     """Provide a *fresh* mock database with clean call history.
@@ -186,3 +211,25 @@ def _no_real_http():
         ),
     ):
         yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _warm_crewai_agent():
+    """Pre-warm the CrewAI Agent pydantic model hierarchy.
+
+    The **first** ``Agent()`` instantiation in a process triggers
+    pydantic ``model_rebuild()`` across the entire Agent class tree,
+    costing ~1.2 s.  Subsequent instantiations only cost ~0.12 s.
+
+    By creating (and discarding) one throwaway Agent here, every
+    test that later calls ``create_*()`` agent factories avoids
+    the cold-start penalty.
+    """
+    from crewai import Agent
+    Agent(
+        role="_warmup",
+        goal="_warmup",
+        backstory="_warmup",
+        llm="openai/gpt-4o-mini",
+        verbose=False,
+    )

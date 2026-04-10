@@ -113,13 +113,13 @@ def _build_timeline(run_id: str, limit: int) -> list[TimelineEvent]:
                 score=es.get("critique", "")[:200] if es.get("critique") else "",
             ))
 
-        # Section iterations
+        # Section iterations + approval decisions
         sections = idea_doc.get("section", {})
         if isinstance(sections, dict):
             for section_key, iterations in sections.items():
                 if not isinstance(iterations, list):
                     continue
-                for it in iterations:
+                for idx, it in enumerate(iterations):
                     events.append(TimelineEvent(
                         timestamp=_iso(it.get("updated_date", "")),
                         event_type="section_drafted",
@@ -128,6 +128,17 @@ def _build_timeline(run_id: str, limit: int) -> list[TimelineEvent]:
                         section_key=section_key,
                         iteration=it.get("iteration", 0),
                         score=it.get("critique", "")[:200] if it.get("critique") else "",
+                    ))
+                # Emit approval annotation after the last iteration
+                if iterations:
+                    last = iterations[-1]
+                    events.append(TimelineEvent(
+                        timestamp=_iso(last.get("updated_date", "")),
+                        event_type="section_approved",
+                        title=f"Section '{section_key}' approved",
+                        detail=f"Approved after {len(iterations)} iteration(s)",
+                        section_key=section_key,
+                        iteration=last.get("iteration", 0),
                     ))
 
         # Completion

@@ -44,6 +44,22 @@ def _normalise_issue_type(raw: str, *, has_parent: bool = False) -> str:
         return "Sub-task"
     return "Story"
 
+
+import re as _re  # noqa: E402
+
+_ISSUE_KEY_RE = _re.compile(r"[A-Z][A-Z0-9]+-\d+")
+
+
+def _split_issue_keys(raw: str) -> list[str]:
+    """Extract individual Jira issue keys from a possibly comma-separated string.
+
+    The LLM often supplies ``"CJT-101,CJT-102"`` as a single value.
+    Returns an empty list when *raw* is blank.
+    """
+    if not raw or not raw.strip():
+        return []
+    return _ISSUE_KEY_RE.findall(raw)
+
 # Lazy import to avoid circular dependency at module load time.
 # Imported here so tests can patch it at
 # ``crewai_productfeature_planner.tools.jira._tool.find_run_any_status``.
@@ -251,30 +267,32 @@ class JiraCreateIssueTool(BaseTool):
                         created_key, exc,
                     )
 
-            # Create dependency links if requested
-            if blocks_key:
+            # Create dependency links if requested.
+            # The LLM may supply comma-separated keys (e.g. "CJT-1,CJT-2");
+            # split and create one link per target to avoid Jira 404s.
+            for target_key in _split_issue_keys(blocks_key):
                 try:
                     _ops_mod.create_issue_link(
-                        inward_issue_key=blocks_key,
+                        inward_issue_key=target_key,
                         outward_issue_key=created_key,
                         link_type="Blocks",
                     )
                 except Exception as exc:
                     logger.warning(
                         "[Jira] Failed to create 'Blocks' link %s → %s: %s",
-                        created_key, blocks_key, exc,
+                        created_key, target_key, exc,
                     )
-            if is_blocked_by_key:
+            for target_key in _split_issue_keys(is_blocked_by_key):
                 try:
                     _ops_mod.create_issue_link(
                         inward_issue_key=created_key,
-                        outward_issue_key=is_blocked_by_key,
+                        outward_issue_key=target_key,
                         link_type="Blocks",
                     )
                 except Exception as exc:
                     logger.warning(
                         "[Jira] Failed to create 'is blocked by' link %s → %s: %s",
-                        created_key, is_blocked_by_key, exc,
+                        created_key, target_key, exc,
                     )
 
             return (

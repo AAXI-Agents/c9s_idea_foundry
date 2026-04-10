@@ -109,7 +109,26 @@ On resume, this phase is skipped if `flow.state.idea_refined == True`. The previ
 
 - `save_iteration(run_id, step="idea_refinement", ...)` — after each cycle
 - Refinement history stored in `working_ideas.refinement_history[]`
+- Options history stored in `working_ideas.refinement_options_history[]`
 - Original idea preserved in `working_ideas.original_idea`
+
+---
+
+## 3-Options Decision Points
+
+After each evaluation, the refiner checks for trigger conditions:
+
+| Trigger | Condition | Description |
+|---------|-----------|-------------|
+| `auto_cycles_complete` | `iteration == min_iterations` | Transition from auto to guided mode |
+| `low_confidence` | `avg_confidence < 3.0` | Average evaluation score below threshold (1-5 scale) |
+| `direction_change` | Word overlap < 60% | Major pivot detected vs previous iteration |
+
+When triggered (once per run), `generate_alternatives_task` produces 3 options:
+- **Interactive mode**: Options presented via Slack Block Kit (`idea_options_blocks`), user selects 1/2/3
+- **Autonomous mode**: Auto-selects option 0 (current direction)
+
+Selected option becomes the basis for the next refinement cycle.
 
 ---
 
@@ -119,6 +138,7 @@ On resume, this phase is skipped if `flow.state.idea_refined == True`. The previ
 Input:  flow.state.idea (raw user text)
 Output: flow.state.idea (refined), flow.state.original_idea (preserved)
         flow.state.refinement_history (all iterations)
+        flow.state.refinement_options_history (decision points)
 Next:   → Executive Summary Flow (Phase 1)
 ```
 

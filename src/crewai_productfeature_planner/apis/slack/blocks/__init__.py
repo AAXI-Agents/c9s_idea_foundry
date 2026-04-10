@@ -97,6 +97,9 @@ from crewai_productfeature_planner.apis.slack.blocks._exec_summary_blocks import
 from crewai_productfeature_planner.apis.slack.blocks._ceo_review_blocks import (
     ceo_review_blocks,
 )
+from crewai_productfeature_planner.apis.slack.blocks._idea_options_blocks import (
+    idea_options_blocks,
+)
 from crewai_productfeature_planner.apis.slack.blocks._ux_design_review_blocks import (
     ux_design_review_blocks,
 )
@@ -183,6 +186,8 @@ __all__ = [
     "exec_summary_feedback_blocks",
     # CEO review
     "ceo_review_blocks",
+    # Idea options (3 alternative directions)
+    "idea_options_blocks",
     # Jira
     "jira_skeleton_approval_blocks",
     "jira_review_blocks",

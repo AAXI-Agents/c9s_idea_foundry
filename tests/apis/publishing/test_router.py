@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from crewai_productfeature_planner.apis import app
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
         yield c

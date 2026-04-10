@@ -157,12 +157,16 @@ REQUIRED_UAT_PROD=(
     "ATLASSIAN_BASE_URL"
     "ATLASSIAN_USERNAME"
     "ATLASSIAN_API_TOKEN"
+    "SSO_BASE_URL"
+    "SSO_CLIENT_ID"
 )
 
 # PROD requires Confluence and Jira project keys
 REQUIRED_PROD=(
     "CONFLUENCE_SPACE_KEY"
     "JIRA_PROJECT_KEY"
+    "SSO_CLIENT_SECRET"
+    "SSO_ENABLED"
 )
 
 header "Required Environment Variables — Core"
@@ -430,6 +434,86 @@ if [[ "$DEPLOY_ENV" == "uat" || "$DEPLOY_ENV" == "prod" ]]; then
     fi
 fi
 
+# ── 8b. SSO Authentication (UAT/PROD) ───────────────────────
+if [[ "$DEPLOY_ENV" == "uat" || "$DEPLOY_ENV" == "prod" ]]; then
+    header "SSO Authentication"
+
+    SSO_ON="${SSO_ENABLED:-false}"
+    SSO_URL="${SSO_BASE_URL:-}"
+    SSO_CID="${SSO_CLIENT_ID:-}"
+    SSO_CSEC="${SSO_CLIENT_SECRET:-}"
+    SSO_PK="${SSO_JWT_PUBLIC_KEY_PATH:-}"
+
+    if [[ "$SSO_ON" == "true" || "$SSO_ON" == "1" || "$SSO_ON" == "yes" ]]; then
+        pass "SSO_ENABLED=true"
+
+        # SSO_BASE_URL
+        if [[ -n "$SSO_URL" ]]; then
+            pass "SSO_BASE_URL is set"
+
+            # Health check
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -H "ngrok-skip-browser-warning: true" \
+                "${SSO_URL}/sso/health" 2>/dev/null || echo "000")
+            if [[ "$HTTP_CODE" == "200" ]]; then
+                pass "SSO server reachable (HTTP $HTTP_CODE)"
+            else
+                record_fail "SSO server health check failed (HTTP $HTTP_CODE)"
+            fi
+        else
+            record_fail "SSO_BASE_URL is not set"
+        fi
+
+        # Client credentials
+        if [[ -n "$SSO_CID" ]]; then
+            pass "SSO_CLIENT_ID is set"
+        else
+            record_fail "SSO_CLIENT_ID is not set"
+        fi
+        if [[ -n "$SSO_CSEC" ]]; then
+            pass "SSO_CLIENT_SECRET is set"
+        else
+            record_fail "SSO_CLIENT_SECRET is not set (OAuth token exchange will fail)"
+        fi
+
+        # Public key
+        if [[ -n "$SSO_PK" && -f "$SSO_PK" ]]; then
+            pass "SSO JWT public key file exists: $SSO_PK"
+        elif [[ -n "$SSO_PK" ]]; then
+            record_warn "SSO_JWT_PUBLIC_KEY_PATH set but file not found: $SSO_PK"
+            info "JWT validation will fall back to remote introspection"
+        else
+            info "SSO_JWT_PUBLIC_KEY_PATH not set — using remote introspection"
+        fi
+
+        # Validate client_id is accepted by SSO server
+        if [[ -n "$SSO_URL" && -n "$SSO_CID" ]]; then
+            TEST_RESP=$(curl -s -X POST \
+                -H "Content-Type: application/json" \
+                -H "ngrok-skip-browser-warning: true" \
+                "${SSO_URL}/sso/auth/login" \
+                -d "{\"email\":\"deploy-check@example.com\",\"password\":\"x\",\"client_id\":\"${SSO_CID}\"}" 2>/dev/null || echo "{}")
+            ERR_CODE=$(echo "$TEST_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin).get('detail',{}); print(d.get('code',''))" 2>/dev/null || echo "")
+            case "$ERR_CODE" in
+                AUTH_1001)
+                    pass "SSO client_id is accepted by SSO server"
+                    ;;
+                AUTH_2009)
+                    record_fail "SSO client_id rejected — app not approved. Run: ./scripts/sso_bootstrap.sh"
+                    ;;
+                *)
+                    record_warn "SSO client_id check returned unexpected: $ERR_CODE"
+                    ;;
+            esac
+        fi
+    else
+        info "SSO_ENABLED is false — SSO checks skipped"
+        if [[ "$DEPLOY_ENV" == "prod" ]]; then
+            record_warn "SSO is disabled in production — all endpoints are unauthenticated"
+        fi
+    fi
+fi
+
 # ── 9. VS Code configuration (dev only) ─────────────────────
 if [[ "$DEPLOY_ENV" == "dev" ]]; then
     header "VS Code Configuration"
@@ -487,11 +571,13 @@ if [[ "$DEPLOY_ENV" == "uat" ]]; then
     echo "  Next steps:"
     echo "    1. Start the server:  ./start_server.sh"
     echo "    2. Verify Slack webhooks are configured to the UAT URL"
+    echo "    3. Bootstrap SSO app: ./scripts/sso_bootstrap.sh"
 fi
 if [[ "$DEPLOY_ENV" == "prod" ]]; then
     echo "  Next steps:"
     echo "    1. Start with watchdog:  ./start_server_watchdog.sh"
     echo "    2. Monitor logs:         tail -f logs/crewai.log"
+    echo "    3. Verify SSO is operational: curl -s http://localhost:8000/auth/sso/status"
 fi
 echo ""
 echo "══════════════════════════════════════════════════════════"

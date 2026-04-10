@@ -6,11 +6,11 @@ tags:
 
 # Jira Ticketing Flow
 
-> Post-PRD — 5-phase interactive Jira ticket creation with approval gates at each phase.
+> Post-PRD — interactive Jira ticket creation with approval gates. Scrum uses 5 phases; Kanban uses 2 phases.
 
 | Field | Value |
 |-------|-------|
-| **Phase** | Post-Completion (5 sub-phases) |
+| **Phase** | Post-Completion (5 sub-phases scrum / 2 sub-phases kanban) |
 | **Agents** | [[Orchestrator]] (Jira PM, Architect), [[Staff Engineer]], [[QA Lead]], [[QA Engineer]] |
 | **LLM Tier** | Research (Gemini) |
 | **Source** | `orchestrator/_jira.py`, `flows/_finalization.py` |
@@ -20,7 +20,10 @@ tags:
 
 ## Purpose
 
-Create structured Jira tickets (Epics, Stories, Sub-tasks, Review tickets, QA test tickets) from the completed PRD through a 5-phase approval workflow. Each phase requires user approval before proceeding. Autonomous paths must always use `confluence_only=True` to prevent unapproved ticket creation.
+Create structured Jira tickets from the completed PRD through an approval workflow. The flow adapts based on the project's `board_style` setting in `projectConfig`:
+
+- **Scrum** (default): Epics → Stories → Sub-tasks → Review tickets → QA test tickets (5 phases)
+- **Kanban**: Flat Tasks with priority/category labels (2 phases)
 
 ---
 
@@ -53,7 +56,7 @@ Skips if:
 ### Step 2 — Skeleton Generation
 
 - Agent: `create_jira_product_manager_agent(project_id, run_id)`
-- Task: `generate_jira_skeleton_task`
+- Task: `generate_jira_skeleton_task` (scrum) or `generate_kanban_skeleton_task` (kanban)
 - Input:
   - `{page_title}`: `make_page_title(flow.state.idea)`
   - `{executive_summary}`: executive product summary or finalized idea
@@ -64,7 +67,7 @@ Skips if:
 ### Step 3 — State Update
 
 - `flow.state.jira_skeleton = result.output`
-- `flow.state.jira_phase = "skeleton_pending"`
+- `flow.state.jira_phase = "skeleton_pending"` (scrum) or `"kanban_skeleton_pending"` (kanban)
 - Persists via `save_jira_skeleton()`
 
 ### Step 4 — User Approval
@@ -79,7 +82,9 @@ jira_skeleton_approval_callback(skeleton, run_id) → (action, feedback)
 
 ---
 
-## Phase 2 — Epics & Stories Creation
+## Phase 2 — Epics & Stories Creation (Scrum only)
+
+> Skipped when `board_style == "kanban"`.
 
 ```
 build_jira_epics_stories_stage(flow, require_confluence=True) → AgentStage
@@ -210,11 +215,43 @@ Skips if `jira_phase != "review_done"`
 
 ---
 
+## Kanban Phase 2 — Flat Task Creation
+
+```
+build_jira_kanban_tasks_stage(flow, require_confluence=True) → AgentStage
+```
+
+> Only runs when `board_style == "kanban"`.
+
+### Skip Check
+
+Skips if: not kanban, no skeleton, phase is `kanban_skeleton_pending` (not yet approved), or `kanban_tasks_done`.
+
+### Task Creation
+
+- Agent: `create_jira_product_manager_agent(project_id, run_id)`
+- Task: `create_kanban_tasks_task`
+- Creates flat Jira Tasks (no Epics, Stories, or Sub-tasks)
+- Each task has priority label and category tag
+
+### State Update
+
+- `flow.state.jira_output = result.output`
+- `flow.state.jira_phase = "kanban_tasks_done"`
+
+---
+
 ## Jira Phase State Machine
 
+**Scrum flow**:
 ```
 (none) → skeleton_pending → skeleton_approved → epics_stories_done
   → subtasks_ready → subtasks_done → review_done → qa_test_done
+```
+
+**Kanban flow**:
+```
+(none) → kanban_skeleton_pending → kanban_skeleton_approved → kanban_tasks_done
 ```
 
 ---
@@ -290,7 +327,8 @@ Output: flow.state.jira_skeleton
 
 ## Source Files
 
-- `orchestrator/_jira.py` — all 5 stage factories and implementations
+- `orchestrator/_jira.py` — all stage factories (5 scrum + 1 kanban + 1 legacy ticketing)
+- `agents/orchestrator/config/tasks.yaml` — task prompts (`generate_jira_skeleton_task`, `generate_kanban_skeleton_task`, `create_kanban_tasks_task`, etc.)
 - `flows/_finalization.py` — `run_post_completion()`, `_run_phased_post_completion()`
 - `agents/orchestrator/agent.py` — Jira PM, Architect agent factories
 - `agents/staff_engineer/agent.py` — Staff Engineer agent

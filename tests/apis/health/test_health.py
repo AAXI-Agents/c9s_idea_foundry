@@ -7,7 +7,7 @@ from crewai_productfeature_planner.apis import app
 from crewai_productfeature_planner.version import get_version
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
         yield c

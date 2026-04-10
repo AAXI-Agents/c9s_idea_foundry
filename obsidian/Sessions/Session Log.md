@@ -9,6 +9,250 @@ tags:
 
 ---
 
+## Session — 2026-04-10 (v0.63.2)
+
+**Focus**: SSO OAuth deep fix — 3-phase token validation with automatic key rotation recovery
+
+### Root Cause (deeper, surfaced by v0.63.1 improved logging)
+v0.63.1's enhanced error logging revealed the true SSO server error: `{'detail': 'Missing or invalid Authorization header'}`. The SSO introspection endpoint requires client credentials via **Authorization: Bearer &lt;client_secret&gt;** header, not just `client_id` in the JSON body. Additionally, the local RSA public key (`sso_public_key.pem`) has been stale since April 6, causing every local JWT decode to fail.
+
+### Fixes Applied
+1. `_introspect_remotely()` now sends `Authorization: Bearer <client_secret>` header per RFC 7662
+2. New `_fetch_and_save_public_key()` — downloads current public key from `SSO_BASE_URL/sso/auth/public-key`, saves to disk, clears LRU cache
+3. `require_sso_user`, `/userinfo`, and `/status` all use 3-phase validation: local decode → auto key fetch + retry → remote introspect
+4. Seamless recovery from SSO key rotation without server restart
+
+### Files Changed
+- `apis/sso_auth.py` — Authorization header, `_fetch_and_save_public_key()`, 3-phase flow in `require_sso_user`
+- `apis/sso/router.py` — imported `_fetch_and_save_public_key`, updated `/userinfo` and `/status` with 3-phase pattern
+- `tests/apis/sso/test_sso_router.py` — updated TestIntrospectClientId (now checks Auth header), new TestFetchAndSavePublicKey (3 tests)
+
+### Results
+- 44 SSO tests pass, 2877 full regression green
+
+---
+
+## Session — 2026-04-10 (v0.63.1)
+
+**Focus**: SSO userinfo 401 loop — investigate and fix OAuth error
+
+### Root Cause
+The `/auth/sso/userinfo` endpoint returned 401 even after a successful token refresh (200). Two concurrent issues:
+
+1. **Missing `client_id` in introspection** — `_introspect_remotely()` sent `{"token": ...}` but the SSO server requires `client_id` for client authentication per RFC 7662. The `/token/refresh` endpoint worked because it already included `client_id`.
+2. **Stale public key cache** — `_sso_public_key()` used `@lru_cache(maxsize=1)` which never re-read the key file. If the SSO server rotated its signing key (as shown by `InvalidSignatureError` on every JWT since April 6), local decode permanently failed.
+
+### Fixes Applied
+1. `_introspect_remotely()` now includes `SSO_CLIENT_ID` in the request body
+2. `_decode_jwt_locally()` clears the `_sso_public_key` LRU cache on `InvalidSignatureError`
+3. Introspection logs the response body on non-200 status (not just the status code)
+
+### Files Changed
+- `apis/sso_auth.py` — introspect client_id, cache clear, error logging
+- `tests/apis/sso/test_sso_router.py` — 2 new tests (TestIntrospectClientId, TestPublicKeyCacheClear)
+
+### Results
+- 41 SSO tests pass, full regression green
+
+---
+
+## Session — 2026-04-10 (v0.63.0)
+
+**Focus**: Implement 3 performance recommendations from GAP-api-projects-ideas-slow-latency
+
+### Recommendations Implemented
+
+1. **Motor async MongoDB driver** — `GET /ideas` and `GET /projects` now use native `await`-based Motor queries instead of `run_in_executor` + sync pymongo. Eliminates thread-pool overhead. New `mongodb/async_client.py` module provides `get_async_db()` for API endpoints while keeping sync pymongo for orchestrator/flow code.
+
+2. **Response cache** — 5-second TTL in-memory cache (`apis/_response_cache.py`) for paginated list endpoints. Dashboard polling serves from cache instead of hitting Atlas on every request.
+
+3. **Index coverage analysis script** — `scripts/explain_queries.py` runs `explain("executionStats")` on all API query paths and reports IXSCAN vs COLLSCAN status.
+
+### User Decision
+- **Suggestion (Option B)**: Keep current exclusion projection approach rather than MongoDB aggregation.
+
+### Files Created
+- `mongodb/async_client.py` — Motor AsyncIOMotorClient wrapper
+- `apis/_response_cache.py` — TTL response cache
+- `scripts/explain_queries.py` — Index analysis script
+- `tests/apis/test_response_cache.py` — 7 cache tests
+- `tests/mongodb/test_async_client.py` — 3 async client tests
+
+### Files Changed
+- `pyproject.toml` — added `motor>=3.3,<3.6` dependency
+- `apis/ideas/get_ideas.py` — Motor async queries + cache integration
+- `apis/projects/get_projects.py` — Motor async queries + cache integration
+- `tests/conftest.py` — Motor safety-net fixture + cache cleanup
+- `tests/apis/ideas/test_router.py` — AsyncMock for Motor
+- `tests/apis/projects/test_router.py` — AsyncMock for Motor
+
+### Results
+- **2872 passed**, 0 failed (46.06s)
+
+---
+
+## Session — 2026-04-10 (v0.62.2)
+
+**Focus**: API latency fix — GET /projects and GET /ideas taking 10+ seconds
+
+### Root Causes Identified
+1. **No MongoDB projection on workingIdeas** — full 50–200 KB documents transferred for list queries
+2. **Missing `created_at` index** on `projectConfig` and standalone index on `workingIdeas`
+3. **Sync pymongo calls blocking async event loop** — `count_documents()` and `find()` inside `async def`
+4. **`count_documents({})` instead of `estimated_document_count()`** for unfiltered projects
+5. **`VALID_PAGE_SIZES` missing 5 and 6** — web app requests returned 400
+
+### Files Changed
+- `apis/ideas/get_ideas.py` — exclusion projection, run_in_executor
+- `apis/ideas/models.py` — IDEA_LIST_PROJECTION, VALID_PAGE_SIZES expanded
+- `apis/projects/get_projects.py` — estimated_document_count, run_in_executor
+- `apis/projects/models.py` — VALID_PAGE_SIZES expanded
+- `scripts/setup_mongodb.py` — new `created_at DESC` indexes for projectConfig + workingIdeas
+- `tests/apis/projects/test_router.py` — mock `estimated_document_count`
+
+### User Feedback Created
+- `obsidian/User Feedback/GAP-api-projects-ideas-slow-latency.md` — detailed analysis with 3 recommendations + 1 suggestion *(deleted after all tasks resolved in v0.63.0)*
+
+### Results
+- **2862 passed**, 0 failed (52.20s)
+
+---
+
+## Session — 2026-04-10 (v0.62.1)
+
+**Focus**: Log error investigation, API latency analysis, and performance fixes
+
+### Log Analysis Findings (crewai.log — April 10)
+- **22 ERRORs, 18 WARNINGs** across 17,766 log lines (00:01–10:02)
+- **15 Slack file upload failures** — `files_upload_v2` failing on transient errors with no retry
+- **6 Jira issueLink 404s** — comma-separated issue keys (e.g. "CJT-1612,CJT-1613") passed as single value to Jira API
+- **1 SSO introspection failure** — per-request `httpx.AsyncClient` creation overhead
+- **1 CrewAI bus dead** — executor thread died, auto-reinitialised
+- **No API latency middleware** — no visibility into request timing or slowness
+
+### Fixes Applied
+1. **Jira issue-link 404s** (`tools/jira/_tool.py`): Added `_split_issue_keys()` helper using regex `[A-Z][A-Z0-9]+-\d+` to extract individual Jira keys from comma-separated strings. Both `blocks_key` and `is_blocked_by_key` now iterate over extracted keys instead of passing raw string.
+2. **Slack file upload retry** (`apis/slack/_slack_file_helper.py`): `upload_content_file()` now retries up to 2 times with linear backoff (1s, 2s) on transient failures. Error logging only fires after all attempts exhausted.
+3. **API latency middleware** (`apis/__init__.py`): New `@app.middleware("http")` logs request duration, sets `X-Process-Time` response header, and logs WARNING for requests >2000ms.
+4. **SSO client reuse** (`apis/sso_auth.py`): Replaced per-request `httpx.AsyncClient` context manager with a long-lived `_sso_http_client` singleton, eliminating TLS handshake/DNS overhead on every token validation.
+
+### Test Results
+- **2862 passed**, 0 failed, 13 warnings in 52.72s
+
+---
+
+## Session — 2026-04-09 (v0.62.0)
+
+**Focus**: Implement TASK-idea-refinement-3-options and TASK-jira-kanban-board-style from User Feedback
+
+### Changes
+1. **Idea Refinement 3-Options** — Added `generate_alternatives_task` to idea refiner tasks.yaml. Modified `refine_idea()` to check for 3 trigger conditions (auto cycles complete, low confidence <3.0, direction change >40%) and generate 3 alternative directions. Interactive mode presents via Slack callback; autonomous auto-selects option 0. Return value changed to 3-tuple `(idea, history, options_history)`. New PRDState field `refinement_options_history`. New MongoDB `save_refinement_options()`. New Slack `idea_options_blocks()` builder. Fixed confidence threshold from 6.0→3.0 (1-5 scale).
+2. **Jira Kanban Board Style** — Jira ticketing now reads `board_style` from projectConfig (defaults to "scrum"). Kanban uses flat 2-phase pipeline: skeleton → Tasks (no Epics/Stories/Sub-tasks hierarchy). New `build_jira_kanban_tasks_stage()`, `generate_kanban_skeleton_task`, `create_kanban_tasks_task`. Scrum-only phases auto-skip for kanban. Updated `build_jira_ticketing_stage` to route kanban vs scrum.
+3. **Deleted 4 GAP files** — engineering-plan-tech-level, idea-refinement-options-frequency, jira-kanban-structure, webapp-monorepo-decision
+4. **Deleted 2 TASK files** — TASK-idea-refinement-3-options.md, TASK-jira-kanban-board-style.md (implemented)
+
+### Tests
+- 11 new idea refiner options tests (score parsing, confidence, direction change, callback, auto-select)
+- 19 new Jira kanban tests (board style, skeleton phase, epics skip, kanban tasks, ticketing routing)
+- 4 MongoDB persistence tests, 7 Slack block builder tests
+- All 2850+ tests passing
+
+### Files Modified
+- `agents/idea_refiner/agent.py` — 3-options logic, helper functions
+- `agents/idea_refiner/config/tasks.yaml` — `generate_alternatives_task`
+- `agents/orchestrator/config/tasks.yaml` — kanban skeleton + tasks config
+- `orchestrator/_jira.py` — kanban routing, `_get_board_style()`, `build_jira_kanban_tasks_stage()`
+- `orchestrator/__init__.py`, `orchestrator/stages.py` — new exports
+- `flows/_constants.py` — `refinement_options_history`, updated `jira_phase` description
+- `flows/prd_flow.py` — 3-tuple unpacking
+- `mongodb/working_ideas/_sections.py` — `save_refinement_options()`
+- `apis/slack/blocks/_idea_options_blocks.py` — Block Kit builder
+- `version.py` — v0.62.0
+- `obsidian/` — Changelog, Agents/Idea Refiner, Flows/Idea Refinement Flow, Flows/Jira Ticketing Flow, Orchestrator Overview, Module Map, Database/workingIdeas Schema
+
+---
+
+## Session — 2026-04-07 (v0.61.0)
+
+**Focus**: Gap ticket resolution — implement user answers to 4 follow-up clarity tickets
+
+### Changes
+1. **Engineering Plan — Progressive Disclosure (Answer: C)** — Updated Engineering Manager task prompt (`agents/eng_manager/config/tasks.yaml`) to always use progressive disclosure format: high-level summary per section followed by Technical Deep-Dive sub-section with full detail + ASCII diagrams
+2. **Jira Board Style — Schema (Answer: C)** — Added `board_style` field to `projectConfig` schema (default `"scrum"`, alternative `"kanban"`). Updated `create_project()` in repository with new parameter
+3. **Webapp Monorepo — Decision Recorded (Answer: A)** — Keep separate repos (`c9s_idea_foundry_web`). No code changes needed
+4. **Codex Task: Idea Refinement 3 Options** — Created `TASK-idea-refinement-3-options.md` for presenting 3 alternative directions at key decision points (after 3 auto cycles, on confidence drop below 6, on significant direction change)
+5. **Codex Task: Jira Kanban Flow** — Created `TASK-jira-kanban-board-style.md` for implementing flat-task Kanban mode (3-phase vs 5-phase Scrum) gated by `board_style` project setting
+
+### Gap Tickets Resolved
+- `GAP-flow-engineering-plan-tech-level.md` — Deleted (implemented)
+- `GAP-flow-idea-refinement-options-frequency.md` — Deleted (codex task created)
+- `GAP-flow-jira-kanban-structure.md` — Deleted (schema done, codex task created)
+- `GAP-webapp-monorepo-decision.md` — Deleted (decision recorded, no code needed)
+
+### Files Modified
+- `agents/eng_manager/config/tasks.yaml` — Progressive disclosure format
+- `mongodb/project_config/repository.py` — `board_style` field + parameter
+- `version.py` — v0.61.0
+- `obsidian/Flows/Engineering Plan Flow.md` — Progressive disclosure docs
+- `obsidian/Agents/Engineering Manager.md` — Updated expected output
+- `obsidian/Database/projectConfig Schema.md` — `board_style` field
+- `obsidian/Changelog/Version History.md` — v0.61.0 entry
+- `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session — 2026-04-04 (v0.59.2)
+
+**Focus**: SSO bootstrap, deployment validation, and async fix
+
+### Root Cause
+The SSO app "Idea Foundry" was submitted as an app request but **never approved** — SSO server returns `AUTH_2009: Application has not been approved`. Additionally, zero SSO environment variables were configured in `.env`.
+
+### Changes
+1. **SSO .env configuration** — Added SSO_ENABLED, SSO_BASE_URL, SSO_CLIENT_ID, SSO_CLIENT_SECRET, SSO_JWT_PUBLIC_KEY_PATH, SSO_ISSUER, SSO_EXPECTED_APP_ID, SSO_WEBHOOK_SECRET to `.env`
+2. **RSA public key** — Downloaded `sso_public_key.pem` from SSO server for local JWT verification
+3. **sso_bootstrap.sh** — One-time script: admin login (with 2FA support), list/approve pending app requests, save credentials to `.env`, download public key, validate client_id
+4. **dev_setup.sh** — Added section 8b: SSO health check, credential validation, client_id acceptance test for UAT/PROD. Added SSO_BASE_URL and SSO_CLIENT_ID to UAT/PROD required vars; SSO_CLIENT_SECRET and SSO_ENABLED to PROD required vars
+5. **Async fix** — Converted `_introspect_remotely()` to async (same event-loop blocking pattern as v0.59.1). Updated 3 call sites in `sso/router.py` to `await`
+
+### Files Modified
+- `.env` — Added SSO configuration block
+- `sso_public_key.pem` — RSA public key for JWT verification (new)
+- `scripts/sso_bootstrap.sh` — SSO app bootstrap script (new)
+- `scripts/dev_setup.sh` — SSO validation for UAT/PROD deployments
+- `src/.../apis/sso_auth.py` — `_introspect_remotely()` → async
+- `src/.../apis/sso/router.py` — 3 `_introspect_remotely()` calls → `await`
+- `src/.../version.py` — v0.59.2 entry
+
+### Tests: 2807 passed, 0 failed
+
+---
+
+## Session — 2026-04-06 (v0.59.3)
+
+**Focus**: SSO bootstrap script fix — multi-environment redirect_uris and credential persistence
+
+### Root Cause
+The app "Idea Foundry" was registered (client_id: `2b5037b93bec30bcd2bfed5d24132ecc`) but the `client_secret` and `app_id` were not saved to `.env`. Since the client_secret is only shown once at registration, it was lost. The old script also required re-running for each environment (DEV/UAT/PROD) with different redirect_uris, generating new credentials each time.
+
+### Changes
+1. **Multi-environment redirect_uris** — Script now registers with ALL redirect_uris (DEV localhost, DEV ngrok, UAT, PROD) in a single registration. Same client_id/secret works across all environments.
+2. **SSO_JWT_PUBLIC_KEY_PATH auto-update** — After downloading the RSA public key, the script now updates `SSO_JWT_PUBLIC_KEY_PATH=sso_public_key.pem` in `.env` (previously only saved the file but didn't update the env var).
+3. **Webhook subscription** — Added step 7: registers webhook subscription via `POST /sso/webhooks/register` and saves `SSO_WEBHOOK_SECRET` to `.env`.
+4. **Smart existing-app detection** — Checks if `SSO_CLIENT_SECRET` is already saved before prompting re-registration. If secret is missing, warns user that OAuth token exchange will fail and recommends re-registration.
+5. **SSO_EXPECTED_APP_ID verification** — Added to verification checklist.
+6. **Simplified deployment** — UAT/PROD now only needs `SERVER_ENV=UAT|PROD` in `.env` — no script re-run needed.
+
+### Files Modified
+- `scripts/sso_bootstrap.sh` — Complete rewrite of app registration and verification flow
+- `src/.../version.py` — v0.59.3 entry
+
+### Next Steps
+- Run `./scripts/sso_bootstrap.sh` to delete the broken registration and create fresh credentials with all redirect_uris
+- The script will prompt to delete the existing "Idea Foundry" app since client_secret is missing
+
+---
+
 ## Session — 2026-04-06 (v0.57.0)
 
 **Focus**: Review and clean up User Feedback gap tickets; implement agent transparency features
@@ -3334,5 +3578,115 @@ Implement backend features for 4 open gap tickets with complete user answers. Fi
 - `obsidian/APIs/PRD Flow/GET flow-runs-{run_id}-versions.md` — New per-route doc
 - `obsidian/APIs/Publishing/GET publishing-confluence-{run_id}-preview.md` — New per-route doc
 - `obsidian/Sessions/Session Log.md` — This entry
+
+---
+
+## Session — 2026-04-07 (v0.59.5)
+
+**Focus:** Fix GET /flow/runs/{run_id} returning 404 after server restart
+
+### Root Cause
+- `GET /flow/runs/{run_id}` only checked the in-memory `runs` dict (`dict[str, FlowRun]`)
+- This dict is ephemeral — lost on every server restart
+- Run data IS persisted in MongoDB (crewJobs + workingIdeas collections) but no fallback existed
+
+### Changes
+- **router.py**: Added `_build_run_response()` and `_build_run_response_from_db()` helpers
+  - `_build_run_response()`: handles active in-memory runs (existing behaviour)
+  - `_build_run_response_from_db()`: queries crewJobs for metadata, calls `restore_prd_state()` for draft content
+- **router.py (list_runs)**: Now supplements in-memory runs with persistent MongoDB jobs via `list_jobs()`
+- **version.py**: Bumped to v0.59.5
+
+### Tests
+- Updated `test_get_run_status_not_found` to patch `find_job`
+- Added `test_get_run_status_falls_back_to_mongodb` — DB fallback with empty draft
+- Updated `test_list_runs_empty` and `test_list_runs_with_data` to patch `list_jobs`
+- Added `test_list_runs_includes_mongodb_jobs` — dedup in-memory + DB
+- 2458 passed (1 pre-existing failure in test_retry.py, unrelated)
+
+---
+
+## Session — 2026-04-07 (v0.60.0)
+
+**Focus:** User Feedback gap ticket resolution — wire backend to flow, clean up gap files
+
+### Gap Tickets Processed (8 total)
+
+**Fully answered → Implemented + deleted (4):**
+1. **confluence-publishing-preview** — Version snapshot on Confluence publish, change detection
+2. **journey-dashboard-history** — `section_approved` decision annotations in timeline API
+3. **prd-iteration-versioning** — `save_version_snapshot()` wired into `finalize()` and `_apply()`
+4. **section-drafting-conversation** — `save_section_message()` wired into section loop (user feedback + agent critiques), `save_section_summary_note()` on approval
+
+**Partially answered → New clarity gap files created + originals deleted (4):**
+5. **engineering-plan-context** → `GAP-flow-engineering-plan-tech-level.md` (Q2: tech-level assessment)
+6. **idea-refinement-interactivity** → `GAP-flow-idea-refinement-options-frequency.md` (Q3: 3 options frequency)
+7. **jira-ticketing-interactivity** → `GAP-flow-jira-kanban-structure.md` (Q1: Kanban interpretation)
+8. **webapp-frontend-framework** → `GAP-webapp-monorepo-decision.md` (Q4: monorepo vs separate)
+
+### Code Changes
+
+**_finalization.py**:
+- After `mark_completed()`, calls `save_version_snapshot()` to persist v1 (or vN) snapshot with all section content
+
+**_section_loop.py**:
+- Added `_save_msg()` helper — best-effort `save_section_message()` calls
+- Added `_save_summary()` helper — best-effort `save_section_summary_note()` calls
+- User approval → saves `[Approved]` message + summary note
+- User critique feedback → saves feedback as `user` role message
+- Agent critique → saves critique as `agent` role message
+- Auto-approval paths (max iterations, SECTION_READY) → saves summary note
+
+**_confluence.py**:
+- After `upsert_delivery_record()` in `_apply()`, calls `save_version_snapshot()` with changelog noting the Confluence URL
+
+**_route_timeline.py**:
+- After iterating section drafts, emits a `section_approved` `TimelineEvent` with iteration count
+
+### Tests
+- 375 affected tests pass (flows, orchestrator, timeline)
+- No regressions introduced
+
+---
+
+## Session: 2026-04-08 — Test Suite Optimization (v0.61.1)
+
+### Goal
+Full regression test suite was taking 480s (8 min). Optimize to bring every test under 1.5s and fix flaky tests.
+
+### Root Causes Identified
+1. **Cold Agent creation**: First `Agent()` costs 1.2s due to pydantic `model_rebuild()`; subsequent only 0.12s
+2. **Unmocked LLM builders**: UX Designer, Product Manager, and PM Critic `_build_llm()` functions creating real `LLM` objects in tests
+3. **State leakage**: `session_manager` pending dicts and `events_router` caches not cleaned between Slack tests
+4. **Assert scope**: Retry shutdown tests asserting `mock_sleep.assert_not_called()` outside the mock context — background threads cause false positives
+
+### Changes Made
+
+**tests/conftest.py**:
+- Added `_warm_crewai_agent` session-scoped fixture — creates one throwaway Agent to warm pydantic model hierarchy (saves ~1.2s per first-agent-creation per module)
+
+**tests/agents/conftest.py**:
+- Added `_build_llm` mock for Product Manager agent
+- Added `_build_critic_llm` mock for Product Manager Critic agent
+- Added `_build_llm` mock for UX Designer agent
+
+**tests/flows/conftest.py** (NEW):
+- Autouse fixture mocking `_build_llm` for UX Designer, Product Manager, and PM Critic in flow tests
+
+**tests/apis/slack/conftest.py**:
+- Added `_clear_session_manager_state` autouse fixture — clears `_pending_project_creates`, `_pending_memory_entries`, `_pending_project_setup` before and after each test
+- Also clears `events_router._seen_events`, `_thread_conversations`, `_thread_last_active`
+
+**tests/test_retry.py**:
+- Moved `assert crew.kickoff.call_count` and `mock_sleep.assert_not_called()` inside the mock context for `test_shutdown_interpreter_not_retried` and `test_shutdown_futures_not_retried`
+
+### Results
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Total suite time | 480s (8 min) | 45s | **90.5%** |
+| Slowest test | 12.42s | 1.00s | **92%** |
+| Tests > 1.5s | 30+ | **0** | Target met |
+| Failures | 4 flaky | **0** | All fixed |
+| Test count | 2819 | 2819 | No removals |
 
 ---

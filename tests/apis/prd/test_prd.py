@@ -136,9 +136,40 @@ def test_get_run_status_found(client):
 
 
 def test_get_run_status_not_found(client):
-    """Unknown run_id should return 404."""
-    resp = client.get("/flow/runs/nonexistent")
+    """Unknown run_id should return 404 when absent from memory and DB."""
+    with patch("crewai_productfeature_planner.apis.prd.router.find_job", return_value=None):
+        resp = client.get("/flow/runs/nonexistent")
     assert resp.status_code == 404
+
+
+def test_get_run_status_falls_back_to_mongodb(client):
+    """GET /flow/runs/{run_id} should reconstruct from MongoDB when not in memory."""
+    job_doc = {
+        "job_id": "db-run-1",
+        "flow_name": "prd",
+        "idea": "Add dark mode",
+        "status": "completed",
+        "queued_at": "2026-04-01T00:00:00",
+        "updated_at": "2026-04-01T01:00:00",
+        "completed_at": "2026-04-01T01:00:00",
+        "error": None,
+        "confluence_url": "https://wiki.example.com/page",
+        "output_file": "output/prds/prd_v1.md",
+    }
+    with (
+        patch("crewai_productfeature_planner.apis.prd.router.find_job", return_value=job_doc),
+        patch(
+            "crewai_productfeature_planner.apis.prd.router.restore_prd_state",
+            side_effect=ValueError("not found"),
+        ),
+    ):
+        resp = client.get("/flow/runs/db-run-1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["run_id"] == "db-run-1"
+    assert body["status"] == "completed"
+    assert body["confluence_url"] == "https://wiki.example.com/page"
+    assert body["sections_total"] == 12
 
 
 # ── run_prd_flow background task ─────────────────────────────
@@ -754,7 +785,8 @@ def test_resume_already_active(client):
 
 def test_list_runs_empty(client):
     """Should return empty list when no runs exist."""
-    resp = client.get("/flow/runs")
+    with patch("crewai_productfeature_planner.apis.prd.router.list_jobs", return_value=[]):
+        resp = client.get("/flow/runs")
     assert resp.status_code == 200
     body = resp.json()
     assert body["count"] == 0
@@ -765,12 +797,31 @@ def test_list_runs_with_data(client):
     """Should return all in-memory runs."""
     runs["r1"] = FlowRun(run_id="r1", flow_name="prd", status=FlowStatus.RUNNING)
     runs["r2"] = FlowRun(run_id="r2", flow_name="prd", status=FlowStatus.COMPLETED)
-    resp = client.get("/flow/runs")
+    with patch("crewai_productfeature_planner.apis.prd.router.list_jobs", return_value=[]):
+        resp = client.get("/flow/runs")
     assert resp.status_code == 200
     body = resp.json()
     assert body["count"] == 2
     run_ids = {r["run_id"] for r in body["runs"]}
     assert run_ids == {"r1", "r2"}
+
+
+def test_list_runs_includes_mongodb_jobs(client):
+    """Should include MongoDB jobs not in memory."""
+    runs["mem-1"] = FlowRun(run_id="mem-1", flow_name="prd", status=FlowStatus.RUNNING)
+    db_jobs = [
+        {"job_id": "mem-1", "flow_name": "prd", "status": "running",
+         "queued_at": "2026-04-01T00:00:00"},
+        {"job_id": "db-2", "flow_name": "prd", "status": "completed",
+         "queued_at": "2026-03-31T00:00:00"},
+    ]
+    with patch("crewai_productfeature_planner.apis.prd.router.list_jobs", return_value=db_jobs):
+        resp = client.get("/flow/runs")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 2
+    run_ids = {r["run_id"] for r in body["runs"]}
+    assert run_ids == {"mem-1", "db-2"}
 
 
 # ── ErrorResponse model ──────────────────────────────────────

@@ -2,7 +2,10 @@
 
 Request:  Query params: page, page_size.
 Response: ProjectListResponse with paginated items.
-Database: Queries ``projectConfig`` collection sorted by ``created_at`` desc.
+Database: Queries ``projectConfig`` collection via Motor (async) sorted
+          by ``created_at`` desc.  Uses ``estimated_document_count()``
+          for unfiltered totals and a short-lived response cache
+          (5 s TTL) to eliminate redundant Atlas round-trips.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from crewai_productfeature_planner.apis._response_cache import response_cache
 from crewai_productfeature_planner.apis.projects.models import (
     ProjectItem,
     ProjectListResponse,
@@ -32,7 +36,7 @@ router = APIRouter()
 )
 async def list_projects(
     page: int = Query(default=1, ge=1, description="Page number (1-based)"),
-    page_size: int = Query(default=10, description="Items per page: 10, 25, or 50"),
+    page_size: int = Query(default=10, description="Items per page: 5, 6, 10, 25, or 50"),
     user: dict = Depends(require_sso_user),
 ) -> ProjectListResponse:
     """Return a paginated list of projects, newest first."""
@@ -43,29 +47,37 @@ async def list_projects(
             detail=f"page_size must be one of {sorted(VALID_PAGE_SIZES)}",
         )
 
+    # ── Check response cache ──────────────────────────────────
+    cache_params = dict(page=page, page_size=page_size)
+    cached = response_cache.get("projects", **cache_params)
+    if cached is not None:
+        logger.debug("[Projects] cache hit for page=%d size=%d", page, page_size)
+        return cached
+
+    # ── Motor async query ─────────────────────────────────────
+    from crewai_productfeature_planner.mongodb.async_client import get_async_db
     from crewai_productfeature_planner.mongodb.project_config.repository import (
         PROJECT_CONFIG_COLLECTION,
     )
-    from crewai_productfeature_planner.mongodb.client import get_db
 
-    db = get_db()
+    db = get_async_db()
     coll = db[PROJECT_CONFIG_COLLECTION]
 
-    total = coll.count_documents({})
-    total_pages = max(1, ceil(total / page_size))
     skip = (page - 1) * page_size
+    total = await coll.estimated_document_count()
+    cursor = coll.find({}, {"_id": 0}).sort(
+        "created_at", -1
+    ).skip(skip).limit(page_size)
+    docs = await cursor.to_list(length=page_size)
 
-    docs = list(
-        coll.find({}, {"_id": 0})
-        .sort("created_at", -1)
-        .skip(skip)
-        .limit(page_size)
-    )
+    total_pages = max(1, ceil(total / page_size))
 
-    return ProjectListResponse(
+    result = ProjectListResponse(
         items=[ProjectItem(**project_fields(d)) for d in docs],
         total=total,
         page=page,
         page_size=page_size,
         total_pages=total_pages,
     )
+    response_cache.put("projects", result, **cache_params)
+    return result

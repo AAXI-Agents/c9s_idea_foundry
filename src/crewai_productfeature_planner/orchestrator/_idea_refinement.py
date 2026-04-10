@@ -52,21 +52,35 @@ def build_idea_refinement_stage(flow: "PRDFlow") -> AgentStage:
         # Snapshot original idea *before* refinement
         flow.state.original_idea = flow.state.idea
         project_id = resolve_project_id(flow.state.run_id)
-        refined, history = refine_idea(
+
+        # Resolve options callback from the flow if available
+        options_cb = getattr(flow, "_idea_options_callback", None)
+
+        refined, history, options_history = refine_idea(
             flow.state.idea,
             run_id=flow.state.run_id,
             project_id=project_id,
+            options_callback=options_cb,
         )
         logger.info(
-            "[IdeaRefiner] Idea refined (%d → %d chars, %d iterations)",
+            "[IdeaRefiner] Idea refined (%d → %d chars, %d iterations, "
+            "%d option presentations)",
             len(flow.state.original_idea), len(refined), len(history),
+            len(options_history),
         )
-        return StageResult(output=refined, history=history)
+        return StageResult(
+            output=refined, history=history,
+            extra={"options_history": options_history},
+        )
 
     def _apply(result: StageResult) -> None:
         flow.state.idea = result.output
         flow.state.idea_refined = True
         flow.state.refinement_history = result.history
+        flow.state.refinement_options_history = (
+            result.extra.get("options_history", [])
+            if result.extra else []
+        )
 
     def _requires_approval() -> bool:
         # Skip the idea approval gate when requirements breakdown is

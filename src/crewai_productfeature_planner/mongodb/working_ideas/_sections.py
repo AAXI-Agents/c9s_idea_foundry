@@ -661,3 +661,34 @@ def save_section_summary_note(
             run_id, exc,
         )
         return False
+
+
+def save_refinement_options(
+    run_id: str,
+    options_history: list[dict],
+) -> bool:
+    """Persist the refinement options history to the workingIdeas document.
+
+    Each entry records when 3 alternatives were presented and which was
+    selected.
+    """
+    if not run_id or not options_history:
+        return False
+    now = _now_iso()
+    try:
+        result = _common.get_db()[WORKING_COLLECTION].update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    "refinement_options_history": options_history,
+                    "update_date": now,
+                },
+            },
+        )
+        return result.modified_count > 0
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to save refinement options for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False

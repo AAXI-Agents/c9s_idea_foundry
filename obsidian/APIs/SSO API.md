@@ -328,6 +328,9 @@ Refresh an expired access token using a refresh token.
 }
 ```
 
+> [!note] The server automatically injects `client_id` (from `SSO_CLIENT_ID`)
+> into the proxy payload so the SSO server can identify the application.
+
 ### Response
 
 ```json

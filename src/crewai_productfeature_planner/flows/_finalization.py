@@ -187,6 +187,35 @@ def finalize(flow: PRDFlow) -> str:
     # Mark working-idea document as completed
     mark_completed(flow.state.run_id)
 
+    # Save v1 version snapshot on first finalization
+    try:
+        from crewai_productfeature_planner.mongodb.product_requirements import (
+            get_current_version,
+            save_version_snapshot,
+        )
+        cur = get_current_version(flow.state.run_id)
+        new_version = cur + 1
+        sections_snapshot = {
+            s.key: s.content
+            for s in flow.state.draft.sections
+            if s.content
+        }
+        save_version_snapshot(
+            flow.state.run_id,
+            version=new_version,
+            sections_snapshot=sections_snapshot,
+            changelog_entry="PRD finalized" if new_version == 1 else "PRD updated",
+        )
+        logger.info(
+            "[Step 4] Saved version snapshot v%d for run_id=%s",
+            new_version, flow.state.run_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "[Step 4] Could not save version snapshot for run_id=%s",
+            flow.state.run_id, exc_info=True,
+        )
+
     # Generate project knowledge base page for the completed idea
     try:
         from crewai_productfeature_planner.scripts.project_knowledge import (

@@ -1,6 +1,6 @@
 """Tests for the Projects CRUD router."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,10 +9,10 @@ from crewai_productfeature_planner.apis import app
 
 _PKG = "crewai_productfeature_planner.apis.projects.router"
 _REPO = "crewai_productfeature_planner.mongodb.project_config.repository"
-_CLIENT = "crewai_productfeature_planner.mongodb.client"
+_ASYNC_CLIENT = "crewai_productfeature_planner.mongodb.async_client"
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
         yield c
@@ -38,21 +38,23 @@ def _make_project_doc(**overrides):
 
 class TestListProjects:
     def _mock_collection(self, docs, total=None):
-        """Build a mock MongoDB collection with find/count_documents."""
+        """Build a mock Motor-compatible async collection."""
         if total is None:
             total = len(docs)
         coll = MagicMock()
-        coll.count_documents.return_value = total
+        coll.count_documents = AsyncMock(return_value=total)
+        coll.estimated_document_count = AsyncMock(return_value=total)
         cursor = MagicMock()
         cursor.sort.return_value = cursor
         cursor.skip.return_value = cursor
-        cursor.limit.return_value = list(docs)
+        cursor.limit.return_value = cursor
+        cursor.to_list = AsyncMock(return_value=list(docs))
         coll.find.return_value = cursor
         return coll
 
     def test_empty_list(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects")
         assert resp.status_code == 200
@@ -65,7 +67,7 @@ class TestListProjects:
     def test_default_page_size(self, client):
         docs = [_make_project_doc(project_id=f"p{i}") for i in range(3)]
         coll = self._mock_collection(docs, total=3)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects")
         assert resp.status_code == 200
@@ -76,7 +78,7 @@ class TestListProjects:
 
     def test_page_size_25(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects?page_size=25")
         assert resp.status_code == 200
@@ -84,7 +86,7 @@ class TestListProjects:
 
     def test_page_size_50(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects?page_size=50")
         assert resp.status_code == 200
@@ -98,7 +100,7 @@ class TestListProjects:
     def test_pagination_math(self, client):
         """total_pages is ceil(total / page_size)."""
         coll = self._mock_collection([], total=26)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects?page=2&page_size=10")
         body = resp.json()

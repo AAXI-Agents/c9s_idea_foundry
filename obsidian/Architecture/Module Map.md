@@ -51,6 +51,7 @@ tags:
 | File / Dir | Purpose |
 |-----------|---------|
 | `__init__.py` | FastAPI app factory, router registration, lifespan hooks |
+| `_response_cache.py` | TTL-based in-memory cache for paginated list endpoints |
 | `shared.py` | FlowRun, FlowStatus, FlowCancelled, approval state, cancel_events |
 | `health/router.py` | Assembles health route modules |
 | `health/get_health.py` | GET /health — liveness probe |
@@ -108,7 +109,7 @@ tags:
 | `_idea_refinement.py` | `build_idea_refinement_stage(flow)` |
 | `_requirements.py` | `build_requirements_breakdown_stage(flow)` |
 | `_confluence.py` | `build_confluence_publish_stage(flow)` |
-| `_jira.py` | Phased Jira stages (skeleton, epics, subtasks) |
+| `_jira.py` | Phased Jira stages (skeleton, epics, subtasks, kanban tasks) |
 | `_pipelines.py` | `build_default_pipeline()`, `build_post_completion_pipeline()` |
 | `_post_completion.py` | Post-completion crew (Confluence + Jira) |
 | `_startup_review.py` | Startup PRD discovery and publishing |
@@ -118,7 +119,8 @@ tags:
 
 | File / Dir | Purpose |
 |-----------|---------|
-| `client.py` | `get_db()`, connection management |
+| `client.py` | `get_db()`, synchronous pymongo connection management |
+| `async_client.py` | `get_async_db()`, Motor async client for API endpoints |
 | `crew_jobs/` | Async job tracking (create, update, fail, reactivate) |
 | `working_ideas/` | In-progress PRD persistence (4 sub-modules) |
 | `product_requirements/` | Completed PRD + delivery records |
@@ -162,6 +164,7 @@ tags:
 | `knowledge_sources.py` | Knowledge file loading, caching, and builder factories (8 knowledge files: user_preference, project_architecture, prd_guidelines, idea_refinement, review_criteria, engineering_standards, ux_design_standards, agent_roles_and_workflow) |
 | `project_knowledge.py` | Obsidian-style project knowledge base builder (project pages, completed idea pages, agent context) |
 | `migrate_output_dirs.py` | One-time script: migrate output files to project-based directories (delete after use) |
+| `sso_bootstrap.sh` | One-time SSO app bootstrap: admin login, app approval, credential save, public key download |
 
 ## Components (`components/`)
 

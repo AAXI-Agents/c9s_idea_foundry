@@ -185,6 +185,14 @@ class PRDState(BaseModel):
         default_factory=list,
         description="Iteration history from idea refinement (each dict has 'iteration', 'idea', and optionally 'evaluation').",
     )
+    refinement_options_history: list[dict] = Field(
+        default_factory=list,
+        description=(
+            "Records when 3 alternative directions were presented and which "
+            "was selected. Each dict has 'iteration', 'trigger', 'options', "
+            "'selected'."
+        ),
+    )
     requirements_breakdown: str = Field(
         default="",
         description="Structured product requirements produced by the Requirements Breakdown agent.",
@@ -258,14 +266,11 @@ class PRDState(BaseModel):
         default="",
         description=(
             "Current Jira ticketing phase: '' (not started), "
-            "'skeleton_pending' (skeleton generated, awaiting approval), "
-            "'epics_stories_done' (Epics+Stories created, paused for review), "
-            "'subtasks_ready' (sub-tasks approved, ready for creation), "
-            "'subtasks_done' (sub-tasks created), "
-            "'review_ready' (ready for Staff Eng + QA Lead review sub-tasks), "
-            "'review_done' (review sub-tasks created), "
-            "'qa_test_ready' (ready for QA Engineer test sub-tasks), "
-            "'qa_test_done' (QA test sub-tasks created, fully complete)."
+            "Scrum: 'skeleton_pending' → 'skeleton_approved' → "
+            "'epics_stories_done' → 'subtasks_ready' → 'subtasks_done' → "
+            "'review_ready' → 'review_done' → 'qa_test_ready' → 'qa_test_done'. "
+            "Kanban: 'kanban_skeleton_pending' → 'kanban_skeleton_approved' → "
+            "'kanban_tasks_done'."
         ),
     )
     jira_review_output: str = Field(

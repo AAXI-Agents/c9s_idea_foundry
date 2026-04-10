@@ -43,6 +43,7 @@ tags:
 | `design_preferences` | `dict` | No | `{}` | UX/UI design style preferences: `{ style: str, brand_colors: [str], typography: str }` |
 | `review_checklists` | `list[dict]` | No | `[]` | Custom review checklists: `{ name: str, items: [str] }` |
 | `technical_profile` | `dict` | No | `{}` | Tech stack profile: `{ languages: [str], frameworks: [str], infra: [str] }` |
+| `board_style` | `string` | No | `"scrum"` | Jira board style: `"scrum"` (Epic/Story/Sub-task hierarchy) or `"kanban"` (flat Tasks with priority labels) |
 | `created_at` | `string (ISO-8601)` | **Yes** | *now* | When the project was created |
 | `updated_at` | `string (ISO-8601)` | **Yes** | *now* | Last modification timestamp |
 
@@ -67,6 +68,7 @@ Each element in the `slack_file_refs` array:
 |--------|------|---------|
 | `project_id` | Unique, Ascending | Primary key lookup |
 | `name` | Ascending | Lookup by project name |
+| `created_at DESC` | Single | Paginated list sorted by newest first (GET /projects) |
 
 ---
 

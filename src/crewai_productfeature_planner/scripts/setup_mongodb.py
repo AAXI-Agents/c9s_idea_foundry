@@ -71,6 +71,7 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("status", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("project_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("slack_channel", ASCENDING), ("status", ASCENDING)]),
+        IndexModel([("created_at", DESCENDING)]),
     ],
     PRODUCT_REQUIREMENTS_COLLECTION: [
         IndexModel([("run_id", ASCENDING)], unique=True),
@@ -79,6 +80,7 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
     PROJECT_CONFIG_COLLECTION: [
         IndexModel([("project_id", ASCENDING)], unique=True),
         IndexModel([("name", ASCENDING)]),
+        IndexModel([("created_at", DESCENDING)]),
     ],
     PROJECT_MEMORY_COLLECTION: [
         IndexModel([("project_id", ASCENDING)], unique=True),

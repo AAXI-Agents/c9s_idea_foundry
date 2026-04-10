@@ -1098,7 +1098,7 @@ def test_maybe_refine_idea_runs_with_credentials(monkeypatch):
 
     with patch(
         "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
-        return_value=("Enriched idea with details", [{"iteration": 1, "idea": "Enriched idea with details", "evaluation": "IDEA_READY"}]),
+        return_value=("Enriched idea with details", [{"iteration": 1, "idea": "Enriched idea with details", "evaluation": "IDEA_READY"}], []),
     ):
         flow._maybe_refine_idea()
 

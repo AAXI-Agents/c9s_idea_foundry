@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import threading as _threading_mod
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from crewai_productfeature_planner.apis.slack.blocks import product_list_blocks
+
+_OrigThread = _threading_mod.Thread
 
 
 def _product_action_blocks(blocks: list[dict]) -> list[dict]:
@@ -24,6 +27,21 @@ def _product_action_blocks(blocks: list[dict]) -> list[dict]:
 @pytest.fixture(autouse=True)
 def _set_dummy_keys(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
+
+
+class _SyncThread:
+    """Drop-in replacement for threading.Thread that joins immediately.
+
+    Wraps a *real* Thread but ``start()`` blocks until the target has
+    finished, eliminating the need for ``time.sleep()`` in tests.
+    """
+
+    def __init__(self, **kwargs):
+        self._thread = _OrigThread(**kwargs)
+
+    def start(self):
+        self._thread.start()
+        self._thread.join()
 
 
 # ---------------------------------------------------------------------------
@@ -1662,6 +1680,10 @@ class TestHandleConfluencePublishStateRestore:
                 "crewai_productfeature_planner.orchestrator._helpers._has_gemini_credentials",
                 return_value=True,
             ),
+            patch(
+                f"{_CONF_PLH}.threading.Thread",
+                _SyncThread,
+            ),
         ):
             from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
                 _handle_confluence_publish,
@@ -1672,8 +1694,6 @@ class TestHandleConfluencePublishStateRestore:
             _handle_confluence_publish(
                 "run-conf-1", 1, "U1", "C1", "T1", send, client,
             )
-            import time
-            time.sleep(0.5)  # allow background thread to finish
 
         assert captured["idea"] == "Test idea"
         assert captured["run_id"] == "run-conf-1"
@@ -1730,6 +1750,10 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             patch(
                 "crewai_productfeature_planner.flows._finalization.persist_post_completion",
             ),
+            patch(
+                f"{_CONF_PLH}.threading.Thread",
+                _SyncThread,
+            ),
         ):
             from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
                 _handle_confluence_publish,
@@ -1740,8 +1764,6 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             _handle_confluence_publish(
                 "run-hb-1", 1, "U1", "C1", "T1", send, client,
             )
-            import time
-            time.sleep(0.5)
 
         # progress_callback was passed to build_post_completion_crew
         assert captured_cb.get("cb") is not None
@@ -1794,6 +1816,10 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             patch(
                 "crewai_productfeature_planner.flows._finalization.persist_post_completion",
             ),
+            patch(
+                f"{_CONF_PLH}.threading.Thread",
+                _SyncThread,
+            ),
         ):
             from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
                 _handle_confluence_publish,
@@ -1804,8 +1830,6 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             _handle_confluence_publish(
                 "run-js-1", 1, "U1", "C1", "T1", send, client,
             )
-            import time
-            time.sleep(0.5)
 
         # Jira next-step button should be posted via client.chat_postMessage
         client.chat_postMessage.assert_called()
@@ -1863,6 +1887,10 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             patch(
                 "crewai_productfeature_planner.flows._finalization.persist_post_completion",
             ),
+            patch(
+                f"{_CONF_PLH}.threading.Thread",
+                _SyncThread,
+            ),
         ):
             from crewai_productfeature_planner.apis.slack.interactions_router._product_list_handler import (
                 _handle_confluence_publish,
@@ -1873,8 +1901,6 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             _handle_confluence_publish(
                 "run-nj-1", 1, "U1", "C1", "T1", send, client,
             )
-            import time
-            time.sleep(0.5)
 
         # Only the ack call, no Jira blocks call
         jira_calls = [
@@ -2184,18 +2210,14 @@ class TestHandleManualUxDesign:
         send_tool = MagicMock()
         client = MagicMock()
 
-        with patch(
-            f"{_WI_REPO}.find_run_any_status", return_value=fake_doc,
-        ) as mock_find:
-            # Run synchronously by calling the inner function
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=fake_doc),
+            patch(f"{_PLH_MOD}.threading.Thread", _SyncThread),
+        ):
             _handle_manual_ux_design(
                 "run-mux-02", 1, "U_TEST", "C_TEST", "ts789",
                 send_tool, client,
             )
-
-        # Give the background thread a moment to finish
-        import time
-        time.sleep(0.2)
 
         # Verify files_upload_v2 was called with markdown content
         client.files_upload_v2.assert_called_once()
@@ -2224,16 +2246,14 @@ class TestHandleManualUxDesign:
         send_tool = MagicMock()
         client = MagicMock()
 
-        with patch(
-            f"{_WI_REPO}.find_run_any_status", return_value=fake_doc,
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=fake_doc),
+            patch(f"{_PLH_MOD}.threading.Thread", _SyncThread),
         ):
             _handle_manual_ux_design(
                 "run-mux-03", 1, "U_TEST", "C_TEST", "ts999",
                 send_tool, client,
             )
-
-        import time
-        time.sleep(0.2)
 
         # Should warn about missing EPS, not upload a file
         client.files_upload_v2.assert_not_called()
@@ -2261,16 +2281,14 @@ class TestHandleManualUxDesign:
         send_tool = MagicMock()
         client = MagicMock()
 
-        with patch(
-            f"{_WI_REPO}.find_run_any_status", return_value=fake_doc,
+        with (
+            patch(f"{_WI_REPO}.find_run_any_status", return_value=fake_doc),
+            patch(f"{_PLH_MOD}.threading.Thread", _SyncThread),
         ):
             _handle_manual_ux_design(
                 "run-mux-04", 1, "U_TEST", "C_TEST", "ts000",
                 send_tool, client,
             )
-
-        import time
-        time.sleep(0.2)
 
         client.files_upload_v2.assert_called_once()
         content = client.files_upload_v2.call_args[1]["content"]

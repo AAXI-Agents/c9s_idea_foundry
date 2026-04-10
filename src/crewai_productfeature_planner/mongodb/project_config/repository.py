@@ -39,6 +39,7 @@ Document schema::
             "frameworks": [str],             # e.g. ["FastAPI", "React"]
             "infra":      [str],             # e.g. ["AWS", "Docker"]
         },
+        "board_style":               str,   # "scrum" (default) or "kanban"
         "created_at":                str,   # ISO-8601
         "updated_at":                str,   # ISO-8601
     }
@@ -82,6 +83,7 @@ def create_project(
     design_preferences: dict[str, Any] | None = None,
     review_checklists: list[dict[str, Any]] | None = None,
     technical_profile: dict[str, Any] | None = None,
+    board_style: str = "scrum",
 ) -> str | None:
     """Create a new project configuration document.
 
@@ -113,6 +115,7 @@ def create_project(
         "design_preferences": design_preferences or {},
         "review_checklists": review_checklists or [],
         "technical_profile": technical_profile or {},
+        "board_style": board_style,
         "created_at": now,
         "updated_at": now,
     }

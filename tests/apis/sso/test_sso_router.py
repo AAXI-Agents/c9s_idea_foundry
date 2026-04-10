@@ -219,6 +219,85 @@ class TestSSOUserinfo:
         resp = client.get("/auth/sso/userinfo")
         assert resp.status_code == 401
 
+    def test_valid_token_returns_user_profile(self, client):
+        """Should return user profile when local JWT decode succeeds."""
+        claims = {
+            "sub": "user-123",
+            "email": "test@example.com",
+            "roles": ["USER"],
+            "enterprise_id": "ent-1",
+            "organization_id": "org-1",
+            "type": "access",
+        }
+        with patch(
+            "crewai_productfeature_planner.apis.sso.router._decode_jwt_locally",
+            return_value=claims,
+        ):
+            resp = client.get(
+                "/auth/sso/userinfo",
+                headers={"Authorization": "Bearer valid-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["user_id"] == "user-123"
+        assert body["email"] == "test@example.com"
+        assert body["roles"] == ["USER"]
+
+    def test_expired_token_returns_401(self, client):
+        """Should return 401 when both local decode and introspection fail."""
+        with (
+            patch(
+                "crewai_productfeature_planner.apis.sso.router._decode_jwt_locally",
+                return_value=None,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.sso.router._introspect_remotely",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            resp = client.get(
+                "/auth/sso/userinfo",
+                headers={"Authorization": "Bearer expired-token"},
+            )
+        assert resp.status_code == 401
+
+    def test_introspection_fallback_works(self, client):
+        """Should fall back to remote introspection when local decode fails."""
+        introspection_result = {
+            "active": True,
+            "sub": "user-456",
+            "email": "fallback@example.com",
+            "roles": ["ADMIN"],
+            "enterprise_id": "",
+            "organization_id": "",
+        }
+        with (
+            patch(
+                "crewai_productfeature_planner.apis.sso.router._decode_jwt_locally",
+                return_value=None,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.sso.router._introspect_remotely",
+                new_callable=AsyncMock,
+                return_value=introspection_result,
+            ),
+        ):
+            resp = client.get(
+                "/auth/sso/userinfo",
+                headers={"Authorization": "Bearer some-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["user_id"] == "user-456"
+
+    def test_malformed_bearer_returns_401(self, client):
+        """Should return 401 when Authorization header is present but not Bearer."""
+        resp = client.get(
+            "/auth/sso/userinfo",
+            headers={"Authorization": "Basic dXNlcjpwYXNz"},
+        )
+        assert resp.status_code == 401
+
 
 # ── POST /auth/sso/register ──────────────────────────────────
 
@@ -296,13 +375,18 @@ class TestSSOTokenRefresh:
         assert resp.status_code == 400
 
     def test_proxies_to_sso(self, client, monkeypatch):
-        """Should proxy refresh to SSO server."""
+        """Should proxy refresh to SSO server with client_id."""
         monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
+        monkeypatch.setenv("SSO_CLIENT_ID", "test-client")
 
-        with _mock_proxy({"access_token": "new-tok"}):
+        with _mock_proxy({"access_token": "new-tok"}) as mock_post:
             resp = client.post("/auth/sso/token/refresh", json={"refresh_token": "rt-123"})
             assert resp.status_code == 200
             assert resp.json()["access_token"] == "new-tok"
+            # Verify client_id is injected into the proxy payload
+            call_args = mock_post.call_args
+            assert call_args[1]["json"]["client_id"] == "test-client"
+            assert call_args[1]["json"]["refresh_token"] == "rt-123"
 
 
 # ── POST /auth/sso/reauth ────────────────────────────────────
@@ -392,3 +476,394 @@ class TestSSOLogout:
                 headers={"Authorization": "Bearer test-token"},
             )
             assert resp.status_code == 200
+
+
+# ── _decode_jwt_locally with PyJWT ────────────────────────────
+
+
+class TestDecodeJwtLocally:
+    """Tests for _decode_jwt_locally using PyJWT."""
+
+    def _make_token(self, claims: dict, private_key):
+        """Create a signed RS256 JWT for testing."""
+        import jwt as pyjwt
+
+        return pyjwt.encode(claims, private_key, algorithm="RS256")
+
+    @pytest.fixture()
+    def rsa_keys(self):
+        """Generate an RSA key pair for testing."""
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives import serialization
+
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+        )
+        public_pem = private_key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode()
+        private_pem = private_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
+        return private_pem, public_pem
+
+    def test_valid_access_token_decoded(self, rsa_keys, monkeypatch, tmp_path):
+        """Should decode a valid RS256 access token."""
+        import time
+
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _decode_jwt_locally,
+            _sso_public_key,
+        )
+
+        private_pem, public_pem = rsa_keys
+        key_file = tmp_path / "pub.pem"
+        key_file.write_text(public_pem)
+        monkeypatch.setenv("SSO_JWT_PUBLIC_KEY_PATH", str(key_file))
+        monkeypatch.setenv("SSO_ISSUER", "c9s-sso")
+        _sso_public_key.cache_clear()
+
+        token = self._make_token(
+            {
+                "sub": "u1",
+                "email": "test@x.com",
+                "roles": ["USER"],
+                "type": "access",
+                "iss": "c9s-sso",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 900,
+            },
+            private_pem,
+        )
+
+        result = _decode_jwt_locally(token)
+        assert result is not None
+        assert result["sub"] == "u1"
+        assert result["email"] == "test@x.com"
+        _sso_public_key.cache_clear()
+
+    def test_refresh_token_rejected(self, rsa_keys, monkeypatch, tmp_path):
+        """Should reject tokens with type != access."""
+        import time
+
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _decode_jwt_locally,
+            _sso_public_key,
+        )
+
+        private_pem, public_pem = rsa_keys
+        key_file = tmp_path / "pub.pem"
+        key_file.write_text(public_pem)
+        monkeypatch.setenv("SSO_JWT_PUBLIC_KEY_PATH", str(key_file))
+        monkeypatch.setenv("SSO_ISSUER", "c9s-sso")
+        _sso_public_key.cache_clear()
+
+        token = self._make_token(
+            {
+                "sub": "u1",
+                "type": "refresh",
+                "iss": "c9s-sso",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 900,
+            },
+            private_pem,
+        )
+
+        result = _decode_jwt_locally(token)
+        assert result is None
+        _sso_public_key.cache_clear()
+
+    def test_expired_token_returns_none(self, rsa_keys, monkeypatch, tmp_path):
+        """Should return None for expired tokens."""
+        import time
+
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _decode_jwt_locally,
+            _sso_public_key,
+        )
+
+        private_pem, public_pem = rsa_keys
+        key_file = tmp_path / "pub.pem"
+        key_file.write_text(public_pem)
+        monkeypatch.setenv("SSO_JWT_PUBLIC_KEY_PATH", str(key_file))
+        monkeypatch.setenv("SSO_ISSUER", "c9s-sso")
+        _sso_public_key.cache_clear()
+
+        token = self._make_token(
+            {
+                "sub": "u1",
+                "type": "access",
+                "iss": "c9s-sso",
+                "iat": int(time.time()) - 1000,
+                "exp": int(time.time()) - 100,
+            },
+            private_pem,
+        )
+
+        result = _decode_jwt_locally(token)
+        assert result is None
+        _sso_public_key.cache_clear()
+
+    def test_wrong_issuer_returns_none(self, rsa_keys, monkeypatch, tmp_path):
+        """Should return None when issuer doesn't match."""
+        import time
+
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _decode_jwt_locally,
+            _sso_public_key,
+        )
+
+        private_pem, public_pem = rsa_keys
+        key_file = tmp_path / "pub.pem"
+        key_file.write_text(public_pem)
+        monkeypatch.setenv("SSO_JWT_PUBLIC_KEY_PATH", str(key_file))
+        monkeypatch.setenv("SSO_ISSUER", "c9s-sso")
+        _sso_public_key.cache_clear()
+
+        token = self._make_token(
+            {
+                "sub": "u1",
+                "type": "access",
+                "iss": "wrong-issuer",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 900,
+            },
+            private_pem,
+        )
+
+        result = _decode_jwt_locally(token)
+        assert result is None
+        _sso_public_key.cache_clear()
+
+    def test_no_public_key_returns_none(self, monkeypatch):
+        """Should return None when no public key is configured."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _decode_jwt_locally,
+            _sso_public_key,
+        )
+
+        monkeypatch.delenv("SSO_JWT_PUBLIC_KEY_PATH", raising=False)
+        _sso_public_key.cache_clear()
+
+        result = _decode_jwt_locally("some.jwt.token")
+        assert result is None
+        _sso_public_key.cache_clear()
+
+
+# ── Login → Userinfo integration ──────────────────────────────
+
+
+class TestLoginToUserinfoFlow:
+    """End-to-end test: login → use token → get userinfo."""
+
+    def test_login_then_userinfo(self, client, monkeypatch):
+        """Login should return tokens; userinfo should decode them."""
+        tokens = {
+            "access_token": "fresh-jwt",
+            "refresh_token": "rt-1",
+            "token_type": "Bearer",
+            "expires_in": 900,
+        }
+        user_claims = {
+            "sub": "user-789",
+            "email": "minh@pascalsoftware.com",
+            "roles": ["USER"],
+            "enterprise_id": "ent-1",
+            "organization_id": "org-1",
+            "type": "access",
+        }
+
+        # Step 1: login → get tokens
+        with _mock_proxy(tokens):
+            login_resp = client.post(
+                "/auth/sso/login",
+                json={"email": "minh@pascalsoftware.com", "password": "pw"},
+            )
+        assert login_resp.status_code == 200
+        access_token = login_resp.json()["access_token"]
+
+        # Step 2: use token → get userinfo
+        with patch(
+            "crewai_productfeature_planner.apis.sso.router._decode_jwt_locally",
+            return_value=user_claims,
+        ):
+            info_resp = client.get(
+                "/auth/sso/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+        assert info_resp.status_code == 200
+        body = info_resp.json()
+        assert body["user_id"] == "user-789"
+        assert body["email"] == "minh@pascalsoftware.com"
+
+
+# ── Introspection client_id & key cache ──────────────────────
+
+
+class TestIntrospectClientId:
+    """Verify that _introspect_remotely sends client_id."""
+
+    @pytest.mark.asyncio
+    async def test_introspect_includes_client_id_and_auth_header(self):
+        """Remote introspection should send client_id in body and
+        Authorization: Bearer <secret> header (RFC 7662)."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _introspect_remotely,
+        )
+
+        captured_payload: dict = {}
+        captured_headers: dict = {}
+
+        async def _fake_post(url, *, json=None, headers=None):
+            captured_payload.update(json or {})
+            captured_headers.update(headers or {})
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"active": True, "sub": "u1"}
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=_fake_post)
+        mock_client.is_closed = False
+
+        with (
+            patch(
+                "crewai_productfeature_planner.apis.sso_auth._get_sso_http_client",
+                return_value=mock_client,
+            ),
+            patch.dict(
+                "os.environ",
+                {
+                    "SSO_CLIENT_ID": "test-app-123",
+                    "SSO_CLIENT_SECRET": "s3cret",
+                    "SSO_BASE_URL": "http://sso",
+                },
+            ),
+        ):
+            result = await _introspect_remotely("tok-abc")
+
+        assert result is not None
+        assert result["active"] is True
+        assert captured_payload.get("client_id") == "test-app-123"
+        assert captured_payload.get("token") == "tok-abc"
+        assert captured_headers.get("Authorization") == "Bearer s3cret"
+
+
+class TestFetchAndSavePublicKey:
+    """Verify _fetch_and_save_public_key downloads and saves the key."""
+
+    @pytest.mark.asyncio
+    async def test_fetches_saves_and_clears_cache(self, tmp_path):
+        """Should download key from SSO, save to disk, and clear LRU cache."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _fetch_and_save_public_key,
+            _sso_public_key,
+        )
+
+        key_file = tmp_path / "pub.pem"
+        key_file.write_text("old-key")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"public_key": "-----BEGIN PUBLIC KEY-----\nnew-key\n-----END PUBLIC KEY-----"}
+
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.is_closed = False
+
+        _sso_public_key.cache_clear()
+
+        with (
+            patch(
+                "crewai_productfeature_planner.apis.sso_auth._get_sso_http_client",
+                return_value=mock_client,
+            ),
+            patch.dict(
+                "os.environ",
+                {
+                    "SSO_BASE_URL": "http://sso",
+                    "SSO_JWT_PUBLIC_KEY_PATH": str(key_file),
+                },
+            ),
+        ):
+            result = await _fetch_and_save_public_key()
+
+        assert result is not None
+        assert "new-key" in result
+        assert "new-key" in key_file.read_text()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_key_path(self):
+        """Should return None when SSO_JWT_PUBLIC_KEY_PATH is not set."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _fetch_and_save_public_key,
+        )
+
+        with patch.dict("os.environ", {"SSO_JWT_PUBLIC_KEY_PATH": ""}):
+            result = await _fetch_and_save_public_key()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_non_200(self, tmp_path):
+        """Should return None when SSO server returns non-200."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _fetch_and_save_public_key,
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.is_closed = False
+
+        with (
+            patch(
+                "crewai_productfeature_planner.apis.sso_auth._get_sso_http_client",
+                return_value=mock_client,
+            ),
+            patch.dict(
+                "os.environ",
+                {
+                    "SSO_BASE_URL": "http://sso",
+                    "SSO_JWT_PUBLIC_KEY_PATH": str(tmp_path / "k.pem"),
+                },
+            ),
+        ):
+            result = await _fetch_and_save_public_key()
+        assert result is None
+
+
+class TestPublicKeyCacheClear:
+    """Verify cache is cleared on InvalidSignatureError."""
+
+    def test_cache_cleared_on_signature_error(self):
+        """_decode_jwt_locally should clear cache when signature fails."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _decode_jwt_locally,
+            _sso_public_key,
+        )
+
+        # Prime the cache
+        _sso_public_key.cache_clear()
+        with patch.dict("os.environ", {"SSO_JWT_PUBLIC_KEY_PATH": ""}):
+            _sso_public_key()  # returns None, cached
+
+        # Verify initial state: cache has 1 entry
+        assert _sso_public_key.cache_info().currsize == 1
+
+        # Call with a fake key that will trigger InvalidSignatureError
+        with (
+            patch(
+                "crewai_productfeature_planner.apis.sso_auth._sso_public_key",
+                wraps=_sso_public_key,
+            ),
+            patch.dict("os.environ", {"SSO_JWT_PUBLIC_KEY_PATH": ""}),
+        ):
+            # Calling with no key returns None immediately (no error)
+            result = _decode_jwt_locally("fake.jwt.token")
+            assert result is None

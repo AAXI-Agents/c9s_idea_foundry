@@ -157,6 +157,22 @@ def _reset_jira_context(jira_token: object) -> None:
         _project_key_ctx.reset(jira_token)
 
 
+def _get_board_style(flow: "PRDFlow") -> str:
+    """Return the project board style (``scrum`` or ``kanban``).
+
+    Reads from ``projectConfig.board_style`` via MongoDB.  Defaults to
+    ``scrum`` when no project is linked or the field is missing.
+    """
+    try:
+        from crewai_productfeature_planner.mongodb.project_config import (
+            get_project_for_run,
+        )
+        pc = get_project_for_run(flow.state.run_id) or {}
+        return pc.get("board_style", "scrum")
+    except Exception:  # noqa: BLE001
+        return "scrum"
+
+
 # =====================================================================
 # Phase 1 — Skeleton generation (no tickets created)
 # =====================================================================
@@ -195,6 +211,7 @@ def build_jira_skeleton_stage(
         )
 
         jira_token, project_id, task_configs = _setup_jira_context(flow)
+        board_style = _get_board_style(flow)
 
         try:
             pm_agent = create_jira_product_manager_agent(project_id=project_id, run_id=flow.state.run_id)
@@ -210,14 +227,22 @@ def build_jira_skeleton_stage(
             func_reqs = func_req_section.content if func_req_section else ""
             additional_ctx = _build_jira_context(flow)
 
+            # Choose the skeleton task based on board style
+            if board_style == "kanban":
+                task_key = "generate_kanban_skeleton_task"
+                step_label = "jira_generate_kanban_skeleton"
+            else:
+                task_key = "generate_jira_skeleton_task"
+                step_label = "jira_generate_skeleton"
+
             skeleton_task = Task(
-                description=task_configs["generate_jira_skeleton_task"]["description"].format(
+                description=task_configs[task_key]["description"].format(
                     page_title=page_title,
                     executive_summary=exec_summary,
                     functional_requirements=func_reqs,
                     additional_prd_context=additional_ctx,
                 ),
-                expected_output=task_configs["generate_jira_skeleton_task"]["expected_output"],
+                expected_output=task_configs[task_key]["expected_output"],
                 agent=pm_agent,
             )
             crew = Crew(
@@ -227,7 +252,7 @@ def build_jira_skeleton_stage(
                 verbose=is_verbose(),
             )
             result = crew_kickoff_with_retry(
-                crew, step_label="jira_generate_skeleton",
+                crew, step_label=step_label,
             )
             return StageResult(output=result.raw)
         finally:
@@ -235,8 +260,12 @@ def build_jira_skeleton_stage(
 
     def _apply(result: StageResult) -> None:
         flow.state.jira_skeleton = result.output
-        flow.state.jira_phase = "skeleton_pending"
-        _persist_jira_phase(flow.state.run_id, "skeleton_pending")
+        board_style = _get_board_style(flow)
+        phase = ("kanban_skeleton_pending"
+                 if board_style == "kanban"
+                 else "skeleton_pending")
+        flow.state.jira_phase = phase
+        _persist_jira_phase(flow.state.run_id, phase)
         # Persist skeleton to MongoDB so it survives process restarts
         # and can be shown again when the user resumes approval.
         try:
@@ -282,6 +311,9 @@ def build_jira_epics_stories_stage(
         )
         if reason:
             logger.info("[JiraEpicsStories] Skipping — %s", reason)
+            return True
+        if _get_board_style(flow) == "kanban":
+            logger.info("[JiraEpicsStories] Skipping — kanban board style")
             return True
         if not flow.state.jira_skeleton:
             logger.info("[JiraEpicsStories] Skipping — no approved skeleton")
@@ -900,24 +932,165 @@ def build_jira_qa_test_subtasks_stage(
 
 
 # =====================================================================
+# Kanban Phase 2 — Create flat Tasks (no hierarchy)
+# =====================================================================
+
+
+def build_jira_kanban_tasks_stage(
+    flow: "PRDFlow", *, require_confluence: bool = True,
+) -> AgentStage:
+    """Create an :class:`AgentStage` that creates flat Jira Tasks
+    from the approved kanban skeleton (no Epics, Stories, or Sub-tasks).
+    """
+
+    def _should_skip() -> bool:
+        reason = _check_jira_prerequisites(
+            flow, require_confluence=require_confluence,
+        )
+        if reason:
+            logger.info("[JiraKanbanTasks] Skipping — %s", reason)
+            return True
+        if _get_board_style(flow) != "kanban":
+            logger.info("[JiraKanbanTasks] Skipping — not kanban board style")
+            return True
+        if not flow.state.jira_skeleton:
+            logger.info("[JiraKanbanTasks] Skipping — no approved skeleton")
+            return True
+        if flow.state.jira_phase == "kanban_skeleton_pending":
+            logger.info("[JiraKanbanTasks] Skipping — skeleton not yet approved")
+            return True
+        if flow.state.jira_phase in ("kanban_tasks_done",):
+            logger.info("[JiraKanbanTasks] Skipping — already created")
+            return True
+        return False
+
+    def _run() -> StageResult:
+        from crewai import Crew, Process, Task
+
+        from crewai_productfeature_planner.agents.orchestrator.agent import (
+            create_jira_product_manager_agent,
+        )
+        from crewai_productfeature_planner.scripts.logging_config import is_verbose
+        from crewai_productfeature_planner.scripts.retry import (
+            crew_kickoff_with_retry,
+        )
+
+        jira_token, project_id, task_configs = _setup_jira_context(flow)
+
+        try:
+            pm_agent = create_jira_product_manager_agent(
+                project_id=project_id, run_id=flow.state.run_id,
+            )
+
+            page_title = make_page_title(flow.state.idea)
+            func_req_section = flow.state.draft.get_section(
+                "functional_requirements",
+            )
+            func_reqs = func_req_section.content if func_req_section else ""
+            additional_ctx = _build_jira_context(flow)
+
+            kanban_task = Task(
+                description=task_configs[
+                    "create_kanban_tasks_task"
+                ]["description"].format(
+                    kanban_skeleton=flow.state.jira_skeleton,
+                    page_title=page_title,
+                    functional_requirements=func_reqs,
+                    additional_prd_context=additional_ctx,
+                    confluence_url=flow.state.confluence_url,
+                    run_id=flow.state.run_id,
+                ),
+                expected_output=task_configs[
+                    "create_kanban_tasks_task"
+                ]["expected_output"],
+                agent=pm_agent,
+            )
+            crew = Crew(
+                agents=[pm_agent],
+                tasks=[kanban_task],
+                process=Process.sequential,
+                verbose=is_verbose(),
+            )
+            result = crew_kickoff_with_retry(
+                crew, step_label="jira_create_kanban_tasks",
+            )
+            return StageResult(output=result.raw)
+        finally:
+            _reset_jira_context(jira_token)
+
+    def _apply(result: StageResult) -> None:
+        flow.state.jira_output = result.output
+        flow.state.jira_phase = "kanban_tasks_done"
+        _persist_jira_phase(flow.state.run_id, "kanban_tasks_done")
+        logger.info(
+            "[JiraKanbanTasks] Kanban tasks created (%d chars)",
+            len(result.output),
+        )
+
+    return AgentStage(
+        name="jira_kanban_tasks",
+        description=(
+            "Create flat Jira Tasks from the approved kanban skeleton "
+            "(no Epic/Story/Sub-task hierarchy)"
+        ),
+        run=_run,
+        should_skip=_should_skip,
+        apply=_apply,
+    )
+
+
+# =====================================================================
 # Legacy — run all Jira phases sequentially (auto-approve mode)
 # =====================================================================
 
 
 def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
-    """Backward-compatible stage that runs all five Jira phases
-    sequentially in auto-approve mode (no user approval gates).
+    """Backward-compatible stage that runs all Jira phases sequentially
+    in auto-approve mode (no user approval gates).
+
+    For **scrum** projects, runs skeleton → epics/stories → sub-tasks →
+    review → QA test (5 phases).
+
+    For **kanban** projects, runs skeleton → kanban tasks (2 phases).
 
     This is used by :func:`build_post_completion_pipeline` and startup
     delivery flows where interactive approval is not available.
     """
+
+    def _run_kanban(flow_: "PRDFlow") -> StageResult:
+        """Run the simplified kanban pipeline (2 phases)."""
+        from crewai_productfeature_planner.orchestrator.orchestrator import (
+            AgentOrchestrator,
+        )
+
+        skeleton = build_jira_skeleton_stage(flow_)
+        kanban_tasks = build_jira_kanban_tasks_stage(flow_)
+
+        # Auto-approve skeleton so kanban tasks proceed
+        orig_apply = skeleton.apply
+
+        def _auto_approve_apply(result: StageResult) -> None:
+            orig_apply(result)
+            flow_.state.jira_phase = "kanban_skeleton_approved"
+            _persist_jira_phase(flow_.state.run_id, "kanban_skeleton_approved")
+
+        skeleton.apply = _auto_approve_apply
+
+        mini = AgentOrchestrator(stages=[skeleton, kanban_tasks])
+        mini.run_pipeline()
+
+        return StageResult(output=flow_.state.jira_output or "")
 
     def _should_skip() -> bool:
         reason = _check_jira_prerequisites(flow)
         if reason:
             logger.info("[JiraTicketing] Skipping — %s", reason)
             return True
-        if flow.state.jira_phase == "qa_test_done":
+        board_style = _get_board_style(flow)
+        done_phase = ("kanban_tasks_done"
+                      if board_style == "kanban"
+                      else "qa_test_done")
+        if flow.state.jira_phase == done_phase:
             logger.info("[JiraTicketing] Skipping — already completed")
             return True
         return False
@@ -927,7 +1100,12 @@ def build_jira_ticketing_stage(flow: "PRDFlow") -> AgentStage:
             AgentOrchestrator,
         )
 
-        # Build a mini pipeline of all five phases, auto-approving
+        board_style = _get_board_style(flow)
+
+        if board_style == "kanban":
+            return _run_kanban(flow)
+
+        # Build a mini pipeline of all five scrum phases, auto-approving
         # between each so the next phase proceeds.
         skeleton = build_jira_skeleton_stage(flow)
         epics_stories = build_jira_epics_stories_stage(flow)

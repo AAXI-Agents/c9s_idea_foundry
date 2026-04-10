@@ -220,8 +220,10 @@ def test_refine_idea_stops_at_idea_ready(monkeypatch):
         return result
 
     with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
-               side_effect=mock_kickoff):
-        result, history = refine_idea("Build a dashboard")
+               side_effect=mock_kickoff), \
+         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+               side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
+        result, history, _ = refine_idea("Build a dashboard")
 
     assert "Refined idea version 3" in result
     # 1 merged crew kickoff per iteration = 3 calls
@@ -251,8 +253,10 @@ def test_refine_idea_runs_max_iterations(monkeypatch):
         return result
 
     with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
-               side_effect=mock_kickoff):
-        result, history = refine_idea("Build a feature")
+               side_effect=mock_kickoff), \
+         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+               side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
+        result, history, _ = refine_idea("Build a feature")
 
     # 1 merged crew kickoff per iteration = 4 calls (max 4 iterations)
     assert call_count == 4
@@ -278,8 +282,10 @@ def test_refine_idea_ignores_ready_before_min(monkeypatch):
         return result
 
     with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
-               side_effect=mock_kickoff):
-        result, history = refine_idea("Some idea")
+               side_effect=mock_kickoff), \
+         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+               side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
+        result, history, _ = refine_idea("Some idea")
 
     # Should run exactly 3 iterations (min), then stop at IDEA_READY on iter 3
     # 1 merged crew kickoff per iteration = 3 calls
@@ -302,7 +308,7 @@ def test_refine_idea_returns_tuple(monkeypatch):
 
     with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
-        result, history = refine_idea("Raw idea")
+        result, history, _ = refine_idea("Raw idea")
 
     assert isinstance(result, str)
     assert len(result) > 0
@@ -335,7 +341,7 @@ def test_refine_idea_saves_iterations_with_run_id(monkeypatch):
          patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db") as mock_db:
         mock_collection = MagicMock()
         mock_db.return_value = {"workingIdeas": mock_collection}
-        result, history = refine_idea("Raw idea", run_id="test_run_123")
+        result, history, _ = refine_idea("Raw idea", run_id="test_run_123")
 
     assert mock_collection.update_one.call_count == 2
     # Verify first saved doc uses upsert with correct run_id filter
@@ -368,3 +374,155 @@ def test_refine_idea_no_run_id_skips_save(monkeypatch):
         refine_idea("Raw idea")  # no run_id
 
     mock_collection.update_one.assert_not_called()
+
+
+# ── Score parsing & direction change helpers ─────────────────
+
+from crewai_productfeature_planner.agents.idea_refiner.agent import (
+    parse_evaluation_scores,
+    compute_average_confidence,
+    detect_direction_change,
+    _parse_options,
+)
+
+
+class TestParseEvaluationScores:
+
+    def test_parses_scores_from_evaluation(self):
+        text = "Target audience clarity: 4/5\nProblem definition: 3/5\nSolution: 5/5"
+        assert parse_evaluation_scores(text) == [4, 3, 5]
+
+    def test_empty_when_no_scores(self):
+        assert parse_evaluation_scores("This idea is great.") == []
+
+    def test_handles_scores_without_slash(self):
+        text = "Clarity: 2 5  Problem: 4 5"
+        scores = parse_evaluation_scores(text)
+        assert 2 in scores
+        assert 4 in scores
+
+
+class TestComputeAverageConfidence:
+
+    def test_average_of_scores(self):
+        text = "1/5 2/5 3/5 4/5 5/5"
+        assert compute_average_confidence(text) == 3.0
+
+    def test_returns_5_when_unparseable(self):
+        assert compute_average_confidence("No scores here") == 5.0
+
+
+class TestDetectDirectionChange:
+
+    def test_no_change_with_similar_text(self):
+        a = "Build a dashboard for enterprise analytics"
+        b = "Build a powerful dashboard for enterprise analytics reporting"
+        assert detect_direction_change(b, a) is False
+
+    def test_change_with_completely_different_text(self):
+        a = "Build a dashboard for enterprise analytics"
+        b = "Create a mobile game for children with puzzles"
+        assert detect_direction_change(b, a) is True
+
+    def test_no_change_when_previous_is_empty(self):
+        assert detect_direction_change("any text", "") is False
+
+
+class TestParseOptions:
+
+    def test_parses_three_options(self):
+        text = "OPTION 1: Enterprise\nBig corps.\n\nOPTION 2: Consumer\nSmall users.\n\nOPTION 3: API\nDevelopers."
+        opts = _parse_options(text, "fallback")
+        assert len(opts) == 3
+        assert "Enterprise" in opts[0]
+        assert "Consumer" in opts[1]
+        assert "API" in opts[2]
+
+    def test_pads_missing_options_with_fallback(self):
+        text = "OPTION 1: Only one"
+        opts = _parse_options(text, "fallback idea")
+        assert len(opts) == 3
+        assert opts[1] == "fallback idea"
+        assert opts[2] == "fallback idea"
+
+    def test_handles_no_options(self):
+        opts = _parse_options("Just some text", "fallback")
+        assert len(opts) == 3
+        assert all(o == "fallback" for o in opts)
+
+
+# ── 3-Options with callback ─────────────────────────────────
+
+def test_refine_idea_calls_options_callback(monkeypatch):
+    """When options_callback is provided, it should be called at the trigger point."""
+    monkeypatch.setenv("IDEA_REFINER_MIN_ITERATIONS", "3")
+    monkeypatch.setenv("IDEA_REFINER_MAX_ITERATIONS", "5")
+
+    callback_calls = []
+
+    def mock_options_cb(options, run_id, iteration, trigger):
+        callback_calls.append({
+            "options": options, "run_id": run_id,
+            "iteration": iteration, "trigger": trigger,
+        })
+        return 1  # Select option 2
+
+    call_count = 0
+
+    def mock_kickoff(crew, step_label=""):
+        nonlocal call_count
+        call_count += 1
+        refine_output = MagicMock()
+        refine_output.raw = f"Refined v{call_count}"
+        crew.tasks[0].output = refine_output
+        result = MagicMock()
+        if call_count >= 3:
+            result.raw = "4/5 4/5 4/5 4/5 4/5 IDEA_READY"
+        else:
+            result.raw = "4/5 4/5 4/5 4/5 4/5 NEEDS_MORE"
+        return result
+
+    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+               side_effect=mock_kickoff), \
+         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+               side_effect=lambda agent, idea, configs: [idea, "alt_direction_B", "alt_direction_C"]):
+        result, history, opts_history = refine_idea(
+            "Build a dashboard",
+            options_callback=mock_options_cb,
+        )
+
+    # Callback should have been called once (at iteration 3)
+    assert len(callback_calls) == 1
+    assert callback_calls[0]["iteration"] == 3
+    assert callback_calls[0]["trigger"] == "auto_cycles_complete"
+    assert len(callback_calls[0]["options"]) == 3
+
+    # Options history should be recorded
+    assert len(opts_history) == 1
+    assert opts_history[0]["selected"] == 1
+
+    # Result should use the selected option (alt_direction_B)
+    assert result == "alt_direction_B"
+
+
+def test_refine_idea_options_auto_select_without_callback(monkeypatch):
+    """Without callback, auto-selects option 0."""
+    monkeypatch.setenv("IDEA_REFINER_MIN_ITERATIONS", "3")
+    monkeypatch.setenv("IDEA_REFINER_MAX_ITERATIONS", "3")
+
+    def mock_kickoff(crew, step_label=""):
+        refine_output = MagicMock()
+        refine_output.raw = "Refined idea"
+        crew.tasks[0].output = refine_output
+        result = MagicMock()
+        result.raw = "4/5 4/5 4/5 4/5 4/5 IDEA_READY"
+        return result
+
+    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+               side_effect=mock_kickoff), \
+         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+               side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
+        result, history, opts_history = refine_idea("Build something")
+
+    assert len(opts_history) == 1
+    assert opts_history[0]["selected"] == 0

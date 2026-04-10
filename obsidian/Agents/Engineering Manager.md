@@ -51,7 +51,7 @@ Produce comprehensive Engineering Plan covering:
 - **Deployment & Rollout**
 - **Observability**
 
-**Expected output**: Professional markdown with ASCII diagrams, architecture diagrams, phased implementation plan, data models, error handling, test strategy, security analysis, deployment plan, observability requirements.
+**Expected output**: Professional markdown using **progressive disclosure** format — each section starts with a concise high-level summary (for non-technical readers), followed by a **Technical Deep-Dive** sub-section with full ASCII diagrams, architecture details, and specifications.
 
 ---
 

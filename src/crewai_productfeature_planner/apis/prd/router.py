@@ -32,6 +32,7 @@ from crewai_productfeature_planner.apis.prd._route_actions import (
     _ERROR_RESPONSES,
     action_router,
 )
+from crewai_productfeature_planner.apis.prd.service import restore_prd_state
 from crewai_productfeature_planner.apis.prd._route_timeline import (
     router as timeline_router,
 )
@@ -49,6 +50,109 @@ router.include_router(action_router)
 router.include_router(timeline_router)
 router.include_router(versions_router)
 router.include_router(ux_design_router)
+
+
+# ── Helpers ───────────────────────────────────────────────────
+
+
+def _build_run_response(run) -> dict:
+    """Build a PRDRunStatusResponse dict from an in-memory FlowRun."""
+    draft = run.current_draft
+    approved_count = sum(1 for s in draft.sections if s.is_approved)
+    total_sections = len(draft.sections)
+    current_section = (
+        draft.get_section(run.current_section_key)
+        if run.current_section_key
+        else None
+    )
+    current_step = current_section.step if current_section else 0
+    data = run.model_dump()
+    data["current_draft"] = PRDDraftDetail(
+        sections=[
+            PRDSectionDetail(**s.model_dump()) for s in draft.sections
+        ],
+        all_approved=draft.all_approved(),
+    ).model_dump()
+    data["sections_approved"] = approved_count
+    data["sections_total"] = total_sections
+    data["current_step"] = current_step
+    return data
+
+
+def _build_run_response_from_db(run_id: str) -> dict:
+    """Reconstruct a run-status response from MongoDB.
+
+    Queries ``crewJobs`` for lifecycle metadata and ``workingIdeas`` for
+    draft content so that runs survive server restarts.
+    """
+    from crewai_productfeature_planner.apis.prd.models import (
+        ExecutiveSummaryDraft,
+        PRDDraft,
+    )
+
+    job = find_job(run_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Attempt to rebuild draft from workingIdeas.
+    try:
+        (
+            idea, draft, exec_summary,
+            requirements_breakdown, _bh, _rh,
+        ) = restore_prd_state(run_id)
+    except Exception:
+        logger.debug(
+            "[PRD] Could not restore draft for run_id=%s, using empty draft",
+            run_id,
+        )
+        idea = job.get("idea", "")
+        draft = PRDDraft.create_empty()
+        exec_summary = ExecutiveSummaryDraft()
+        requirements_breakdown = ""
+
+    def _iso(val):
+        if val is None:
+            return None
+        return val.isoformat() if hasattr(val, "isoformat") else str(val)
+
+    approved_count = sum(1 for s in draft.sections if s.is_approved)
+    total_sections = len(draft.sections)
+    total_iterations = max(
+        (s.iteration for s in draft.sections), default=0,
+    )
+
+    return {
+        "run_id": run_id,
+        "flow_name": job.get("flow_name", "prd"),
+        "status": job.get("status", "unknown"),
+        "iteration": total_iterations,
+        "created_at": _iso(job.get("queued_at")) or "",
+        "update_date": _iso(job.get("updated_at")),
+        "completed_at": _iso(job.get("completed_at")),
+        "result": None,
+        "error": job.get("error"),
+        "current_section_key": "",
+        "current_step": 0,
+        "sections_approved": approved_count,
+        "sections_total": total_sections,
+        "active_agents": [],
+        "dropped_agents": [],
+        "agent_errors": {},
+        "original_idea": idea,
+        "idea_refined": False,
+        "finalized_idea": idea,
+        "requirements_breakdown": requirements_breakdown,
+        "executive_summary": exec_summary.model_dump(),
+        "confluence_url": job.get("confluence_url", ""),
+        "jira_output": "",
+        "output_file": job.get("output_file", ""),
+        "current_draft": PRDDraftDetail(
+            sections=[
+                PRDSectionDetail(**s.model_dump()) for s in draft.sections
+            ],
+            all_approved=draft.all_approved(),
+        ).model_dump(),
+    }
 
 
 @router.get(
@@ -76,24 +180,11 @@ router.include_router(ux_design_router)
 async def get_run_status(run_id: str, user: dict = Depends(require_sso_user)):
     """Check the status of a flow run."""
     run = runs.get(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
-    draft = run.current_draft
-    approved_count = sum(1 for s in draft.sections if s.is_approved)
-    total_sections = len(draft.sections)
-    current_section = draft.get_section(run.current_section_key) if run.current_section_key else None
-    current_step = current_section.step if current_section else 0
-    data = run.model_dump()
-    data["current_draft"] = PRDDraftDetail(
-        sections=[
-            PRDSectionDetail(**s.model_dump()) for s in draft.sections
-        ],
-        all_approved=draft.all_approved(),
-    ).model_dump()
-    data["sections_approved"] = approved_count
-    data["sections_total"] = total_sections
-    data["current_step"] = current_step
-    return data
+    if run is not None:
+        return _build_run_response(run)
+
+    # Fallback: reconstruct from MongoDB for runs lost after restart.
+    return _build_run_response_from_db(run_id)
 
 
 @router.get(
@@ -170,8 +261,11 @@ async def get_run_activity(
     },
 )
 async def list_runs(user: dict = Depends(require_sso_user)):
+    # Start with active in-memory runs.
+    seen: set[str] = set()
     result = []
     for run in runs.values():
+        seen.add(run.run_id)
         result.append({
             "run_id": run.run_id,
             "flow_name": run.flow_name,
@@ -180,6 +274,31 @@ async def list_runs(user: dict = Depends(require_sso_user)):
             "created_at": run.created_at,
             "current_section_key": run.current_section_key,
         })
+
+    # Supplement with persistent jobs from MongoDB.
+    try:
+        db_jobs = list_jobs(limit=100)
+    except Exception:
+        db_jobs = []
+    for doc in db_jobs:
+        job_id = doc.get("job_id", "")
+        if job_id in seen:
+            continue
+        seen.add(job_id)
+        queued = doc.get("queued_at")
+        result.append({
+            "run_id": job_id,
+            "flow_name": doc.get("flow_name", "prd"),
+            "status": doc.get("status", "unknown"),
+            "iteration": 0,
+            "created_at": (
+                queued.isoformat()
+                if hasattr(queued, "isoformat")
+                else str(queued or "")
+            ),
+            "current_section_key": "",
+        })
+
     return {"count": len(result), "runs": result}
 
 

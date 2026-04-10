@@ -24,7 +24,8 @@ The `AgentOrchestrator` executes a pipeline of `AgentStage` objects sequentially
 | `build_jira_skeleton_stage(flow)` | `_jira.py` | Jira skeleton outline |
 | `build_jira_epics_stories_stage(flow)` | `_jira.py` | Epics + Stories creation |
 | `build_jira_subtasks_stage(flow)` | `_jira.py` | Sub-tasks with dependencies |
-| `build_jira_ticketing_stage(flow)` | `_jira.py` | Legacy auto-approve Jira |
+| `build_jira_kanban_tasks_stage(flow)` | `_jira.py` | Flat kanban Tasks (no hierarchy) |
+| `build_jira_ticketing_stage(flow)` | `_jira.py` | Legacy auto-approve Jira (scrum or kanban) |
 
 ## Pipelines
 

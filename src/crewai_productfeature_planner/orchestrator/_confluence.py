@@ -119,6 +119,31 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
             confluence_page_id=page_id,
         )
 
+        # Save a version snapshot at publish time
+        try:
+            from crewai_productfeature_planner.mongodb.product_requirements import (
+                get_current_version,
+                save_version_snapshot,
+            )
+            cur = get_current_version(flow.state.run_id)
+            new_v = cur + 1
+            sections_snapshot = {
+                s.key: s.content
+                for s in flow.state.draft.sections
+                if s.content
+            }
+            save_version_snapshot(
+                flow.state.run_id,
+                version=new_v,
+                sections_snapshot=sections_snapshot,
+                changelog_entry=f"Published to Confluence ({page_url})",
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "[ConfluencePublish] Could not save version snapshot",
+                exc_info=True,
+            )
+
     return AgentStage(
         name="confluence_publish",
         description="Publish completed PRD to Atlassian Confluence",

@@ -59,7 +59,7 @@ class TestBuildDefaultPipeline:
 
         with patch(
             "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
-            return_value=("refined idea", [{"iteration": 1}]),
+            return_value=("refined idea", [{"iteration": 1}], []),
         ):
             orch = build_default_pipeline(flow)
             orch.run_pipeline()
@@ -171,7 +171,7 @@ class TestOrchestratorProgressCallback:
 
         with patch(
             "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
-            return_value=("refined", [{"iteration": 1}]),
+            return_value=("refined", [{"iteration": 1}], []),
         ):
             orch = build_default_pipeline(flow)
             orch.run_pipeline()

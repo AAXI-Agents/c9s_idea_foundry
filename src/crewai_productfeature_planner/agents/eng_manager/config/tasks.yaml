@@ -16,6 +16,22 @@ generate_engineering_plan_task:
     The requirements breakdown (if available) is:
     {requirements_breakdown}
 
+    **Format — Progressive Disclosure:**
+    Use a progressive disclosure structure throughout the entire plan.
+    For EVERY major section below, write a concise high-level summary
+    first (2-4 sentences, suitable for a non-technical product manager),
+    then include a **Technical Deep-Dive** sub-section with the full
+    engineering detail. This lets any reader get the overview quickly
+    and drill into depth only where they choose.
+
+    Example structure for each section:
+
+        ## 1. Architecture Overview
+        *Brief plain-language summary of overall architecture…*
+
+        ### Technical Deep-Dive
+        *Full ASCII diagrams, component boundaries, data flows…*
+
     Your task — produce a complete Engineering Plan that covers:
 
     1. **Architecture Overview**
@@ -75,8 +91,12 @@ generate_engineering_plan_task:
     Use ASCII diagrams liberally for architecture, data flow, and state machines.
     Do NOT wrap in JSON, code fences, or any structure.
   expected_output: >
-    A comprehensive Engineering Plan in professional markdown containing:
-    architecture overview with diagrams, component breakdown, phased
+    A comprehensive Engineering Plan in professional markdown using
+    progressive disclosure: each section starts with a concise
+    high-level summary followed by a **Technical Deep-Dive** sub-section
+    with full engineering detail, ASCII diagrams, and specifications.
+
+    Sections: architecture overview, component breakdown, phased
     implementation plan, data model, error handling, test strategy,
     security analysis, deployment plan, and observability requirements.
 

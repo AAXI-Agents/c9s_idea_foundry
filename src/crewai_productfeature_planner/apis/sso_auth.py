@@ -77,7 +77,11 @@ def _sso_webhook_secret() -> str:
 
 @lru_cache(maxsize=1)
 def _sso_public_key() -> str | None:
-    """Load the RS256 public key from disk (cached after first read)."""
+    """Load the RS256 public key from disk (cached after first read).
+
+    Call ``_sso_public_key.cache_clear()`` to force a re-read after
+    key rotation.
+    """
     key_path = os.environ.get("SSO_JWT_PUBLIC_KEY_PATH", "").strip()
     if not key_path:
         return None
@@ -85,6 +89,42 @@ def _sso_public_key() -> str | None:
         return Path(key_path).read_text()
     except Exception:
         logger.warning("[SSO Auth] Could not read public key from %s", key_path, exc_info=True)
+        return None
+
+
+async def _fetch_and_save_public_key() -> str | None:
+    """Download the current public key from the SSO server and save to disk.
+
+    Called automatically when the local key fails signature verification,
+    allowing seamless recovery from SSO key rotation without a server
+    restart.
+    """
+    base_url = _sso_base_url()
+    key_path = os.environ.get("SSO_JWT_PUBLIC_KEY_PATH", "").strip()
+    if not key_path:
+        return None
+    try:
+        client = _get_sso_http_client()
+        resp = await client.get(
+            f"{base_url}/sso/auth/public-key",
+            headers={"ngrok-skip-browser-warning": "true"},
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "[SSO Auth] Public key fetch returned %d", resp.status_code,
+            )
+            return None
+        body = resp.json()
+        new_key = body.get("public_key", "")
+        if not new_key:
+            logger.warning("[SSO Auth] Public key response has no 'public_key' field")
+            return None
+        Path(key_path).write_text(new_key)
+        _sso_public_key.cache_clear()
+        logger.info("[SSO Auth] Downloaded and saved new public key from SSO server")
+        return new_key
+    except Exception:
+        logger.warning("[SSO Auth] Failed to fetch public key from SSO server", exc_info=True)
         return None
 
 
@@ -101,48 +141,90 @@ def _decode_jwt_locally(token: str) -> dict[str, Any] | None:
         return None
 
     try:
-        from jose import jwt as jose_jwt
+        import jwt as pyjwt
 
-        claims = jose_jwt.decode(
+        claims = pyjwt.decode(
             token,
             public_key,
             algorithms=[_RS256_ALGORITHM],
             issuer=_sso_issuer(),
-            options={"require_sub": True, "require_exp": True},
+            options={"require": ["sub", "exp"]},
         )
         # Ensure this is an access token, not a refresh token.
         if claims.get("type") != "access":
             logger.debug("[SSO Auth] Token type is '%s', expected 'access'", claims.get("type"))
             return None
         return claims
-    except Exception:
+    except Exception as exc:
         logger.debug("[SSO Auth] Local RS256 JWT decode failed", exc_info=True)
+        # On signature mismatch, the SSO server may have rotated its
+        # signing key.  Clear the cached public key so the next
+        # request re-reads the key file from disk.
+        if "Signature verification failed" in str(exc):
+            _sso_public_key.cache_clear()
+            logger.info(
+                "[SSO Auth] Cleared public key cache — possible key rotation"
+            )
         return None
 
 
 # ── Remote introspection ──────────────────────────────────────
 
+# Reuse a single AsyncClient for SSO introspection to avoid
+# per-request connection setup overhead (TLS handshake, DNS, etc.).
+_sso_http_client: httpx.AsyncClient | None = None
 
-def _introspect_remotely(token: str) -> dict[str, Any] | None:
+
+def _get_sso_http_client() -> httpx.AsyncClient:
+    """Return or lazily create a long-lived httpx client for SSO calls."""
+    global _sso_http_client  # noqa: PLW0603
+    if _sso_http_client is None or _sso_http_client.is_closed:
+        _sso_http_client = httpx.AsyncClient(timeout=5.0)
+    return _sso_http_client
+
+
+async def _introspect_remotely(token: str) -> dict[str, Any] | None:
     """Call the SSO service's ``/sso/oauth/introspect`` endpoint.
 
     Returns the introspection dict on success (``active: True``),
-    None on failure.
+    None on failure.  Authenticates the request using the
+    ``Authorization: Bearer <client_secret>`` header with the
+    ``client_id`` in the body, per RFC 7662.
     """
     base_url = _sso_base_url()
+    client_id = os.environ.get("SSO_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("SSO_CLIENT_SECRET", "").strip()
     try:
-        resp = httpx.post(
+        client = _get_sso_http_client()
+        payload: dict[str, str] = {"token": token}
+        if client_id:
+            payload["client_id"] = client_id
+        headers: dict[str, str] = {"ngrok-skip-browser-warning": "true"}
+        if client_secret:
+            headers["Authorization"] = f"Bearer {client_secret}"
+        resp = await client.post(
             f"{base_url}/sso/oauth/introspect",
-            json={"token": token},
-            timeout=5.0,
+            json=payload,
+            headers=headers,
         )
         if resp.status_code == 200:
             body = resp.json()
             if body.get("active"):
                 return body
-        logger.debug(
-            "[SSO Auth] Remote introspection returned %d", resp.status_code,
-        )
+            logger.debug(
+                "[SSO Auth] Remote introspection returned active=False",
+            )
+        else:
+            # Log body on non-200 to aid debugging (e.g. missing client_id).
+            try:
+                err_body = resp.json()
+            except Exception:
+                err_body = resp.text[:200]
+            logger.debug(
+                "[SSO Auth] Remote introspection returned %d: %s",
+                resp.status_code,
+                err_body,
+            )
     except Exception:
         logger.warning("[SSO Auth] Remote introspection failed", exc_info=True)
     return None
@@ -214,7 +296,19 @@ async def require_sso_user(request: Request) -> dict[str, Any]:
     token = auth[len("Bearer "):]
 
     # Try local RS256 decode first, then remote introspection.
-    claims = _decode_jwt_locally(token) or _introspect_remotely(token)
+    claims = _decode_jwt_locally(token)
+
+    # On local decode failure (e.g. key rotation), try fetching the
+    # current public key from the SSO server before falling back to
+    # remote introspection.
+    if claims is None:
+        new_key = await _fetch_and_save_public_key()
+        if new_key:
+            claims = _decode_jwt_locally(token)
+
+    # Final fallback: remote introspection.
+    if claims is None:
+        claims = await _introspect_remotely(token)
 
     if not claims:
         logger.warning("[SSO] Invalid/expired token for %s", request.url.path)

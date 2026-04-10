@@ -1,6 +1,6 @@
 """Tests for the Ideas CRUD router."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,10 +10,10 @@ from crewai_productfeature_planner.apis import app
 _PKG = "crewai_productfeature_planner.apis.ideas.router"
 _QUERIES = "crewai_productfeature_planner.mongodb.working_ideas._queries"
 _STATUS = "crewai_productfeature_planner.mongodb.working_ideas._status"
-_CLIENT = "crewai_productfeature_planner.mongodb.working_ideas._common"
+_ASYNC_CLIENT = "crewai_productfeature_planner.mongodb.async_client"
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
         yield c
@@ -45,17 +45,18 @@ class TestListIdeas:
         if total is None:
             total = len(docs)
         coll = MagicMock()
-        coll.count_documents.return_value = total
+        coll.count_documents = AsyncMock(return_value=total)
         cursor = MagicMock()
         cursor.sort.return_value = cursor
         cursor.skip.return_value = cursor
-        cursor.limit.return_value = list(docs)
+        cursor.limit.return_value = cursor
+        cursor.to_list = AsyncMock(return_value=list(docs))
         coll.find.return_value = cursor
         return coll
 
     def test_empty_list(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas")
         assert resp.status_code == 200
@@ -67,7 +68,7 @@ class TestListIdeas:
     def test_with_items(self, client):
         docs = [_make_idea_doc(run_id=f"r{i}") for i in range(3)]
         coll = self._mock_collection(docs, total=3)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas")
         assert resp.status_code == 200
@@ -77,7 +78,7 @@ class TestListIdeas:
 
     def test_page_size_25(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?page_size=25")
         assert resp.status_code == 200
@@ -85,7 +86,7 @@ class TestListIdeas:
 
     def test_page_size_50(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?page_size=50")
         assert resp.status_code == 200
@@ -103,34 +104,33 @@ class TestListIdeas:
 
     def test_filter_by_project(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?project_id=proj1")
         assert resp.status_code == 200
-        # Verify the query included project_id filter
-        coll.count_documents.assert_called_once_with({"project_id": "proj1"})
+        coll.count_documents.assert_awaited_once_with({"project_id": "proj1"})
 
     def test_filter_by_status(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?status=completed")
         assert resp.status_code == 200
-        coll.count_documents.assert_called_once_with({"status": "completed"})
+        coll.count_documents.assert_awaited_once_with({"status": "completed"})
 
     def test_filter_by_project_and_status(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?project_id=proj1&status=paused")
         assert resp.status_code == 200
-        coll.count_documents.assert_called_once_with(
+        coll.count_documents.assert_awaited_once_with(
             {"project_id": "proj1", "status": "paused"}
         )
 
     def test_pagination_math(self, client):
         coll = self._mock_collection([], total=51)
-        with patch(f"{_CLIENT}.get_db") as mock_db:
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?page=3&page_size=25")
         body = resp.json()

@@ -39,6 +39,34 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _save_msg(run_id: str, section_key: str, role: str, content: str) -> None:
+    """Best-effort save of a conversation message."""
+    if not run_id:
+        return
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas import (
+            save_section_message,
+        )
+        save_section_message(run_id, section_key, role, content)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _save_summary(run_id: str, section) -> None:
+    """Best-effort save of a section summary note for cross-section context."""
+    if not run_id or not section.content:
+        return
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas import (
+            save_section_summary_note,
+        )
+        # Use first 500 chars as a concise summary
+        summary = section.content[:500]
+        save_section_summary_note(run_id, section.key, summary)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def section_approval_loop(
     flow: PRDFlow,
     section,
@@ -129,6 +157,10 @@ def section_approval_loop(
                     section.step, total_steps, section.title,
                     agent_name, section.iteration,
                 )
+                # Persist approval as a conversation message
+                _save_msg(run_id, section.key, "user", "[Approved]")
+                # Save summary note for cross-section context
+                _save_summary(run_id, section)
                 break
             if action == PAUSE_SENTINEL or decision == PAUSE_SENTINEL:
                 logger.info(
@@ -145,6 +177,7 @@ def section_approval_loop(
                     "'%s' (agent=%s, %d chars)",
                     section.title, agent_name, len(user_feedback),
                 )
+                _save_msg(run_id, section.key, "user", user_feedback)
 
         # Resolve agent for critique / refine.
         # Cross-agent collaboration: use a different agent for
@@ -261,6 +294,7 @@ def section_approval_loop(
                 break
             flow.state.critique = critique_result.raw
             section.critique = flow.state.critique
+            _save_msg(run_id, section.key, "agent", section.critique)
 
         update_section_critique(
             run_id=flow.state.run_id,
@@ -281,6 +315,7 @@ def section_approval_loop(
                 "(%d) — auto-approved",
                 section.title, max_iter,
             )
+            _save_summary(run_id, section)
             break
 
         if is_ready and past_min and flow.approval_callback is None:
@@ -290,6 +325,7 @@ def section_approval_loop(
                 "iteration %d (min=%d) — auto-approved",
                 section.title, section.iteration, min_iter,
             )
+            _save_summary(run_id, section)
             break
 
         # ── Refine (primary PM addresses cross-agent critique) ─

@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from crewai_productfeature_planner.apis.sso_auth import (
     _decode_jwt_locally,
+    _fetch_and_save_public_key,
     _introspect_remotely,
     _sso_base_url,
 )
@@ -530,7 +531,13 @@ async def sso_status(request: Request):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[len("Bearer "):]
-        claims = _decode_jwt_locally(token) or _introspect_remotely(token)
+        claims = _decode_jwt_locally(token)
+        if claims is None:
+            new_key = await _fetch_and_save_public_key()
+            if new_key:
+                claims = _decode_jwt_locally(token)
+        if claims is None:
+            claims = await _introspect_remotely(token)
         if claims:
             return {
                 "authenticated": True,
@@ -549,7 +556,13 @@ async def sso_status(request: Request):
         }
 
     access_token = tokens.get("access_token", "")
-    claims = _decode_jwt_locally(access_token) or _introspect_remotely(access_token)
+    claims = _decode_jwt_locally(access_token)
+    if claims is None:
+        new_key = await _fetch_and_save_public_key()
+        if new_key:
+            claims = _decode_jwt_locally(access_token)
+    if claims is None:
+        claims = await _introspect_remotely(access_token)
     if claims:
         return {
             "authenticated": True,
@@ -577,7 +590,13 @@ async def sso_userinfo(request: Request):
         )
 
     token = auth_header[len("Bearer "):]
-    claims = _decode_jwt_locally(token) or _introspect_remotely(token)
+    claims = _decode_jwt_locally(token)
+    if claims is None:
+        new_key = await _fetch_and_save_public_key()
+        if new_key:
+            claims = _decode_jwt_locally(token)
+    if claims is None:
+        claims = await _introspect_remotely(token)
     if not claims:
         return JSONResponse(
             {"error": "Invalid or expired access token"},
@@ -675,6 +694,8 @@ async def sso_token_refresh(request: Request):
 
     Expects JSON body: ``{"refresh_token": "..."}``
     """
+    client_id = os.environ.get("SSO_CLIENT_ID", "").strip()
+
     try:
         body = await request.json()
     except Exception:
@@ -686,9 +707,11 @@ async def sso_token_refresh(request: Request):
             status_code=400,
         )
 
+    payload = {**body, "client_id": client_id}
+
     return await _sso_proxy_post(
         "/sso/auth/refresh",
-        json=body,
+        json=payload,
         label="Token refresh",
     )
 

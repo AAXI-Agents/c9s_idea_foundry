@@ -60,3 +60,34 @@ evaluate_quality_task:
   expected_output: >
     A brief evaluation (100-200 words) with scores for each criterion,
     followed by exactly IDEA_READY or NEEDS_MORE on the final line.
+
+generate_alternatives_task:
+  description: >
+    Based on the current refined idea, generate 3 distinct alternative
+    directions for the product. Each alternative should explore a
+    meaningfully different strategic angle.
+
+    ## Current Refined Idea
+    {idea}
+
+    ## Your Task
+    1. Identify the core value proposition in the current idea.
+    2. Generate 3 distinct alternatives, each with a clear
+       differentiating theme (e.g. "Enterprise-focused",
+       "Consumer-first", "Platform/API approach").
+    3. Each alternative should be 150-250 words.
+    4. Highlight the key trade-off vs the current direction.
+
+    Present all 3 as numbered options:
+    OPTION 1: <title>
+    <description>
+
+    OPTION 2: <title>
+    <description>
+
+    OPTION 3: <title>
+    <description>
+  expected_output: >
+    Three distinct product direction alternatives, each 150-250 words,
+    clearly numbered as OPTION 1, OPTION 2, OPTION 3 and differentiated
+    by strategic theme.

@@ -67,6 +67,12 @@ tags:
 |-------|------|----------|---------|-------------|
 | `executive_summary` | `list[dict]` | No | `[]` | Array of executive summary iterations. Each element: `{ content: str, iteration: int, critique: str \| null, updated_date: str }`. Iterations accumulate — the latest entry is the current draft |
 
+### Refinement Options History
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `refinement_options_history` | `list[dict]` | No | `[]` | Records of 3-options decision points during idea refinement. Each element: `{ iteration: int, trigger: str, options: [str, str, str], selected: int }`. Trigger values: `"auto_cycles_complete"`, `"low_confidence"`, `"direction_change"` |
+
 ### Requirements Breakdown (Phase 1.5)
 
 | Field | Type | Required | Default | Description |
@@ -90,7 +96,7 @@ tags:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `jira_phase` | `string` | No | `""` | Current Jira ticketing phase. Progression: `""` → `"skeleton_pending"` → `"skeleton_approved"` → `"epics_stories_done"` → `"subtasks_ready"` → `"subtasks_done"` |
+| `jira_phase` | `string` | No | `""` | Current Jira ticketing phase. Scrum: `""` → `"skeleton_pending"` → `"skeleton_approved"` → `"epics_stories_done"` → `"subtasks_ready"` → `"subtasks_done"`. Kanban: `""` → `"kanban_skeleton_pending"` → `"kanban_skeleton_approved"` → `"kanban_tasks_done"` |
 | `jira_skeleton` | `string \| null` | No | `null` | Jira skeleton text (Epic/Story structure outline) — shown to user for review/approval before ticket creation |
 | `jira_epics_stories_output` | `string \| null` | No | `null` | Agent output summary from Jira Phase 2 (Epics & Stories creation) |
 
@@ -138,6 +144,7 @@ tags:
 | `(status, created_at DESC)` | Compound | Filter by status, newest first |
 | `(project_id, status, created_at DESC)` | Compound | Filter ideas by project + status |
 | `(slack_channel, status)` | Compound | Find active ideas in a Slack channel |
+| `created_at DESC` | Single | Unfiltered sort for paginated list (GET /ideas) |
 
 ---
 
@@ -193,6 +200,7 @@ tags:
 | `get_jira_skeleton()` | Fetch Jira skeleton text |
 | `save_jira_epics_stories_output()` | Persist Phase 2 Jira output |
 | `get_jira_epics_stories_output()` | Fetch Phase 2 Jira output |
+| `save_refinement_options()` | Persist refinement_options_history |
 | `save_ux_design()` | Persist UX design content and status |
 
 ---

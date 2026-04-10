@@ -3104,6 +3104,220 @@ _CODEX: list[CodexEntry] = [
             "Updated 29 SSO tests to mock async proxy."
         ),
     ),
+    CodexEntry(
+        version="0.59.2",
+        date=date(2026, 4, 4),
+        summary=(
+            "SSO bootstrap & deployment validation — configured SSO "
+            "environment variables in .env (SSO_BASE_URL, SSO_CLIENT_ID, "
+            "SSO_JWT_PUBLIC_KEY_PATH, SSO_ISSUER). Downloaded RSA public "
+            "key for local JWT verification. Created sso_bootstrap.sh "
+            "one-time script for admin login, app-request approval, "
+            "credential persistence, and client_id validation. Added "
+            "SSO health/credential checks to dev_setup.sh for UAT/PROD "
+            "deployments (section 8b). Fixed _introspect_remotely to "
+            "use async httpx.AsyncClient (same event-loop blocking fix "
+            "as v0.59.1). Identified root cause: app 'Idea Foundry' "
+            "was submitted but never approved (AUTH_2009)."
+        ),
+    ),
+    CodexEntry(
+        version="0.59.3",
+        date=date(2026, 4, 6),
+        summary=(
+            "SSO bootstrap script fix — multi-environment redirect_uris. "
+            "Root cause: app was registered but client_secret and app_id "
+            "were not saved to .env. Script now registers with ALL "
+            "redirect_uris (DEV localhost + ngrok, UAT, PROD) in a "
+            "single registration so the same credentials work across "
+            "environments. Added SSO_JWT_PUBLIC_KEY_PATH auto-update "
+            "after downloading public key. Added webhook subscription "
+            "registration (POST /webhooks/register) with "
+            "SSO_WEBHOOK_SECRET persistence. Improved existing-app "
+            "detection: checks if client_secret is already saved before "
+            "prompting for re-registration. Removed per-environment "
+            "re-registration requirement — UAT/PROD deployment now "
+            "only needs SERVER_ENV change, no script re-run."
+        ),
+    ),
+    CodexEntry(
+        version="0.59.4",
+        date=date(2026, 4, 7),
+        summary=(
+            "Fix SSO token refresh 401 — missing client_id. "
+            "Root cause: POST /auth/sso/token/refresh proxied the "
+            "refresh_token to the SSO server without including "
+            "client_id, so the SSO server could not identify the "
+            "application and rejected the request with 401. "
+            "Fix: inject SSO_CLIENT_ID into the proxy payload, "
+            "matching the pattern used by the direct login endpoint."
+        ),
+    ),
+    CodexEntry(
+        version="0.59.5",
+        date=date(2026, 4, 7),
+        summary=(
+            "Fix GET /flow/runs/{run_id} 404 after server restart. "
+            "Root cause: the endpoint only checked the in-memory "
+            "`runs` dict which is lost on restart. "
+            "Fix: fall back to MongoDB (crewJobs + workingIdeas) "
+            "via restore_prd_state() to reconstruct run state. "
+            "Also enhanced GET /flow/runs to include persistent "
+            "MongoDB jobs alongside in-memory runs."
+        ),
+    ),
+    CodexEntry(
+        version="0.60.0",
+        date=date(2026, 4, 7),
+        summary=(
+            "User Feedback gap ticket resolution — wired backend to flow. "
+            "Version snapshots auto-saved on finalization and Confluence "
+            "publish. Section conversation messages persisted during "
+            "draft-critique-refine loop (user feedback + agent critiques). "
+            "Cross-section summary notes saved on approval for context. "
+            "Timeline API emits section_approved decision annotations. "
+            "Resolved 4 fully-answered gap tickets, created 4 follow-up "
+            "clarity gap tickets for unanswered sub-questions."
+        ),
+    ),
+    CodexEntry(
+        version="0.61.0",
+        date=date(2026, 4, 7),
+        summary=(
+            "Gap ticket resolution — 4 user-answered follow-up tickets "
+            "processed. Engineering Plan task prompt updated to progressive "
+            "disclosure format (high-level summary + Technical Deep-Dive "
+            "sections). Added board_style field to projectConfig schema "
+            "(scrum/kanban). Webapp monorepo decision recorded (keep "
+            "separate). Created codex task files for complex flow changes: "
+            "idea refinement 3-options at key decision points, Jira kanban "
+            "flat-task generation."
+        ),
+    ),
+    CodexEntry(
+        version="0.61.1",
+        date=date(2026, 4, 8),
+        summary=(
+            "Test suite optimization — full regression from 480s (8 min) "
+            "to 45s (90% faster). Added session-scoped CrewAI Agent warmup "
+            "fixture to amortise 1.2s cold-start pydantic model_rebuild. "
+            "Mock LLM builders for UX designer, product manager, and "
+            "product manager critic across agent and flow tests. Added "
+            "flows/conftest.py with autouse LLM builder mocks. Fixed "
+            "flaky shutdown-error retry tests (assert within mock scope). "
+            "Added session_manager + events_router state cleanup to Slack "
+            "conftest to prevent cross-test leakage. All 2819 tests pass "
+            "under 1.5s per test."
+        ),
+    ),
+    CodexEntry(
+        version="0.62.0",
+        date=date(2026, 4, 9),
+        summary=(
+            "Idea Refinement 3-Options — after 3 auto cycles, on low "
+            "confidence (<3.0 avg), or significant direction change, the "
+            "idea refiner generates 3 alternative directions via a new "
+            "generate_alternatives_task. Interactive mode presents options "
+            "via Slack Block Kit (idea_options_blocks); autonomous mode "
+            "auto-selects option 0. Options history tracked in PRDState "
+            "refinement_options_history and persisted to MongoDB "
+            "workingIdeas.refinement_options_history. refine_idea() now "
+            "returns a 3-tuple (idea, history, options_history). "
+            "Kanban Board Style — Jira ticketing now supports kanban "
+            "projects alongside scrum. board_style read from "
+            "projectConfig.board_style (defaults to 'scrum'). Kanban "
+            "uses a flat skeleton → Tasks pipeline (2 phases) instead "
+            "of the 5-phase scrum hierarchy. New stages: "
+            "build_jira_kanban_tasks_stage, generate_kanban_skeleton_task, "
+            "create_kanban_tasks_task. Scrum-only phases "
+            "(Epics/Stories/Sub-tasks/Reviews/QA) auto-skip for kanban. "
+            "Fixed low_confidence threshold from 6.0 to 3.0 (1-5 scale). "
+            "19 new kanban tests, 11 new options tests, all 2840+ tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.62.1",
+        date=date(2026, 4, 10),
+        summary=(
+            "Log error investigation & performance fixes — "
+            "Jira issue-link 404s: split comma-separated "
+            "is_blocked_by_key/blocks_key into individual keys before "
+            "calling create_issue_link (LLM provides 'CJT-1,CJT-2'). "
+            "Slack file upload retry: upload_content_file now retries "
+            "up to 2 times with linear backoff on transient failures. "
+            "API latency middleware: new @app.middleware('http') logs "
+            "request duration, sets X-Process-Time header, warns on "
+            "requests >2s. SSO introspection optimised: reuse a "
+            "long-lived httpx.AsyncClient instead of creating one "
+            "per token validation request."
+        ),
+    ),
+    CodexEntry(
+        version="0.62.2",
+        date=date(2026, 4, 10),
+        summary=(
+            "API latency fix — GET /projects and GET /ideas 10s→<300ms. "
+            "Root cause: workingIdeas find() returned full 100KB+ documents "
+            "(PRD text, sections, summaries) with no projection; "
+            "projectConfig had no created_at index; sync pymongo blocked "
+            "the async event loop; page_size 5/6 rejected as invalid. "
+            "Fixes: IDEA_LIST_PROJECTION excludes heavy fields "
+            "(finalized_idea, requirements_breakdown, jira/ux content); "
+            "run_in_executor for all blocking DB calls; "
+            "estimated_document_count for unfiltered project counts; "
+            "new created_at DESC indexes on projectConfig and workingIdeas; "
+            "VALID_PAGE_SIZES expanded to {5,6,10,25,50}."
+        ),
+    ),
+    CodexEntry(
+        version="0.63.0",
+        date=date(2026, 4, 10),
+        summary=(
+            "Performance recommendations implemented — 3 optimisations from "
+            "GAP-api-projects-ideas-slow-latency. (1) Motor async MongoDB "
+            "driver: GET /ideas and GET /projects now use native async Motor "
+            "queries instead of run_in_executor + sync pymongo, eliminating "
+            "thread-pool overhead. (2) Response cache: 5-second TTL in-memory "
+            "cache for paginated list endpoints — dashboard polling serves "
+            "from cache instead of hitting Atlas repeatedly. (3) Index "
+            "coverage analysis script (scripts/explain_queries.py) runs "
+            "explain('executionStats') on all API query paths and reports "
+            "IXSCAN vs COLLSCAN. User chose Option B (keep exclusion "
+            "projection). New files: mongodb/async_client.py, "
+            "apis/_response_cache.py. 2872 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.63.1",
+        date=date(2026, 4, 10),
+        summary=(
+            "SSO userinfo 401 loop fix — /auth/sso/userinfo returning 401 "
+            "even after successful token refresh. Root cause: "
+            "_introspect_remotely did not include SSO_CLIENT_ID in the "
+            "request body (RFC 7662 requires client authentication); "
+            "token refresh worked because it already sent client_id. "
+            "Fix: introspection now sends client_id + logs response body "
+            "on failure. Also: _sso_public_key LRU cache auto-clears on "
+            "InvalidSignatureError (handles SSO key rotation without "
+            "server restart). 2 new SSO tests."
+        ),
+    ),
+    CodexEntry(
+        version="0.63.2",
+        date=date(2026, 4, 10),
+        summary=(
+            "SSO OAuth deep fix — 3-phase token validation with automatic "
+            "key rotation recovery. (1) _introspect_remotely now sends "
+            "Authorization: Bearer <client_secret> header per RFC 7662 "
+            "(SSO server rejected body-only auth). (2) New "
+            "_fetch_and_save_public_key() downloads current RSA public "
+            "key from SSO_BASE_URL/sso/auth/public-key, saves to disk, "
+            "and clears LRU cache — recovers from stale key without "
+            "restart. (3) require_sso_user, /userinfo, and /status all "
+            "use 3-phase flow: local decode → auto key fetch + retry → "
+            "remote introspect. 5 new SSO tests (44 total)."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

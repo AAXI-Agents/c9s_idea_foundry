@@ -381,7 +381,7 @@ class PRDFlow(Flow[PRDState]):
 
             self.state.original_idea = self.state.idea
             project_id = resolve_project_id(self.state.run_id)
-            refined, history = refine_idea(
+            refined, history, options_history = refine_idea(
                 self.state.idea,
                 run_id=self.state.run_id,
                 project_id=project_id,
@@ -389,6 +389,7 @@ class PRDFlow(Flow[PRDState]):
             self.state.idea = refined
             self.state.idea_refined = True
             self.state.refinement_history = history
+            self.state.refinement_options_history = options_history
             logger.info(
                 "[IdeaRefiner] Idea refined (%d → %d chars, %d iterations)",
                 len(self.state.original_idea), len(refined), len(history),

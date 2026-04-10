@@ -410,8 +410,8 @@ def test_shutdown_futures_not_retried():
             crew_kickoff_with_retry(
                 crew, step_label="test", max_retries=3, base_delay=5.0,
             )
-    assert crew.kickoff.call_count == 1
-    mock_sleep.assert_not_called()
+        assert crew.kickoff.call_count == 1
+        mock_sleep.assert_not_called()
 
 
 def test_shutdown_interpreter_not_retried():
@@ -426,8 +426,8 @@ def test_shutdown_interpreter_not_retried():
             crew_kickoff_with_retry(
                 crew, step_label="test", max_retries=3, base_delay=5.0,
             )
-    assert crew.kickoff.call_count == 1
-    mock_sleep.assert_not_called()
+        assert crew.kickoff.call_count == 1
+        mock_sleep.assert_not_called()
 
 
 def test_shutdown_error_chains_original():

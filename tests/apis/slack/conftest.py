@@ -23,6 +23,38 @@ def _clear_interactive_runs():
 
 
 @pytest.fixture(autouse=True)
+def _clear_session_manager_state():
+    """Reset session manager pending-state dicts to prevent cross-test leakage.
+
+    Without this, a test that calls ``mark_pending_create()`` or
+    ``mark_pending_memory()`` without consuming the entry leaves
+    residual state visible to later tests in the suite.
+    """
+    import crewai_productfeature_planner.apis.slack.session_manager as sm
+    import crewai_productfeature_planner.apis.slack.events_router as er
+
+    with sm._lock:
+        sm._pending_project_creates.clear()
+        sm._pending_memory_entries.clear()
+        sm._pending_project_setup.clear()
+    with er._seen_events_lock:
+        er._seen_events.clear()
+    with er._thread_lock:
+        er._thread_conversations.clear()
+        er._thread_last_active.clear()
+    yield
+    with sm._lock:
+        sm._pending_project_creates.clear()
+        sm._pending_memory_entries.clear()
+        sm._pending_project_setup.clear()
+    with er._seen_events_lock:
+        er._seen_events.clear()
+    with er._thread_lock:
+        er._thread_conversations.clear()
+        er._thread_last_active.clear()
+
+
+@pytest.fixture(autouse=True)
 def _mock_engagement_manager():
     """Prevent real Engagement Manager LLM calls in Slack tests.
 

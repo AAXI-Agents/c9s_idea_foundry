@@ -19,8 +19,24 @@ from pydantic import BaseModel, Field
 # ── Constants ─────────────────────────────────────────────────
 
 VALID_STATUSES = {"inprogress", "completed", "paused", "failed", "archived"}
-VALID_PAGE_SIZES = {10, 25, 50}
+VALID_PAGE_SIZES = {5, 6, 10, 25, 50}
 _TOTAL_SECTIONS = 12
+
+# MongoDB projection for list queries — exclude heavy content fields
+# that are not needed for the paginated idea list.  This avoids
+# transferring multi-KB PRD text from Atlas for every list request.
+IDEA_LIST_PROJECTION: dict[str, int] = {
+    "_id": 0,
+    # Heavy fields to exclude (each can be 10-100 KB):
+    "finalized_idea": 0,
+    "requirements_breakdown": 0,
+    "refinement_options_history": 0,
+    "jira_skeleton": 0,
+    "jira_epics_stories_output": 0,
+    "ux_design_content": 0,
+    "output_file": 0,
+    "ux_output_file": 0,
+}
 
 
 # ── Response models ───────────────────────────────────────────

@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 # ── Constants ─────────────────────────────────────────────────
 
-VALID_PAGE_SIZES = {10, 25, 50}
+VALID_PAGE_SIZES = {5, 6, 10, 25, 50}
 
 
 # ── Request models ────────────────────────────────────────────

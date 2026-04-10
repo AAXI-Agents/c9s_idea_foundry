@@ -6,7 +6,7 @@ aliases:
   - Changelog
   - Release Notes
 created: 2026-02-14
-updated: 2026-04-07
+updated: 2026-04-10
 ---
 
 # Version History
@@ -15,10 +15,29 @@ updated: 2026-04-07
 
 ---
 
+## Week of 2026-04-06
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.59.4 | 04-07 | Fix SSO token refresh 401 — missing client_id. Token refresh proxy did not include SSO_CLIENT_ID in the payload, causing the SSO server to reject requests with 401 Unauthorized. Now injects client_id matching the direct login endpoint pattern |
+| 0.59.5 | 04-07 | Fix GET /flow/runs/{run_id} 404 after server restart. Endpoint only checked in-memory `runs` dict (lost on restart). Now falls back to MongoDB (crewJobs + workingIdeas) via restore_prd_state(). GET /flow/runs list also includes persistent MongoDB jobs |
+| 0.60.0 | 04-07 | User Feedback gap ticket resolution — wired backend infrastructure to flow execution. Version snapshots auto-saved on finalization + Confluence publish. Section conversation messages persisted during draft-critique-refine loop. Cross-section summary notes on approval. Timeline API emits section_approved annotations. 4 fully-answered gaps resolved, 4 follow-up clarity gaps created |
+| 0.61.0 | 04-07 | Gap ticket resolution — 4 user-answered follow-up tickets processed. Engineering Plan task prompt updated to progressive disclosure format (high-level summary + Technical Deep-Dive sections). Added board_style field to projectConfig schema (scrum/kanban). Webapp monorepo decision recorded (keep separate). Created codex task files for complex flow changes: idea refinement 3-options at key decision points, Jira kanban flat-task generation |
+| 0.61.1 | 04-08 | Test suite optimization — full regression from 480s to 45s (90% faster). Session-scoped Agent warmup fixture. Mock LLM builders for UX/PM/Critic agents. Flows conftest. Fixed flaky retry + dm_pending tests. Session manager state cleanup in Slack conftest. All 2819 tests under 1.5s |
+| 0.62.0 | 04-09 | Idea Refinement 3-Options — generate 3 alternative directions at key decision points (after 3 auto cycles, low confidence, or direction change). Kanban Board Style — flat-task Jira ticketing (2-phase skeleton→tasks) for kanban projects. Fixed low_confidence threshold (6.0→3.0 for 1-5 scale). 30 new tests (19 kanban + 11 options) |
+| 0.62.1 | 04-10 | Log error investigation & performance fixes — Jira issue-link 404s fixed (split comma-separated keys). Slack file upload retry (2 attempts + backoff). API latency middleware (X-Process-Time header, slow request warnings >2s). SSO introspection optimised (reuse httpx client). All 2862 tests pass |
+| 0.62.2 | 04-10 | API latency fix — GET /projects and GET /ideas 10s→<300ms. MongoDB exclusion projection for ideas (removes 80%+ document size). run_in_executor for async-safe DB calls. estimated_document_count for unfiltered projects. New created_at DESC indexes on projectConfig + workingIdeas. VALID_PAGE_SIZES expanded to {5,6,10,25,50}. All 2862 tests pass |
+| 0.63.0 | 04-10 | Performance recommendations implemented. Motor async MongoDB driver for GET /ideas and GET /projects (replaces run_in_executor). Response cache with 5s TTL for paginated list endpoints. Index coverage analysis script (explain_queries.py). User chose Option B (keep exclusion projection). New dependencies: motor>=3.3. 2872 tests pass |
+| 0.63.1 | 04-10 | SSO userinfo 401 loop fix — _introspect_remotely missing SSO_CLIENT_ID in body (RFC 7662). Public key LRU cache auto-clears on InvalidSignatureError. Improved introspection error logging (response body). 2874 tests pass |
+| 0.63.2 | 04-10 | SSO OAuth deep fix — 3-phase token validation with automatic key rotation recovery. Introspection sends Authorization: Bearer header. New _fetch_and_save_public_key() auto-downloads RSA key from SSO server. require_sso_user, /userinfo, /status all use 3-phase flow (local decode → key fetch retry → remote introspect). 5 new SSO tests. 2877 tests pass |
+| 0.63.1 | 04-10 | SSO userinfo 401 loop fix. Remote introspection missing client_id (RFC 7662). Public key LRU cache auto-clears on InvalidSignatureError (SSO key rotation). Improved introspect error logging with response body. 2 new SSO tests |
+
 ## Week of 2026-03-31
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 0.59.3 | 04-06 | SSO bootstrap fix — multi-environment redirect_uris. App was registered but client_secret/app_id not saved. Script now registers with ALL redirect_uris (DEV+UAT+PROD) in one registration. Added SSO_JWT_PUBLIC_KEY_PATH auto-update, webhook subscription registration, smart existing-app detection. UAT/PROD deployment no longer requires script re-run |
+| 0.59.2 | 04-04 | SSO bootstrap & deployment validation. Configured .env with SSO vars, downloaded RSA public key. Created sso_bootstrap.sh for admin login, app approval, credential save. Added SSO checks to dev_setup.sh for UAT/PROD. Fixed _introspect_remotely async (event-loop blocking). Root cause: app submitted but never approved (AUTH_2009) |
 | 0.59.1 | 04-08 | SSO proxy async refactor — fix 502 login errors. Converted all 15 synchronous httpx.post calls to async httpx.AsyncClient via _sso_proxy_post helper. ConnectError → 502, TimeoutException → 504. Updated 29 SSO tests |\n| 0.59.0 | 04-08 | Gap ticket backend features. Timeline API (GET /flow/runs/{run_id}/timeline): unified PRD journey view. PRD version tracking (save/get version snapshots + GET /flow/runs/{run_id}/versions). Confluence preview (GET /publishing/confluence/{run_id}/preview). Section conversation schema (per-section message threading + summary notes). 30 new tests |
 | 0.58.0 | 04-07 | UX Design review gate + flow control panel. Summary review gate after Phase 2 (Approve/Skip). Persistent control panel with [Pause Flow] / [Cancel] buttons. CEO + UX design gates added to cancel unblock. Fixed version.py date bug. Updated gap tickets |
 | 0.57.0 | 04-06 | Agent activity messages + requirements transparency. `agent_activity` progress events for all 6 agents (PM, Critic, CEO, Eng Manager, UX Designer, Senior Designer) with agent-specific emojis in Slack. `requirements_assumptions` event shows AI evaluation after breakdown. `ux_design_draft_complete` and `ux_design_review_start` events handled in Slack. Deleted 9 resolved gap tickets. 4 gap tickets updated with v0.57.0 implementation |

@@ -60,7 +60,10 @@ run_eng_plan(flow) → str
 
 ## Engineering Plan Coverage
 
-The generated plan includes:
+The generated plan uses **progressive disclosure** format: each section
+starts with a concise high-level summary (suitable for non-technical
+readers), followed by a **Technical Deep-Dive** sub-section with full
+engineering detail and ASCII diagrams.
 
 | Section | Content |
 |---------|---------|

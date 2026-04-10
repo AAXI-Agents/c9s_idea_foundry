@@ -112,6 +112,70 @@ generate_jira_skeleton_task:
     (Data Persistence, Data Layer, Data Presentation, App & Data
     Security) under each Epic.  No descriptions — titles only.
 
+generate_kanban_skeleton_task:
+  description: >
+    Generate a flat list of Jira Tasks for a Kanban board based on the
+    PRD, **without creating any tickets yet**.  This is a planning step
+    — the user must approve the task list before any Jira issues are
+    created.
+
+    Unlike the Scrum skeleton (Epics → Stories → Sub-tasks), this
+    Kanban skeleton produces a flat list of actionable Tasks with
+    priority and category labels.
+
+    ## PRD Title
+    {page_title}
+
+    ## Executive Summary
+    {executive_summary}
+
+    ## PRD Functional Requirements
+    {functional_requirements}
+
+    {additional_prd_context}
+
+    ## Instructions
+
+    Analyse the PRD and produce a flat list of Jira Tasks:
+
+    1. Each task should be a single actionable work item.
+    2. Assign a **priority** to each task: critical, high, medium, low.
+    3. Assign a **category label** to each task:
+       - `backend` — API endpoints, services, business logic, webhooks
+       - `frontend` — UI components, pages, state management
+       - `database` — schemas, models, indexes, migrations
+       - `testing` — test cases, test infrastructure, QA
+       - `infrastructure` — deployment, CI/CD, environment config
+       - `security` — auth, RBAC, input validation, injection prevention
+       - `documentation` — API docs, user guides, architecture docs
+    4. Group tasks by priority (critical first, then high, medium, low).
+    5. Note dependencies between tasks where order matters.
+
+    ## Output Format
+
+    ```
+    CRITICAL:
+      - [category] Task title (depends on: Task N, or "none")
+      - [category] Task title
+    HIGH:
+      - [category] Task title
+    MEDIUM:
+      - [category] Task title
+    LOW:
+      - [category] Task title
+    ```
+
+    Keep task titles concise but descriptive (e.g.
+    "[backend] POST /api/v1/preferences endpoint",
+    "[frontend] Preferences settings page component",
+    "[database] User preferences MongoDB schema",
+    "[security] RBAC for preferences API").
+
+  expected_output: >
+    A flat list of Jira Tasks grouped by priority (critical, high,
+    medium, low) with category labels and dependency notes.
+    No Epics or Stories — just actionable Tasks.
+
 create_jira_epic_task:
   description: >
     Create a Jira Epic to track the implementation of a newly published
@@ -499,4 +563,51 @@ create_jira_tasks_task:
         - TASK_KEY: Summary — URL (blocked by: TASK_KEY)
         - TASK_KEY: Summary — URL
     followed by a summary of all dependency links created.
+    If any creation failed, include the error details.
+
+create_kanban_tasks_task:
+  description: >
+    Create Jira Task tickets from the approved Kanban task list.
+    Each item becomes a flat Jira "Task" issue (NOT an Epic, Story,
+    or Sub-task).
+
+    ## Approved Task List
+    {kanban_skeleton}
+
+    ## PRD Title
+    {page_title}
+
+    ## PRD Functional Requirements
+    {functional_requirements}
+
+    {additional_prd_context}
+
+    ## Confluence Page
+    {confluence_url}
+
+    ## Instructions
+
+    For each task in the approved list:
+
+    1. Create a Jira issue with type **Task**.
+    2. Set the **priority** field (Critical, High, Medium, Low).
+    3. Apply **labels**: the category label (backend, frontend,
+       database, testing, infrastructure, security, documentation)
+       plus "prd" and "auto-generated".
+    4. Write a clear description that an AI coding agent can work
+       from, including:
+       - Reasoning: Why this task exists
+       - Step-by-step instructions
+       - Definition of done (acceptance criteria)
+    5. Add ``is_blocked_by_key`` links to capture task dependencies.
+    6. Include the run ID ``{run_id}`` and Confluence URL in each
+       ticket description.
+
+    Do NOT create Epics, Stories, or Sub-tasks — only flat Tasks.
+
+  expected_output: >
+    A list of all Jira Task keys created with their URLs, priority,
+    and category labels.  Format each as:
+      [PRIORITY] [CATEGORY] TASK_KEY: Summary — URL
+    followed by a summary of dependency links created.
     If any creation failed, include the error details.

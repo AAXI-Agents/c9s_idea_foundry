@@ -25,10 +25,12 @@ class StageResult:
     Attributes:
         output:   The primary text artefact (e.g. refined idea, requirements).
         history:  Per-iteration records for the stage.
+        extra:    Optional dict for stage-specific data (e.g. options_history).
     """
 
     output: str
     history: list[dict] = field(default_factory=list)
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass

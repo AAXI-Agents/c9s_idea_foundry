@@ -46,6 +46,10 @@ You are an industry expert reviewing a product feature idea. Identify the indust
 
 Evaluate whether the refined idea is detailed enough for PRD generation. Rate 5 criteria (target audience clarity, problem definition, solution specificity, competitive context, success criteria). End with `IDEA_READY` or `NEEDS_MORE`.
 
+### `generate_alternatives_task`
+
+Generate 3 distinct alternative directions for the product idea. Each alternative explores a meaningfully different strategic angle (150-250 words), clearly numbered as OPTION 1/2/3. Used at key decision points (after min_iterations complete, on low confidence, or on significant direction change).
+
 ---
 
 ## Scoring Criteria
@@ -66,7 +70,9 @@ All five criteria must score ≥ 3 for the idea to be marked `IDEA_READY`.
 
 - **Cycles**: 3-10 iterative refinement rounds
 - **Flow**: `refine_idea_task` → `evaluate_quality_task` → repeat if `NEEDS_MORE`
+- **3-Options trigger**: After evaluation, if any trigger condition is met (auto cycles complete at `min_iterations`, avg confidence < 3.0, or >40% direction change), `generate_alternatives_task` produces 3 options. Interactive mode presents via Slack callback; autonomous mode auto-selects option 0.
 - **Termination**: All criteria ≥ 3 (`IDEA_READY`) or max iterations reached
+- **Return value**: 3-tuple `(idea, history, options_history)`
 
 ---
 

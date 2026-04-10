@@ -632,6 +632,40 @@ app.add_middleware(
 )
 
 
+# ── Request latency middleware ────────────────────────────────
+import time as _time
+
+
+_SLOW_REQUEST_THRESHOLD_MS = 2000  # log a warning when request exceeds this
+
+
+@app.middleware("http")
+async def _latency_middleware(request: Request, call_next):
+    """Log request duration and expose it via the X-Process-Time header.
+
+    Requests slower than ``_SLOW_REQUEST_THRESHOLD_MS`` are logged at
+    WARNING level to surface latency bottlenecks.
+    """
+    start = _time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (_time.perf_counter() - start) * 1000
+    response.headers["X-Process-Time"] = f"{elapsed_ms:.1f}ms"
+    method = request.method
+    path = request.url.path
+    status_code = response.status_code
+    if elapsed_ms > _SLOW_REQUEST_THRESHOLD_MS:
+        _logger.warning(
+            "[API] Slow request: %s %s → %d (%.0fms)",
+            method, path, status_code, elapsed_ms,
+        )
+    else:
+        _logger.debug(
+            "[API] %s %s → %d (%.0fms)",
+            method, path, status_code, elapsed_ms,
+        )
+    return response
+
+
 # ── Global exception handler ─────────────────────────────────
 
 
