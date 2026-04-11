@@ -76,9 +76,11 @@ tags:
 | `prd/service.py` | Flow execution helpers (run, resume, restore state) |
 | `prd/_route_timeline.py` | `GET /flow/runs/{run_id}/timeline` — unified PRD journey timeline |
 | `prd/_route_versions.py` | `GET /flow/runs/{run_id}/versions` — PRD version history |
+| `prd/_route_websocket.py` | `WS /flow/runs/{run_id}/ws` — real-time WebSocket for agent activity |
 | `publishing/` | Publishing automation (router, service, watcher, scheduler) |
 | `slack/` | Full Slack integration (see [[Slack Integration]]) |
 | `slack/_slack_file_helper.py` | Truncation + file upload for long Slack content (v0.31.2) |
+| `dashboard/` | Dashboard aggregate statistics (`GET /dashboard/stats`) |
 | `integrations/` | Integration status endpoint (Confluence/Jira connection check) |
 | `sso/` | SSO auth router — 18 endpoints (login, register, 2FA, logout, etc.) |
 | `sso_auth.py` | SSO JWT validation + require_sso_user dependency |
@@ -165,6 +167,7 @@ tags:
 | `project_knowledge.py` | Obsidian-style project knowledge base builder (project pages, completed idea pages, agent context) |
 | `migrate_output_dirs.py` | One-time script: migrate output files to project-based directories (delete after use) |
 | `sso_bootstrap.sh` | One-time SSO app bootstrap: admin login, app approval, credential save, public key download |
+| `cleanup_orphan_projects.py` | One-time CLI: find/archive/delete orphaned project_id refs in workingIdeas |
 
 ## Components (`components/`)
 

@@ -33,7 +33,7 @@ tags:
 |-------|------|----------|-------------|---------|-------------|
 | `idea` | `string` | **Yes** | 1–50,000 chars | — | The product feature idea |
 | `title` | `string` | No | max 256 chars | `""` | Short display title; fallback: first line of idea |
-| `project_id` | `string` | No | max 50 chars | `""` | Link to existing project for Confluence/Jira config |
+| `project_id` | `string` | No | max 50 chars | `""` | Link to existing project for Confluence/Jira config. **Must exist in projectConfig** — returns 422 if not found |
 | `auto_approve` | `bool` | No | — | `false` | Skip manual approval — auto-iterate and approve sections |
 
 ---
@@ -58,18 +58,24 @@ tags:
 
 ## Error — 409
 
-A job is already active. Only one job can run at a time.
+Returned when:
+- A job is already active (only one job can run at a time)
+- A duplicate idea was recently submitted to the same project (24h cooldown). Response includes `run_id` and `created_at` of the existing submission
 
 ## Error — 422
 
-Validation error (e.g. idea too long or empty).
+Validation error. Returned when:
+- `idea` is empty or exceeds 50,000 chars
+- `project_id` is provided but does not exist in the `projectConfig` collection
 
 ---
 
 ## Database Algorithm
 
 1. Check `crewJobs` for active job: `find_active_job()` — return 409 if found
-2. Generate `run_id = uuid4().hex[:12]`
+2. If `project_id` provided: `get_project(project_id)` — return 422 if not found
+2b. If `project_id` provided: `find_recent_duplicate_idea(idea, project_id)` — return 409 if duplicate within 24h
+3. Generate `run_id = uuid4().hex[:12]`
 3. Create in-memory `FlowRun` in `runs` dict
 4. Insert job record: `crewJobs.insert_one({job_id, flow_name: "prd", idea, status: "queued", queued_at: now()})`
 5. If `project_id` provided: `workingIdeas.update_one({run_id}, {$set: {project_id, idea}}, upsert=True)` via `save_project_ref()`

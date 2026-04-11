@@ -41,6 +41,12 @@ tags:
 | `POST /health/slack-token/exchange` | [[Health/POST health-slack-token-exchange]] |
 | `POST /health/slack-token/refresh` | [[Health/POST health-slack-token-refresh]] |
 
+### Dashboard (1 endpoint)
+
+| Endpoint | Page |
+|----------|------|
+| `GET /dashboard/stats` | — |
+
 ### Projects (5 endpoints)
 
 | Endpoint | Page |
@@ -59,7 +65,7 @@ tags:
 | `GET /ideas/{run_id}` | [[Ideas/GET ideas-{run_id}]] |
 | `PATCH /ideas/{run_id}/status` | [[Ideas/PATCH ideas-{run_id}-status]] |
 
-### PRD Flow (10 endpoints)
+### PRD Flow (14 endpoints)
 
 | Endpoint | Page |
 |----------|------|
@@ -73,6 +79,10 @@ tags:
 | `GET /flow/prd/resumable` | [[PRD Flow/GET flow-prd-resumable]] |
 | `GET /flow/jobs` | [[PRD Flow/GET flow-jobs]] |
 | `GET /flow/jobs/{job_id}` | [[PRD Flow/GET flow-jobs-{job_id}]] |
+| `POST /flow/ux-design/{run_id}` | — |
+| `POST /flow/ux/kickoff` | — |
+| `GET /flow/ux/status/{run_id}` | — |
+| `WS /flow/runs/{run_id}/ws` | — |
 
 ### Publishing (9 endpoints)
 

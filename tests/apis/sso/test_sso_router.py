@@ -749,8 +749,9 @@ class TestIntrospectClientId:
         assert result is not None
         assert result["active"] is True
         assert captured_payload.get("client_id") == "test-app-123"
+        assert captured_payload.get("client_secret") == "s3cret"
         assert captured_payload.get("token") == "tok-abc"
-        assert captured_headers.get("Authorization") == "Bearer s3cret"
+        assert "Authorization" not in captured_headers
 
 
 class TestFetchAndSavePublicKey:
@@ -758,7 +759,7 @@ class TestFetchAndSavePublicKey:
 
     @pytest.mark.asyncio
     async def test_fetches_saves_and_clears_cache(self, tmp_path):
-        """Should download key from SSO, save to disk, and clear LRU cache."""
+        """Should download key via JWKS, save to disk, and clear LRU cache."""
         from crewai_productfeature_planner.apis.sso_auth import (
             _fetch_and_save_public_key,
             _sso_public_key,
@@ -767,12 +768,16 @@ class TestFetchAndSavePublicKey:
         key_file = tmp_path / "pub.pem"
         key_file.write_text("old-key")
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"public_key": "-----BEGIN PUBLIC KEY-----\nnew-key\n-----END PUBLIC KEY-----"}
+        # Mock JWKS endpoint returning non-200 so it falls through to PEM
+        jwks_resp = MagicMock()
+        jwks_resp.status_code = 404
+
+        pem_resp = MagicMock()
+        pem_resp.status_code = 200
+        pem_resp.json.return_value = {"public_key_pem": "-----BEGIN PUBLIC KEY-----\nnew-key\n-----END PUBLIC KEY-----"}
 
         mock_client = MagicMock()
-        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.get = AsyncMock(side_effect=[jwks_resp, pem_resp])
         mock_client.is_closed = False
 
         _sso_public_key.cache_clear()
@@ -797,6 +802,74 @@ class TestFetchAndSavePublicKey:
         assert "new-key" in key_file.read_text()
 
     @pytest.mark.asyncio
+    async def test_jwks_fetches_and_converts_to_pem(self, tmp_path):
+        """Should download key via JWKS endpoint and convert JWK to PEM."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _fetch_and_save_public_key,
+            _sso_public_key,
+        )
+
+        # Generate a real RSA key pair for testing
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PublicFormat,
+        )
+
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_key = private_key.public_key()
+        public_numbers = public_key.public_numbers()
+
+        import base64
+        def _int_to_b64url(val: int) -> str:
+            byte_len = (val.bit_length() + 7) // 8
+            return base64.urlsafe_b64encode(val.to_bytes(byte_len, "big")).rstrip(b"=").decode()
+
+        jwk = {
+            "kty": "RSA",
+            "alg": "RS256",
+            "use": "sig",
+            "kid": "sso-signing-key",
+            "n": _int_to_b64url(public_numbers.n),
+            "e": _int_to_b64url(public_numbers.e),
+        }
+
+        key_file = tmp_path / "pub.pem"
+
+        jwks_resp = MagicMock()
+        jwks_resp.status_code = 200
+        jwks_resp.json.return_value = {"keys": [jwk]}
+
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=jwks_resp)
+        mock_client.is_closed = False
+
+        _sso_public_key.cache_clear()
+
+        with (
+            patch(
+                "crewai_productfeature_planner.apis.sso_auth._get_sso_http_client",
+                return_value=mock_client,
+            ),
+            patch.dict(
+                "os.environ",
+                {
+                    "SSO_BASE_URL": "http://sso",
+                    "SSO_JWT_PUBLIC_KEY_PATH": str(key_file),
+                },
+            ),
+        ):
+            result = await _fetch_and_save_public_key()
+
+        assert result is not None
+        assert "-----BEGIN PUBLIC KEY-----" in result
+        assert key_file.read_text() == result
+
+        # Verify it's a valid PEM that matches the original key
+        expected_pem = public_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+        assert result == expected_pem
+
+    @pytest.mark.asyncio
     async def test_returns_none_when_no_key_path(self):
         """Should return None when SSO_JWT_PUBLIC_KEY_PATH is not set."""
         from crewai_productfeature_planner.apis.sso_auth import (
@@ -809,7 +882,7 @@ class TestFetchAndSavePublicKey:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_non_200(self, tmp_path):
-        """Should return None when SSO server returns non-200."""
+        """Should return None when both JWKS and PEM endpoints return non-200."""
         from crewai_productfeature_planner.apis.sso_auth import (
             _fetch_and_save_public_key,
         )
@@ -867,3 +940,54 @@ class TestPublicKeyCacheClear:
             # Calling with no key returns None immediately (no error)
             result = _decode_jwt_locally("fake.jwt.token")
             assert result is None
+
+
+# ── Key refresh scheduler ─────────────────────────────────────
+
+
+class TestKeyRefreshScheduler:
+    """Verify the SSO public key background scheduler."""
+
+    def test_start_returns_false_when_sso_disabled(self, monkeypatch):
+        """Should not start when SSO_ENABLED is false."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            start_key_refresh_scheduler,
+        )
+
+        monkeypatch.setenv("SSO_ENABLED", "false")
+        assert start_key_refresh_scheduler() is False
+
+    def test_start_returns_false_when_no_key_path(self, monkeypatch):
+        """Should not start when SSO_JWT_PUBLIC_KEY_PATH is empty."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            start_key_refresh_scheduler,
+        )
+
+        monkeypatch.setenv("SSO_ENABLED", "true")
+        monkeypatch.setenv("SSO_JWT_PUBLIC_KEY_PATH", "")
+        assert start_key_refresh_scheduler() is False
+
+    def test_start_returns_true_when_configured(self, monkeypatch):
+        """Should start and return True when SSO is enabled with key path."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            start_key_refresh_scheduler,
+            stop_key_refresh_scheduler,
+        )
+
+        monkeypatch.setenv("SSO_ENABLED", "true")
+        monkeypatch.setenv("SSO_JWT_PUBLIC_KEY_PATH", "/tmp/test.pem")
+        monkeypatch.setenv("SSO_BASE_URL", "http://sso")
+
+        # Patch the fetch to avoid real network calls
+        with patch(
+            "crewai_productfeature_planner.apis.sso_auth._fetch_and_save_public_key",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            try:
+                result = start_key_refresh_scheduler()
+                assert result is True
+                # Second call should return False (already running)
+                assert start_key_refresh_scheduler() is False
+            finally:
+                stop_key_refresh_scheduler()

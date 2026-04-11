@@ -37,12 +37,14 @@ from crewai_productfeature_planner.mongodb.working_ideas._status import (  # noq
 
 # -- Query / lookup operations ----------------------------------------------
 from crewai_productfeature_planner.mongodb.working_ideas._queries import (  # noqa: F401
+    DUPLICATE_IDEA_COOLDOWN_HOURS,
     fail_unfinalized_on_startup,
     find_completed_ideas_by_project,
     find_completed_without_confluence,
     find_completed_without_output,
     find_idea_by_thread,
     find_ideas_by_project,
+    find_recent_duplicate_idea,
     find_resumable_on_startup,
     find_run_any_status,
     find_unfinalized,
@@ -85,12 +87,14 @@ __all__ = [
     "save_project_ref",
     "save_slack_context",
     # _queries
+    "DUPLICATE_IDEA_COOLDOWN_HOURS",
     "fail_unfinalized_on_startup",
     "find_completed_ideas_by_project",
     "find_completed_without_confluence",
     "find_completed_without_output",
     "find_idea_by_thread",
     "find_ideas_by_project",
+    "find_recent_duplicate_idea",
     "find_resumable_on_startup",
     "find_run_any_status",
     "find_unfinalized",

@@ -18,7 +18,6 @@ from crewai_productfeature_planner.apis._response_cache import response_cache
 from crewai_productfeature_planner.apis.projects.models import (
     ProjectItem,
     ProjectListResponse,
-    VALID_PAGE_SIZES,
     project_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
@@ -36,15 +35,15 @@ router = APIRouter()
 )
 async def list_projects(
     page: int = Query(default=1, ge=1, description="Page number (1-based)"),
-    page_size: int = Query(default=10, description="Items per page: 5, 6, 10, 25, or 50"),
+    page_size: int = Query(default=10, ge=1, le=100, description="Items per page (1-100)"),
     user: dict = Depends(require_sso_user),
 ) -> ProjectListResponse:
     """Return a paginated list of projects, newest first."""
     logger.debug("[Projects] list_projects called by user_id=%s", user.get("user_id"))
-    if page_size not in VALID_PAGE_SIZES:
+    if page_size < 1 or page_size > 100:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"page_size must be one of {sorted(VALID_PAGE_SIZES)}",
+            detail="page_size must be between 1 and 100",
         )
 
     # ── Check response cache ──────────────────────────────────

@@ -141,3 +141,145 @@ async def kickoff_ux_design(
             f"Poll GET /flow/runs/{run_id} and check ux_design_status."
         ),
     )
+
+
+# ── Web-app facing endpoints (A2/A3 from Gap Analysis) ──────
+
+
+class UXDesignKickoffRequest(BaseModel):
+    """Request body for ``POST /flow/ux/kickoff``."""
+
+    run_id: str = Field(..., description="The PRD run ID to generate UX design for.")
+
+
+class UXDesignStatusResponse(BaseModel):
+    """Response for ``GET /flow/ux/status/{run_id}``."""
+
+    run_id: str = Field(..., description="The PRD run ID.")
+    status: str = Field(
+        default="",
+        description="UX design status: '', 'generating', or 'completed'.",
+    )
+    current_step: str = Field(
+        default="",
+        description="Current UX design step label, if available.",
+    )
+    design_md_ready: bool = Field(
+        default=False,
+        description="Whether the UX design markdown content is ready.",
+    )
+    stitch_completed: bool = Field(
+        default=False,
+        description="Whether the design sections have been stitched.",
+    )
+    figma_uploaded: bool = Field(
+        default=False,
+        description="Whether the design was uploaded to Figma.",
+    )
+    figma_url: str | None = Field(
+        default=None,
+        description="Figma file URL, if uploaded.",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Error message if UX design generation failed.",
+    )
+
+
+@ux_design_router.post(
+    "/flow/ux/kickoff",
+    status_code=202,
+    tags=["UX Design"],
+    summary="Trigger UX design generation (web-app format)",
+    response_model=UXDesignKickoffResponse,
+    description=(
+        "Web-app-compatible endpoint for triggering UX design generation. "
+        "Accepts ``run_id`` in the request body instead of the URL path. "
+        "Delegates to the same background logic as ``POST /flow/ux-design/{run_id}``."
+    ),
+    responses={
+        202: {"description": "UX design generation started."},
+        404: {"description": "PRD run not found."},
+        409: {"description": "PRD not completed or UX design already in progress."},
+        **_ERROR_RESPONSES,
+    },
+)
+async def kickoff_ux_design_web(
+    body: UXDesignKickoffRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_sso_user),
+):
+    """Start UX design generation — body-based variant for the web app."""
+    return await kickoff_ux_design(body.run_id, background_tasks, user)
+
+
+@ux_design_router.get(
+    "/flow/ux/status/{run_id}",
+    tags=["UX Design"],
+    summary="Get UX design status",
+    response_model=UXDesignStatusResponse,
+    description=(
+        "Returns the current UX design generation status for a run. "
+        "The frontend polls this endpoint after triggering "
+        "``POST /flow/ux/kickoff``."
+    ),
+    responses={
+        200: {"description": "UX design status returned successfully."},
+        404: {"description": "PRD run not found."},
+        **_ERROR_RESPONSES,
+    },
+)
+async def get_ux_design_status(
+    run_id: str,
+    user: dict = Depends(require_sso_user),
+) -> UXDesignStatusResponse:
+    """Return UX design status for a run."""
+    logger.info(
+        "[API] UX design status requested by user_id=%s run_id=%s",
+        user.get("user_id"), run_id,
+    )
+
+    from crewai_productfeature_planner.mongodb.working_ideas import (
+        find_run_any_status,
+    )
+
+    idea_doc = find_run_any_status(run_id)
+    if idea_doc is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    ux_status = (
+        idea_doc.get("ux_design_status")
+        or idea_doc.get("figma_design_status")
+        or ""
+    )
+    ux_content = idea_doc.get("ux_design_content", "")
+    figma_url = idea_doc.get("figma_url") or None
+
+    # Derive boolean flags from the stored status.
+    is_completed = ux_status == "completed"
+    design_md_ready = is_completed and bool(ux_content)
+    stitch_completed = design_md_ready
+    figma_uploaded = bool(figma_url)
+
+    # Step label for in-progress runs.
+    if ux_status == "generating":
+        current_step = "Running UX design agents"
+    elif is_completed:
+        current_step = "Completed"
+    else:
+        current_step = ""
+
+    # If status was reset to empty after an error, check for an error
+    # field on the doc.
+    error = idea_doc.get("ux_design_error") or None
+
+    return UXDesignStatusResponse(
+        run_id=run_id,
+        status=ux_status,
+        current_step=current_step,
+        design_md_ready=design_md_ready,
+        stitch_completed=stitch_completed,
+        figma_uploaded=figma_uploaded,
+        figma_url=figma_url,
+        error=error,
+    )

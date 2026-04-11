@@ -93,9 +93,10 @@ class TestListProjects:
         assert resp.json()["page_size"] == 50
 
     def test_invalid_page_size(self, client):
-        resp = client.get("/projects?page_size=15")
-        assert resp.status_code == 400
-        assert "page_size" in resp.json()["detail"]
+        resp = client.get("/projects?page_size=0")
+        assert resp.status_code == 422
+        resp = client.get("/projects?page_size=101")
+        assert resp.status_code == 422
 
     def test_pagination_math(self, client):
         """total_pages is ceil(total / page_size)."""

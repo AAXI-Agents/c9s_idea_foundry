@@ -1252,6 +1252,9 @@ class TestFindCompletedWithoutConfluence:
 # ── save_project_ref ──────────────────────────────────────────────
 
 
+_PATCH_GET_PROJECT = "crewai_productfeature_planner.mongodb.project_config.get_project"
+
+
 def test_save_project_ref(wi_mocks):
     """save_project_ref should $set project_id on the working idea doc."""
     mock_collection, mock_db = wi_mocks
@@ -1259,7 +1262,8 @@ def test_save_project_ref(wi_mocks):
         modified_count=1, upserted_id=None, matched_count=1,
     )
 
-    count = save_project_ref("run-1", "proj-abc")
+    with patch(_PATCH_GET_PROJECT, return_value={"project_id": "proj-abc"}):
+        count = save_project_ref("run-1", "proj-abc")
 
     assert count == 1
     mock_db.__getitem__.assert_called_with(WORKING_COLLECTION)
@@ -1286,7 +1290,8 @@ def test_save_project_ref_with_idea(wi_mocks):
         modified_count=1, upserted_id=None, matched_count=1,
     )
 
-    count = save_project_ref("run-1", "proj-abc", idea="Build a dashboard")
+    with patch(_PATCH_GET_PROJECT, return_value={"project_id": "proj-abc"}):
+        count = save_project_ref("run-1", "proj-abc", idea="Build a dashboard")
 
     assert count == 1
     call_args = mock_collection.update_one.call_args
@@ -1303,7 +1308,8 @@ def test_save_project_ref_upserts_new_doc(wi_mocks):
         modified_count=0, upserted_id="new-obj-id", matched_count=0,
     )
 
-    count = save_project_ref("run-new", "proj-xyz")
+    with patch(_PATCH_GET_PROJECT, return_value={"project_id": "proj-xyz"}):
+        count = save_project_ref("run-new", "proj-xyz")
 
     # Should count the upsert as a modification
     assert count == 1
@@ -1316,7 +1322,20 @@ def test_save_project_ref_db_error(wi_mocks):
     mock_collection, mock_db = wi_mocks
     mock_collection.update_one.side_effect = ServerSelectionTimeoutError("fail")
 
-    assert save_project_ref("run-1", "proj-abc") == 0
+    with patch(_PATCH_GET_PROJECT, return_value={"project_id": "proj-abc"}):
+        assert save_project_ref("run-1", "proj-abc") == 0
+
+
+def test_save_project_ref_rejects_nonexistent_project(wi_mocks):
+    """save_project_ref should return 0 when project_id doesn't exist."""
+    mock_collection, mock_db = wi_mocks
+
+    with patch(_PATCH_GET_PROJECT, return_value=None):
+        count = save_project_ref("run-1", "proj-phantom")
+
+    assert count == 0
+    # Should NOT have written to MongoDB
+    mock_collection.update_one.assert_not_called()
 
 
 # ── save_slack_context ────────────────────────────────────────────
@@ -2572,3 +2591,155 @@ class TestFindCompletedIdeasByProject:
         assert product["confluence_published"] is False
         assert product["jira_completed"] is False
         assert product["jira_tickets"] == []
+
+
+# ── find_recent_duplicate_idea ────────────────────────────────
+
+
+class TestFindRecentDuplicateIdea:
+    """Tests for find_recent_duplicate_idea duplicate-idea cooldown."""
+
+    def test_returns_matching_doc(self, wi_mocks):
+        """Should return the duplicate doc when a matching idea exists."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        dup_doc = {
+            "run_id": "existing-run",
+            "idea": "add dark mode",
+            "status": "completed",
+            "created_at": "2026-04-11T00:00:00Z",
+        }
+        mock_collection.find_one.return_value = dup_doc
+
+        result = find_recent_duplicate_idea("Add dark mode", "proj-abc")
+
+        assert result is not None
+        assert result["run_id"] == "existing-run"
+        # Verify query uses normalized text
+        query = mock_collection.find_one.call_args[0][0]
+        assert query["project_id"] == "proj-abc"
+        assert query["idea_normalized"] == "add dark mode"
+        assert query["status"] == {"$ne": "archived"}
+        assert "$gte" in str(query["created_at"])
+
+    def test_returns_none_when_no_match(self, wi_mocks):
+        """Should return None when no recent duplicate exists."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+
+        result = find_recent_duplicate_idea("unique idea", "proj-abc")
+        assert result is None
+
+    def test_returns_none_for_empty_idea(self):
+        """Should return None immediately if idea is empty."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        result = find_recent_duplicate_idea("", "proj-abc")
+        assert result is None
+
+    def test_returns_none_for_empty_project_id(self):
+        """Should return None immediately if project_id is empty."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        result = find_recent_duplicate_idea("some idea", "")
+        assert result is None
+
+    def test_normalizes_whitespace(self, wi_mocks):
+        """Should collapse whitespace and lowercase for comparison."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+
+        find_recent_duplicate_idea("  Add   Dark  MODE  ", "proj-abc")
+
+        query = mock_collection.find_one.call_args[0][0]
+        assert query["idea_normalized"] == "add dark mode"
+
+    def test_returns_none_on_db_error(self, wi_mocks):
+        """Should catch PyMongoError and return None."""
+        from pymongo.errors import PyMongoError
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = find_recent_duplicate_idea("idea", "proj-abc")
+            assert result is None
+
+
+# ── idea_normalized field persistence ─────────────────────────
+
+
+class TestIdeaNormalized:
+    """Verify idea_normalized is persisted by save_project_ref and save_slack_context."""
+
+    def test_save_project_ref_sets_idea_normalized(self, wi_mocks):
+        """save_project_ref with idea should persist idea_normalized."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(
+            modified_count=1, upserted_id=None, matched_count=1,
+        )
+
+        with patch(_PATCH_GET_PROJECT, return_value={"project_id": "proj-abc"}):
+            save_project_ref("run-1", "proj-abc", idea="Add  Dark MODE")
+
+        call_args = mock_collection.update_one.call_args
+        set_fields = call_args[0][1]["$set"]
+        assert set_fields["idea_normalized"] == "add dark mode"
+
+    def test_save_project_ref_no_idea_no_normalized(self, wi_mocks):
+        """save_project_ref without idea should NOT set idea_normalized."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(
+            modified_count=1, upserted_id=None, matched_count=1,
+        )
+
+        with patch(_PATCH_GET_PROJECT, return_value={"project_id": "proj-abc"}):
+            save_project_ref("run-1", "proj-abc")
+
+        call_args = mock_collection.update_one.call_args
+        set_fields = call_args[0][1]["$set"]
+        assert "idea_normalized" not in set_fields
+
+    def test_save_slack_context_sets_idea_normalized(self, wi_mocks):
+        """save_slack_context with idea should persist idea_normalized."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(
+            modified_count=1, upserted_id=None, matched_count=1,
+        )
+
+        save_slack_context("run-1", "C123", "ts-1", idea="Add  Dark MODE")
+
+        call_args = mock_collection.update_one.call_args
+        set_fields = call_args[0][1]["$set"]
+        assert set_fields["idea_normalized"] == "add dark mode"
+
+    def test_save_slack_context_no_idea_no_normalized(self, wi_mocks):
+        """save_slack_context without idea should NOT set idea_normalized."""
+        mock_collection, mock_db = wi_mocks
+        mock_collection.update_one.return_value = MagicMock(
+            modified_count=1, upserted_id=None, matched_count=1,
+        )
+
+        save_slack_context("run-1", "C123", "ts-1")
+
+        call_args = mock_collection.update_one.call_args
+        set_fields = call_args[0][1]["$set"]
+        assert "idea_normalized" not in set_fields

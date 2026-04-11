@@ -3318,6 +3318,134 @@ _CODEX: list[CodexEntry] = [
             "remote introspect. 5 new SSO tests (44 total)."
         ),
     ),
+    CodexEntry(
+        version="0.63.3",
+        date=date(2026, 4, 10),
+        summary=(
+            "SSO auth fix aligned with SSO server OpenAPI spec (v0.4.0). "
+            "3 bugs corrected: (1) Introspect — client_secret now sent "
+            "in JSON body (not Authorization header); SSO server accepts "
+            "client_id + client_secret in body for server-to-server "
+            "calls. (2) Public key field — response uses 'public_key_pem' "
+            "not 'public_key'. (3) JWKS support — _fetch_and_save_public_key "
+            "now tries GET /.well-known/jwks.json first (with JWK→PEM "
+            "conversion via cryptography library), falls back to "
+            "GET /sso/oauth/public-key. SSO server refresh endpoint already "
+            "has 10s grace period for concurrent requests. 2878 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.64.0",
+        date=date(2026, 4, 10),
+        summary=(
+            "SSO validation strategy + background key scheduler (GAP ticket "
+            "resolution). (1) Remote-first validation (user chose Option B): "
+            "require_sso_user, /userinfo, /status now try remote introspection "
+            "first (authoritative for revoked tokens), falling back to local "
+            "RS256 decode when SSO server is unreachable. (2) Background key "
+            "refresh scheduler: daemon thread fetches public key from JWKS "
+            "every 6h (+ immediate on startup), configurable via "
+            "SSO_KEY_REFRESH_INTERVAL_SECONDS. Starts automatically on server "
+            "boot when SSO_ENABLED=true. 3 new scheduler tests. 2881 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.64.1",
+        date=date(2026, 4, 10),
+        summary=(
+            "Fix GET /ideas and GET /projects 400 errors. Web app sends "
+            "page_size values (e.g. 15, 20) not in the strict allowlist "
+            "{5,6,10,25,50}. Replaced VALID_PAGE_SIZES allowlist with a "
+            "range check (1-100) using FastAPI Query(ge=1, le=100). "
+            "Dashboard polling no longer returns 400."
+        ),
+    ),
+    CodexEntry(
+        version="0.65.0",
+        date=date(2026, 4, 10),
+        summary=(
+            "Web-app API gap closure (A1–A3 from Gap Analysis). "
+            "(1) New GET /dashboard/stats endpoint — aggregates "
+            "total_ideas, in_development, prd_completed, "
+            "ideas_in_progress, uxd_completed from workingIdeas "
+            "via a single MongoDB aggregation pipeline. Gracefully "
+            "returns zeros on DB error. "
+            "(2) New POST /flow/ux/kickoff — web-app-compatible "
+            "endpoint accepting run_id in request body; delegates to "
+            "the existing POST /flow/ux-design/{run_id} logic. "
+            "(3) New GET /flow/ux/status/{run_id} — returns "
+            "UXDesignStatusResponse with status, current_step, "
+            "design_md_ready, stitch_completed, figma_uploaded, "
+            "figma_url, and error fields. "
+            "(4) Fixed GET /flow/runs/{run_id} DB fallback to include "
+            "ux_design_status and ux_design_content from workingIdeas. "
+            "19 new tests across dashboard and UX design endpoints."
+        ),
+    ),
+    CodexEntry(
+        version="0.66.0",
+        date=date(2026, 4, 11),
+        summary=(
+            "WebSocket real-time agent activity (Gap A6). "
+            "New WS /flow/runs/{run_id}/ws endpoint — bidirectional "
+            "WebSocket for real-time flow run updates. Sends "
+            "status_update, agent_activity, and progress events. "
+            "Supports ping/pong and get_status client commands. "
+            "Background poll loop queries agentInteractions for new "
+            "events and pushes status changes. broadcast_sync() "
+            "helper for thread-safe push from background tasks. "
+            "Gap A4 confirmed resolved (PATCH /user/profile already "
+            "exists). Gap A5 is frontend-only. "
+            "10 new WebSocket tests. GAP file deleted."
+        ),
+    ),
+    CodexEntry(
+        version="0.67.0",
+        date=date(2026, 4, 11),
+        summary=(
+            "Fix critical bug: project_id validation on PRD kickoff. "
+            "POST /flow/prd/kickoff now returns 422 when project_id "
+            "does not exist in projectConfig. Slack kickoff validates "
+            "and clears invalid project_id with warning. "
+            "save_project_ref() defence-in-depth: rejects writes for "
+            "non-existent projects. Prevents orphaned ideas for "
+            "phantom project IDs (e.g. 'proj-1' had 67 orphaned "
+            "ideas). 4 new tests. Created GAP ticket for stale data "
+            "cleanup recommendations."
+        ),
+    ),
+    CodexEntry(
+        version="0.68.0",
+        date=date(2026, 4, 11),
+        summary=(
+            "Stale project cleanup & duplicate-idea protection. "
+            "R1+R2+R3: Created scripts/cleanup_orphan_projects.py — "
+            "one-time CLI tool that scans workingIdeas for orphaned "
+            "project_ids, prints a summary, and offers to archive "
+            "(R1) or permanently delete (R2) orphaned documents with "
+            "user confirmation (R3). "
+            "S1A: Duplicate-idea cooldown — POST /flow/prd/kickoff "
+            "now returns 409 if the same idea text (normalised) was "
+            "submitted to the same project within 24 hours. Slack "
+            "kickoff rejects duplicates with a warning message. "
+            "New idea_normalized field persisted by save_project_ref "
+            "and save_slack_context. find_recent_duplicate_idea "
+            "query added to working_ideas._queries. "
+            "17 new tests (10 cleanup script, 3 API, 4 repository)."
+        ),
+    ),
+    CodexEntry(
+        version="0.68.1",
+        date=date(2026, 4, 11),
+        summary=(
+            "Fix IdeaItem ux_design_status crash. "
+            "idea_fields() could return None for ux_design_status when "
+            "both ux_design_status and figma_design_status were null in "
+            "MongoDB, causing a Pydantic ValidationError on GET /ideas/. "
+            "Added trailing `or \"\"` to guarantee a string result. "
+            "6 regression tests added."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

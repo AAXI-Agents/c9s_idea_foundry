@@ -6,6 +6,8 @@ aggregate working-idea documents.
 
 from __future__ import annotations
 
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pymongo.errors import PyMongoError
@@ -802,5 +804,71 @@ def find_idea_by_thread(
         logger.error(
             "[MongoDB] find_idea_by_thread failed (channel=%s thread=%s): %s",
             channel, thread_ts, exc,
+        )
+        return None
+
+
+# ── duplicate-idea detection ───────────────────────────────────────────────
+
+#: Default duplicate-idea cooldown window.
+DUPLICATE_IDEA_COOLDOWN_HOURS = 24
+
+
+def _normalize_idea_text(text: str) -> str:
+    """Lowercase, collapse whitespace, strip for comparison."""
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def find_recent_duplicate_idea(
+    idea: str,
+    project_id: str,
+    *,
+    cooldown_hours: int = DUPLICATE_IDEA_COOLDOWN_HOURS,
+) -> dict[str, Any] | None:
+    """Check if the same idea was submitted to a project recently.
+
+    Normalises the idea text (lowercase + whitespace-collapse) and
+    searches ``workingIdeas`` for a matching document created within
+    the last *cooldown_hours*, excluding ``archived`` ideas.
+
+    Args:
+        idea: Raw idea text from the request.
+        project_id: The project to scope the search to.
+        cooldown_hours: How far back to look (default 24 h).
+
+    Returns:
+        The matching document (lightweight projection) if a recent
+        duplicate exists, otherwise ``None``.
+    """
+    if not idea or not project_id:
+        return None
+
+    normalized = _normalize_idea_text(idea)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=cooldown_hours)
+
+    try:
+        db = _common.get_db()
+        doc = db[WORKING_COLLECTION].find_one(
+            {
+                "project_id": project_id,
+                "idea_normalized": normalized,
+                "status": {"$ne": "archived"},
+                "created_at": {"$gte": cutoff.isoformat()},
+            },
+            {"run_id": 1, "idea": 1, "status": 1, "created_at": 1},
+            sort=[("created_at", -1)],
+        )
+        if doc:
+            logger.info(
+                "[MongoDB] Duplicate idea detected for project_id=%s "
+                "(existing run_id=%s, created_at=%s)",
+                project_id, doc.get("run_id"), doc.get("created_at"),
+            )
+        return doc
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] find_recent_duplicate_idea failed "
+            "(project=%s): %s",
+            project_id, exc,
         )
         return None

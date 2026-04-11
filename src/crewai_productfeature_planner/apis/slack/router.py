@@ -286,6 +286,34 @@ def _run_slack_prd_flow(
             run_id=run_id,
         )
 
+    # Reject duplicate idea submitted to the same project within 24h
+    if project_id:
+        from crewai_productfeature_planner.mongodb.working_ideas import (
+            find_recent_duplicate_idea,
+        )
+        dup = find_recent_duplicate_idea(idea, project_id)
+        if dup is not None:
+            logger.warning(
+                "[Slack] Duplicate idea rejected for project_id=%s "
+                "run_id=%s (existing run_id=%s)",
+                project_id, run_id, dup.get("run_id"),
+            )
+            if notify:
+                from crewai_productfeature_planner.tools.slack_tools import (
+                    SlackSendMessageTool,
+                )
+                SlackSendMessageTool().run(
+                    channel=channel,
+                    text=(
+                        ":warning: *Duplicate idea rejected* — the same idea "
+                        "was recently submitted to this project "
+                        f"(run_id=`{dup.get('run_id')}`). "
+                        "Wait 24 hours or use a different idea text."
+                    ),
+                    thread_ts=thread_ts or "",
+                )
+            return
+
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
     create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts or "")
@@ -301,14 +329,25 @@ def _run_slack_prd_flow(
 
     # Link working idea to project early so in-progress runs appear in
     # find_ideas_by_project queries (e.g. "list ideas").
+    # Validate that the project_id actually exists first to prevent
+    # orphaned ideas for phantom projects.
     if project_id:
-        try:
-            from crewai_productfeature_planner.mongodb.working_ideas.repository import (
-                save_project_ref,
+        from crewai_productfeature_planner.mongodb.project_config import get_project
+        if get_project(project_id) is None:
+            logger.warning(
+                "[Slack] Ignoring invalid project_id=%s for run_id=%s — "
+                "project does not exist in projectConfig",
+                project_id, run_id,
             )
-            save_project_ref(run_id, project_id, idea=idea)
-        except Exception:  # noqa: BLE001
-            logger.debug("early save_project_ref failed for %s", run_id, exc_info=True)
+            project_id = None  # clear so the safety-net re-apply also skips
+        else:
+            try:
+                from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+                    save_project_ref,
+                )
+                save_project_ref(run_id, project_id, idea=idea)
+            except Exception:  # noqa: BLE001
+                logger.debug("early save_project_ref failed for %s", run_id, exc_info=True)
 
     try:
         if notify:

@@ -2088,3 +2088,182 @@ def test_openapi_schema_has_job_detail_new_fields(client):
     props = schema["components"]["schemas"]["JobDetail"]["properties"]
     assert "output_file" in props
     assert "confluence_url" in props
+
+
+# ── UX design status in flow runs (A4 from Gap Analysis) ─────
+
+
+def test_run_status_db_fallback_includes_ux_design_status(client):
+    """GET /flow/runs/{run_id} DB fallback includes ux_design_status."""
+    from crewai_productfeature_planner.apis.prd.models import PRDDraft, ExecutiveSummaryDraft
+
+    job_doc = {
+        "job_id": "r-ux-db",
+        "flow_name": "prd",
+        "idea": "UX test",
+        "status": "completed",
+        "queued_at": "2026-04-01T00:00:00",
+    }
+    idea_doc = {
+        "run_id": "r-ux-db",
+        "ux_design_status": "completed",
+        "ux_design_content": "# UX Design\n\nContent here",
+    }
+    dummy_draft = PRDDraft.create_empty()
+    with (
+        patch("crewai_productfeature_planner.apis.prd.router.find_job", return_value=job_doc),
+        patch(
+            "crewai_productfeature_planner.apis.prd.router.restore_prd_state",
+            return_value=("UX test", dummy_draft, ExecutiveSummaryDraft(), "", [], []),
+        ),
+        patch(
+            "crewai_productfeature_planner.mongodb.working_ideas.find_run_any_status",
+            return_value=idea_doc,
+        ),
+    ):
+        resp = client.get("/flow/runs/r-ux-db")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ux_design_status"] == "completed"
+    assert body["ux_design_content"] == "# UX Design\n\nContent here"
+
+
+def test_run_status_db_fallback_ux_defaults_empty(client):
+    """GET /flow/runs/{run_id} DB fallback defaults ux_design_status to empty."""
+    job_doc = {
+        "job_id": "r-ux-empty",
+        "flow_name": "prd",
+        "idea": "No UX",
+        "status": "completed",
+        "queued_at": "2026-04-01T00:00:00",
+    }
+    with (
+        patch("crewai_productfeature_planner.apis.prd.router.find_job", return_value=job_doc),
+        patch(
+            "crewai_productfeature_planner.apis.prd.router.restore_prd_state",
+            side_effect=ValueError("not found"),
+        ),
+    ):
+        resp = client.get("/flow/runs/r-ux-empty")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ux_design_status"] == ""
+    assert body["ux_design_content"] == ""
+
+
+# ── project_id validation on kickoff ─────────────────────────
+
+
+def test_kickoff_rejects_invalid_project_id(client):
+    """Kickoff with a project_id that doesn't exist should return 422."""
+    with patch(
+        "crewai_productfeature_planner.apis.prd._route_actions.get_project",
+        return_value=None,
+    ):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode", "project_id": "proj-1"},
+        )
+    assert resp.status_code == 422
+    assert "does not exist" in resp.json()["detail"]
+
+
+def test_kickoff_accepts_valid_project_id(client):
+    """Kickoff with a valid project_id should return 202."""
+    project_doc = {"project_id": "abc123", "name": "Test Project"}
+    with (
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.get_project",
+            return_value=project_doc,
+        ),
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.save_project_ref",
+        ) as mock_save,
+        patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"),
+    ):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode", "project_id": "abc123"},
+        )
+    assert resp.status_code == 202
+    mock_save.assert_called_once()
+
+
+def test_kickoff_without_project_id_skips_validation(client):
+    """Kickoff without project_id should not call get_project."""
+    with (
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.get_project",
+        ) as mock_get,
+        patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"),
+    ):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode"},
+        )
+    assert resp.status_code == 202
+    mock_get.assert_not_called()
+
+
+# ── duplicate-idea cooldown on kickoff ───────────────────────
+
+
+def test_kickoff_rejects_duplicate_idea(client):
+    """Kickoff with a duplicate idea submitted within 24h should return 409."""
+    dup_doc = {"run_id": "existing-run", "created_at": "2026-04-11T00:00:00Z"}
+    with (
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.get_project",
+            return_value={"project_id": "abc123"},
+        ),
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.find_recent_duplicate_idea",
+            return_value=dup_doc,
+        ),
+    ):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode", "project_id": "abc123"},
+        )
+    assert resp.status_code == 409
+    assert "Duplicate idea" in resp.json()["detail"]
+    assert "existing-run" in resp.json()["detail"]
+
+
+def test_kickoff_allows_unique_idea(client):
+    """Kickoff with a unique idea (no duplicate) should return 202."""
+    with (
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.get_project",
+            return_value={"project_id": "abc123"},
+        ),
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.find_recent_duplicate_idea",
+            return_value=None,
+        ),
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.save_project_ref",
+        ),
+        patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"),
+    ):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode", "project_id": "abc123"},
+        )
+    assert resp.status_code == 202
+
+
+def test_kickoff_skips_duplicate_check_without_project_id(client):
+    """Without project_id, duplicate check should not run."""
+    with (
+        patch(
+            "crewai_productfeature_planner.apis.prd._route_actions.find_recent_duplicate_idea",
+        ) as mock_dup,
+        patch("crewai_productfeature_planner.apis.prd._route_actions.run_prd_flow"),
+    ):
+        resp = client.post(
+            "/flow/prd/kickoff",
+            json={"idea": "Dark mode"},
+        )
+    assert resp.status_code == 202
+    mock_dup.assert_not_called()

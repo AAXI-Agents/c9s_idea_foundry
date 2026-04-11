@@ -9,6 +9,116 @@ tags:
 
 ---
 
+## Session — 2026-04-11 (v0.68.1)
+
+**Focus**: Fix GET /ideas/ 500 error — ux_design_status None crash
+
+### Root Cause
+`idea_fields()` in `apis/ideas/models.py` used `doc.get("ux_design_status", "") or doc.get("figma_design_status", "")`. When both fields are `None` in MongoDB (not missing — explicitly null), the `or` chain evaluates to `None`, which Pydantic rejects for the `str` field.
+
+### Fix
+Added trailing `or ""` to guarantee a string result regardless of null combinations.
+
+### Files Changed
+- `apis/ideas/models.py` — `idea_fields()` trailing `or ""` on ux_design_status
+- `tests/apis/ideas/test_router.py` — 6 regression tests (router + unit)
+
+### Results
+- 24 ideas API tests pass
+- Version bumped to 0.68.1
+
+---
+
+## Session — 2026-04-11 (v0.68.0)
+
+**Focus**: Stale project cleanup & duplicate-idea protection (GAP ticket resolution)
+
+### User Decisions (from GAP-stale-project-proj1-cleanup.md)
+- **R1+R2+R3**: All three — create cleanup script with archive and delete modes
+- **S1**: Option A — reject duplicates with 409 (24h cooldown)
+
+### Changes Applied
+1. **Cleanup script** (`scripts/cleanup_orphan_projects.py`): CLI tool to find orphaned project_id refs. Modes: `--archive` (R1), `--delete` (R2), dry-run default (R3). Supports `--project <id>` filter and `--yes` for non-interactive
+2. **Duplicate-idea cooldown** (S1A): `find_recent_duplicate_idea()` queries by `idea_normalized` + `project_id` within 24h window. API returns 409, Slack sends warning and returns early
+3. **`idea_normalized` field**: Set by `save_project_ref()` and `save_slack_context()` — lowercase + whitespace-collapsed copy of idea text
+
+### Files Changed
+- `scripts/cleanup_orphan_projects.py` — NEW, standalone CLI with lazy imports
+- `mongodb/working_ideas/_queries.py` — `find_recent_duplicate_idea()`, `_normalize_idea_text()`, `DUPLICATE_IDEA_COOLDOWN_HOURS`
+- `mongodb/working_ideas/_status.py` — `_normalize_idea()`, `idea_normalized` field in save_project_ref/save_slack_context
+- `mongodb/working_ideas/repository.py` + `__init__.py` — re-exports
+- `apis/prd/_route_actions.py` — 409 duplicate check after project_id validation
+- `apis/slack/router.py` — duplicate check before job creation in `_run_slack_prd_flow()`
+
+### Tests
+- `tests/test_cleanup_orphan_projects.py` — 10 new tests (6 classes)
+- `tests/apis/prd/test_prd.py` — 3 new tests (duplicate scenarios)
+- `tests/mongodb/working_ideas/test_repository.py` — 10 new tests (duplicate + normalized)
+
+### GAP Ticket
+- `GAP-stale-project-proj1-cleanup.md` — all items resolved → status: resolved
+
+### Results
+- 265 targeted tests pass (cleanup + PRD + repository)
+- Version bumped to 0.68.0
+
+---
+
+## Session — 2026-04-10 (v0.64.0)
+
+**Focus**: SSO GAP ticket resolution — remote-first validation + background key scheduler
+
+### User Decisions (from GAP-sso-oauth-key-rotation-resilience.md)
+- **R3**: Implement background key refresh scheduler (daemon thread, similar to token_refresh_scheduler.py)
+- **S1**: Option B — remote-first validation (introspect is authoritative)
+
+### Changes Applied
+1. **Remote-first validation**: All SSO endpoints (`require_sso_user`, `/userinfo`, `/status`) now try remote introspection first, falling back to local RS256 decode when the SSO server is unreachable
+2. **Background key refresh scheduler**: `start_key_refresh_scheduler()` — daemon thread that fetches JWKS/PEM every 6 hours + immediate on startup. Stops automatically with server. Configurable via `SSO_KEY_REFRESH_INTERVAL_SECONDS`
+3. Scheduler auto-starts from `_lifespan` in `apis/__init__.py` (step 8c)
+
+### Files Changed
+- `apis/sso_auth.py` — remote-first flow in `require_sso_user`, added `start_key_refresh_scheduler/stop_key_refresh_scheduler/_key_refresh_loop`
+- `apis/sso/router.py` — remote-first flow in `/userinfo` and `/status`
+- `apis/__init__.py` — startup hook for key scheduler (step 8c)
+- `tests/apis/sso/test_sso_router.py` — 3 new scheduler tests (48 total)
+
+### GAP Ticket
+- `GAP-sso-oauth-key-rotation-resilience.md` — all 4 items resolved → **deleted**
+
+### Results
+- 48 SSO tests pass, 2881 full regression green
+
+---
+
+## Session — 2026-04-10 (v0.63.3)
+
+**Focus**: SSO auth fixes aligned with SSO server OpenAPI spec (v0.4.0)
+
+### Root Cause (from SSO server docs review)
+Fetched the SSO server's OpenAPI spec at `/sso/docs` and discovered 3 mismatches in our v0.63.2 implementation:
+
+1. **Introspect auth method wrong** — We sent `Authorization: Bearer <client_secret>` header, but the SSO server's `IntrospectRequest` schema accepts `client_id` + `client_secret` **in the JSON body** (the Authorization header is for bearer access_token auth, not client_secret).
+2. **Public key field name wrong** — We read `body.get("public_key")` but the SSO server returns `"public_key_pem"`.
+3. **JWKS endpoint available** — SSO server already exposes `GET /.well-known/jwks.json` (standard RFC 7517). We weren't using it.
+
+Also discovered: SSO server's refresh endpoint has a **10-second grace period** for concurrent requests, so concurrent refresh races are already handled server-side.
+
+### Fixes Applied
+1. `_introspect_remotely()` — removed `Authorization: Bearer` header, added `client_secret` to JSON body alongside `client_id`
+2. `_fetch_and_save_public_key()` — now tries JWKS first (`/.well-known/jwks.json` with JWK→PEM conversion via `cryptography`), falls back to PEM endpoint (`/sso/oauth/public-key`) reading `public_key_pem` field
+3. New `_fetch_jwks_pem()` + `_jwk_to_pem()` helpers — convert JWKS RSA key to PEM format using `RSAPublicNumbers`
+4. New `_fetch_pem_directly()` — cleaner fallback to PEM endpoint
+
+### Files Changed
+- `apis/sso_auth.py` — introspect body auth, JWKS support, PEM field name fix
+- `tests/apis/sso/test_sso_router.py` — updated introspect test (client_secret in body, no header), new JWKS test, updated PEM fallback test
+
+### Results
+- 45 SSO tests pass, 2878 full regression green
+
+---
+
 ## Session — 2026-04-10 (v0.63.2)
 
 **Focus**: SSO OAuth deep fix — 3-phase token validation with automatic key rotation recovery
@@ -3688,5 +3798,127 @@ Full regression test suite was taking 480s (8 min). Optimize to bring every test
 | Tests > 1.5s | 30+ | **0** | Target met |
 | Failures | 4 flaky | **0** | All fixed |
 | Test count | 2819 | 2819 | No removals |
+
+---
+
+## Session — 2026-04-10 (continued) — v0.65.0
+
+### Goal
+Implement missing APIs identified in the web-app Gap Analysis (A1–A3).
+
+### Changes
+
+**v0.65.0 — Web-App API Gap Closure**
+
+1. **`GET /dashboard/stats`** (A1 — P1):
+   - New `apis/dashboard/` module with router
+   - MongoDB aggregation pipeline: `total_ideas`, `in_development`, `prd_completed`, `ideas_in_progress`, `uxd_completed`
+   - Graceful degradation: returns zeros on DB error
+   - 4 tests
+
+2. **`POST /flow/ux/kickoff`** (A2 — P2):
+   - Web-app-compatible endpoint accepting `run_id` in request body
+   - Delegates to existing `POST /flow/ux-design/{run_id}` logic
+   - 5 tests
+
+3. **`GET /flow/ux/status/{run_id}`** (A3 — P2):
+   - Returns `UXDesignStatusResponse` with fields matching frontend `UxDesignStatus` interface
+   - Derives boolean flags from stored `ux_design_status` string
+   - Falls back to `figma_design_status` field
+   - 8 tests
+
+4. **`GET /flow/runs/{run_id}` fix**:
+   - DB fallback path now includes `ux_design_status` and `ux_design_content` from workingIdeas doc
+   - 2 tests
+
+### Files Modified
+- `src/.../apis/dashboard/__init__.py` — New module
+- `src/.../apis/dashboard/router.py` — New: `GET /dashboard/stats`
+- `src/.../apis/prd/_route_ux_design.py` — Added `POST /flow/ux/kickoff`, `GET /flow/ux/status/{run_id}`
+- `src/.../apis/prd/router.py` — Fixed `_build_run_response_from_db` to include UX design fields
+- `src/.../apis/__init__.py` — Registered `dashboard_router`
+- `tests/apis/dashboard/test_router.py` — 4 new tests
+- `tests/apis/prd/test_ux_design_web.py` — 13 new tests
+- `tests/apis/prd/test_prd.py` — 2 new tests
+- `version.py` — v0.65.0
+- `obsidian/Changelog/Version History.md` — Entry added
+- `obsidian/Architecture/Module Map.md` — dashboard/ added
+- `obsidian/APIs/API Overview.md` — Dashboard section + UX endpoints added
+
+### Test Results
+- 2900 passed, 0 failed (46s)
+
+---
+
+## Session — 2026-04-11 — v0.66.0
+
+### Goal
+Process user answers from GAP-api-remaining-webapp-gaps.md (A4→R3, A6→R3).
+
+### User Answers
+- **S1 (A4)**: R3 — Local preferences only. `PATCH /user/profile` already exists.
+- **S2 (A6)**: R3 — Full bidirectional WebSocket.
+- **A5**: Frontend-only fix (backend already has `GET /integrations/status`).
+
+### Changes
+
+**v0.66.0 — WebSocket Real-Time Agent Activity (Gap A6)**
+
+1. **`WS /flow/runs/{run_id}/ws`** (A6 — P3):
+   - Bidirectional WebSocket endpoint for real-time flow run updates
+   - Sends `status_update`, `agent_activity`, `progress`, `complete` events
+   - Accepts client messages: `ping` (→ pong), `get_status` (→ snapshot)
+   - Background polling loop queries agentInteractions for new events
+   - `broadcast_sync()` helper for thread-safe push from background tasks
+   - Connection hub with async lock for safe multi-client management
+   - `_enable_poll_loop` flag for test isolation
+   - 10 tests (connect, status, ping/pong, get_status, error handling, db fallback)
+
+2. **Gap A4** — confirmed already resolved: `PATCH /user/profile` exists at `user_profile/router.py` with `display_name`, `default_project_id`, `timezone`, `notification_preferences` fields.
+
+3. **Gap A5** — no backend work needed, `GET /integrations/status` already returns Confluence + Jira connection details.
+
+### Files Modified
+- `src/.../apis/prd/_route_websocket.py` — New: WebSocket endpoint + hub + poll loop
+- `src/.../apis/prd/router.py` — Added `ws_router` import + `ws_only_router`
+- `src/.../apis/__init__.py` — Registered `prd_ws_router`
+- `tests/apis/prd/test_websocket.py` — 10 new tests
+- `version.py` — v0.66.0
+- `obsidian/Changelog/Version History.md` — Entry added
+- `obsidian/Architecture/Module Map.md` — `_route_websocket.py` added
+- `obsidian/APIs/API Overview.md` — WS endpoint added (14 PRD endpoints total)
+- `obsidian/User Feedback/GAP-api-remaining-webapp-gaps.md` — Deleted (all resolved)
+
+---
+
+### v0.67.0 — Fix critical bug: project_id validation (2026-04-11)
+
+**Task:** Investigate and fix "proj-1" continuously running. Prevent
+stale/phantom project IDs from creating orphaned ideas.
+
+**Root cause:** No validation that `project_id` exists in `projectConfig`
+when kicking off a PRD flow. Both the API (`POST /flow/prd/kickoff`)
+and Slack kickoff accepted arbitrary strings, allowing 67 orphaned
+ideas to accumulate for the non-existent "proj-1" project over 12 days.
+
+**Changes:**
+
+- `apis/prd/_route_actions.py` — Validate project_id exists via
+  `get_project()` before kickoff. Returns 422 if not found.
+- `apis/slack/router.py` — Validate project_id in `_run_slack_prd_flow()`.
+  Logs warning and clears invalid project_id to prevent persistence.
+- `mongodb/working_ideas/_status.py` — Defence-in-depth in
+  `save_project_ref()`: rejects writes for non-existent projects.
+
+**Files modified:**
+
+- `src/.../apis/prd/_route_actions.py` — project_id validation
+- `src/.../apis/slack/router.py` — Slack project_id validation
+- `src/.../mongodb/working_ideas/_status.py` — save_project_ref validation
+- `tests/apis/prd/test_prd.py` — 3 new tests (invalid, valid, skipped)
+- `tests/mongodb/working_ideas/test_repository.py` — 1 new test + updated 4 existing
+- `version.py` — v0.67.0
+- `obsidian/Changelog/Version History.md` — Entry added
+- `obsidian/User Feedback/GAP-stale-project-proj1-cleanup.md` — Created for user decisions
 
 ---

@@ -531,13 +531,14 @@ async def sso_status(request: Request):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[len("Bearer "):]
-        claims = _decode_jwt_locally(token)
+        # Remote-first: introspection is authoritative
+        claims = await _introspect_remotely(token)
+        if claims is None:
+            claims = _decode_jwt_locally(token)
         if claims is None:
             new_key = await _fetch_and_save_public_key()
             if new_key:
                 claims = _decode_jwt_locally(token)
-        if claims is None:
-            claims = await _introspect_remotely(token)
         if claims:
             return {
                 "authenticated": True,
@@ -556,13 +557,13 @@ async def sso_status(request: Request):
         }
 
     access_token = tokens.get("access_token", "")
-    claims = _decode_jwt_locally(access_token)
+    claims = await _introspect_remotely(access_token)
+    if claims is None:
+        claims = _decode_jwt_locally(access_token)
     if claims is None:
         new_key = await _fetch_and_save_public_key()
         if new_key:
             claims = _decode_jwt_locally(access_token)
-    if claims is None:
-        claims = await _introspect_remotely(access_token)
     if claims:
         return {
             "authenticated": True,
@@ -590,13 +591,14 @@ async def sso_userinfo(request: Request):
         )
 
     token = auth_header[len("Bearer "):]
-    claims = _decode_jwt_locally(token)
+    # Remote-first: introspection is authoritative
+    claims = await _introspect_remotely(token)
+    if claims is None:
+        claims = _decode_jwt_locally(token)
     if claims is None:
         new_key = await _fetch_and_save_public_key()
         if new_key:
             claims = _decode_jwt_locally(token)
-    if claims is None:
-        claims = await _introspect_remotely(token)
     if not claims:
         return JSONResponse(
             {"error": "Invalid or expired access token"},

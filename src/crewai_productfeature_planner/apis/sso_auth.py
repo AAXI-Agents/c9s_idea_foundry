@@ -36,6 +36,7 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -95,36 +96,119 @@ def _sso_public_key() -> str | None:
 async def _fetch_and_save_public_key() -> str | None:
     """Download the current public key from the SSO server and save to disk.
 
-    Called automatically when the local key fails signature verification,
-    allowing seamless recovery from SSO key rotation without a server
-    restart.
+    Tries two strategies in order:
+
+    1. **JWKS** (recommended) — ``GET /.well-known/jwks.json``.
+       Converts the JWK RSA key to PEM format.  Supports key rotation
+       via ``kid`` matching.
+    2. **PEM fallback** — ``GET /sso/oauth/public-key`` (or ``/sso/auth/public-key``).
+       Returns ``public_key_pem`` directly.
+
+    Saves the PEM to ``SSO_JWT_PUBLIC_KEY_PATH`` and clears the LRU
+    cache so the next ``_decode_jwt_locally`` call picks up the new key.
     """
     base_url = _sso_base_url()
     key_path = os.environ.get("SSO_JWT_PUBLIC_KEY_PATH", "").strip()
     if not key_path:
         return None
+
+    client = _get_sso_http_client()
+    headers = {"ngrok-skip-browser-warning": "true"}
+
+    # Strategy 1: JWKS (recommended — supports key rotation via kid)
+    new_key = await _fetch_jwks_pem(client, base_url, headers)
+
+    # Strategy 2: PEM endpoint fallback
+    if not new_key:
+        new_key = await _fetch_pem_directly(client, base_url, headers)
+
+    if not new_key:
+        return None
+
+    Path(key_path).write_text(new_key)
+    _sso_public_key.cache_clear()
+    logger.info("[SSO Auth] Downloaded and saved new public key from SSO server")
+    return new_key
+
+
+async def _fetch_jwks_pem(
+    client: httpx.AsyncClient,
+    base_url: str,
+    headers: dict[str, str],
+) -> str | None:
+    """Fetch JWKS and convert the first RSA key to PEM format."""
     try:
-        client = _get_sso_http_client()
         resp = await client.get(
-            f"{base_url}/sso/auth/public-key",
-            headers={"ngrok-skip-browser-warning": "true"},
+            f"{base_url}/sso/.well-known/jwks.json",
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            logger.debug("[SSO Auth] JWKS fetch returned %d", resp.status_code)
+            return None
+        keys = resp.json().get("keys", [])
+        if not keys:
+            logger.debug("[SSO Auth] JWKS response has no keys")
+            return None
+        # Use the first RS256 signing key
+        jwk = next((k for k in keys if k.get("alg") == "RS256"), keys[0])
+        return _jwk_to_pem(jwk)
+    except Exception:
+        logger.debug("[SSO Auth] JWKS fetch/parse failed", exc_info=True)
+        return None
+
+
+def _jwk_to_pem(jwk: dict[str, Any]) -> str | None:
+    """Convert a JWK dict (with ``n`` and ``e`` fields) to PEM string."""
+    try:
+        import base64
+
+        from cryptography.hazmat.primitives.asymmetric.rsa import (
+            RSAPublicNumbers,
+        )
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PublicFormat,
+        )
+
+        def _b64url_decode(val: str) -> int:
+            padded = val + "=" * (4 - len(val) % 4)
+            data = base64.urlsafe_b64decode(padded)
+            return int.from_bytes(data, "big")
+
+        n = _b64url_decode(jwk["n"])
+        e = _b64url_decode(jwk["e"])
+        public_key = RSAPublicNumbers(e, n).public_key()
+        pem_bytes = public_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        return pem_bytes.decode("utf-8")
+    except Exception:
+        logger.warning("[SSO Auth] Failed to convert JWK to PEM", exc_info=True)
+        return None
+
+
+async def _fetch_pem_directly(
+    client: httpx.AsyncClient,
+    base_url: str,
+    headers: dict[str, str],
+) -> str | None:
+    """Fetch PEM from the ``/sso/oauth/public-key`` endpoint."""
+    try:
+        resp = await client.get(
+            f"{base_url}/sso/oauth/public-key",
+            headers=headers,
         )
         if resp.status_code != 200:
             logger.warning(
-                "[SSO Auth] Public key fetch returned %d", resp.status_code,
+                "[SSO Auth] Public key PEM fetch returned %d", resp.status_code,
             )
             return None
         body = resp.json()
-        new_key = body.get("public_key", "")
+        new_key = body.get("public_key_pem") or body.get("public_key", "")
         if not new_key:
-            logger.warning("[SSO Auth] Public key response has no 'public_key' field")
+            logger.warning("[SSO Auth] Public key response has no 'public_key_pem' field")
             return None
-        Path(key_path).write_text(new_key)
-        _sso_public_key.cache_clear()
-        logger.info("[SSO Auth] Downloaded and saved new public key from SSO server")
         return new_key
     except Exception:
-        logger.warning("[SSO Auth] Failed to fetch public key from SSO server", exc_info=True)
+        logger.warning("[SSO Auth] Failed to fetch PEM key from SSO server", exc_info=True)
         return None
 
 
@@ -187,9 +271,9 @@ async def _introspect_remotely(token: str) -> dict[str, Any] | None:
     """Call the SSO service's ``/sso/oauth/introspect`` endpoint.
 
     Returns the introspection dict on success (``active: True``),
-    None on failure.  Authenticates the request using the
-    ``Authorization: Bearer <client_secret>`` header with the
-    ``client_id`` in the body, per RFC 7662.
+    None on failure.  Authenticates using client credentials
+    (``client_id`` + ``client_secret``) in the JSON body, per the
+    SSO server's IntrospectRequest schema.
     """
     base_url = _sso_base_url()
     client_id = os.environ.get("SSO_CLIENT_ID", "").strip()
@@ -199,9 +283,9 @@ async def _introspect_remotely(token: str) -> dict[str, Any] | None:
         payload: dict[str, str] = {"token": token}
         if client_id:
             payload["client_id"] = client_id
-        headers: dict[str, str] = {"ngrok-skip-browser-warning": "true"}
         if client_secret:
-            headers["Authorization"] = f"Bearer {client_secret}"
+            payload["client_secret"] = client_secret
+        headers: dict[str, str] = {"ngrok-skip-browser-warning": "true"}
         resp = await client.post(
             f"{base_url}/sso/oauth/introspect",
             json=payload,
@@ -295,20 +379,20 @@ async def require_sso_user(request: Request) -> dict[str, Any]:
         )
     token = auth[len("Bearer "):]
 
-    # Try local RS256 decode first, then remote introspection.
-    claims = _decode_jwt_locally(token)
+    # Remote-first validation (Option B): introspection is always
+    # authoritative for revoked/expired tokens.  Local decode serves
+    # as a fast-path fallback when the SSO server is unreachable.
+    claims = await _introspect_remotely(token)
 
-    # On local decode failure (e.g. key rotation), try fetching the
-    # current public key from the SSO server before falling back to
-    # remote introspection.
+    # Fallback: local RS256 decode (useful if SSO server is down).
+    if claims is None:
+        claims = _decode_jwt_locally(token)
+
+    # On local decode failure, try refreshing the public key.
     if claims is None:
         new_key = await _fetch_and_save_public_key()
         if new_key:
             claims = _decode_jwt_locally(token)
-
-    # Final fallback: remote introspection.
-    if claims is None:
-        claims = await _introspect_remotely(token)
 
     if not claims:
         logger.warning("[SSO] Invalid/expired token for %s", request.url.path)
@@ -370,3 +454,91 @@ async def verify_sso_webhook(request: Request) -> dict[str, Any]:
         )
 
     return json.loads(body)
+
+
+# ── Background public key refresh scheduler ───────────────────
+
+_key_scheduler_thread: threading.Thread | None = None
+_key_scheduler_stop = threading.Event()
+
+_DEFAULT_KEY_REFRESH_INTERVAL = 6 * 3600  # 6 hours
+
+
+def start_key_refresh_scheduler() -> bool:
+    """Start a daemon thread that periodically refreshes the SSO public key.
+
+    Fetches the key immediately on startup, then every 6 hours
+    (configurable via ``SSO_KEY_REFRESH_INTERVAL_SECONDS``).
+
+    Returns ``True`` if started, ``False`` if already running or SSO
+    is not configured.
+    """
+    global _key_scheduler_thread  # noqa: PLW0603
+
+    if _key_scheduler_thread is not None and _key_scheduler_thread.is_alive():
+        logger.debug("[SSO KeyRefresh] Already running")
+        return False
+
+    if not _sso_enabled():
+        logger.debug("[SSO KeyRefresh] SSO disabled — scheduler not started")
+        return False
+
+    key_path = os.environ.get("SSO_JWT_PUBLIC_KEY_PATH", "").strip()
+    if not key_path:
+        logger.debug("[SSO KeyRefresh] No SSO_JWT_PUBLIC_KEY_PATH — scheduler not started")
+        return False
+
+    _key_scheduler_stop.clear()
+    _key_scheduler_thread = threading.Thread(
+        target=_key_refresh_loop,
+        name="sso-key-refresh-scheduler",
+        daemon=True,
+    )
+    _key_scheduler_thread.start()
+
+    interval = _get_key_refresh_interval()
+    logger.info(
+        "[SSO KeyRefresh] Started — refreshing every %ds",
+        interval,
+    )
+    return True
+
+
+def stop_key_refresh_scheduler() -> None:
+    """Signal the key refresh scheduler to stop."""
+    global _key_scheduler_thread  # noqa: PLW0603
+    _key_scheduler_stop.set()
+    if _key_scheduler_thread is not None:
+        _key_scheduler_thread.join(timeout=15)
+        _key_scheduler_thread = None
+    logger.info("[SSO KeyRefresh] Stopped")
+
+
+def _get_key_refresh_interval() -> int:
+    try:
+        return int(os.environ.get("SSO_KEY_REFRESH_INTERVAL_SECONDS", ""))
+    except (ValueError, TypeError):
+        return _DEFAULT_KEY_REFRESH_INTERVAL
+
+
+def _key_refresh_loop() -> None:
+    """Main loop — runs in a daemon thread."""
+    import asyncio
+
+    interval = _get_key_refresh_interval()
+    logger.debug("[SSO KeyRefresh] Loop started (interval=%ds)", interval)
+
+    # Immediate fetch on startup.
+    try:
+        asyncio.run(_fetch_and_save_public_key())
+    except Exception:
+        logger.warning("[SSO KeyRefresh] Initial key fetch failed", exc_info=True)
+
+    while not _key_scheduler_stop.is_set():
+        _key_scheduler_stop.wait(timeout=interval)
+        if _key_scheduler_stop.is_set():
+            break
+        try:
+            asyncio.run(_fetch_and_save_public_key())
+        except Exception:
+            logger.warning("[SSO KeyRefresh] Periodic key fetch failed", exc_info=True)

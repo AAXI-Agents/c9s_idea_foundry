@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from crewai_productfeature_planner.apis import app
+from crewai_productfeature_planner.apis.ideas.models import idea_fields
 
 _PKG = "crewai_productfeature_planner.apis.ideas.router"
 _QUERIES = "crewai_productfeature_planner.mongodb.working_ideas._queries"
@@ -93,9 +94,10 @@ class TestListIdeas:
         assert resp.json()["page_size"] == 50
 
     def test_invalid_page_size(self, client):
-        resp = client.get("/ideas?page_size=15")
-        assert resp.status_code == 400
-        assert "page_size" in resp.json()["detail"]
+        resp = client.get("/ideas?page_size=0")
+        assert resp.status_code == 422
+        resp = client.get("/ideas?page_size=101")
+        assert resp.status_code == 422
 
     def test_invalid_status(self, client):
         resp = client.get("/ideas?status=bogus")
@@ -137,6 +139,16 @@ class TestListIdeas:
         assert body["total"] == 51
         assert body["total_pages"] == 3
         assert body["page"] == 3
+
+    def test_ux_design_status_null_in_db(self, client):
+        """Regression: ux_design_status=None in MongoDB must not crash."""
+        docs = [_make_idea_doc(ux_design_status=None)]
+        coll = self._mock_collection(docs, total=1)
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+            mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
+            resp = client.get("/ideas")
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["ux_design_status"] == ""
 
     def test_page_zero_rejected(self, client):
         resp = client.get("/ideas?page=0")
@@ -235,3 +247,34 @@ class TestUpdateIdeaStatus:
             "/ideas/run001/status", json={"status": "completed"}
         )
         assert resp.status_code == 422
+
+
+# ── idea_fields unit tests ───────────────────────────────────
+
+
+class TestIdeaFieldsUxDesignStatus:
+    """Regression: ux_design_status must never return None."""
+
+    def test_both_fields_none(self):
+        doc = _make_idea_doc(ux_design_status=None)
+        doc["figma_design_status"] = None
+        assert idea_fields(doc)["ux_design_status"] == ""
+
+    def test_ux_none_figma_missing(self):
+        doc = _make_idea_doc(ux_design_status=None)
+        assert idea_fields(doc)["ux_design_status"] == ""
+
+    def test_ux_none_figma_set(self):
+        doc = _make_idea_doc(ux_design_status=None)
+        doc["figma_design_status"] = "completed"
+        assert idea_fields(doc)["ux_design_status"] == "completed"
+
+    def test_ux_empty_figma_none(self):
+        doc = _make_idea_doc(ux_design_status="")
+        doc["figma_design_status"] = None
+        # "" is falsy so falls through; None is caught by trailing or ""
+        assert idea_fields(doc)["ux_design_status"] == ""
+
+    def test_ux_set(self):
+        doc = _make_idea_doc(ux_design_status="generating")
+        assert idea_fields(doc)["ux_design_status"] == "generating"

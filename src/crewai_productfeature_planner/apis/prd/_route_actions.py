@@ -34,7 +34,11 @@ from crewai_productfeature_planner.mongodb.crew_jobs import (
     create_job,
     find_active_job,
 )
-from crewai_productfeature_planner.mongodb.working_ideas import save_project_ref
+from crewai_productfeature_planner.mongodb.project_config import get_project
+from crewai_productfeature_planner.mongodb.working_ideas import (
+    find_recent_duplicate_idea,
+    save_project_ref,
+)
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -98,7 +102,12 @@ action_router = APIRouter()
     ),
     responses={
         202: {"description": "Flow accepted and queued."},
-        409: {"description": "A job is already active. Only one job can run at a time."},
+        409: {
+            "description": (
+                "A job is already active, or a duplicate idea was recently "
+                "submitted to the same project (24 h cooldown)."
+            ),
+        },
         422: {"description": "Validation error."},
         **_ERROR_RESPONSES,
     },
@@ -109,6 +118,34 @@ async def kickoff_prd_flow(
 ):
     """Trigger the iterative PRD generation flow."""
     logger.info("[API] PRD kickoff by user_id=%s", user.get("user_id"))
+
+    # Validate project_id exists in projectConfig (if provided)
+    if request.project_id:
+        project = get_project(request.project_id)
+        if project is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"project_id '{request.project_id}' does not exist. "
+                    "Create the project first via POST /projects/ or provide "
+                    "a valid project_id."
+                ),
+            )
+
+    # Reject duplicate idea submitted to the same project within 24h
+    if request.project_id:
+        dup = find_recent_duplicate_idea(request.idea, request.project_id)
+        if dup is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Duplicate idea recently submitted to this project "
+                    f"(run_id={dup.get('run_id')}, "
+                    f"created_at={dup.get('created_at')}). "
+                    "Wait 24 hours or use a different idea text."
+                ),
+            )
+
     # Enforce single active job — reject if one is already running
     try:
         active = find_active_job()

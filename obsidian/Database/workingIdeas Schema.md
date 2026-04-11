@@ -44,6 +44,7 @@ tags:
 | `status` | `string` | **Yes** | `"inprogress"` | Workflow lifecycle status (see Status Values below) |
 | `error` | `string \| null` | No | `null` | Error message when `status` is `failed` — includes error code prefix (`LLM_ERROR`, `BILLING_ERROR`, `INTERNAL_ERROR`) |
 | `project_id` | `string \| null` | No | `null` | FK → `projectConfig.project_id`. Associates this idea with a project for config (Confluence/Jira keys) |
+| `idea_normalized` | `string \| null` | No | `null` | Lowercase, whitespace-collapsed copy of `idea` — used for duplicate detection. Set by `save_project_ref()` and `save_slack_context()` when `idea` is provided |
 
 ### Timestamps
 
@@ -185,6 +186,7 @@ tags:
 | `find_run_any_status()` | Fetch document by run_id |
 | `get_run_documents()` | Fetch multiple runs by run_ids |
 | `has_active_idea_flow()` | Check if user has active PRD flow |
+| `find_recent_duplicate_idea()` | Check if same idea was submitted to same project within 24h cooldown |
 
 ### Context & Output
 | Function | Purpose |

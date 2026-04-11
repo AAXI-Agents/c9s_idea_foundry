@@ -7,6 +7,7 @@ project_id, slack_context).
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,6 +19,11 @@ from crewai_productfeature_planner.mongodb.working_ideas._common import (
     _now_iso,
     logger,
 )
+
+
+def _normalize_idea(text: str) -> str:
+    """Lowercase, collapse whitespace, strip."""
+    return re.sub(r"\s+", " ", text.strip().lower())
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +301,10 @@ def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
     project-level Confluence space key, Jira project key, and
     other project config via :func:`get_project_for_run`.
 
+    Validates that ``project_id`` exists in the ``projectConfig``
+    collection before persisting.  Returns ``0`` without writing
+    if the project does not exist.
+
     Uses ``upsert=True`` so the association can be persisted even
     before the first ``save_iteration`` call creates the full
     document.  This ensures in-progress runs are visible to
@@ -310,6 +320,22 @@ def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
     Returns:
         Number of documents modified or created (0 or 1).
     """
+    # Validate project exists in projectConfig
+    try:
+        from crewai_productfeature_planner.mongodb.project_config import get_project
+        if get_project(project_id) is None:
+            logger.warning(
+                "[MongoDB] save_project_ref rejected — project_id=%s "
+                "does not exist in projectConfig (run_id=%s)",
+                project_id, run_id,
+            )
+            return 0
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "[MongoDB] project_id validation skipped for run_id=%s",
+            run_id, exc_info=True,
+        )
+
     try:
         now = _now_iso()
         set_fields: dict[str, Any] = {
@@ -323,6 +349,7 @@ def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
         }
         if idea:
             set_fields["idea"] = idea
+            set_fields["idea_normalized"] = _normalize_idea(idea)
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {
@@ -389,6 +416,7 @@ def save_slack_context(
         }
         if idea:
             set_fields["idea"] = idea
+            set_fields["idea_normalized"] = _normalize_idea(idea)
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {

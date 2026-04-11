@@ -21,7 +21,6 @@ from crewai_productfeature_planner.apis.ideas.models import (
     IDEA_LIST_PROJECTION,
     IdeaItem,
     IdeaListResponse,
-    VALID_PAGE_SIZES,
     VALID_STATUSES,
     idea_fields,
 )
@@ -40,7 +39,7 @@ router = APIRouter()
 )
 async def list_ideas(
     page: int = Query(default=1, ge=1, description="Page number (1-based)"),
-    page_size: int = Query(default=10, description="Items per page: 5, 6, 10, 25, or 50"),
+    page_size: int = Query(default=10, ge=1, le=100, description="Items per page (1-100)"),
     project_id: str | None = Query(default=None, description="Filter by project ID"),
     idea_status: str | None = Query(
         default=None,
@@ -51,10 +50,10 @@ async def list_ideas(
 ) -> IdeaListResponse:
     """Return a paginated list of ideas, newest first."""
     logger.debug("[Ideas] list_ideas called by user_id=%s", user.get("user_id"))
-    if page_size not in VALID_PAGE_SIZES:
+    if page_size < 1 or page_size > 100:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"page_size must be one of {sorted(VALID_PAGE_SIZES)}",
+            detail="page_size must be between 1 and 100",
         )
 
     if idea_status and idea_status not in VALID_STATUSES:

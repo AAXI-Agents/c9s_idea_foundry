@@ -24,9 +24,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from crewai_productfeature_planner.apis.dashboard.router import router as dashboard_router
 from crewai_productfeature_planner.apis.health.router import router as health_router
 from crewai_productfeature_planner.apis.ideas.router import router as ideas_router
 from crewai_productfeature_planner.apis.prd.router import router as prd_router
+from crewai_productfeature_planner.apis.prd.router import ws_only_router as prd_ws_router
 from crewai_productfeature_planner.apis.projects.router import router as projects_router
 from crewai_productfeature_planner.apis.publishing.router import router as publishing_router
 from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus  # noqa: F401 (re-export)
@@ -446,6 +448,16 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Startup auto-resume failed: %s", exc)
 
+    # 8c. SSO public key refresh scheduler
+    try:
+        from crewai_productfeature_planner.apis.sso_auth import (
+            start_key_refresh_scheduler,
+        )
+        if start_key_refresh_scheduler():
+            _logger.info("SSO key refresh scheduler: started")
+    except Exception as exc:
+        _logger.warning("SSO key refresh scheduler failed to start: %s", exc)
+
     # 9. Install a safety-net threading.excepthook so uncaught exceptions
     #    in background threads (e.g. CrewAI subprocess crashes) are logged
     #    instead of silently killing the thread.
@@ -602,7 +614,9 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(dashboard_router)
 app.include_router(prd_router)
+app.include_router(prd_ws_router)
 app.include_router(slack_router)
 app.include_router(slack_events_router)
 app.include_router(slack_interactions_router)

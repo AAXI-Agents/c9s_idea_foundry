@@ -42,6 +42,9 @@ from crewai_productfeature_planner.apis.prd._route_ux_design import (
 from crewai_productfeature_planner.apis.prd._route_versions import (
     router as versions_router,
 )
+from crewai_productfeature_planner.apis.prd._route_websocket import (
+    ws_router,
+)
 
 logger = get_logger(__name__)
 
@@ -50,6 +53,10 @@ router.include_router(action_router)
 router.include_router(timeline_router)
 router.include_router(versions_router)
 router.include_router(ux_design_router)
+
+# WebSocket router has no SSO dependency (auth is per-message / token-based).
+ws_only_router = APIRouter()
+ws_only_router.include_router(ws_router)
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -95,11 +102,17 @@ def _build_run_response_from_db(run_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Run not found")
 
     # Attempt to rebuild draft from workingIdeas.
+    idea_doc: dict = {}
     try:
         (
             idea, draft, exec_summary,
             requirements_breakdown, _bh, _rh,
         ) = restore_prd_state(run_id)
+        # Keep the raw doc around for UX design fields.
+        from crewai_productfeature_planner.mongodb.working_ideas import (
+            find_run_any_status,
+        )
+        idea_doc = find_run_any_status(run_id) or {}
     except Exception:
         logger.debug(
             "[PRD] Could not restore draft for run_id=%s, using empty draft",
@@ -146,6 +159,12 @@ def _build_run_response_from_db(run_id: str) -> dict:
         "confluence_url": job.get("confluence_url", ""),
         "jira_output": "",
         "output_file": job.get("output_file", ""),
+        "ux_design_status": (
+            idea_doc.get("ux_design_status")
+            or idea_doc.get("figma_design_status")
+            or ""
+        ),
+        "ux_design_content": idea_doc.get("ux_design_content", ""),
         "current_draft": PRDDraftDetail(
             sections=[
                 PRDSectionDetail(**s.model_dump()) for s in draft.sections
