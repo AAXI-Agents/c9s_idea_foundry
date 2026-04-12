@@ -1,9 +1,11 @@
 .venv/
 .env
+*.pem
 __pycache__/
-.git/
-tests/
+.pytest_cache/
 logs/
 output/
-.pytest_cache/
+.git/
+tests/
 obsidian/
+scripts/
