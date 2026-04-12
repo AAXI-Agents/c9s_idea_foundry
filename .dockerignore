@@ -1,0 +1,9 @@
+.venv/
+.env
+__pycache__/
+.git/
+tests/
+logs/
+output/
+.pytest_cache/
+obsidian/

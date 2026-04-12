@@ -51,27 +51,30 @@ def setup_logging() -> logging.Logger:
 
     formatter = logging.Formatter(_LOG_FMT, datefmt=_DATE_FMT)
 
-    # ── File handler (daily rotation) ─────────────────────────
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
-    file_handler = TimedRotatingFileHandler(
-        filename=str(_LOG_DIR / _LOG_FILENAME),
-        when="midnight",
-        interval=1,
-        backupCount=retention_days,
-        encoding="utf-8",
-        utc=False,
-    )
-    file_handler.suffix = "%Y-%m-%d"
-    file_handler.setLevel(root_level)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    # ── Console handler (always active — required for containers) ─
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(root_level)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
-    # ── Console handler (only when flow debug is on) ──────────
-    if flow_debug:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(root_level)
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
+    # ── File handler (daily rotation, skip in containers) ─────
+    log_to_file = _is_truthy(os.environ.get("LOG_TO_FILE")) or (
+        not _is_truthy(os.environ.get("CONTAINER")) and not flow_debug
+    )
+    if log_to_file:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        file_handler = TimedRotatingFileHandler(
+            filename=str(_LOG_DIR / _LOG_FILENAME),
+            when="midnight",
+            interval=1,
+            backupCount=retention_days,
+            encoding="utf-8",
+            utc=False,
+        )
+        file_handler.suffix = "%Y-%m-%d"
+        file_handler.setLevel(root_level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     _configured = True
     logger.info("Logging initialised (debug=%s, flow_debug=%s, retention=%d days)",
