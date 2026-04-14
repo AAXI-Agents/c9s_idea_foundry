@@ -176,7 +176,7 @@ async def sso_login(
         "state": state,
     })
 
-    authorize_url = f"{sso_base}/sso/oauth/authorize?{params}"
+    authorize_url = f"{sso_base}/oauth/authorize?{params}"
     return RedirectResponse(authorize_url)
 
 
@@ -221,7 +221,7 @@ async def sso_callback(
     try:
         async with httpx.AsyncClient(timeout=10.0) as ac:
             resp = await ac.post(
-                f"{sso_base}/sso/oauth/token",
+                f"{sso_base}/oauth/token",
                 json={
                     "grant_type": "authorization_code",
                     "code": code,
@@ -410,7 +410,7 @@ async def sso_register_redirect(
     sso_base = _sso_base_url()
     login_url = f"{_get_public_url()}/auth/sso/login?redirect_after={redirect_after}"
     params = urlencode({"redirect_uri": login_url})
-    return RedirectResponse(f"{sso_base}/sso/users/register?{params}")
+    return RedirectResponse(f"{sso_base}/users/register?{params}")
 
 
 @router.post(
