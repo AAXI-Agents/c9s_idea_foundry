@@ -74,6 +74,8 @@ async def _sso_proxy_post(
                 json=json,
                 headers=_sso_proxy_headers(auth=auth),
             )
+        if resp.status_code == 204 or not resp.content:
+            return JSONResponse(content=None, status_code=resp.status_code)
         return JSONResponse(resp.json(), status_code=resp.status_code)
     except httpx.ConnectError as exc:
         logger.error("[SSO] %s connect failed: %s", label, exc, exc_info=True)
