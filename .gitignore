@@ -42,3 +42,7 @@ obsidian/.obsidian/
 # ── IDE / tool config ────────────────────────────────────────
 .idea/
 *.iml
+
+# Exclude markdown files except README
+*.md
+!README.md

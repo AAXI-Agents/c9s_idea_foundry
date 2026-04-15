@@ -34,6 +34,9 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser \
 USER appuser
 
 # ── Environment defaults ──────────────────────────────────────────────
+ARG VERSION=dev
+ENV APP_VERSION=${VERSION}
+
 # Cloud Run sets PORT automatically; fall back to 8000 locally
 ENV PORT=8000 \
     # Structured JSON to stdout for GCP Cloud Logging

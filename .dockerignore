@@ -16,6 +16,7 @@ tests/
 scripts/
 *.bak
 *.log
+*.pem
 .env
 .env.*
 node_modules/
