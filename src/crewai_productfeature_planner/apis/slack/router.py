@@ -175,6 +175,7 @@ def _run_slack_prd_flow(
     auto_approve: bool = True,
     webhook_url: str | None = None,
     project_id: str | None = None,
+    team_id: str | None = None,
 ) -> None:
     """Execute the PRD flow and post results to Slack.
 
@@ -205,6 +206,18 @@ def _run_slack_prd_flow(
     )
 
     send_tool = SlackSendMessageTool()
+
+    # Resolve tenant context from Slack workspace's OAuth record
+    tenant = None
+    if team_id:
+        try:
+            from crewai_productfeature_planner.mongodb._tenant import TenantContext
+            from crewai_productfeature_planner.mongodb.slack_oauth.repository import get_team
+            install = get_team(team_id)
+            if install:
+                tenant = TenantContext.from_slack_install(install)
+        except Exception:
+            logger.debug("Failed to resolve tenant for team_id=%s", team_id, exc_info=True)
 
     # Build progress callback for live heartbeat messages
     progress_cb = make_progress_poster(
@@ -286,44 +299,50 @@ def _run_slack_prd_flow(
             run_id=run_id,
         )
 
-    # Reject duplicate idea submitted to the same project within 24h
-    if project_id:
-        from crewai_productfeature_planner.mongodb.working_ideas import (
-            find_recent_duplicate_idea,
+    # Reject duplicate idea submitted to the same project/channel within 24h
+    from crewai_productfeature_planner.mongodb.working_ideas import (
+        find_active_duplicate_idea,
+        find_recent_duplicate_idea,
+    )
+    active_dup = find_active_duplicate_idea(
+        idea, project_id=project_id or "", channel=channel,
+    )
+    recent_dup = find_recent_duplicate_idea(
+        idea, project_id or "", channel=channel,
+    ) if not active_dup else None
+    dup = active_dup or recent_dup
+    if dup is not None:
+        logger.warning(
+            "[Slack] Duplicate idea rejected for project_id=%s "
+            "run_id=%s (existing run_id=%s)",
+            project_id, run_id, dup.get("run_id"),
         )
-        dup = find_recent_duplicate_idea(idea, project_id)
-        if dup is not None:
-            logger.warning(
-                "[Slack] Duplicate idea rejected for project_id=%s "
-                "run_id=%s (existing run_id=%s)",
-                project_id, run_id, dup.get("run_id"),
+        if notify:
+            from crewai_productfeature_planner.tools.slack_tools import (
+                SlackSendMessageTool,
             )
-            if notify:
-                from crewai_productfeature_planner.tools.slack_tools import (
-                    SlackSendMessageTool,
-                )
-                SlackSendMessageTool().run(
-                    channel=channel,
-                    text=(
-                        ":warning: *Duplicate idea rejected* — the same idea "
-                        "was recently submitted to this project "
-                        f"(run_id=`{dup.get('run_id')}`). "
-                        "Wait 24 hours or use a different idea text."
-                    ),
-                    thread_ts=thread_ts or "",
-                )
-            return
+            SlackSendMessageTool().run(
+                channel=channel,
+                text=(
+                    ":warning: *Duplicate idea rejected* — the same idea "
+                    "was recently submitted to this project "
+                    f"(run_id=`{dup.get('run_id')}`). "
+                    "Wait 24 hours or use a different idea text."
+                ),
+                thread_ts=thread_ts or "",
+            )
+        return
 
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
-    create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts or "")
+    create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts or "", tenant=tenant)
 
     # Persist Slack context so auto-resume can notify the same thread
     try:
         from crewai_productfeature_planner.mongodb.working_ideas.repository import (
             save_slack_context,
         )
-        save_slack_context(run_id, channel, thread_ts or "", idea=idea)
+        save_slack_context(run_id, channel, thread_ts or "", idea=idea, tenant=tenant)
     except Exception:  # noqa: BLE001
         logger.debug("save_slack_context failed for %s", run_id, exc_info=True)
 
@@ -345,7 +364,7 @@ def _run_slack_prd_flow(
                 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
                     save_project_ref,
                 )
-                save_project_ref(run_id, project_id, idea=idea)
+                save_project_ref(run_id, project_id, idea=idea, tenant=tenant)
             except Exception:  # noqa: BLE001
                 logger.debug("early save_project_ref failed for %s", run_id, exc_info=True)
 
@@ -376,7 +395,7 @@ def _run_slack_prd_flow(
                 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
                     save_project_ref,
                 )
-                save_project_ref(run_id, project_id, idea=idea)
+                save_project_ref(run_id, project_id, idea=idea, tenant=tenant)
             except Exception:  # noqa: BLE001
                 logger.debug("save_project_ref failed for %s", run_id, exc_info=True)
 
@@ -721,6 +740,32 @@ async def slack_kickoff(req: SlackPRDKickoffRequest) -> SlackPRDKickoffResponse:
 
     channel = _resolve_channel(req)
     req.channel = channel
+
+    # ── Duplicate-idea guard (before allocating run_id) ────────
+    from crewai_productfeature_planner.mongodb.working_ideas import (
+        find_active_duplicate_idea,
+        find_recent_duplicate_idea,
+    )
+    try:
+        dup = find_active_duplicate_idea(
+            req.text, project_id=req.project_id or "", channel=channel,
+        ) or find_recent_duplicate_idea(
+            req.text, req.project_id or "", channel=channel,
+        )
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Duplicate idea — already submitted as "
+                    f"run_id={dup.get('run_id')} "
+                    f"(status: {dup.get('status')})"
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        logger.debug("Pre-kickoff duplicate check failed — proceeding", exc_info=True)
+
     run_id = uuid.uuid4().hex[:12]
 
     if req.interactive:
@@ -798,6 +843,32 @@ async def slack_kickoff_sync(req: SlackPRDKickoffRequest) -> dict:
 
     channel = _resolve_channel(req)
     req.channel = channel
+
+    # ── Duplicate-idea guard (before allocating run_id) ────────
+    from crewai_productfeature_planner.mongodb.working_ideas import (
+        find_active_duplicate_idea,
+        find_recent_duplicate_idea,
+    )
+    try:
+        dup = find_active_duplicate_idea(
+            req.text, project_id=req.project_id or "", channel=channel,
+        ) or find_recent_duplicate_idea(
+            req.text, req.project_id or "", channel=channel,
+        )
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Duplicate idea — already submitted as "
+                    f"run_id={dup.get('run_id')} "
+                    f"(status: {dup.get('status')})"
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        logger.debug("Pre-kickoff duplicate check failed — proceeding", exc_info=True)
+
     run_id = uuid.uuid4().hex[:12]
 
     loop = asyncio.get_event_loop()

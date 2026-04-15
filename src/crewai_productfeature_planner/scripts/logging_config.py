@@ -6,11 +6,15 @@ Reads environment variables to control behaviour:
     CREWAI_LOG_RETENTION_DAYS – number of daily log files to keep (default 7).
     CREWAI_VERBOSE          – set to "true" to enable verbose CrewAI agent/crew output
                               on the console (default "false").
+    LOG_TARGET              – logging target: "file" (default, file-based rotation),
+                              "stdout" (structured JSON to stdout for GCP Cloud Logging),
+                              "both" (file + stdout JSON).
 
 Log files are stored in the ``logs/`` directory with the naming pattern
 ``crewai_YYYY-MM-DD.log`` and automatically rotated at midnight.
 """
 
+import json
 import logging
 import os
 from logging.handlers import TimedRotatingFileHandler
@@ -23,6 +27,34 @@ _LOG_FMT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
 _configured = False
 
+# Mapping from Python log levels to GCP Cloud Logging severity names.
+_GCP_SEVERITY = {
+    logging.DEBUG: "DEBUG",
+    logging.INFO: "INFO",
+    logging.WARNING: "WARNING",
+    logging.ERROR: "ERROR",
+    logging.CRITICAL: "CRITICAL",
+}
+
+
+class _JSONFormatter(logging.Formatter):
+    """Emit structured JSON log lines compatible with GCP Cloud Logging.
+
+    GCP automatically parses JSON lines on stdout and picks up the
+    ``severity``, ``message``, and ``time`` fields.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_entry = {
+            "severity": _GCP_SEVERITY.get(record.levelno, "DEFAULT"),
+            "message": record.getMessage(),
+            "logger": record.name,
+            "time": self.formatTime(record, _DATE_FMT),
+        }
+        if record.exc_info and record.exc_info[1]:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_entry, ensure_ascii=False)
+
 
 def _is_truthy(value: str | None) -> bool:
     """Return True for common truthy env-var strings."""
@@ -33,6 +65,12 @@ def setup_logging() -> logging.Logger:
     """Configure and return the root project logger.
 
     Safe to call multiple times — subsequent calls are no-ops.
+
+    Honours the ``LOG_TARGET`` env var:
+
+    * ``"file"`` (default) — daily-rotated log files in ``logs/``.
+    * ``"stdout"`` — structured JSON to stdout (for GCP Cloud Logging).
+    * ``"both"`` — file + stdout JSON simultaneously.
     """
     global _configured
     if _configured:
@@ -41,6 +79,7 @@ def setup_logging() -> logging.Logger:
     debug_enabled = _is_truthy(os.environ.get("CREWAI_DEBUG"))
     flow_debug = _is_truthy(os.environ.get("CREWAI_FLOW_DEBUG"))
     retention_days = int(os.environ.get("CREWAI_LOG_RETENTION_DAYS", "7"))
+    log_target = os.environ.get("LOG_TARGET", "file").strip().lower()
 
     root_level = logging.DEBUG if debug_enabled else logging.INFO
 
@@ -51,31 +90,44 @@ def setup_logging() -> logging.Logger:
 
     formatter = logging.Formatter(_LOG_FMT, datefmt=_DATE_FMT)
 
+    use_file = log_target in ("file", "both")
+    use_stdout = log_target in ("stdout", "both")
+
     # ── File handler (daily rotation) ─────────────────────────
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
-    file_handler = TimedRotatingFileHandler(
-        filename=str(_LOG_DIR / _LOG_FILENAME),
-        when="midnight",
-        interval=1,
-        backupCount=retention_days,
-        encoding="utf-8",
-        utc=False,
-    )
-    file_handler.suffix = "%Y-%m-%d"
-    file_handler.setLevel(root_level)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    if use_file:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        file_handler = TimedRotatingFileHandler(
+            filename=str(_LOG_DIR / _LOG_FILENAME),
+            when="midnight",
+            interval=1,
+            backupCount=retention_days,
+            encoding="utf-8",
+            utc=False,
+        )
+        file_handler.suffix = "%Y-%m-%d"
+        file_handler.setLevel(root_level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    # ── Stdout JSON handler (for GCP Cloud Logging) ───────────
+    if use_stdout:
+        json_handler = logging.StreamHandler()
+        json_handler.setLevel(root_level)
+        json_handler.setFormatter(_JSONFormatter())
+        logger.addHandler(json_handler)
 
     # ── Console handler (only when flow debug is on) ──────────
-    if flow_debug:
+    if flow_debug and not use_stdout:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(root_level)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
     _configured = True
-    logger.info("Logging initialised (debug=%s, flow_debug=%s, retention=%d days)",
-                debug_enabled, flow_debug, retention_days)
+    logger.info(
+        "Logging initialised (debug=%s, flow_debug=%s, retention=%d days, target=%s)",
+        debug_enabled, flow_debug, retention_days, log_target,
+    )
     return logger
 
 

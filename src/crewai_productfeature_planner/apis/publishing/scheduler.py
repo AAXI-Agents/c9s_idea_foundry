@@ -129,20 +129,22 @@ def _run_scan() -> None:
     logger.debug("[PublishScheduler] Starting scan sweep")
 
     published = _publish_pending_confluence()
-    ticketed = _create_pending_jira()
 
-    if published or ticketed:
+    if published:
         logger.info(
-            "[PublishScheduler] Sweep complete — "
-            "published=%d, jira_created=%d",
-            published, ticketed,
+            "[PublishScheduler] Sweep complete — published=%d",
+            published,
         )
     else:
         logger.debug("[PublishScheduler] Sweep complete — nothing pending")
 
 
 def _publish_pending_confluence() -> int:
-    """Publish any PRDs that are still missing from Confluence."""
+    """Publish any PRDs that are still missing from Confluence.
+
+    Uses an atomic claim pattern so only one instance processes each
+    PRD when running behind a load balancer / auto-scaler.
+    """
     try:
         from crewai_productfeature_planner.tools.confluence_tool import (
             _has_confluence_credentials,
@@ -160,28 +162,48 @@ def _publish_pending_confluence() -> int:
         if not items:
             return 0
 
+        from crewai_productfeature_planner.mongodb.product_requirements import (
+            claim_for_confluence,
+            release_claim,
+        )
+        from crewai_productfeature_planner.mongodb.leases.repository import (
+            _instance_id,
+        )
+
+        holder = _instance_id()
         published = 0
         for item in items:
             if _stop_event.is_set():
                 break
+            run_id = item.get("run_id", "")
+
+            # Atomic claim — skip if another instance is already handling this
+            if run_id and not claim_for_confluence(run_id, holder):
+                logger.debug(
+                    "[PublishScheduler] Skipping '%s' — claimed by another instance",
+                    item["title"],
+                )
+                continue
+
             try:
                 result = publish_to_confluence(
                     title=item["title"],
                     markdown_content=item["content"],
-                    run_id=item.get("run_id", ""),
+                    run_id=run_id,
                 )
 
                 # Persist delivery record in productRequirements
-                if item.get("run_id"):
+                if run_id:
                     from crewai_productfeature_planner.mongodb.product_requirements import (
                         upsert_delivery_record,
                     )
                     upsert_delivery_record(
-                        run_id=item["run_id"],
+                        run_id=run_id,
                         confluence_published=True,
                         confluence_url=result["url"],
                         confluence_page_id=result["page_id"],
                     )
+                    release_claim(run_id, "confluence")
 
                 published += 1
                 logger.info(
@@ -189,6 +211,8 @@ def _publish_pending_confluence() -> int:
                     item["title"], result.get("url", ""),
                 )
             except Exception as exc:  # noqa: BLE001
+                if run_id:
+                    release_claim(run_id, "confluence")
                 logger.warning(
                     "[PublishScheduler] Failed to publish '%s': %s",
                     item["title"], exc,
@@ -201,54 +225,20 @@ def _publish_pending_confluence() -> int:
 
 
 def _create_pending_jira() -> int:
-    """Create Jira tickets for deliveries where Confluence is done but Jira is not."""
-    try:
-        from crewai_productfeature_planner.orchestrator._helpers import (
-            _has_jira_credentials,
-        )
+    """Jira ticket creation is NOT allowed in the automated scheduler.
 
-        if not _has_jira_credentials():
-            return 0
+    Per the Jira Approval Gate Invariant, Jira tickets must NEVER be
+    created without explicit user approval.  Tickets are only created
+    through:
 
-        from crewai_productfeature_planner.orchestrator._startup_delivery import (
-            _discover_pending_deliveries,
-        )
+    * Interactive Slack flow (user approves each phase)
+    * Manual API endpoint ``POST /publishing/jira/{run_id}``
+      (user-initiated)
 
-        items = _discover_pending_deliveries()
-        jira_pending = [
-            i for i in items
-            if i.get("confluence_done") and not i.get("jira_done")
-        ]
-
-        if not jira_pending:
-            return 0
-
-        from crewai_productfeature_planner.apis.publishing.service import (
-            create_jira_single,
-        )
-
-        created = 0
-        for item in jira_pending:
-            if _stop_event.is_set():
-                break
-            run_id = item.get("run_id", "")
-            try:
-                create_jira_single(run_id)
-                created += 1
-                logger.info(
-                    "[PublishScheduler] Jira tickets created for run_id=%s",
-                    run_id,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[PublishScheduler] Jira creation failed for run_id=%s: %s",
-                    run_id, exc,
-                )
-
-        return created
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[PublishScheduler] Jira scan error: %s", exc)
-        return 0
+    This stub always returns ``0`` and logs a debug message so the
+    scheduler sweep summary remains clean.
+    """
+    return 0
 
 
 def _get_interval_seconds() -> int:

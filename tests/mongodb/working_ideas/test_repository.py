@@ -2646,14 +2646,37 @@ class TestFindRecentDuplicateIdea:
         result = find_recent_duplicate_idea("", "proj-abc")
         assert result is None
 
-    def test_returns_none_for_empty_project_id(self):
-        """Should return None immediately if project_id is empty."""
+    def test_returns_none_for_empty_project_id_and_no_channel(self):
+        """Should return None immediately if both project_id and channel are empty."""
         from crewai_productfeature_planner.mongodb.working_ideas.repository import (
             find_recent_duplicate_idea,
         )
 
         result = find_recent_duplicate_idea("some idea", "")
         assert result is None
+
+    def test_fallback_to_channel_when_no_project_id(self, wi_mocks):
+        """Should query by channel when project_id is empty."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        dup_doc = {
+            "run_id": "chan-run",
+            "idea": "add dark mode",
+            "status": "inprogress",
+            "created_at": "2026-04-12T00:00:00Z",
+        }
+        mock_collection.find_one.return_value = dup_doc
+
+        result = find_recent_duplicate_idea("Add dark mode", "", channel="C123")
+
+        assert result is not None
+        assert result["run_id"] == "chan-run"
+        query = mock_collection.find_one.call_args[0][0]
+        assert query["slack_channel"] == "C123"
+        assert "project_id" not in query
 
     def test_normalizes_whitespace(self, wi_mocks):
         """Should collapse whitespace and lowercase for comparison."""
@@ -2681,6 +2704,104 @@ class TestFindRecentDuplicateIdea:
             side_effect=PyMongoError("connection failed"),
         ):
             result = find_recent_duplicate_idea("idea", "proj-abc")
+            assert result is None
+
+
+# ── find_active_duplicate_idea ────────────────────────────────
+
+
+class TestFindActiveDuplicateIdea:
+    """Tests for find_active_duplicate_idea — blocks active flows."""
+
+    def test_returns_matching_active_doc(self, wi_mocks):
+        """Should return the active doc when a matching idea is in-progress."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        active_doc = {
+            "run_id": "active-run",
+            "idea": "add knowledge sharing",
+            "status": "inprogress",
+            "created_at": "2026-04-12T14:00:00Z",
+        }
+        mock_collection.find_one.return_value = active_doc
+
+        result = find_active_duplicate_idea(
+            "Add knowledge sharing", project_id="proj-abc",
+        )
+
+        assert result is not None
+        assert result["run_id"] == "active-run"
+        query = mock_collection.find_one.call_args[0][0]
+        assert query["project_id"] == "proj-abc"
+        assert query["status"] == {"$in": ["inprogress", "paused"]}
+        assert query["idea_normalized"] == "add knowledge sharing"
+
+    def test_channel_fallback_when_no_project(self, wi_mocks):
+        """Should query by channel when project_id is empty."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = {
+            "run_id": "chan-run",
+            "idea": "foo",
+            "status": "paused",
+            "created_at": "2026-04-12T00:00:00Z",
+        }
+
+        result = find_active_duplicate_idea("Foo", channel="C999")
+
+        assert result is not None
+        query = mock_collection.find_one.call_args[0][0]
+        assert query["slack_channel"] == "C999"
+        assert "project_id" not in query
+
+    def test_returns_none_when_no_active(self, wi_mocks):
+        """Should return None when no active duplicate exists."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+
+        result = find_active_duplicate_idea("unique idea", project_id="proj-abc")
+        assert result is None
+
+    def test_returns_none_for_empty_idea(self):
+        """Should return None immediately if idea is empty."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        result = find_active_duplicate_idea("")
+        assert result is None
+
+    def test_returns_none_when_no_scope(self):
+        """Should return None when neither project_id nor channel provided."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        result = find_active_duplicate_idea("some idea")
+        assert result is None
+
+    def test_returns_none_on_db_error(self, wi_mocks):
+        """Should catch PyMongoError and return None."""
+        from pymongo.errors import PyMongoError
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.working_ideas._common.get_db",
+            side_effect=PyMongoError("connection failed"),
+        ):
+            result = find_active_duplicate_idea("idea", project_id="proj-abc")
             assert result is None
 
 
@@ -2743,3 +2864,150 @@ class TestIdeaNormalized:
         call_args = mock_collection.update_one.call_args
         set_fields = call_args[0][1]["$set"]
         assert "idea_normalized" not in set_fields
+
+
+# ── Dedup fallback (Phase 2: in-memory match) ────────────────
+
+
+class TestDedupFallback:
+    """Tests for the Phase 2 in-memory fallback when idea_normalized is missing."""
+
+    def test_active_dup_found_via_fallback(self, wi_mocks):
+        """find_active_duplicate_idea should match via raw idea when idea_normalized is absent."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        # Phase 1: find_one returns None (no idea_normalized match)
+        mock_collection.find_one.return_value = None
+        # Phase 2: find returns a candidate without idea_normalized
+        mock_collection.find.return_value = [
+            {
+                "_id": "id1",
+                "run_id": "old-run",
+                "idea": "Add Knowledge Sharing to the platform",
+                "status": "inprogress",
+                "created_at": "2026-04-12T00:00:00Z",
+            },
+        ]
+
+        result = find_active_duplicate_idea(
+            "add knowledge sharing to the platform", project_id="proj-1",
+        )
+
+        assert result is not None
+        assert result["run_id"] == "old-run"
+        # Verify self-heal: update_one should be called to backfill idea_normalized
+        assert mock_collection.update_one.called
+
+    def test_recent_dup_found_via_fallback(self, wi_mocks):
+        """find_recent_duplicate_idea should match via raw idea when idea_normalized is absent."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_recent_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+        mock_collection.find.return_value = [
+            {
+                "_id": "id2",
+                "run_id": "completed-run",
+                "idea": "Add Knowledge Sharing",
+                "status": "completed",
+                "created_at": "2026-04-12T10:00:00Z",
+            },
+        ]
+
+        result = find_recent_duplicate_idea(
+            "add knowledge sharing", "proj-1",
+        )
+
+        assert result is not None
+        assert result["run_id"] == "completed-run"
+
+    def test_fallback_uses_finalized_idea(self, wi_mocks):
+        """Phase 2 should match finalized_idea when idea field is empty."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+        mock_collection.find.return_value = [
+            {
+                "_id": "id3",
+                "run_id": "finalized-run",
+                "idea": "",
+                "finalized_idea": "add knowledge sharing",
+                "status": "paused",
+                "created_at": "2026-04-12T00:00:00Z",
+            },
+        ]
+
+        result = find_active_duplicate_idea(
+            "add knowledge sharing", project_id="proj-1",
+        )
+
+        assert result is not None
+        assert result["run_id"] == "finalized-run"
+
+    def test_fallback_no_match(self, wi_mocks):
+        """Phase 2 should return None when no candidate matches."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        mock_collection.find_one.return_value = None
+        mock_collection.find.return_value = [
+            {
+                "_id": "id4",
+                "run_id": "other-run",
+                "idea": "completely different idea",
+                "status": "inprogress",
+                "created_at": "2026-04-12T00:00:00Z",
+            },
+        ]
+
+        result = find_active_duplicate_idea(
+            "add knowledge sharing", project_id="proj-1",
+        )
+
+        assert result is None
+
+    def test_multi_scope_channel_fallback(self, wi_mocks):
+        """Should try project_id scope first, then channel scope."""
+        from crewai_productfeature_planner.mongodb.working_ideas.repository import (
+            find_active_duplicate_idea,
+        )
+
+        mock_collection, mock_db = wi_mocks
+        # Both find_one (Phase 1) and find (Phase 2) return nothing
+        # for project scope, but find returns match for channel scope.
+        call_count = 0
+
+        def mock_find(query, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Second find call (channel scope) returns a match
+            if "slack_channel" in query:
+                return [
+                    {
+                        "_id": "id5",
+                        "run_id": "chan-run",
+                        "idea": "add knowledge sharing",
+                        "status": "inprogress",
+                        "created_at": "2026-04-12T00:00:00Z",
+                    },
+                ]
+            return []
+
+        mock_collection.find.side_effect = mock_find
+
+        result = find_active_duplicate_idea(
+            "add knowledge sharing", project_id="proj-1", channel="C123",
+        )
+
+        assert result is not None
+        assert result["run_id"] == "chan-run"

@@ -39,6 +39,7 @@ from crewai_productfeature_planner.mongodb.working_ideas._status import (  # noq
 from crewai_productfeature_planner.mongodb.working_ideas._queries import (  # noqa: F401
     DUPLICATE_IDEA_COOLDOWN_HOURS,
     fail_unfinalized_on_startup,
+    find_active_duplicate_idea,
     find_completed_ideas_by_project,
     find_completed_without_confluence,
     find_completed_without_output,
@@ -89,6 +90,7 @@ __all__ = [
     # _queries
     "DUPLICATE_IDEA_COOLDOWN_HOURS",
     "fail_unfinalized_on_startup",
+    "find_active_duplicate_idea",
     "find_completed_ideas_by_project",
     "find_completed_without_confluence",
     "find_completed_without_output",

@@ -36,9 +36,6 @@ CMD_ACTIONS = frozenset({
     "cmd_create_project",
     "cmd_list_projects",
     "cmd_help",
-    "cmd_check_publish",
-    "cmd_publish",
-    "cmd_create_jira",
     "cmd_restart_prd",
     "cmd_current_project",
     "cmd_create_prd",
@@ -135,27 +132,6 @@ def _handle_command_action(
 
     elif action_id == "cmd_help":
         _handle_help(channel, thread_ts, user_id, session)
-
-    elif action_id == "cmd_check_publish":
-        from crewai_productfeature_planner.apis.slack._flow_handlers import (
-            handle_check_publish_intent,
-        )
-        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
-        handle_check_publish_intent(channel, thread_ts, user_id, SlackSendMessageTool())
-
-    elif action_id == "cmd_publish":
-        from crewai_productfeature_planner.apis.slack._flow_handlers import (
-            handle_publish_intent,
-        )
-        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
-        handle_publish_intent(channel, thread_ts, user_id, SlackSendMessageTool())
-
-    elif action_id == "cmd_create_jira":
-        from crewai_productfeature_planner.apis.slack._flow_handlers import (
-            handle_create_jira_intent,
-        )
-        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
-        handle_create_jira_intent(channel, thread_ts, user_id, SlackSendMessageTool())
 
     elif action_id == "cmd_restart_prd":
         from crewai_productfeature_planner.apis.slack._flow_handlers import (

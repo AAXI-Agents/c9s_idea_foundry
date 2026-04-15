@@ -53,6 +53,11 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -84,6 +89,7 @@ def create_project(
     review_checklists: list[dict[str, Any]] | None = None,
     technical_profile: dict[str, Any] | None = None,
     board_style: str = "scrum",
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """Create a new project configuration document.
 
@@ -118,6 +124,7 @@ def create_project(
         "board_style": board_style,
         "created_at": now,
         "updated_at": now,
+        **(tenant_fields(tenant) if tenant else {}),
     }
 
     try:
@@ -157,15 +164,21 @@ def create_project(
 # ---------------------------------------------------------------------------
 
 
-def get_project(project_id: str) -> dict[str, Any] | None:
+def get_project(
+    project_id: str,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
     """Fetch a single project configuration by ``project_id``.
 
     Returns:
         The project document (without MongoDB ``_id``) or ``None``.
     """
     try:
+        query: dict[str, Any] = {"project_id": project_id}
+        if tenant:
+            query.update(tenant_filter(tenant))
         doc = get_db()[PROJECT_CONFIG_COLLECTION].find_one(
-            {"project_id": project_id},
+            query,
             {"_id": 0},
         )
         return doc
@@ -199,19 +212,24 @@ def get_project_by_name(name: str) -> dict[str, Any] | None:
         return None
 
 
-def list_projects(limit: int = 100) -> list[dict[str, Any]]:
-    """List all project configurations, newest first.
+def list_projects(
+    limit: int = 100,
+    tenant: TenantContext | None = None,
+) -> list[dict[str, Any]]:
+    """List project configurations, newest first.
 
     Args:
         limit: Maximum number of results (default 100).
+        tenant: Tenant context for data isolation.
 
     Returns:
         List of project documents (without ``_id``).
     """
     try:
+        query = tenant_filter(tenant) if tenant else {}
         cursor = (
             get_db()[PROJECT_CONFIG_COLLECTION]
-            .find({}, {"_id": 0})
+            .find(query, {"_id": 0})
             .sort("created_at", -1)
             .limit(limit)
         )
@@ -255,6 +273,7 @@ def get_project_for_run(run_id: str) -> dict[str, Any] | None:
 
 def update_project(
     project_id: str,
+    tenant: TenantContext | None = None,
     **fields: Any,
 ) -> int:
     """Update fields on an existing project configuration.
@@ -271,8 +290,11 @@ def update_project(
     fields["updated_at"] = _now_iso()
 
     try:
+        query: dict[str, Any] = {"project_id": project_id}
+        if tenant:
+            query.update(tenant_filter(tenant))
         result = get_db()[PROJECT_CONFIG_COLLECTION].update_one(
-            {"project_id": project_id},
+            query,
             {"$set": fields},
         )
         logger.info(
@@ -369,15 +391,21 @@ def add_slack_file_ref(
 # ---------------------------------------------------------------------------
 
 
-def delete_project(project_id: str) -> int:
+def delete_project(
+    project_id: str,
+    tenant: TenantContext | None = None,
+) -> int:
     """Delete a project configuration by ``project_id``.
 
     Returns:
         Number of documents deleted (0 or 1).
     """
     try:
+        query: dict[str, Any] = {"project_id": project_id}
+        if tenant:
+            query.update(tenant_filter(tenant))
         result = get_db()[PROJECT_CONFIG_COLLECTION].delete_one(
-            {"project_id": project_id},
+            query,
         )
         logger.info(
             "[MongoDB] Deleted project config project_id=%s (count=%d)",

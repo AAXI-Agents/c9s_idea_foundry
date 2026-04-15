@@ -1,4 +1,8 @@
-"""Tests for the create_jira intent classification and phrase fallback."""
+"""Tests for the create_jira intent classification and phrase fallback.
+
+As of v0.71.0, the create_jira intent no longer triggers Jira creation —
+it sends an info message directing users to the web API instead.
+"""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -63,10 +67,10 @@ class TestCreateJiraPhraseDetection:
 
 
 class TestCreateJiraIntentDispatch:
-    """Verify the message handler dispatches create_jira to the correct handler."""
+    """Verify the message handler dispatches create_jira as an info reply (v0.71.0)."""
 
-    @patch(f"{_EVENTS_MODULE}._handle_create_jira_intent")
-    def test_create_jira_intent_dispatches(self, mock_handler):
+    def test_create_jira_intent_sends_info_reply(self):
+        """create_jira intent should send an info message (not call handler)."""
         import crewai_productfeature_planner.apis.slack.events_router as er
 
         mock_interpret, mock_send = _make_mocks("create_jira")
@@ -82,35 +86,16 @@ class TestCreateJiraIntentDispatch:
             ),
             patch(f"{_SESSION_MODULE}.get_context_session",
                   return_value=_ACTIVE_SESSION),
+            patch(
+                "crewai_productfeature_planner.apis.slack._message_handler._reply",
+            ) as mock_reply,
         ):
             er._interpret_and_act("C1", "T1", "U1", "create jira", "E1")
 
-        mock_handler.assert_called_once_with("C1", "T1", "U1", mock_send)
-
-    @patch(f"{_EVENTS_MODULE}._handle_create_jira_intent")
-    def test_phrase_override_triggers_create_jira(self, mock_handler):
-        """Even if LLM returns 'publish', the phrase override should fix it."""
-        import crewai_productfeature_planner.apis.slack.events_router as er
-
-        # LLM incorrectly returns "publish" for "create jira tickets"
-        mock_interpret, mock_send = _make_mocks("publish")
-
-        with (
-            patch(f"{_TOOLS_MODULE}.SlackInterpretMessageTool",
-                  return_value=mock_interpret),
-            patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
-                  return_value=mock_send),
-            patch(
-                "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
-                MagicMock(),
-            ),
-            patch(f"{_SESSION_MODULE}.get_context_session",
-                  return_value=_ACTIVE_SESSION),
-        ):
-            er._interpret_and_act("C1", "T1", "U1", "create jira tickets", "E1")
-
-        # The phrase-level override should catch "create jira tickets"
-        mock_handler.assert_called_once()
+        # Should have called _reply with an info message
+        mock_reply.assert_called_once()
+        call_text = mock_reply.call_args[0][2]  # (channel, thread_ts, text)
+        assert "web" in call_text.lower() or "api" in call_text.lower()
 
 
 class TestJiraPhraseDoesNotHijackIdea:
@@ -193,9 +178,8 @@ class TestJiraPhraseDoesNotHijackIdea:
 
         mock_kickoff.assert_called_once()
 
-    @patch(f"{_EVENTS_MODULE}._handle_create_jira_intent")
-    def test_explicit_create_jira_still_works(self, mock_handler):
-        """Short explicit 'create jira' must still route to jira handler."""
+    def test_explicit_create_jira_sends_info(self):
+        """Short explicit 'create jira' must route to info reply (v0.71.0)."""
         import crewai_productfeature_planner.apis.slack.events_router as er
 
         mock_interpret, mock_send = _make_mocks("create_jira")
@@ -211,22 +195,10 @@ class TestJiraPhraseDoesNotHijackIdea:
             ),
             patch(f"{_SESSION_MODULE}.get_context_session",
                   return_value=_ACTIVE_SESSION),
+            patch(
+                "crewai_productfeature_planner.apis.slack._message_handler._reply",
+            ) as mock_reply,
         ):
             er._interpret_and_act("C1", "T1", "U1", "create jira tickets", "E1")
 
-        mock_handler.assert_called_once()
-
-
-class TestCreateJiraHandlerProxy:
-    """Verify handler proxy wiring."""
-
-    def test_proxy_calls_events_router(self):
-        from crewai_productfeature_planner.apis.slack._handler_proxies import (
-            _handle_create_jira_intent,
-        )
-
-        with patch(
-            f"{_EVENTS_MODULE}._handle_create_jira_intent",
-        ) as mock:
-            _handle_create_jira_intent("C1", "T1", "U1", MagicMock())
-            mock.assert_called_once()
+        mock_reply.assert_called()

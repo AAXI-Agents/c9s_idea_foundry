@@ -18,11 +18,14 @@ Re-exports the public repository API::
 from crewai_productfeature_planner.mongodb.product_requirements.repository import (
     PRODUCT_REQUIREMENTS_COLLECTION,
     append_jira_ticket,
+    claim_for_confluence,
+    claim_for_jira,
     find_pending_delivery,
     get_current_version,
     get_delivery_record,
     get_jira_tickets,
     get_version_history,
+    release_claim,
     save_version_snapshot,
     upsert_delivery_record,
 )
@@ -30,11 +33,14 @@ from crewai_productfeature_planner.mongodb.product_requirements.repository impor
 __all__ = [
     "PRODUCT_REQUIREMENTS_COLLECTION",
     "append_jira_ticket",
+    "claim_for_confluence",
+    "claim_for_jira",
     "find_pending_delivery",
     "get_current_version",
     "get_delivery_record",
     "get_jira_tickets",
     "get_version_history",
+    "release_claim",
     "save_version_snapshot",
     "upsert_delivery_record",
 ]

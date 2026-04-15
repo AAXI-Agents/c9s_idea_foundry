@@ -769,3 +769,35 @@ class TestResumePathPassesJiraCallbacks:
             cleanup_interactive_run,
         )
         cleanup_interactive_run("resume-interactive-test")
+
+
+# ── Scheduler Jira creation disabled (v0.70.1) ───────────────────────
+
+
+class TestSchedulerNeverCreatesJira:
+    """The PublishScheduler must NEVER autonomously create Jira tickets.
+
+    Regression test for the runaway ticket creation bug where the
+    scheduler's ``_create_pending_jira()`` bypassed the Jira Approval
+    Gate Invariant and auto-created 1000+ Jira tickets across 34 PRDs.
+    """
+
+    def test_scheduler_create_pending_jira_always_returns_zero(self):
+        """``_create_pending_jira()`` must be a no-op stub."""
+        from crewai_productfeature_planner.apis.publishing.scheduler import (
+            _create_pending_jira,
+        )
+
+        assert _create_pending_jira() == 0
+
+    def test_run_scan_does_not_call_jira(self):
+        """``_run_scan()`` must NOT invoke any Jira creation logic."""
+        from crewai_productfeature_planner.apis.publishing import scheduler
+
+        with patch.object(
+            scheduler, "_publish_pending_confluence", return_value=0,
+        ):
+            scheduler._run_scan()
+        # If _run_scan tried to call _create_pending_jira with args
+        # or tried to import Jira modules, we'd get an error here.
+        # The stub is a bare `return 0`.

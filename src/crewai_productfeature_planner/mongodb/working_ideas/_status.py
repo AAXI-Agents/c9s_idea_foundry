@@ -13,6 +13,10 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+)
 from crewai_productfeature_planner.mongodb.working_ideas import _common
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
@@ -294,7 +298,13 @@ def save_ux_output_file(run_id: str, ux_output_file: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
+def save_project_ref(
+    run_id: str,
+    project_id: str,
+    *,
+    idea: str = "",
+    tenant: TenantContext | None = None,
+) -> int:
     """Associate a working-idea document with a project configuration.
 
     Sets the ``project_id`` field so the run can look up its
@@ -346,10 +356,13 @@ def save_project_ref(run_id: str, project_id: str, *, idea: str = "") -> int:
             "run_id": run_id,
             "created_at": now,
             "status": "inprogress",
+            **(tenant_fields(tenant) if tenant else {}),
         }
         if idea:
             set_fields["idea"] = idea
             set_fields["idea_normalized"] = _normalize_idea(idea)
+        if tenant:
+            set_fields.update(tenant_fields(tenant))
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {
@@ -382,6 +395,7 @@ def save_slack_context(
     slack_thread_ts: str,
     *,
     idea: str = "",
+    tenant: TenantContext | None = None,
 ) -> int:
     """Persist the Slack channel and thread_ts for a working-idea run.
 
@@ -413,10 +427,13 @@ def save_slack_context(
             "run_id": run_id,
             "created_at": now,
             "status": "inprogress",
+            **(tenant_fields(tenant) if tenant else {}),
         }
         if idea:
             set_fields["idea"] = idea
             set_fields["idea_normalized"] = _normalize_idea(idea)
+        if tenant:
+            set_fields.update(tenant_fields(tenant))
         result = _common.get_db()[WORKING_COLLECTION].update_one(
             {"run_id": run_id},
             {

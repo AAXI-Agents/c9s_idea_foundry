@@ -6,7 +6,7 @@ aliases:
   - Changelog
   - Release Notes
 created: 2026-02-14
-updated: 2026-04-10
+updated: 2026-04-15
 ---
 
 # Version History
@@ -14,6 +14,14 @@ updated: 2026-04-10
 > Weekly changelog from v0.1.0 to current. Each week groups all version bumps with summaries.
 
 ---
+
+## Week of 2026-04-13
+
+| Version | Date | Summary |
+|---------|------|---------|
+| 0.72.0 | 04-15 | Multi-tenancy data isolation Phase 1. New `_tenant.py` module (TenantContext, tenant_filter, tenant_fields). All 9 repositories updated with tenant param. API layer injects TenantContext.from_user(). Slack path resolves tenant from slackOAuth. Tenant indexes on all collections. Migration script for backfill. 15 new regression tests. 3 web UI gap tickets |
+| 0.71.2 | 04-13 | CRITICAL FIX Phase 2: Comprehensive dedup fallback. v0.71.1 relied on idea_normalized field (absent on older documents), causing dedup to silently miss existing duplicates. Fix: Two-phase _match_by_idea_text() — fast indexed lookup then in-memory fallback on raw idea field. Self-healing backfill of idea_normalized. Multi-scope search (project then channel). API routes reject duplicates before run_id allocation (HTTP 409). Startup calls fail_unfinalized_on_startup() to clean orphaned flows. One-time scripts/dedup_working_ideas.py for backfill + archival. 5 new fallback tests |
+| 0.71.1 | 04-13 | CRITICAL FIX: Duplicate-idea dedup in kick_off_prd_flow. Root cause: zero deduplication at PRD flow entry point — same idea created 5 run_ids with 1000+ Jira tickets. Fix: find_active_duplicate_idea() blocks inprogress/paused duplicates. find_recent_duplicate_idea() now falls back to channel scope when project_id is missing. Dual guard in kick_off_prd_flow + router.py + API route_actions.py. 14 new tests |
 
 ## Week of 2026-04-06
 
@@ -38,6 +46,9 @@ updated: 2026-04-10
 | 0.67.0 | 04-11 | Fix critical bug: project_id validation on PRD kickoff. POST /flow/prd/kickoff returns 422 for non-existent project_id. Slack kickoff validates and clears invalid project_id. save_project_ref() defence-in-depth rejects phantom projects. Prevents orphaned ideas (proj-1 had 67). GAP ticket for stale data cleanup. 4 new tests |
 | 0.68.0 | 04-11 | Stale project cleanup + duplicate-idea protection. R1+R2+R3: cleanup_orphan_projects.py CLI (archive/delete orphaned project refs). S1A: 24h duplicate-idea cooldown (409 on API, warning in Slack). idea_normalized field for text comparison. find_recent_duplicate_idea query. 17 new tests |
 | 0.68.1 | 04-11 | Fix IdeaItem ux_design_status crash. idea_fields() returned None when both ux_design_status and figma_design_status were null in MongoDB, causing Pydantic ValidationError on GET /ideas/. Added trailing `or ""` fallback. 6 regression tests |
+| 0.69.0 | 04-12 | Deprecate legacy API endpoints (/generate, /publish, /confluence/*). Preflight checks validate credentials on startup. 4 endpoints deprecated with 410 Gone responses |
+| 0.70.0 | 04-12 | GCP auto-scale statelessness audit. (1) File-based output → GCS adapter + MongoDB fallback. (2) PRDFlow singleton → per-request instances. (3) Scheduler → sharded leader election. (4) Rotating Slack tokens → encrypted storage via KMS. (5) New env vars: GCS_OUTPUT_BUCKET, GCS_OUTPUT_PREFIX |
+| 0.70.1 | 04-12 | CRITICAL FIX: Stop runaway Jira ticket creation. _create_pending_jira() replaced with no-op stub. _discover_pending_deliveries() re-evaluation removed. Jira tickets ONLY via interactive Slack flow or manual API |
 | 0.63.1 | 04-10 | SSO userinfo 401 loop fix. Remote introspection missing client_id (RFC 7662). Public key LRU cache auto-clears on InvalidSignatureError (SSO key rotation). Improved introspect error logging with response body. 2 new SSO tests |
 
 ## Week of 2026-03-31

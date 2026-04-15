@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
-    BTN_CHECK_PUBLISH,
     BTN_CONFIGURE,
     BTN_CONFIGURE_MEMORY,
-    BTN_CREATE_JIRA,
     BTN_CREATE_PROJECT,
     BTN_CURRENT_PROJECT,
     BTN_END_SESSION,
@@ -15,7 +13,6 @@ from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
     BTN_LIST_PRODUCTS,
     BTN_LIST_PROJECTS,
     BTN_NEW_IDEA,
-    BTN_PUBLISH,
     BTN_RESTART_PRD,
     BTN_RESUME_PRD,
     BTN_SWITCH_PROJECT,
@@ -44,7 +41,7 @@ class TestButtonConstants:
         BTN_LIST_IDEAS, BTN_LIST_PRODUCTS, BTN_CONFIGURE,
         BTN_CONFIGURE_MEMORY, BTN_SWITCH_PROJECT, BTN_END_SESSION,
         BTN_RESUME_PRD, BTN_CREATE_PROJECT, BTN_LIST_PROJECTS,
-        BTN_HELP, BTN_CHECK_PUBLISH, BTN_PUBLISH, BTN_CREATE_JIRA,
+        BTN_HELP,
         BTN_RESTART_PRD, BTN_CURRENT_PROJECT, BTN_NEW_IDEA,
     ]
 
@@ -56,13 +53,12 @@ class TestButtonConstants:
             assert btn["text"]["type"] == "plain_text"
 
     def test_total_button_count(self):
-        assert len(self.ALL_BUTTONS) == 16
+        assert len(self.ALL_BUTTONS) == 13
 
     def test_resume_prd_has_primary_style(self):
         assert BTN_RESUME_PRD.get("style") == "primary"
 
-    def test_publish_has_primary_style(self):
-        assert BTN_PUBLISH.get("style") == "primary"
+
 
 
 # ---------------------------------------------------------------------------
@@ -190,10 +186,10 @@ class TestMissingKeysButtons:
 
 
 class TestCheckPublishButtons:
-    def test_contains_check_publish(self):
+    def test_returns_empty_list(self):
+        """check_publish_buttons returns empty list (removed in v0.71.0)."""
         blocks = check_publish_buttons()
-        ids = {e["action_id"] for e in blocks[0]["elements"]}
-        assert "cmd_check_publish" in ids
+        assert blocks == []
 
 
 class TestRestartCancelledButtons:

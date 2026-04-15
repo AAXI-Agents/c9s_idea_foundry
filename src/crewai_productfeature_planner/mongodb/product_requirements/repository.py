@@ -28,6 +28,11 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -90,6 +95,150 @@ def find_pending_delivery() -> list[dict[str, Any]]:
         return []
 
 
+# ── Atomic claims (multi-instance safety) ─────────────────────────────
+
+
+def claim_for_confluence(run_id: str, holder: str) -> bool:
+    """Atomically claim a delivery record for Confluence publishing.
+
+    Uses ``find_one_and_update`` with a filter that matches only when
+    ``confluence_published`` is falsy **and** no other instance has
+    claimed it (``confluence_claimed_by`` is absent or expired).
+
+    This prevents two auto-scaled instances from publishing the same
+    PRD simultaneously.
+
+    Args:
+        run_id: The flow run identifier.
+        holder: Unique instance identifier (e.g. ``hostname-pid``).
+
+    Returns:
+        ``True`` if this instance won the claim, ``False`` otherwise.
+    """
+    import time
+
+    now = _now_iso()
+    claim_expiry = time.time() + 300  # 5 min claim TTL
+
+    try:
+        db = get_db()
+        result = db[PRODUCT_REQUIREMENTS_COLLECTION].update_one(
+            {
+                "run_id": run_id,
+                "confluence_published": {"$ne": True},
+                "$or": [
+                    {"confluence_claimed_by": {"$exists": False}},
+                    {"confluence_claim_expires": {"$lt": time.time()}},
+                    {"confluence_claimed_by": holder},
+                ],
+            },
+            {
+                "$set": {
+                    "confluence_claimed_by": holder,
+                    "confluence_claim_expires": claim_expiry,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"run_id": run_id, "created_at": now},
+            },
+            upsert=True,
+        )
+        if result.modified_count > 0 or result.upserted_id is not None:
+            logger.info(
+                "[MongoDB] Claimed Confluence publish for run_id=%s (holder=%s)",
+                run_id, holder,
+            )
+            return True
+        logger.debug(
+            "[MongoDB] Confluence claim missed for run_id=%s — "
+            "already claimed or published",
+            run_id,
+        )
+        return False
+    except PyMongoError as exc:
+        logger.warning(
+            "[MongoDB] Failed to claim Confluence for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def claim_for_jira(run_id: str, holder: str) -> bool:
+    """Atomically claim a delivery record for Jira ticket creation.
+
+    Same pattern as :func:`claim_for_confluence` but for the Jira
+    delivery step.
+
+    Returns:
+        ``True`` if this instance won the claim, ``False`` otherwise.
+    """
+    import time
+
+    now = _now_iso()
+    claim_expiry = time.time() + 600  # 10 min claim TTL (Jira is slower)
+
+    try:
+        db = get_db()
+        result = db[PRODUCT_REQUIREMENTS_COLLECTION].update_one(
+            {
+                "run_id": run_id,
+                "jira_completed": {"$ne": True},
+                "$or": [
+                    {"jira_claimed_by": {"$exists": False}},
+                    {"jira_claim_expires": {"$lt": time.time()}},
+                    {"jira_claimed_by": holder},
+                ],
+            },
+            {
+                "$set": {
+                    "jira_claimed_by": holder,
+                    "jira_claim_expires": claim_expiry,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"run_id": run_id, "created_at": now},
+            },
+            upsert=True,
+        )
+        if result.modified_count > 0 or result.upserted_id is not None:
+            logger.info(
+                "[MongoDB] Claimed Jira delivery for run_id=%s (holder=%s)",
+                run_id, holder,
+            )
+            return True
+        logger.debug(
+            "[MongoDB] Jira claim missed for run_id=%s — "
+            "already claimed or completed",
+            run_id,
+        )
+        return False
+    except PyMongoError as exc:
+        logger.warning(
+            "[MongoDB] Failed to claim Jira for run_id=%s: %s",
+            run_id, exc,
+        )
+        return False
+
+
+def release_claim(run_id: str, claim_type: str) -> None:
+    """Release a claim after successful delivery (best-effort).
+
+    Args:
+        run_id: The flow run identifier.
+        claim_type: ``"confluence"`` or ``"jira"``.
+    """
+    field_prefix = claim_type  # "confluence" or "jira"
+    try:
+        db = get_db()
+        db[PRODUCT_REQUIREMENTS_COLLECTION].update_one(
+            {"run_id": run_id},
+            {"$unset": {
+                f"{field_prefix}_claimed_by": "",
+                f"{field_prefix}_claim_expires": "",
+            }},
+        )
+    except PyMongoError:
+        pass  # best-effort cleanup
+
+
 # ── Mutations ─────────────────────────────────────────────────────────
 
 
@@ -103,6 +252,7 @@ def upsert_delivery_record(
     jira_output: str | None = None,
     jira_tickets: list[dict] | None = None,
     error: str | None = None,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Create or update the delivery record for *run_id*.
 
@@ -158,7 +308,11 @@ def upsert_delivery_record(
             {"run_id": run_id},
             {
                 "$set": set_fields,
-                "$setOnInsert": {"run_id": run_id, "created_at": now},
+                "$setOnInsert": {
+                    "run_id": run_id,
+                    "created_at": now,
+                    **(tenant_fields(tenant) if tenant else {}),
+                },
             },
             upsert=True,
         )

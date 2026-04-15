@@ -2531,6 +2531,7 @@ def kick_off_prd_flow(
     event_ts: str,
     interactive: bool = False,
     project_id: str | None = None,
+    team_id: str | None = None,
 ) -> None:
     """Start a PRD flow from a Slack interaction.
 
@@ -2544,9 +2545,75 @@ def kick_off_prd_flow(
 
     If *project_id* is provided the working-idea document will be linked
     to the project so publishing can resolve project-level keys.
+
+    **Deduplication:** Before starting a new flow, checks for:
+
+    1. An *active* (``inprogress``/``paused``) flow with the same idea
+       text — blocks unconditionally.
+    2. A *recently completed* (within 24 h) flow with the same idea
+       text — blocks to prevent accidental re-runs.
     """
+    from crewai_productfeature_planner.apis.slack._session_reply import reply
     from crewai_productfeature_planner.apis.slack.router import _run_slack_prd_flow
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
+
+    # ── Duplicate-idea guard ───────────────────────────────────
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas import (
+            find_active_duplicate_idea,
+            find_recent_duplicate_idea,
+        )
+
+        active_dup = find_active_duplicate_idea(
+            idea,
+            project_id=project_id or "",
+            channel=channel,
+        )
+        if active_dup:
+            logger.warning(
+                "[KickOff] Blocked duplicate idea — active flow "
+                "exists (run_id=%s, status=%s, idea=%r)",
+                active_dup.get("run_id"),
+                active_dup.get("status"),
+                idea[:60],
+            )
+            reply(
+                channel, thread_ts,
+                f"<@{user}> :no_entry_sign: *Duplicate idea blocked* — "
+                f"this idea is already being processed "
+                f"(run `{active_dup.get('run_id')}`). "
+                "Use *Resume* to continue the existing run, or "
+                "*Archive* it first if you want to start fresh.",
+            )
+            return
+
+        recent_dup = find_recent_duplicate_idea(
+            idea,
+            project_id or "",
+            channel=channel,
+        )
+        if recent_dup:
+            logger.warning(
+                "[KickOff] Blocked duplicate idea — recently completed "
+                "(run_id=%s, status=%s, idea=%r)",
+                recent_dup.get("run_id"),
+                recent_dup.get("status"),
+                idea[:60],
+            )
+            reply(
+                channel, thread_ts,
+                f"<@{user}> :no_entry_sign: *Duplicate idea blocked* — "
+                f"this idea was recently submitted "
+                f"(run `{recent_dup.get('run_id')}`, "
+                f"status: {recent_dup.get('status')}). "
+                "Use *Rescan* to restart it, or wait 24 hours.",
+            )
+            return
+    except Exception:
+        logger.debug(
+            "[KickOff] Duplicate check failed — proceeding anyway",
+            exc_info=True,
+        )
 
     client = _get_slack_client()
     if client:
@@ -2569,15 +2636,20 @@ def kick_off_prd_flow(
         t = threading.Thread(
             target=run_interactive_slack_flow,
             args=(run_id, idea, channel, thread_ts, user),
-            kwargs={"project_id": project_id},
+            kwargs={"project_id": project_id, "team_id": team_id},
             name=f"slack-prd-interactive-{run_id}",
             daemon=True,
         )
     else:
+        kwargs = {}
+        if project_id:
+            kwargs["project_id"] = project_id
+        if team_id:
+            kwargs["team_id"] = team_id
         t = threading.Thread(
             target=_run_slack_prd_flow,
             args=(run_id, idea, channel, thread_ts),
-            kwargs={"project_id": project_id} if project_id else {},
+            kwargs=kwargs,
             name=f"slack-prd-{run_id}",
             daemon=True,
         )

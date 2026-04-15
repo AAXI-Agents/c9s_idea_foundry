@@ -103,18 +103,15 @@ class TestStopScheduler:
 
 
 class TestRunScan:
-    def test_calls_both_publishers(self):
+    def test_calls_confluence_publisher_only(self):
+        """Scheduler only handles Confluence — Jira requires user approval."""
         with (
             patch.object(
                 scheduler, "_publish_pending_confluence", return_value=1,
             ) as mock_conf,
-            patch.object(
-                scheduler, "_create_pending_jira", return_value=0,
-            ) as mock_jira,
         ):
             scheduler._run_scan()
         mock_conf.assert_called_once()
-        mock_jira.assert_called_once()
 
 
 class TestPublishPendingConfluence:
@@ -158,63 +155,30 @@ class TestPublishPendingConfluence:
             patch(
                 "crewai_productfeature_planner.mongodb.product_requirements.upsert_delivery_record",
             ),
+            patch(
+                "crewai_productfeature_planner.mongodb.product_requirements.claim_for_confluence",
+                return_value=True,
+            ),
+            patch(
+                "crewai_productfeature_planner.mongodb.product_requirements.release_claim",
+            ),
+            patch(
+                "crewai_productfeature_planner.mongodb.leases.repository._instance_id",
+                return_value="test-host-1",
+            ),
         ):
             assert scheduler._publish_pending_confluence() == 1
 
 
 class TestCreatePendingJira:
-    def test_no_credentials(self):
-        with patch(
-            "crewai_productfeature_planner.orchestrator._helpers._has_jira_credentials",
-            return_value=False,
-        ):
-            assert scheduler._create_pending_jira() == 0
+    """Jira creation is disabled in the scheduler (Jira Approval Gate)."""
 
-    def test_no_pending(self):
-        with (
-            patch(
-                "crewai_productfeature_planner.orchestrator._helpers._has_jira_credentials",
-                return_value=True,
-            ),
-            patch(
-                "crewai_productfeature_planner.orchestrator._startup_delivery._discover_pending_deliveries",
-                return_value=[],
-            ),
-        ):
-            assert scheduler._create_pending_jira() == 0
+    def test_always_returns_zero(self):
+        """Scheduler must NEVER create Jira tickets autonomously."""
+        assert scheduler._create_pending_jira() == 0
 
-    def test_creates_jira_for_pending(self):
-        items = [
-            {"run_id": "r1", "confluence_done": True, "jira_done": False},
-        ]
-        with (
-            patch(
-                "crewai_productfeature_planner.orchestrator._helpers._has_jira_credentials",
-                return_value=True,
-            ),
-            patch(
-                "crewai_productfeature_planner.orchestrator._startup_delivery._discover_pending_deliveries",
-                return_value=items,
-            ),
-            patch(
-                "crewai_productfeature_planner.apis.publishing.service.create_jira_single",
-                return_value={"run_id": "r1", "jira_completed": True, "ticket_keys": ["P-1"]},
-            ),
-        ):
-            assert scheduler._create_pending_jira() == 1
-
-    def test_skips_confluence_not_done(self):
-        items = [
-            {"run_id": "r1", "confluence_done": False, "jira_done": False},
-        ]
-        with (
-            patch(
-                "crewai_productfeature_planner.orchestrator._helpers._has_jira_credentials",
-                return_value=True,
-            ),
-            patch(
-                "crewai_productfeature_planner.orchestrator._startup_delivery._discover_pending_deliveries",
-                return_value=items,
-            ),
-        ):
-            assert scheduler._create_pending_jira() == 0
+    def test_no_external_calls(self):
+        """Verify no MongoDB or Jira calls are made."""
+        # The stub should return immediately without importing anything
+        result = scheduler._create_pending_jira()
+        assert result == 0

@@ -13,6 +13,7 @@ from crewai_productfeature_planner.apis.projects.models import (
     project_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -33,6 +34,7 @@ async def create_project(body: ProjectCreate, user: dict = Depends(require_sso_u
     )
 
     logger.info("[Projects] CREATE name=%s user_id=%s", body.name, user.get("user_id"))
+    tenant = TenantContext.from_user(user)
     project_id = _create_project(
         name=body.name,
         description=body.description,
@@ -40,6 +42,7 @@ async def create_project(body: ProjectCreate, user: dict = Depends(require_sso_u
         jira_project_key=body.jira_project_key,
         confluence_parent_id=body.confluence_parent_id,
         reference_urls=body.reference_urls,
+        tenant=tenant,
     )
     if not project_id:
         logger.error("[Projects] CREATE failed for name=%s", body.name)
@@ -49,5 +52,5 @@ async def create_project(body: ProjectCreate, user: dict = Depends(require_sso_u
         )
 
     logger.info("[Projects] Created project_id=%s", project_id)
-    doc = _get_project(project_id)
+    doc = _get_project(project_id, tenant=tenant)
     return ProjectItem(**project_fields(doc or {"project_id": project_id, "name": body.name}))

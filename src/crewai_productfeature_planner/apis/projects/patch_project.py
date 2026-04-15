@@ -13,6 +13,7 @@ from crewai_productfeature_planner.apis.projects.models import (
     project_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -32,7 +33,8 @@ async def update_project(project_id: str, body: ProjectUpdate, user: dict = Depe
     )
 
     logger.info("[Projects] UPDATE project_id=%s user_id=%s", project_id, user.get("user_id"))
-    existing = _get_project(project_id)
+    tenant = TenantContext.from_user(user)
+    existing = _get_project(project_id, tenant=tenant)
     if not existing:
         logger.warning("[Projects] Not found for update project_id=%s", project_id)
         raise HTTPException(
@@ -42,8 +44,8 @@ async def update_project(project_id: str, body: ProjectUpdate, user: dict = Depe
 
     updates = body.model_dump(exclude_none=True)
     if updates:
-        _update_project(project_id, **updates)
+        _update_project(project_id, tenant=tenant, **updates)
         logger.info("[Projects] Updated project_id=%s fields=%s", project_id, list(updates.keys()))
 
-    doc = _get_project(project_id)
+    doc = _get_project(project_id, tenant=tenant)
     return ProjectItem(**project_fields(doc or existing))

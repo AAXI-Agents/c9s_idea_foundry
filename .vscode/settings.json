@@ -1,6 +1,6 @@
 {
     "github.copilot.chat.codeGeneration.instructions": [
-        { "file": "CODEX.md" }
+        { "file": "CLAUDE.md" }
     ],
     "chat.instructionFiles.enabled": true,
     "chat.promptFiles": true,

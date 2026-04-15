@@ -189,8 +189,8 @@ class TestSlackPostPRDResultTool:
         assert blocks[0]["type"] == "header"
         assert blocks[-1]["text"]["text"] == ":white_check_mark: PRD has been generated successfully!"
 
-    def test_builds_blocks_with_run_id_shows_buttons(self):
-        """When run_id is provided and delivery not done, buttons are included."""
+    def test_builds_blocks_with_run_id_no_delivery_buttons(self):
+        """When run_id is provided, delivery buttons are NOT shown (removed in v0.71.0)."""
         from crewai_productfeature_planner.tools.slack_tools import SlackPostPRDResultTool
 
         tool = SlackPostPRDResultTool()
@@ -201,13 +201,16 @@ class TestSlackPostPRDResultTool:
             jira_output=None,
             run_id="run-test-123",
         )
-        # Header + idea + success + divider + next-steps section + actions = 6
-        assert len(blocks) == 6
-        # Last block should be an actions block with buttons
-        assert blocks[-1]["type"] == "actions"
-        action_ids = [el["action_id"] for el in blocks[-1]["elements"]]
-        assert "delivery_publish" in action_ids
-        assert "delivery_create_jira" in action_ids
+        # delivery_next_step_blocks returns [] now, so only Header + idea + success = 3
+        assert len(blocks) == 3
+        # No delivery action buttons
+        action_ids = [
+            el.get("action_id", "")
+            for b in blocks if b.get("type") == "actions"
+            for el in b.get("elements", [])
+        ]
+        assert "delivery_publish" not in action_ids
+        assert "delivery_create_jira" not in action_ids
 
     def test_sends_blocks_to_slack(self):
         mock_client = MagicMock()

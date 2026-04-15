@@ -127,10 +127,8 @@ from crewai_productfeature_planner.apis.slack.blocks._delivery_action_blocks imp
     publish_only_blocks,
 )
 from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
-    BTN_CHECK_PUBLISH,
     BTN_CONFIGURE,
     BTN_CONFIGURE_MEMORY,
-    BTN_CREATE_JIRA,
     BTN_CREATE_PROJECT,
     BTN_CURRENT_PROJECT,
     BTN_END_SESSION,
@@ -140,7 +138,6 @@ from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
     BTN_LIST_PRODUCTS,
     BTN_LIST_PROJECTS,
     BTN_NEW_IDEA,
-    BTN_PUBLISH,
     BTN_RESTART_PRD,
     BTN_RESUME_PRD,
     BTN_SUMMARIZE_IDEAS,
@@ -206,10 +203,8 @@ __all__ = [
     "jira_only_blocks",
     "publish_only_blocks",
     # Command buttons
-    "BTN_CHECK_PUBLISH",
     "BTN_CONFIGURE",
     "BTN_CONFIGURE_MEMORY",
-    "BTN_CREATE_JIRA",
     "BTN_CREATE_PROJECT",
     "BTN_CURRENT_PROJECT",
     "BTN_END_SESSION",
@@ -219,7 +214,6 @@ __all__ = [
     "BTN_LIST_PRODUCTS",
     "BTN_LIST_PROJECTS",
     "BTN_NEW_IDEA",
-    "BTN_PUBLISH",
     "BTN_RESTART_PRD",
     "BTN_RESUME_PRD",
     "BTN_SUMMARIZE_IDEAS",

@@ -12,6 +12,10 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.working_ideas import _common
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
@@ -478,7 +482,7 @@ def _doc_to_idea_dict(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def has_active_idea_flow(project_id: str) -> bool:
+def has_active_idea_flow(project_id: str, *, tenant: TenantContext | None = None) -> bool:
     """Return ``True`` if the project has any in-progress idea flow.
 
     Checks the ``workingIdeas`` collection for documents with
@@ -489,7 +493,7 @@ def has_active_idea_flow(project_id: str) -> bool:
     try:
         db = _common.get_db()
         count = db[WORKING_COLLECTION].count_documents(
-            {"project_id": project_id, "status": "inprogress"},
+            {"project_id": project_id, "status": "inprogress", **tenant_filter(tenant)},
             limit=1,
         )
         return count > 0
@@ -505,6 +509,7 @@ def find_ideas_by_project(
     project_id: str,
     *,
     channel: str | None = None,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """Find all working ideas associated with a project.
 
@@ -547,6 +552,7 @@ def find_ideas_by_project(
         query: dict[str, Any] = {
             "status": {"$nin": ["archived", "completed"]},
             "$or": or_conditions,
+            **tenant_filter(tenant),
         }
 
         docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
@@ -666,6 +672,7 @@ def find_completed_ideas_by_project(
     project_id: str,
     *,
     channel: str | None = None,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """Find all *completed* (not archived) working ideas for a project.
 
@@ -698,6 +705,7 @@ def find_completed_ideas_by_project(
         query: dict[str, Any] = {
             "status": "completed",
             "$or": or_conditions,
+            **tenant_filter(tenant),
         }
 
         docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
@@ -819,11 +827,98 @@ def _normalize_idea_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+def _build_scope_filters(
+    project_id: str | None,
+    channel: str | None,
+) -> list[dict[str, Any]]:
+    """Build a list of scope filters to try, from most specific to broadest.
+
+    Returns multiple filters so callers can run wider scans when a
+    narrow scope finds nothing.  This prevents duplicates from
+    slipping through when ``project_id`` is ``""``/``None`` on some
+    documents but set on others.
+    """
+    filters: list[dict[str, Any]] = []
+    if project_id:
+        filters.append({"project_id": project_id})
+    if channel:
+        filters.append({"slack_channel": channel})
+    return filters
+
+
+def _match_by_idea_text(
+    db,
+    scope_filter: dict[str, Any],
+    normalized: str,
+    extra_filter: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Two-phase lookup: indexed ``idea_normalized`` first, then fallback.
+
+    Phase 1 — fast path: query ``idea_normalized`` field directly
+    (works for documents created after the field was introduced).
+
+    Phase 2 — fallback: if phase 1 finds nothing, fetch all
+    candidates matching scope + extra_filter and compare the
+    ``idea`` field in-memory after normalizing.  When a match is
+    found this way, self-heal by writing ``idea_normalized`` back
+    so future lookups use the fast path.
+    """
+    projection = {"run_id": 1, "idea": 1, "status": 1, "created_at": 1}
+
+    # Phase 1 — indexed fast path
+    doc = db[WORKING_COLLECTION].find_one(
+        {**scope_filter, "idea_normalized": normalized, **extra_filter},
+        projection,
+        sort=[("created_at", -1)],
+    )
+    if doc:
+        return doc
+
+    # Phase 2 — in-memory fallback for documents without idea_normalized
+    raw_results = db[WORKING_COLLECTION].find(
+        {
+            **scope_filter,
+            **extra_filter,
+            # Only scan documents that lack the indexed field
+            "$or": [
+                {"idea_normalized": {"$exists": False}},
+                {"idea_normalized": None},
+                {"idea_normalized": ""},
+            ],
+        },
+        {**projection, "finalized_idea": 1},
+    )
+    candidates = list(raw_results)[:200]
+    # Sort in-memory
+    candidates.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+    for cand in candidates:
+        raw = cand.get("idea") or cand.get("finalized_idea") or ""
+        if not raw:
+            continue
+        if _normalize_idea_text(raw) == normalized:
+            # Self-heal: backfill idea_normalized for next time
+            try:
+                db[WORKING_COLLECTION].update_one(
+                    {"_id": cand["_id"]},
+                    {"$set": {"idea_normalized": _normalize_idea_text(raw)}},
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            # Return only the projection fields
+            return {
+                k: cand[k] for k in ("run_id", "idea", "status", "created_at")
+                if k in cand
+            }
+
+    return None
+
+
 def find_recent_duplicate_idea(
     idea: str,
     project_id: str,
     *,
     cooldown_hours: int = DUPLICATE_IDEA_COOLDOWN_HOURS,
+    channel: str | None = None,
 ) -> dict[str, Any] | None:
     """Check if the same idea was submitted to a project recently.
 
@@ -831,16 +926,28 @@ def find_recent_duplicate_idea(
     searches ``workingIdeas`` for a matching document created within
     the last *cooldown_hours*, excluding ``archived`` ideas.
 
+    Uses a two-phase lookup: first queries the indexed
+    ``idea_normalized`` field, then falls back to in-memory comparison
+    of the raw ``idea`` field for older documents.
+
+    When *project_id* is empty/missing but *channel* is provided,
+    falls back to channel-scoped matching so that ideas without a
+    project association are still deduplicated.
+
     Args:
         idea: Raw idea text from the request.
         project_id: The project to scope the search to.
         cooldown_hours: How far back to look (default 24 h).
+        channel: Slack channel for fallback scoping when
+            project_id is unavailable.
 
     Returns:
         The matching document (lightweight projection) if a recent
         duplicate exists, otherwise ``None``.
     """
-    if not idea or not project_id:
+    if not idea:
+        return None
+    if not project_id and not channel:
         return None
 
     normalized = _normalize_idea_text(idea)
@@ -848,27 +955,88 @@ def find_recent_duplicate_idea(
 
     try:
         db = _common.get_db()
-        doc = db[WORKING_COLLECTION].find_one(
-            {
-                "project_id": project_id,
-                "idea_normalized": normalized,
-                "status": {"$ne": "archived"},
-                "created_at": {"$gte": cutoff.isoformat()},
-            },
-            {"run_id": 1, "idea": 1, "status": 1, "created_at": 1},
-            sort=[("created_at", -1)],
-        )
-        if doc:
-            logger.info(
-                "[MongoDB] Duplicate idea detected for project_id=%s "
-                "(existing run_id=%s, created_at=%s)",
-                project_id, doc.get("run_id"), doc.get("created_at"),
-            )
-        return doc
+
+        extra: dict[str, Any] = {
+            "status": {"$ne": "archived"},
+            "created_at": {"$gte": cutoff.isoformat()},
+        }
+
+        for scope in _build_scope_filters(project_id, channel):
+            doc = _match_by_idea_text(db, scope, normalized, extra)
+            if doc:
+                logger.info(
+                    "[MongoDB] Duplicate idea detected for project_id=%s "
+                    "channel=%s (existing run_id=%s, created_at=%s)",
+                    project_id, channel,
+                    doc.get("run_id"), doc.get("created_at"),
+                )
+                return doc
+        return None
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] find_recent_duplicate_idea failed "
-            "(project=%s): %s",
-            project_id, exc,
+            "(project=%s, channel=%s): %s",
+            project_id, channel, exc,
+        )
+        return None
+
+
+def find_active_duplicate_idea(
+    idea: str,
+    *,
+    project_id: str | None = None,
+    channel: str | None = None,
+) -> dict[str, Any] | None:
+    """Check if the same idea already has an active (in-progress) flow.
+
+    Unlike :func:`find_recent_duplicate_idea` which has a cooldown
+    window, this function matches **any active flow** regardless of
+    age — an idea that is currently being processed must never be
+    started again.
+
+    Uses a two-phase lookup: indexed ``idea_normalized`` first, then
+    in-memory fallback on the raw ``idea`` field for older documents
+    that lack the indexed field.
+
+    Args:
+        idea: Raw idea text from the request.
+        project_id: Optional project scope.
+        channel: Optional Slack channel scope (fallback when
+            project_id is missing).
+
+    Returns:
+        The matching document (lightweight projection) if an active
+        duplicate exists, otherwise ``None``.
+    """
+    if not idea:
+        return None
+    if not project_id and not channel:
+        return None
+
+    normalized = _normalize_idea_text(idea)
+
+    try:
+        db = _common.get_db()
+
+        extra: dict[str, Any] = {
+            "status": {"$in": ["inprogress", "paused"]},
+        }
+
+        for scope in _build_scope_filters(project_id, channel):
+            doc = _match_by_idea_text(db, scope, normalized, extra)
+            if doc:
+                logger.info(
+                    "[MongoDB] Active duplicate idea detected "
+                    "(project=%s, channel=%s, existing run_id=%s, status=%s)",
+                    project_id, channel,
+                    doc.get("run_id"), doc.get("status"),
+                )
+                return doc
+        return None
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] find_active_duplicate_idea failed "
+            "(project=%s, channel=%s): %s",
+            project_id, channel, exc,
         )
         return None

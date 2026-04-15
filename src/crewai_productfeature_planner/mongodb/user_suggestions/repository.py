@@ -30,6 +30,11 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -47,6 +52,7 @@ def log_suggestion(
     project_id: str | None = None,
     channel: str | None = None,
     thread_ts: str | None = None,
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """Insert a new user suggestion document.
 
@@ -67,6 +73,7 @@ def log_suggestion(
         "resolved": False,
         "resolved_intent": None,
         "created_at": now,
+        **(tenant_fields(tenant) if tenant else {}),
     }
 
     try:
@@ -90,6 +97,7 @@ def find_suggestions_by_project(
     *,
     resolved: bool | None = None,
     limit: int = 50,
+    tenant: TenantContext | None = None,
 ) -> list[dict]:
     """Return recent suggestions for a project.
 
@@ -98,7 +106,7 @@ def find_suggestions_by_project(
         resolved: If set, filter by resolved status.
         limit: Max documents to return.
     """
-    query: dict[str, Any] = {"project_id": project_id}
+    query: dict[str, Any] = {"project_id": project_id, **tenant_filter(tenant)}
     if resolved is not None:
         query["resolved"] = resolved
     try:

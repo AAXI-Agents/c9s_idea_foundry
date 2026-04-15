@@ -119,6 +119,18 @@ def run():
     except Exception as exc:
         logger.debug("Startup recovery failed: %s", exc)
 
+    # Startup recovery: mark orphaned in-progress working ideas as failed
+    # so dedup won't permanently block new flows for the same idea.
+    try:
+        from crewai_productfeature_planner.mongodb.working_ideas._queries import (
+            fail_unfinalized_on_startup,
+        )
+        failed_ideas = fail_unfinalized_on_startup()
+        if failed_ideas:
+            print(f"  Marked {len(failed_ideas)} orphaned in-progress idea(s) as failed.")
+    except Exception as exc:
+        logger.debug("Startup working-ideas recovery failed: %s", exc)
+
     # Startup recovery: generate markdown for completed ideas missing output
     generated = _generate_missing_outputs()
     if generated:

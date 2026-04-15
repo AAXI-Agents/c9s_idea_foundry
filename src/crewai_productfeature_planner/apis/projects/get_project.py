@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from crewai_productfeature_planner.apis.projects.models import ProjectItem, project_fields
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +28,8 @@ async def get_project(project_id: str, user: dict = Depends(require_sso_user)) -
     )
 
     logger.info("[Projects] GET project_id=%s user_id=%s", project_id, user.get("user_id"))
-    doc = _get_project(project_id)
+    tenant = TenantContext.from_user(user)
+    doc = _get_project(project_id, tenant=tenant)
     if not doc:
         logger.warning("[Projects] Not found project_id=%s", project_id)
         raise HTTPException(

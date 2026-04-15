@@ -14,6 +14,7 @@ from typing import Any
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_fields
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -41,6 +42,7 @@ def upsert_team(
     app_id: str = "",
     expires_in: int | None = None,
     authed_user_id: str | None = None,
+    tenant: TenantContext | None = None,
 ) -> dict[str, Any] | None:
     """Insert or replace the OAuth record for *team_id*.
 
@@ -65,6 +67,7 @@ def upsert_team(
         "expires_at": expires_at,
         "updated_at": now,
         "authed_user_id": authed_user_id,
+        **(tenant_fields(tenant) if tenant else {}),
     }
 
     try:
@@ -131,6 +134,59 @@ def update_tokens(
     except PyMongoError as exc:
         logger.error(
             "[SlackOAuth] Failed to update tokens for team=%s: %s",
+            team_id,
+            exc,
+        )
+        return False
+
+
+def refresh_tokens_cas(
+    *,
+    team_id: str,
+    old_refresh_token: str,
+    new_access_token: str,
+    new_refresh_token: str,
+    expires_in: int,
+) -> bool:
+    """Atomically update tokens only if ``refresh_token`` has not changed.
+
+    Uses a compare-and-swap (CAS) guard: the MongoDB filter includes the
+    current ``refresh_token`` value.  If another instance already refreshed
+    (consuming the single-use Slack refresh token and writing a new one),
+    the filter won't match and the update is a safe no-op.
+
+    Returns ``True`` when the update was applied (this instance won the
+    CAS race) or ``False`` on CAS miss or error.
+    """
+    now = _now_iso()
+    expires_at = time.time() + expires_in
+
+    try:
+        result = get_db()[SLACK_OAUTH_COLLECTION].update_one(
+            {"team_id": team_id, "refresh_token": old_refresh_token},
+            {
+                "$set": {
+                    "access_token": new_access_token,
+                    "refresh_token": new_refresh_token,
+                    "expires_at": expires_at,
+                    "updated_at": now,
+                }
+            },
+        )
+        if result.matched_count == 0:
+            logger.info(
+                "[SlackOAuth] CAS miss for team=%s — another instance "
+                "already refreshed the token",
+                team_id,
+            )
+            return False
+        logger.debug(
+            "[SlackOAuth] CAS refresh succeeded for team=%s", team_id,
+        )
+        return True
+    except PyMongoError as exc:
+        logger.error(
+            "[SlackOAuth] CAS refresh failed for team=%s: %s",
             team_id,
             exc,
         )

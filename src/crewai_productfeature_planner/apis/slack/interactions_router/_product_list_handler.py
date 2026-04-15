@@ -54,35 +54,17 @@ def _handle_product_list_action(
     client = _get_slack_client()
 
     if action_id.startswith("product_confluence_"):
-        _handle_confluence_publish(
-            run_id, idea_number, user_id, channel, thread_ts,
-            send_tool, client,
-        )
+        logger.warning("Ignored deprecated product_confluence action")
     elif action_id.startswith("product_jira_skeleton_"):
-        _handle_jira_skeleton(
-            run_id, idea_number, user_id, channel, thread_ts,
-            send_tool, client,
-        )
+        logger.warning("Ignored deprecated product_jira_skeleton action")
     elif action_id.startswith("product_jira_epics_"):
-        _handle_jira_epics(
-            run_id, idea_number, user_id, channel, thread_ts,
-            send_tool, client,
-        )
+        logger.warning("Ignored deprecated product_jira_epics action")
     elif action_id.startswith("product_jira_subtasks_"):
-        _handle_jira_subtasks(
-            run_id, idea_number, user_id, channel, thread_ts,
-            send_tool, client,
-        )
+        logger.warning("Ignored deprecated product_jira_subtasks action")
     elif action_id.startswith("product_jira_reviews_"):
-        _handle_jira_reviews(
-            run_id, idea_number, user_id, channel, thread_ts,
-            send_tool, client,
-        )
+        logger.warning("Ignored deprecated product_jira_reviews action")
     elif action_id.startswith("product_jira_qa_tests_"):
-        _handle_jira_qa_tests(
-            run_id, idea_number, user_id, channel, thread_ts,
-            send_tool, client,
-        )
+        logger.warning("Ignored deprecated product_jira_qa_tests action")
     elif action_id.startswith("product_ux_design_"):
         _handle_ux_design(
             run_id, idea_number, user_id, channel, thread_ts,

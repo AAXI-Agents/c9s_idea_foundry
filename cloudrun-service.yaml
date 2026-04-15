@@ -1,0 +1,111 @@
+# Cloud Run service definition for PRD Planner API.
+#
+# Deploy with:
+#   gcloud run services replace cloudrun-service.yaml --region=REGION
+#
+# Or use `gcloud run deploy` with the Dockerfile directly:
+#   gcloud run deploy prd-planner \
+#     --source . \
+#     --region us-central1 \
+#     --set-env-vars "$(cat .env.cloudrun | xargs)" \
+#     --allow-unauthenticated
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: prd-planner
+  annotations:
+    run.googleapis.com/description: "PRD Feature Planner API — CrewAI-powered PRD generation"
+spec:
+  template:
+    metadata:
+      annotations:
+        # Auto-scaling configuration
+        autoscaling.knative.dev/minScale: "1"       # Keep 1 warm instance (scheduler needs it)
+        autoscaling.knative.dev/maxScale: "5"        # Scale up to 5 instances
+        run.googleapis.com/cpu-throttling: "false"   # Always-on CPU (needed for background scheduler)
+        run.googleapis.com/startup-cpu-boost: "true" # Extra CPU during startup
+    spec:
+      containerConcurrency: 80  # Max concurrent requests per instance
+      timeoutSeconds: 300       # 5 min request timeout (PRD flows are async)
+      containers:
+        - image: IMAGE_URL      # Replace with your artifact registry URL
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              memory: "1Gi"
+              cpu: "2"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 30
+          env:
+            # ── Required ──
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: mongodb-uri
+            - name: SLACK_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: slack-client-id
+            - name: SLACK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: slack-client-secret
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: slack-signing-secret
+
+            # ── GCS Output Storage ──
+            - name: GCS_OUTPUT_BUCKET
+              value: ""  # Set to your bucket name, e.g. "my-project-prds"
+
+            # ── Logging ──
+            - name: LOG_TARGET
+              value: "stdout"
+
+            # ── Server ──
+            - name: SERVER_ENV
+              value: "PROD"
+            - name: API_PORT
+              value: "8000"
+
+            # ── Optional: Confluence ──
+            # - name: ATLASSIAN_BASE_URL
+            #   value: ""
+            # - name: ATLASSIAN_USERNAME
+            #   valueFrom:
+            #     secretKeyRef:
+            #       key: latest
+            #       name: atlassian-username
+            # - name: ATLASSIAN_API_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       key: latest
+            #       name: atlassian-api-token
+
+            # ── Optional: Jira ──
+            # - name: JIRA_PROJECT_KEY
+            #   value: ""
+
+            # ── Optional: LLM ──
+            # - name: GOOGLE_API_KEY
+            #   valueFrom:
+            #     secretKeyRef:
+            #       key: latest
+            #       name: google-api-key

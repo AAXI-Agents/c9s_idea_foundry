@@ -58,6 +58,7 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_fields
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -102,7 +103,10 @@ def _empty_doc(project_id: str) -> dict[str, Any]:
 # ── Create / Upsert ─────────────────────────────────────────────────
 
 
-def upsert_project_memory(project_id: str) -> bool:
+def upsert_project_memory(
+    project_id: str,
+    tenant: TenantContext | None = None,
+) -> bool:
     """Ensure a ``projectMemory`` document exists for *project_id*.
 
     Creates an empty-scaffold document if one does not already exist.
@@ -111,9 +115,12 @@ def upsert_project_memory(project_id: str) -> bool:
         ``True`` if a document now exists (created or already present).
     """
     try:
+        insert_doc = _empty_doc(project_id)
+        if tenant:
+            insert_doc.update(tenant_fields(tenant))
         result = _collection().update_one(
             {"project_id": project_id},
-            {"$setOnInsert": _empty_doc(project_id)},
+            {"$setOnInsert": insert_doc},
             upsert=True,
         )
         if result.upserted_id:

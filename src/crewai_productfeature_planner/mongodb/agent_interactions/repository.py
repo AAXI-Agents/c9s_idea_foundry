@@ -35,6 +35,11 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -61,6 +66,7 @@ def log_interaction(
     conversation_history: list[dict] | None = None,
     metadata: dict[str, Any] | None = None,
     predicted_next_step: dict[str, Any] | None = None,
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """Insert a new agent interaction document.
 
@@ -109,6 +115,7 @@ def log_interaction(
         "next_step_accepted": None,
         "next_step_feedback_at": None,
         "created_at": now,
+        **(tenant_fields(tenant) if tenant else {}),
     }
 
     try:

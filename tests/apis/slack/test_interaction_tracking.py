@@ -238,7 +238,7 @@ class TestInterpretAndActTracking:
                   return_value=mock_interpret_tool),
             patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
                   return_value=mock_send_tool),
-            patch(f"{_EVENTS_MODULE}._handle_publish_intent"),
+            patch(f"{_MSG_MODULE}._reply"),
             patch(
                 "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
                 mock_log,
@@ -268,7 +268,7 @@ class TestInterpretAndActTracking:
                   return_value=mock_interpret_tool),
             patch(f"{_TOOLS_MODULE}.SlackSendMessageTool",
                   return_value=mock_send_tool),
-            patch(f"{_EVENTS_MODULE}._handle_check_publish_intent"),
+            patch(f"{_MSG_MODULE}._reply"),
             patch(
                 "crewai_productfeature_planner.mongodb.agent_interactions.repository.log_interaction",
                 mock_log,

@@ -28,6 +28,10 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -49,6 +53,7 @@ def start_session(
     channel: str,
     project_id: str,
     project_name: str,
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """Start a new project session for a Slack user.
 
@@ -73,6 +78,7 @@ def start_session(
         "active": True,
         "started_at": now,
         "ended_at": None,
+        **(tenant_fields(tenant) if tenant else {}),
     }
 
     try:

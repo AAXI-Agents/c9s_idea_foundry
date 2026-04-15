@@ -1,3 +1,3 @@
-<!-- GitHub Copilot workspace instructions — see CODEX.md for details -->
-See [CODEX.md](../CODEX.md) for the full AI agent developer guide.
+<!-- GitHub Copilot workspace instructions — see CLAUDE.md for details -->
+See [CLAUDE.md](../CLAUDE.md) for the full AI agent developer guide.
 

@@ -79,11 +79,13 @@ class TestDiscoverPendingDeliveries:
     @patch(_ASSEMBLE, return_value="# PRD content")
     @patch(_GET_REC)
     @patch(_GET_DB)
-    def test_reevaluates_completed_record_when_jira_missing(
+    def test_completed_record_skipped_even_when_jira_missing(
         self, mock_db, mock_rec, _asm, _jira,
     ):
-        """A record marked 'completed' with jira_completed=False should
-        be re-evaluated when Jira credentials are now available."""
+        """A record marked 'completed' must be SKIPPED even when
+        jira_completed=False.  Jira tickets require explicit user
+        approval — the scheduler must never reopen completed records
+        (Jira Approval Gate Invariant, v0.70.1 fix)."""
         mock_db.return_value = _mock_db_with_docs([
             {
                 "run_id": "r1",
@@ -93,7 +95,7 @@ class TestDiscoverPendingDeliveries:
                 "executive_summary": [{"content": "Summary", "iteration": 1}],
             },
         ])
-        # Record says "completed" but jira_completed is False (old bug)
+        # Record says "completed" but jira_completed is False
         mock_rec.return_value = {
             "status": "completed",
             "confluence_published": True,
@@ -101,21 +103,18 @@ class TestDiscoverPendingDeliveries:
         }
 
         items = _discover_pending_deliveries()
-        assert len(items) == 1
-        assert items[0]["run_id"] == "r1"
-        assert items[0]["confluence_done"] is True
-        assert items[0]["jira_done"] is False
-        assert items[0]["jira_tickets"] == []
+        assert len(items) == 0
 
     @patch(f"{_MOD}._has_jira_credentials", return_value=True)
     @patch(_ASSEMBLE, return_value="# PRD content")
     @patch(_GET_REC)
     @patch(_GET_DB)
-    def test_includes_jira_tickets_from_record(
+    def test_completed_record_with_partial_tickets_still_skipped(
         self, mock_db, mock_rec, _asm, _jira,
     ):
-        """Existing jira_tickets from a partial delivery record should
-        be included in the DeliveryItem."""
+        """Even when a completed delivery record has partial Jira
+        tickets, the scheduler must not reopen it.  The user must
+        initiate Jira creation explicitly."""
         mock_db.return_value = _mock_db_with_docs([
             {
                 "run_id": "r1",
@@ -133,8 +132,7 @@ class TestDiscoverPendingDeliveries:
         }
 
         items = _discover_pending_deliveries()
-        assert len(items) == 1
-        assert items[0]["jira_tickets"] == [{"key": "PRD-42", "type": "Epic"}]
+        assert len(items) == 0
 
     @patch(f"{_MOD}._has_jira_credentials", return_value=True)
     @patch(_ASSEMBLE, return_value="# PRD content")

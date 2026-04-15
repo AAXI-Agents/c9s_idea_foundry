@@ -3446,6 +3446,169 @@ _CODEX: list[CodexEntry] = [
             "6 regression tests added."
         ),
     ),
+    CodexEntry(
+        version="0.69.0",
+        date=date(2026, 4, 12),
+        summary=(
+            "GCP stateless auto-scale readiness (Phase 1). "
+            "(1) Slack token refresh CAS guard: refresh_tokens_cas() in "
+            "slack_oauth repository uses find_one_and_update with the "
+            "current refresh_token as a filter — if another instance "
+            "already consumed the single-use token, the update is a safe "
+            "no-op and the instance reloads from MongoDB. Prevents "
+            "permanent token bricking in multi-instance deployments. "
+            "(2) Leader lease for token refresh scheduler: new "
+            "mongodb/leases/ module with acquire/renew/release_lease(). "
+            "The scheduler now acquires a MongoDB-based lease before "
+            "refreshing — only one instance actively refreshes tokens. "
+            "Lease auto-expires via TTL so another instance takes over "
+            "if the leader dies. "
+            "(3) Structured JSON logging: LOG_TARGET env var controls "
+            "output destination — 'file' (default, current behavior), "
+            "'stdout' (JSON to stdout for GCP Cloud Logging), or "
+            "'both'. GCP-compatible severity mapping included. "
+            "(4) leases collection bootstrapped in setup_mongodb."
+        ),
+    ),
+    CodexEntry(
+        version="0.70.0",
+        date=date(2026, 4, 12),
+        summary=(
+            "GCP stateless auto-scale readiness (Phase 2). "
+            "(1) Atomic claim pattern for startup delivery: "
+            "claim_for_confluence() and claim_for_jira() in "
+            "productRequirements repo use find_one_and_update with "
+            "claim_by/claim_expires fields — prevents duplicate "
+            "Confluence publishes and Jira tickets when multiple "
+            "instances start simultaneously. release_claim() cleans up. "
+            "(2) Publishing scheduler uses atomic claims: "
+            "_publish_pending_confluence() and _create_pending_jira() "
+            "now claim work items before processing. "
+            "(3) GCS output storage: new output_storage.py module with "
+            "write_output/read_output/exists_output. PRDFileWriteTool "
+            "and UX design flow upload to GCS when GCS_OUTPUT_BUCKET "
+            "env var is set. Local disk always used as cache. "
+            "google-cloud-storage added as optional dependency [gcs]. "
+            "(4) Dockerfile + Cloud Run service definition: "
+            "multi-stage Docker build, .dockerignore, "
+            "cloudrun-service.yaml with auto-scaling, health probes, "
+            "secrets, and env var configuration. "
+            "(5) New env vars: GCS_OUTPUT_BUCKET, GCS_OUTPUT_PREFIX."
+        ),
+    ),
+    CodexEntry(
+        version="0.70.1",
+        date=date(2026, 4, 12),
+        summary=(
+            "CRITICAL FIX: Stop runaway Jira ticket creation. "
+            "The PublishScheduler's _create_pending_jira() was "
+            "autonomously creating Jira tickets for every completed "
+            "PRD where Confluence was published but jira_completed was "
+            "False — violating the Jira Approval Gate Invariant. "
+            "Over 8 days, 34 PRDs x ~30 tickets each = 1000+ unwanted "
+            "Jira tickets created without user approval. "
+            "Fix: (1) _create_pending_jira() replaced with no-op stub "
+            "that always returns 0 — Jira tickets are ONLY created via "
+            "interactive Slack flow or manual API call. "
+            "(2) _discover_pending_deliveries() re-evaluation logic "
+            "removed — completed delivery records are no longer reopened "
+            "when Jira credentials become available. "
+            "(3) Regression tests added to test_jira_approval_gate.py. "
+            "(4) Scheduler sweep summary simplified (removed jira_created)."
+        ),
+    ),
+    CodexEntry(
+        version="0.71.0",
+        date=date(2026, 4, 12),
+        summary=(
+            "Remove Slack-triggered Confluence and Jira publishing. "
+            "All Confluence publish and Jira ticket creation buttons, "
+            "command dispatches, and handler proxies removed from Slack. "
+            "Intent handlers (publish, create_jira, check_publish) now "
+            "return info messages directing users to the web API. "
+            "Delivery action blocks (delivery_next_step_blocks, "
+            "jira_only_blocks, publish_only_blocks) stubbed to return []. "
+            "Product list Confluence publish and all Jira phase buttons "
+            "removed. Flow event handlers kept as read-only status "
+            "updates. 12 source files + 9 test files updated. "
+            "891 Slack tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.71.1",
+        date=date(2026, 4, 13),
+        summary=(
+            "Fix critical duplicate-idea bug causing 1000+ Jira tickets. "
+            "Root cause: kick_off_prd_flow had ZERO deduplication — "
+            "every call created a new run_id regardless of existing "
+            "active/completed runs with the same idea text. Also, "
+            "find_recent_duplicate_idea silently skipped when "
+            "project_id was empty (common for orphaned ideas). "
+            "Fix: (1) Added find_active_duplicate_idea() query — "
+            "blocks any inprogress/paused flow with matching idea. "
+            "(2) Enhanced find_recent_duplicate_idea() to fall back "
+            "to channel-scoped matching when project_id is missing. "
+            "(3) Added dual dedup guard in kick_off_prd_flow() — "
+            "checks active AND recently completed duplicates before "
+            "creating any new flow thread. (4) Updated router.py "
+            "and _route_actions.py with same active-duplicate check. "
+            "7 new regression tests in test_kickoff_dedup.py, "
+            "7 new tests in test_repository.py. All 24 dedup tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.71.2",
+        date=date(2026, 4, 13),
+        summary=(
+            "Comprehensive duplicate-idea fix — Phase 2 fallback. "
+            "v0.71.1 dedup relied solely on idea_normalized field "
+            "which was absent on older documents, causing the dedup "
+            "query to silently miss existing duplicates. "
+            "Fix: (1) Two-phase lookup in _match_by_idea_text(): "
+            "Phase 1 uses indexed idea_normalized (fast path), "
+            "Phase 2 does in-memory comparison on raw idea field "
+            "for documents without idea_normalized (fallback). "
+            "(2) Self-healing: sets idea_normalized on matched docs "
+            "via fallback so future lookups use fast path. "
+            "(3) Multi-scope search: tries project_id first, then "
+            "channel scope — prevents duplicates from slipping "
+            "through scope mismatch. "
+            "(4) API routes (slack_kickoff, slack_kickoff_sync) now "
+            "reject duplicates BEFORE allocating run_id (HTTP 409). "
+            "(5) Server startup now calls fail_unfinalized_on_startup "
+            "to mark orphaned inprogress ideas as failed. "
+            "(6) Created scripts/dedup_working_ideas.py — one-time "
+            "backfill of idea_normalized + archive existing dupes. "
+            "5 new TestDedupFallback tests. 1316+ tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.72.0",
+        date=date(2026, 4, 15),
+        summary=(
+            "Multi-tenancy data isolation — Phase 1. "
+            "New _tenant.py module with TenantContext dataclass, "
+            "tenant_filter() and tenant_fields() helpers for MongoDB "
+            "query scoping. Two-level hierarchy: enterprise_id "
+            "(corporate) > organization_id (division). Three access "
+            "modes: regular user (org-scoped), enterprise_admin "
+            "(enterprise-scoped), system (global). "
+            "All 9 repository modules updated with tenant param on "
+            "create/upsert functions (backward-compat: None=unscoped). "
+            "Read-side tenant filtering on find_ideas_by_project, "
+            "find_completed_ideas_by_project, has_active_idea_flow. "
+            "API layer: all project endpoints (CRUD) inject "
+            "TenantContext.from_user(). GET /projects and GET /ideas "
+            "use tenant-scoped queries. PRD kickoff passes tenant to "
+            "create_job and save_project_ref. Slack path: "
+            "kick_off_prd_flow and _run_slack_prd_flow accept team_id, "
+            "resolve TenantContext from slackOAuth record. "
+            "Tenant indexes added to all collections in setup_mongodb. "
+            "Migration script: scripts/migrate_add_tenant_fields.py. "
+            "15 new regression tests in test_tenant_isolation.py. "
+            "3 web UI gap tickets created for frontend changes."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

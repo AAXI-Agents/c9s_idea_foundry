@@ -22,15 +22,12 @@ import json
 from typing import Any  # noqa: F401 — kept for downstream compatibility
 
 from crewai_productfeature_planner.apis.slack._handler_proxies import (
-    _handle_check_publish_intent,
     _handle_configure_memory,
-    _handle_create_jira_intent,
     _handle_create_project_intent,
     _handle_current_project,
     _handle_end_session,
     _handle_list_ideas,
     _handle_list_products,
-    _handle_publish_intent,
     _handle_restart_prd,
     _handle_resume_prd,
     _handle_switch_project,
@@ -1113,16 +1110,25 @@ def _interpret_and_act_inner(
             )
 
     elif intent == "publish":
-        _handle_publish_intent(channel, thread_ts, user, send_tool)
-        tracked_response = "(publish pipeline triggered)"
+        # Confluence publishing removed from Slack in v0.71.0
+        _reply(channel, thread_ts,
+               f"<@{user}> :info: Publishing to Confluence is now managed "
+               "through the web API.")
+        tracked_response = "(publish removed from Slack)"
 
     elif intent == "create_jira":
-        _handle_create_jira_intent(channel, thread_ts, user, send_tool)
-        tracked_response = "(create_jira pipeline triggered)"
+        # Jira creation removed from Slack in v0.71.0
+        _reply(channel, thread_ts,
+               f"<@{user}> :info: Jira ticket creation is now managed "
+               "through the web API.")
+        tracked_response = "(create_jira removed from Slack)"
 
     elif intent == "check_publish":
-        _handle_check_publish_intent(channel, thread_ts, user, send_tool)
-        tracked_response = "(check_publish status reported)"
+        # Publish status check removed from Slack in v0.71.0
+        _reply(channel, thread_ts,
+               f"<@{user}> :info: Publish status is now available "
+               "through the web API.")
+        tracked_response = "(check_publish removed from Slack)"
 
     elif intent == "general_question":
         # Check if there's an active idea flow in this thread.

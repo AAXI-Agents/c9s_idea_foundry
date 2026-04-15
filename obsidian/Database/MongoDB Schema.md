@@ -32,6 +32,21 @@ Each page documents every field with type, constraints, descriptions, API refere
 
 ---
 
+## Multi-Tenancy Fields
+
+All 9 collections include the following tenant-scoping fields (added v0.72.0):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enterprise_id` | `str` | Corporate parent ID (from JWT claim) |
+| `organization_id` | `str` | Division/subsidiary ID (from JWT claim) |
+
+**Indexes**: All collections have an `(organization_id, 1)` index. `projectConfig` and `workingIdeas` also have `(enterprise_id, 1, organization_id, 1)` compound indexes.
+
+**Migration**: Run `scripts/migrate_add_tenant_fields.py` to backfill existing documents.
+
+---
+
 ## Collection Relationships
 
 ```

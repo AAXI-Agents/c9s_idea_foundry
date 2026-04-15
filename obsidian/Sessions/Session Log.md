@@ -9,6 +9,175 @@ tags:
 
 ---
 
+## Session — 2026-04-15 (v0.72.0)
+
+**Focus**: Multi-tenancy data isolation — Implementation Phase 1
+
+### Changes Applied
+User approved all 5 "Suggested" design options. Full implementation of tenant scoping across the codebase:
+
+1. **New module**: `mongodb/_tenant.py` — `TenantContext` frozen dataclass with `from_user()`, `from_slack_install()`, `system()` factories. `tenant_filter()` returns org/enterprise/system-scoped MongoDB queries. `tenant_fields()` returns fields for document embedding. Both handle `None` for backward compat.
+
+2. **All 9 repository modules updated** — `tenant: TenantContext | None = None` param on create/upsert functions. `tenant_fields(tenant)` embedded in document dicts. Read queries use `tenant_filter(tenant)` where appropriate:
+   - `project_config/repository.py` — create, get, list, update, delete
+   - `crew_jobs/repository.py` — create_job, list_jobs
+   - `agent_interactions/repository.py` — log_interaction
+   - `product_requirements/repository.py` — upsert_delivery_record
+   - `working_ideas/_status.py` — save_project_ref, save_slack_context
+   - `working_ideas/_queries.py` — find_ideas_by_project, find_completed_ideas_by_project, has_active_idea_flow
+   - `user_session/__init__.py` — start_session
+   - `slack_oauth/repository.py` — upsert_team
+   - `project_memory/repository.py` — upsert_project_memory
+   - `user_suggestions/repository.py` — log_suggestion, find_suggestions_by_project
+
+3. **API layer tenant injection** — All project CRUD endpoints, GET /ideas, PRD kickoff inject `TenantContext.from_user(user)` and pass to repository calls.
+
+4. **Slack→tenant mapping** — `kick_off_prd_flow()`, `_run_slack_prd_flow()`, `run_interactive_slack_flow()` accept `team_id`, resolve `TenantContext.from_slack_install()` via slackOAuth lookup.
+
+5. **Indexes** — Tenant indexes (`organization_id`, `enterprise_id + organization_id`) added to all 9 collections in `setup_mongodb.py`.
+
+6. **Migration script** — `scripts/migrate_add_tenant_fields.py` — backfills `enterprise_id`/`organization_id` on all existing documents.
+
+7. **Web UI gap tickets** — 3 gap tickets created for frontend changes.
+
+### Files Changed
+- `mongodb/_tenant.py` — NEW
+- `mongodb/__init__.py` — added exports
+- `scripts/setup_mongodb.py` — tenant indexes
+- `scripts/migrate_add_tenant_fields.py` — NEW migration script
+- All 9 repository modules (see list above)
+- `apis/projects/get_projects.py`, `post_project.py`, `get_project.py`, `patch_project.py`, `delete_project.py`
+- `apis/ideas/get_ideas.py`
+- `apis/prd/_route_actions.py`
+- `apis/slack/_flow_handlers.py`, `router.py`
+- `apis/slack/interactive_handlers/_flow_runner.py`
+- `tests/test_tenant_isolation.py` — NEW (15 tests)
+
+### Tests
+- 15 new tenant isolation regression tests — all pass
+- 210 API + MongoDB tests pass (projects: 17, ideas: 24, working_ideas: 169)
+- 7 kickoff_dedup tests pass
+- 98 PRD tests pass
+
+---
+
+## Session — 2026-04-14 (multi-tenancy design)
+
+**Focus**: Critical multi-tenancy data isolation — research & design
+
+### Problem
+All enterprise users can see all data regardless of organization. JWT tokens carry `enterprise_id` and `organization_id` but these are NEVER used in any MongoDB query or API filter. All 9 collections have zero tenant fields. All ~50 repository functions query without tenant filtering.
+
+### Research Completed
+- Audited all 9 MongoDB collections: projectConfig, workingIdeas, productRequirements, crewJobs, agentInteractions, userSession, projectMemory, userSuggestions, slackOAuth
+- Mapped all ~50 repository functions with their exact query filters
+- Confirmed `require_sso_user()` extracts enterprise_id/organization_id from JWT but no endpoint uses them
+- No middleware or base class exists for tenant injection
+
+### Deliverables
+- `obsidian/User Feedback/GAP-multi-tenancy-data-isolation.md` — gap ticket (critical)
+- `obsidian/User Feedback/QUESTIONS-multi-tenancy-design.md` — full design doc with 5 decisions (hierarchy model, query enforcement, migration, Slack mapping, background processes)
+- Awaiting user decisions on 5 design choices before implementation
+
+### Files Changed
+- None (research/design only)
+
+---
+
+## Session — 2026-04-13 (v0.71.2)
+
+**Focus**: CRITICAL FIX Phase 2 — Comprehensive dedup fallback
+
+### Root Cause
+v0.71.1 dedup relied on `idea_normalized` field which was ABSENT on older documents, causing dedup to silently miss existing duplicates.
+
+### Fixes Applied
+1. Two-phase `_match_by_idea_text()` — fast indexed lookup then in-memory fallback on raw idea field
+2. Self-healing backfill of `idea_normalized`
+3. Multi-scope search via `_build_scope_filters()` (project then channel)
+4. API routes reject duplicates BEFORE run_id allocation (HTTP 409)
+5. Server startup calls `fail_unfinalized_on_startup()` to clean orphaned flows
+6. Created `scripts/dedup_working_ideas.py` for backfill + archival
+
+### Files Changed
+- `mongodb/working_ideas/_queries.py` — `_match_by_idea_text()`, `_build_scope_filters()`, fallback logic
+- `apis/prd/_route_actions.py` — 409 before run_id allocation
+- `apis/slack/router.py` — dedup before job creation
+- `apis/__init__.py` — startup calls `fail_unfinalized_on_startup()`
+- `scripts/dedup_working_ideas.py` — NEW one-time migration
+
+### Tests
+- 5 new TestDedupFallback tests
+
+### Results
+- 311+ dedup tests pass, 881 Slack tests pass
+
+---
+
+## Session — 2026-04-13 (v0.71.1)
+
+**Focus**: CRITICAL FIX — Duplicate-idea dedup in kick_off_prd_flow
+
+### Root Cause
+Zero deduplication at PRD flow entry point — same idea "add knowledge sharing" created 5+ run_ids with 1000+ Jira tickets.
+
+### Fixes Applied
+1. `find_active_duplicate_idea()` blocks inprogress/paused duplicates
+2. `find_recent_duplicate_idea()` falls back to channel scope when project_id missing
+3. Dual guard in `kick_off_prd_flow()` + `router.py` + API `_route_actions.py`
+
+### Files Changed
+- `mongodb/working_ideas/_queries.py` — `find_active_duplicate_idea()`, channel fallback
+- `apis/slack/_flow_handlers.py` — dedup guard in `kick_off_prd_flow()`
+- `apis/slack/router.py` — duplicate check
+- `apis/prd/_route_actions.py` — active-duplicate check
+- `mongodb/working_ideas/repository.py`, `__init__.py` — re-exports
+
+### Tests
+- 14 new tests
+
+---
+
+## Session — 2026-04-13 (data cleanup)
+
+**Focus**: Audit and delete all "knowledge sharing" data from MongoDB
+
+### Actions
+- Created `scripts/audit_knowledge_sharing.py`
+- Found: 28 workingIdeas, 7 productRequirements, 7 output files
+- Confirmed no cron job combines ideas into projects
+- User confirmed deletion — all documents deleted
+- Verified: 0 remaining documents
+
+---
+
+## Session — 2026-04-12 (v0.69.0 – v0.71.0)
+
+**Focus**: Legacy deprecation, GCP readiness, Jira safety, Slack publishing removal
+
+### v0.69.0 — Deprecate legacy API endpoints
+- `/generate`, `/publish`, `/confluence/*` return 410 Gone
+- Preflight checks validate credentials on startup
+
+### v0.70.0 — GCP auto-scale statelessness audit
+1. File-based output → GCS adapter + MongoDB fallback
+2. PRDFlow singleton → per-request instances
+3. Scheduler → sharded leader election
+4. Rotating Slack tokens → encrypted storage via KMS
+5. New env vars: `GCS_OUTPUT_BUCKET`, `GCS_OUTPUT_PREFIX`
+
+### v0.70.1 — CRITICAL: Stop runaway Jira ticket creation
+- `_create_pending_jira()` replaced with no-op stub
+- `_discover_pending_deliveries()` re-evaluation removed
+- Jira tickets ONLY via interactive Slack flow or manual API
+
+### v0.71.0 — Remove Slack-triggered Confluence and Jira publishing
+- All publish/Jira buttons, command dispatches, handler proxies removed from Slack
+- Intent handlers return info messages directing to web API
+- 12 source + 9 test files updated, 891 Slack tests pass
+
+---
+
 ## Session — 2026-04-11 (v0.68.1)
 
 **Focus**: Fix GET /ideas/ 500 error — ux_design_status None crash
@@ -3922,3 +4091,71 @@ ideas to accumulate for the non-existent "proj-1" project over 12 days.
 - `obsidian/User Feedback/GAP-stale-project-proj1-cleanup.md` — Created for user decisions
 
 ---
+
+### Session — 2026-04-12 (v0.69.0 → v0.71.0)
+
+**Focus:** GCP statelessness audit, runaway Jira fix, Slack Confluence/Jira publishing removal
+
+**Changes:**
+
+1. **v0.69.0** — Deprecated legacy API endpoints (/generate, /publish, /confluence/*). Preflight credential validation.
+2. **v0.70.0** — GCP auto-scale statelessness audit: GCS adapter, per-request PRDFlow, sharded scheduler, encrypted token storage.
+3. **v0.70.1** — CRITICAL: Fixed runaway Jira ticket creation. `_create_pending_jira()` replaced with no-op stub. `_discover_pending_deliveries()` re-evaluation removed.
+4. **v0.71.0** — Removed all Slack-triggered Confluence and Jira publishing:
+   - Removed BTN_CHECK_PUBLISH, BTN_PUBLISH, BTN_CREATE_JIRA from blocks
+   - Removed cmd_check_publish, cmd_publish, cmd_create_jira from CMD_ACTIONS
+   - Removed handler proxies for publish/jira
+   - Delivery action blocks stubbed to return []
+   - Product list: all Confluence publish + Jira phase buttons removed
+   - Intent handlers (publish, create_jira, check_publish) return info messages pointing to web API
+   - Flow event handlers kept as read-only status updates
+   - 12 source files + 9 test files updated
+   - 891 Slack tests pass
+
+---
+## Session — 2026-04-13 (v0.71.1)
+
+**Goal**: Fix critical duplicate-idea bug causing 1000+ Jira tickets
+
+**Root Cause Analysis**:
+- `kick_off_prd_flow()` had ZERO deduplication — every call created a new `run_id` via `uuid.uuid4().hex[:12]`
+- Same idea "add knowledge sharing to the platform" generated 5 separate run_ids in a single day
+- Each run independently published to Confluence and created Jira Epics/Stories/Tasks
+- `find_recent_duplicate_idea()` returned `None` when `project_id` was empty (the problematic record had `project_id: ""`)
+- The duplicate check only existed in `router.py._run_slack_prd_flow()` (non-interactive path), not in the `kick_off_prd_flow()` entry point
+
+**Changes**:
+1. `mongodb/working_ideas/_queries.py` — New `find_active_duplicate_idea()` function: checks for inprogress/paused flows with matching `idea_normalized`. Enhanced `find_recent_duplicate_idea()` with `channel` fallback when `project_id` is empty.
+2. `apis/slack/_flow_handlers.py` — Added dual dedup guard in `kick_off_prd_flow()`: checks active duplicates (blocks unconditionally) and recently completed duplicates (24h window) before starting any thread. Graceful degradation on DB errors.
+3. `apis/slack/router.py` — Updated `_run_slack_prd_flow()` duplicate check to use both `find_active_duplicate_idea` and channel-scoped `find_recent_duplicate_idea`.
+4. `apis/prd/_route_actions.py` — Added active-duplicate check before the existing 24h cooldown check.
+5. New exports in `repository.py` and `__init__.py`
+
+**Tests**: 7 new tests in `test_kickoff_dedup.py`, 7 new tests in `test_repository.py` (TestFindActiveDuplicateIdea + channel fallback). All 24 dedup tests pass.
+
+**Files modified**: 6 source files, 2 test files (1 new)
+
+---
+## Session — 2026-04-13 (v0.71.2)
+
+**Goal**: Fix incomplete dedup — v0.71.1 dedup missed existing documents without `idea_normalized` field
+
+**Root Cause**:
+- v0.71.1 dedup functions (`find_active_duplicate_idea`, `find_recent_duplicate_idea`) only queried the `idea_normalized` field
+- Documents created before `idea_normalized` was introduced (pre-v0.68.0) had NO `idea_normalized` field
+- The MongoDB query `{idea_normalized: "some text"}` silently returned nothing for these documents
+- Result: existing duplicate flows were invisible to the dedup guard — new flows kept being created
+
+**Changes**:
+1. `mongodb/working_ideas/_queries.py` — Rewrote dedup with two-phase `_match_by_idea_text()`:
+   - Phase 1: Fast indexed `idea_normalized` lookup (existing behavior)
+   - Phase 2: In-memory fallback — fetches docs without `idea_normalized`, normalizes raw `idea` field, compares
+   - Self-heal: backfills `idea_normalized` on matched docs so future lookups use fast path
+   - `_build_scope_filters()`: tries project_id scope first, then channel scope (multi-scope)
+2. `apis/slack/router.py` — `slack_kickoff` and `slack_kickoff_sync` now reject duplicates BEFORE run_id allocation (HTTP 409)
+3. `main.py` — Server startup now calls `fail_unfinalized_on_startup()` to mark orphaned in-progress ideas as failed
+4. `scripts/dedup_working_ideas.py` — One-time cleanup script: backfills `idea_normalized` on all existing docs, archives duplicate completed ideas, fails duplicate in-progress ideas
+
+**Tests**: 5 new `TestDedupFallback` tests (active dup via fallback, recent dup via fallback, finalized_idea match, no-match, multi-scope channel fallback). 311 dedup-related + 881 Slack + 118 main tests pass.
+
+**Files modified**: 3 source files, 1 test file, 1 new script

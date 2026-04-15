@@ -40,6 +40,7 @@ def run_interactive_slack_flow(
     notify: bool = True,
     webhook_url: str | None = None,
     project_id: str | None = None,
+    team_id: str | None = None,
 ) -> None:
     """Execute the PRD flow with full Slack interactive support.
 
@@ -74,12 +75,24 @@ def run_interactive_slack_flow(
 
     send_tool = SlackSendMessageTool()
 
+    # Resolve tenant context from Slack workspace's OAuth record
+    tenant = None
+    if team_id:
+        try:
+            from crewai_productfeature_planner.mongodb._tenant import TenantContext
+            from crewai_productfeature_planner.mongodb.slack_oauth.repository import get_team
+            install = get_team(team_id)
+            if install:
+                tenant = TenantContext.from_slack_install(install)
+        except Exception:
+            logger.debug("Failed to resolve tenant for team_id=%s", team_id, exc_info=True)
+
     # Register interactive state
     register_interactive_run(run_id, channel, thread_ts, user, idea)
 
     # Create the FlowRun record and crew job
     runs[run_id] = FlowRun(run_id=run_id, flow_name="prd")
-    create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts)
+    create_job(run_id, "prd", idea=idea, slack_channel=channel, slack_thread_ts=thread_ts, tenant=tenant)
 
     # Persist Slack context so channel-based orphan detection works
     # and auto-resume can notify the same thread.
@@ -87,7 +100,7 @@ def run_interactive_slack_flow(
         from crewai_productfeature_planner.mongodb.working_ideas.repository import (
             save_slack_context,
         )
-        save_slack_context(run_id, channel, thread_ts, idea=idea)
+        save_slack_context(run_id, channel, thread_ts, idea=idea, tenant=tenant)
     except Exception:  # noqa: BLE001
         logger.debug("save_slack_context failed for %s", run_id, exc_info=True)
 
@@ -98,7 +111,7 @@ def run_interactive_slack_flow(
             from crewai_productfeature_planner.mongodb.working_ideas.repository import (
                 save_project_ref,
             )
-            save_project_ref(run_id, project_id, idea=idea)
+            save_project_ref(run_id, project_id, idea=idea, tenant=tenant)
         except Exception:  # noqa: BLE001
             logger.debug("early save_project_ref failed for %s", run_id, exc_info=True)
 

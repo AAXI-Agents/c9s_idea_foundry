@@ -32,7 +32,7 @@ class TestCMDActions:
             assert action.startswith("cmd_")
 
     def test_expected_count(self):
-        assert len(CMD_ACTIONS) == 18
+        assert len(CMD_ACTIONS) == 15
 
 
 # ---------------------------------------------------------------------------
@@ -113,32 +113,9 @@ class TestDispatchRouting:
             _handle_command_action("cmd_help", "U1", "C1", "T1")
             mock.assert_called_once_with("C1", "T1", "U1", None)
 
-    def test_check_publish(self):
-        with patch(
-            "crewai_productfeature_planner.apis.slack._flow_handlers.handle_check_publish_intent"
-        ) as mock:
-            _handle_command_action("cmd_check_publish", "U1", "C1", "T1")
-            mock.assert_called_once()
-
     def test_unknown_action_logs_warning(self):
         """Unknown cmd_ action should not raise — just log."""
         _handle_command_action("cmd_nonexistent", "U1", "C1", "T1")
-
-    def test_publish(self):
-        with patch(
-            "crewai_productfeature_planner.apis.slack._flow_handlers.handle_publish_intent"
-        ) as mock:
-            _handle_command_action("cmd_publish", "U1", "C1", "T1")
-            mock.assert_called_once()
-            assert mock.call_args[0][:3] == ("C1", "T1", "U1")
-
-    def test_create_jira(self):
-        with patch(
-            "crewai_productfeature_planner.apis.slack._flow_handlers.handle_create_jira_intent"
-        ) as mock:
-            _handle_command_action("cmd_create_jira", "U1", "C1", "T1")
-            mock.assert_called_once()
-            assert mock.call_args[0][:3] == ("C1", "T1", "U1")
 
     def test_restart_prd(self):
         with patch(
@@ -243,7 +220,7 @@ class TestAdminGate:
 
     @pytest.mark.parametrize("action_id", [
         "cmd_list_ideas", "cmd_list_products", "cmd_resume_prd",
-        "cmd_help", "cmd_check_publish", "cmd_publish",
+        "cmd_help",
     ])
     def test_non_admin_actions_always_allowed(self, action_id):
         """Non-admin-gated actions should work for any user."""
@@ -256,8 +233,6 @@ class TestAdminGate:
                 patch("crewai_productfeature_planner.apis.slack._session_handlers.handle_list_ideas"),
                 patch("crewai_productfeature_planner.apis.slack._session_handlers.handle_list_products"),
                 patch("crewai_productfeature_planner.apis.slack._flow_handlers.handle_resume_prd"),
-                patch("crewai_productfeature_planner.apis.slack._flow_handlers.handle_check_publish_intent"),
-                patch("crewai_productfeature_planner.apis.slack._flow_handlers.handle_publish_intent"),
                 patch("crewai_productfeature_planner.tools.slack_tools._get_slack_client", return_value=None),
             ]
             for p in patches:

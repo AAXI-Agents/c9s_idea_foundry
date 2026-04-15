@@ -21,6 +21,7 @@ from crewai_productfeature_planner.apis.projects.models import (
     project_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -59,12 +60,15 @@ async def list_projects(
         PROJECT_CONFIG_COLLECTION,
     )
 
+    tenant = TenantContext.from_user(user)
+    t_filter = tenant_filter(tenant)
+
     db = get_async_db()
     coll = db[PROJECT_CONFIG_COLLECTION]
 
     skip = (page - 1) * page_size
-    total = await coll.estimated_document_count()
-    cursor = coll.find({}, {"_id": 0}).sort(
+    total = await coll.count_documents(t_filter)
+    cursor = coll.find(t_filter, {"_id": 0}).sort(
         "created_at", -1
     ).skip(skip).limit(page_size)
     docs = await cursor.to_list(length=page_size)

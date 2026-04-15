@@ -66,12 +66,29 @@ def _write_design_file(
     Returns the file path written.
     """
     parts = ["# UX Design Specification\n", f"\n{content}\n"]
+    text = "".join(parts)
 
     dir_path = Path(output_dir)
     dir_path.mkdir(parents=True, exist_ok=True)
     file_path = dir_path / filename
-    file_path.write_text("".join(parts), encoding="utf-8")
+    file_path.write_text(text, encoding="utf-8")
     logger.info("[UX Design] Wrote file: %s", file_path)
+
+    # Also upload to GCS when configured
+    try:
+        from crewai_productfeature_planner.tools.output_storage import (
+            _gcs_bucket_name,
+            _write_to_gcs,
+        )
+        bucket = _gcs_bucket_name()
+        if bucket:
+            rel_dir = output_dir
+            if rel_dir.startswith("output/"):
+                rel_dir = rel_dir[len("output/"):]
+            _write_to_gcs(bucket, f"{rel_dir}/{filename}", text)
+    except Exception:  # noqa: BLE001
+        pass  # GCS is best-effort
+
     return str(file_path)
 
 

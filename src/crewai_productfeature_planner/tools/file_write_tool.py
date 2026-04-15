@@ -44,8 +44,9 @@ class PRDFileWriteTool(BaseTool):
 
     def _run(self, content: str, filename: str = "", version: int = 1) -> str:
         now = datetime.now()
-        # Build year/month subdirectory: output/prds/YYYY/MM
-        output_path = Path(self.output_dir) / now.strftime("%Y") / now.strftime("%m")
+        # Build year/month subdirectory: YYYY/MM
+        sub_dir = now.strftime("%Y") + "/" + now.strftime("%m")
+        output_path = Path(self.output_dir) / sub_dir
         output_path.mkdir(parents=True, exist_ok=True)
 
         if not filename:
@@ -58,4 +59,18 @@ class PRDFileWriteTool(BaseTool):
         filepath.write_text(content, encoding="utf-8")
         logger.info("PRD saved to %s (%d bytes)", filepath, len(content))
         logger.debug("PRD file details — version=%d, dir=%s", version, self.output_dir)
+
+        # Also upload to GCS when configured
+        try:
+            from crewai_productfeature_planner.tools.output_storage import (
+                _gcs_bucket_name,
+                _write_to_gcs,
+            )
+            bucket = _gcs_bucket_name()
+            if bucket:
+                relative_path = f"prds/{sub_dir}/{filename}"
+                _write_to_gcs(bucket, relative_path, content)
+        except Exception:  # noqa: BLE001
+            pass  # GCS is best-effort; local write already succeeded
+
         return f"PRD saved to {filepath}"

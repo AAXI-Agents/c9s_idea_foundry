@@ -13,8 +13,14 @@ Sub-modules:
     - ``mongodb.project_config``       — ``projectConfig`` collection (project-level configuration)
     - ``mongodb.project_memory``       — ``projectMemory`` collection (per-project agent memory)
     - ``mongodb.user_session``         — ``userSession`` collection (Slack session tracking)
+    - ``mongodb._tenant``              — multi-tenancy helpers (TenantContext, tenant_filter)
 """
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
     AGENT_INTERACTIONS_COLLECTION,
     find_interactions,
@@ -123,6 +129,7 @@ __all__ = [
     "WORKING_COLLECTION",
     "USER_SESSION_COLLECTION",
     "MemoryCategory",
+    "TenantContext",
     "_build_uri",
     "_get_db_name",
     "add_memory_entry",
@@ -190,4 +197,6 @@ __all__ = [
     "list_sessions",
     "start_session",
     "switch_session",
+    "tenant_fields",
+    "tenant_filter",
 ]

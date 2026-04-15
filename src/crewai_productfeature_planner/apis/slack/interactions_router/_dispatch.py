@@ -144,11 +144,9 @@ _JIRA_APPROVAL_ACTIONS = frozenset({
     "jira_subtask_reject",
 })
 
-# Post-completion delivery actions (Publish / Create Jira buttons)
-_DELIVERY_ACTIONS = frozenset({
-    "delivery_publish",
-    "delivery_create_jira",
-})
+# Post-completion delivery actions (deprecated — Confluence/Jira
+# publishing removed from Slack in v0.71.0)
+_DELIVERY_ACTIONS = frozenset()
 
 # Setup wizard skip button
 _SETUP_ACTIONS = frozenset({
@@ -217,8 +215,8 @@ def _ack_action(action_id: str, user_name: str) -> str:
         "jira_review_skip": ":fast_forward: Sub-tasks skipped",
         "jira_subtask_approve": ":white_check_mark: Sub-tasks approved — Jira ticketing complete",
         "jira_subtask_reject": ":arrows_counterclockwise: Regenerating Jira sub-tasks",
-        "delivery_publish": ":outbox_tray: Publishing to Confluence",
-        "delivery_create_jira": ":jira: Creating Jira skeleton",
+        "delivery_publish": ":outbox_tray: Publishing to Confluence (deprecated)",
+        "delivery_create_jira": ":jira: Creating Jira skeleton (deprecated)",
         "setup_skip": ":fast_forward: Skipped",
     }
     label = labels.get(action_id, action_id)
@@ -232,13 +230,13 @@ def _ack_action(action_id: str, user_name: str) -> str:
     elif action_id.startswith("idea_iterate_"):
         label = f":repeat: Iterating on idea #{action_id.removeprefix('idea_iterate_')}"
     elif action_id.startswith("product_confluence_"):
-        label = ":confluence: Publishing to Confluence"
+        label = ":confluence: Publishing to Confluence (deprecated)"
     elif action_id.startswith("product_jira_skeleton_"):
-        label = ":jira: Reviewing Jira skeleton"
+        label = ":jira: Reviewing Jira skeleton (deprecated)"
     elif action_id.startswith("product_jira_epics_"):
-        label = ":jira: Publishing Jira epics & stories"
+        label = ":jira: Publishing Jira epics & stories (deprecated)"
     elif action_id.startswith("product_jira_subtasks_"):
-        label = ":jira: Publishing Jira sub-tasks"
+        label = ":jira: Publishing Jira sub-tasks (deprecated)"
     elif action_id.startswith("product_view_"):
         label = ":mag: Viewing product details"
     elif action_id.startswith("product_ux_design_"):
@@ -586,8 +584,6 @@ async def slack_interactions(request: Request) -> JSONResponse:
 
         # ── Product list delivery actions ──
         _PRODUCT_PREFIXES = (
-            "product_confluence_", "product_jira_skeleton_",
-            "product_jira_epics_", "product_jira_subtasks_",
             "product_view_", "product_archive_",
             "product_ux_design_", "product_manual_ux_",
         )

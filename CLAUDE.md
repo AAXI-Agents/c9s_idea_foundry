@@ -1,11 +1,55 @@
-# CODEX — AI Agent Developer Guide
+# CLAUDE — AI Agent Developer Guide
 
 > **Purpose**: Lean lookup guide for AI coding agents. Load only what you
 > need — detailed documentation lives in `obsidian/`. This file provides
 > quick-reference tables and pointers; read the linked Obsidian pages for
 > full context.
 >
-> **Last updated**: 2026-03-10
+> **Last updated**: 2026-04-12
+
+---
+
+## ⛔ Rule 0: NEVER Assume — Ask Questions First (Required)
+
+**NEVER ASSUME.** When requirements are unclear, ambiguous, or have
+multiple valid approaches, the agent **MUST** stop and ask questions
+before proceeding. Assuming makes an ASS out of U and ME.
+
+### Workflow
+
+1. **Detect ambiguity** — if any part of the task is unclear, has
+   missing context, or could be implemented multiple valid ways, do NOT
+   guess. Stop and gather input.
+
+2. **Create a decisions file** — create a markdown file in
+   `obsidian/User Feedback/` named `QUESTIONS-<short-name>.md` with:
+   - **3 Recommendations** (`Option A`, `Option B`, `Option C`): each
+     with a brief rationale explaining the trade-offs.
+   - **1 Suggestion** (`Suggested`): a fourth option that combines or
+     refines the best parts of the recommendations.
+   - Each option **must** be a clickable checkbox (`- [ ]`) so the user
+     can simply tick their choice.
+
+3. **Ask the user** — present the options using the ask-questions tool
+   (or Slack interactive message). Do **NOT** proceed until the user
+   selects an answer.
+
+4. **Record the decision** — update the decisions file with the user's
+   choice and mark it `status: resolved` in frontmatter.
+
+5. **One-time only** — the user should never be asked the same question
+   twice. Once a decision is recorded, the agent must reference it in
+   future sessions. The user should not need to re-input this every time.
+
+### Key Principles
+
+- **When in doubt, ask.** A 30-second question saves hours of rework.
+- **Never fill in blanks with guesses** — surface the ambiguity to the
+  user with structured options.
+- **The user decides, the agent executes** — present recommendations,
+  but let the user choose.
+- **Proactive, not reactive** — the agent must identify ambiguity and
+  ask before the user notices the gap.
 
 ---
 
@@ -298,14 +342,44 @@ broken flow, missing UI component — create a ticket in `obsidian/User Feedback
 3. Describe current vs expected behaviour, affected area, and acceptance
    criteria.
 
-**Codex workflow (when processing gap tickets):**
+**Ask-Questions-First Rule (Required):**
+
+When a gap ticket or task requires user decisions before implementation,
+the agent **MUST** proactively ask questions — the user should never need
+to manually fill in a questionnaire. See **Rule 0** above for the full
+workflow. The agent must:
+
+1. Identify ambiguity and stop before proceeding.
+2. Create `QUESTIONS-<short-name>.md` with 3 recommendations + 1 suggestion.
+3. Ask the user and wait for a selection.
+4. Record the decision and never re-ask.
+
+**Agent workflow (when processing gap tickets):**
 
 1. Scan `User Feedback/` for files with `status: open` in frontmatter.
 2. For each open gap:
-   a. Implement the fix or new feature.
-   b. Update the `## Resolution` section with version, date, and summary.
-   c. Change frontmatter `status: open` → `status: resolved`.
+   a. If the gap has unresolved questions, follow the
+      **Ask-Questions-First Rule** above before implementing.
+   b. Implement the fix or new feature.
+   c. Update the `## Resolution` section with version, date, and summary.
+   d. Change frontmatter `status: open` → `status: resolved`.
 3. Bump version in `version.py` and update `Changelog/Version History.md`.
+
+**Archive completed tickets (Required):**
+
+Once a gap ticket reaches `status: resolved` or `status: wont-fix`,
+the agent **MUST** move the file from `obsidian/User Feedback/` to
+`obsidian/User Feedback Archive/`.
+
+1. Move the resolved/won't-fix file:
+   `obsidian/User Feedback/GAP-<name>.md` →
+   `obsidian/User Feedback Archive/GAP-<name>.md`
+2. Also move any related `QUESTIONS-<name>.md` file to the archive.
+3. Never delete archived files — they form an audit trail.
+4. The `User Feedback/` folder should only contain `_template.md` and
+   active (`open` / `in-progress`) tickets.
+5. **End of session cleanup** — scan for any resolved/wont-fix files
+   still in `User Feedback/` and move them to the archive.
 
 **Naming convention:** `GAP-<domain>-<short-description>.md`
 (e.g. `GAP-api-missing-pagination-on-jobs.md`, `GAP-slack-no-error-feedback.md`)
@@ -329,9 +403,9 @@ has a **## Change Requests** section at the bottom with **Pending** and
    ```
    - [ ] Add a new query param `limit` to GET /slack/channels
    ```
-3. Ask Codex to process change requests.
+3. Ask the agent to process change requests.
 
-**Codex workflow (when processing CRs):**
+**Agent workflow (when processing CRs):**
 
 1. Scan all pages in `APIs/`, `Database/`, `Flows/` for unchecked `- [ ]`
    items under `### Pending`.

@@ -37,9 +37,6 @@ BTN_RESUME_PRD = _btn(":arrow_forward: Resume PRD", "cmd_resume_prd", style="pri
 BTN_CREATE_PROJECT = _btn(":heavy_plus_sign: Create Project", "cmd_create_project")
 BTN_LIST_PROJECTS = _btn(":file_folder: List Projects", "cmd_list_projects")
 BTN_HELP = _btn(":question: Help", "cmd_help")
-BTN_CHECK_PUBLISH = _btn(":mag: Check Publish Status", "cmd_check_publish")
-BTN_PUBLISH = _btn(":outbox_tray: Publish to Confluence", "cmd_publish", style="primary")
-BTN_CREATE_JIRA = _btn(":ticket: Create Jira Tickets", "cmd_create_jira")
 BTN_RESTART_PRD = _btn(":rewind: Restart PRD", "cmd_restart_prd")
 BTN_CURRENT_PROJECT = _btn(":pushpin: Current Project", "cmd_current_project")
 BTN_NEW_IDEA = _btn(":sparkles: New Idea", "cmd_create_prd")
@@ -63,8 +60,7 @@ def help_blocks(
     desc_lines = (
         "*Idea Iteration & PRD Generation*\n"
         "\u2022 Describe a product idea to start a PRD flow\n"
-        "\u2022 List ideas, products & delivery status\n"
-        "\u2022 Publish PRDs to Confluence & create Jira tickets"
+        "\u2022 List ideas, products & delivery status"
     )
     if is_admin:
         desc_lines = (
@@ -101,9 +97,6 @@ def help_blocks(
             "type": "actions",
             "elements": [
                 BTN_RESUME_PRD,
-                BTN_PUBLISH,
-                BTN_CREATE_JIRA,
-                BTN_CHECK_PUBLISH,
                 BTN_RESTART_PRD,
             ],
         },
@@ -229,15 +222,13 @@ def missing_keys_buttons() -> list[dict]:
 
 
 def check_publish_buttons() -> list[dict]:
-    """Action buttons suggesting publish status check."""
-    return [
-        {
-            "type": "actions",
-            "elements": [
-                BTN_CHECK_PUBLISH,
-            ],
-        },
-    ]
+    """Action buttons suggesting publish status check.
+
+    .. deprecated::
+        Confluence/Jira publishing removed from Slack in v0.71.0.
+        Returns empty list for backward compatibility.
+    """
+    return []
 
 
 def restart_cancelled_buttons() -> list[dict]:

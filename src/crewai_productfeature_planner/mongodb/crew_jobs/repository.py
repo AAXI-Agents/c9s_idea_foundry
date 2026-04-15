@@ -33,6 +33,11 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -110,6 +115,7 @@ def create_job(
     idea: str = "",
     slack_channel: str | None = None,
     slack_thread_ts: str | None = None,
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """Insert a new job document in ``queued`` status.
 
@@ -156,6 +162,7 @@ def create_job(
         "running_time_ms": None,
         "running_time_human": None,
         "updated_at": now,
+        **(tenant_fields(tenant) if tenant else {}),
     }
     try:
         result = get_db()[CREW_JOBS_COLLECTION].insert_one(doc)
@@ -406,6 +413,7 @@ def list_jobs(
     status: str | None = None,
     flow_name: str | None = None,
     limit: int = 50,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """List jobs, optionally filtered by status and/or flow_name.
 
@@ -413,6 +421,8 @@ def list_jobs(
         A list of job documents sorted by ``queued_at`` descending.
     """
     query: dict[str, Any] = {}
+    if tenant:
+        query.update(tenant_filter(tenant))
     if status is not None:
         query["status"] = status
     if flow_name is not None:

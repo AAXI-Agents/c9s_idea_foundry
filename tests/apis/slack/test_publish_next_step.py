@@ -1,7 +1,7 @@
 """Tests for next-step hints after publishing (handle_publish_intent).
 
-As of v0.38.0, handle_publish_intent calls publish_confluence_all() only
-(no Jira).  After publishing, it offers a Jira button per published PRD.
+As of v0.71.0, Jira buttons are no longer offered after Confluence
+publishing — jira_only_blocks returns [].
 """
 
 from unittest.mock import MagicMock, patch
@@ -13,7 +13,7 @@ _SLACK_TOOLS = "crewai_productfeature_planner.tools.slack_tools"
 
 
 class TestPublishNextStepHint:
-    """Verify handle_publish_intent shows Jira button when appropriate."""
+    """Verify handle_publish_intent no longer offers Jira button (v0.71.0)."""
 
     def _call(self, conf_result: dict):
         """Run handle_publish_intent and return (summary_text, mock_client)."""
@@ -35,8 +35,8 @@ class TestPublishNextStepHint:
         summary = send.run.call_args_list[1][1]["text"]
         return summary, mock_client
 
-    def test_jira_button_when_confluence_published(self):
-        """When conf published > 0, a Jira button is posted."""
+    def test_no_jira_button_when_confluence_published(self):
+        """When conf published > 0, NO Jira button is posted (removed in v0.71.0)."""
         summary, mock_client = self._call(
             conf_result={
                 "published": 2,
@@ -44,21 +44,9 @@ class TestPublishNextStepHint:
                 "results": [{"run_id": "run123", "title": "T", "url": "http://x"}],
             },
         )
-        # The summary should NOT contain the old text-based "create jira" hint
         assert "Say" not in summary
-        # A Jira button should be posted via chat_postMessage
-        mock_client.chat_postMessage.assert_called_once()
-        call_kw = mock_client.chat_postMessage.call_args[1]
-        assert call_kw["channel"] == "C1"
-        assert call_kw["thread_ts"] == "T1"
-        # Blocks should contain a button with action_id delivery_create_jira
-        blocks = call_kw.get("blocks", [])
-        action_ids = [
-            el.get("action_id", "")
-            for blk in blocks
-            for el in (blk.get("elements", []))
-        ]
-        assert "delivery_create_jira" in action_ids
+        # jira_only_blocks returns [] now, so no chat_postMessage call for Jira
+        mock_client.chat_postMessage.assert_not_called()
 
     def test_no_jira_button_when_no_conf_results(self):
         """No Jira button when conf results list is empty (no run_id to bind)."""

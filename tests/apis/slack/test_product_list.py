@@ -121,34 +121,34 @@ class TestProductListBlocks:
         section_blocks = [b for b in blocks if b["type"] == "section"]
         assert len(section_blocks) == len(_PRODUCTS)
 
-    def test_unpublished_product_has_confluence_button(self):
-        """Product without Confluence should have Publish Confluence button."""
+    def test_unpublished_product_has_ux_button(self):
+        """Product without Confluence should have UX design button (no Confluence publish in v0.71.0)."""
         products = [_PRODUCTS[0]]  # confluence_published=False
         blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         assert len(action_blocks) == 1
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
-        assert "product_confluence_1" in action_ids
+        assert "product_ux_design_1" in action_ids
 
     def test_unpublished_product_has_no_jira_button(self):
-        """Product without Confluence should NOT show Jira buttons."""
+        """Product without Confluence should NOT show Jira buttons (removed in v0.71.0)."""
         products = [_PRODUCTS[0]]  # confluence_published=False
         blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
         assert "product_jira_skeleton_1" not in action_ids
+        assert "product_confluence_1" not in action_ids
 
-    def test_skeleton_approved_has_epics_button(self):
-        """Product with skeleton_approved should have Publish Epics & Stories button."""
+    def test_skeleton_approved_has_no_jira_buttons(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         products = [_PRODUCTS[1]]  # jira_phase="skeleton_approved"
         blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
-        assert "product_jira_epics_1" in action_ids
-        # Should NOT have skeleton button
+        assert "product_jira_epics_1" not in action_ids
         assert "product_jira_skeleton_1" not in action_ids
 
     def test_fully_delivered_has_view_details(self):
@@ -161,7 +161,7 @@ class TestProductListBlocks:
         assert "product_view_1" in action_ids
         # Should also have View Confluence link-button
         assert "product_open_confluence_1" in action_ids
-        # Should NOT have publish/skeleton buttons
+        # Should NOT have publish/skeleton buttons (removed in v0.71.0)
         assert "product_confluence_1" not in action_ids
         assert "product_jira_skeleton_1" not in action_ids
 
@@ -233,8 +233,8 @@ class TestProductListBlocks:
         assert "Confluence PRD" in text
         assert "wiki.example.com" in text
 
-    def test_epics_stories_done_has_subtasks_button(self):
-        """Product with epics_stories_done should have Publish Sub-tasks button."""
+    def test_epics_stories_done_no_jira_buttons(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
@@ -244,10 +244,10 @@ class TestProductListBlocks:
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
-        assert "product_jira_subtasks_1" in action_ids
+        assert "product_jira_subtasks_1" not in action_ids
 
-    def test_skeleton_pending_has_skeleton_button(self):
-        """Product with skeleton_pending should still show Review Jira Skeleton."""
+    def test_skeleton_pending_no_jira_button(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
@@ -257,7 +257,7 @@ class TestProductListBlocks:
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
-        assert "product_jira_skeleton_1" in action_ids
+        assert "product_jira_skeleton_1" not in action_ids
 
     def test_footer_hint_present(self):
         """Footer should have a List Ideas command button."""
@@ -272,32 +272,32 @@ class TestProductListBlocks:
         blocks = product_list_blocks(_PRODUCTS, _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         assert len(action_blocks) == 3
-        # First product (idx=1) — has confluence button only (no jira before publish)
+        # First product (idx=1) — has UX design button
         ids_1 = {e["action_id"] for e in action_blocks[0]["elements"]}
         assert any("_1" in aid for aid in ids_1)
-        assert "product_confluence_1" in ids_1
-        # Second product (idx=2) — has jira epics
+        assert "product_ux_design_1" in ids_1
+        # Second product (idx=2) — has view confluence + UX
         ids_2 = {e["action_id"] for e in action_blocks[1]["elements"]}
         assert any("_2" in aid for aid in ids_2)
         # Third product (idx=3) — fully delivered, view details
         ids_3 = {e["action_id"] for e in action_blocks[2]["elements"]}
         assert any("_3" in aid for aid in ids_3)
 
-    def test_none_jira_phase_shows_skeleton_button_when_published(self):
-        """Product with jira_phase=None should show Start Jira Skeleton only after Confluence."""
+    def test_none_jira_phase_no_jira_button_when_published(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
-            "jira_phase": None,  # from MongoDB when field is None
+            "jira_phase": None,
         }
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
-        assert "product_jira_skeleton_1" in action_ids
+        assert "product_jira_skeleton_1" not in action_ids
 
-    def test_none_jira_phase_hides_skeleton_button_when_unpublished(self):
-        """Product with jira_phase=None should NOT show Jira buttons before Confluence."""
+    def test_none_jira_phase_no_jira_button_when_unpublished(self):
+        """Product without Confluence should NOT show Jira buttons."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": False,
@@ -323,8 +323,8 @@ class TestProductListBlocks:
         # Should NOT have View Confluence button (URL is None)
         assert not any(aid.startswith("product_open_confluence_") for aid in action_ids)
 
-    def test_unknown_jira_phase_shows_restart_skeleton_button(self):
-        """Product with an unrecognised jira_phase should show Restart Jira Skeleton."""
+    def test_unknown_jira_phase_no_jira_button(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
@@ -335,13 +335,10 @@ class TestProductListBlocks:
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
         action_ids = [e["action_id"] for e in elements]
-        assert "product_jira_skeleton_1" in action_ids
-        # Check the button text contains "Restart"
-        skeleton_btn = next(e for e in elements if e["action_id"] == "product_jira_skeleton_1")
-        assert "Restart" in skeleton_btn["text"]["text"]
+        assert "product_jira_skeleton_1" not in action_ids
 
-    def test_known_jira_phase_no_restart_button(self):
-        """Product with a known jira_phase should NOT show Restart Jira Skeleton."""
+    def test_known_jira_phase_no_jira_buttons(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
@@ -351,9 +348,9 @@ class TestProductListBlocks:
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
-        # Should show the epics button, not restart
-        texts = [e["text"]["text"] for e in elements]
-        assert not any("Restart" in t for t in texts)
+        action_ids = [e["action_id"] for e in elements]
+        assert "product_jira_epics_1" not in action_ids
+        assert "product_jira_skeleton_1" not in action_ids
 
     # ── UX Design ──────────────────────────────────────────
 
@@ -561,38 +558,40 @@ class TestProductDispatchRouting:
     """Verify that product action IDs are routed correctly in ack labels."""
 
     def test_confluence_ack_label(self):
-        """product_confluence_ prefix should produce correct ack label."""
+        """product_confluence_ prefix should produce deprecated ack label."""
         from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
             _ack_action,
         )
         label = _ack_action("product_confluence_1", "testuser")
         assert "Confluence" in label
-        assert "testuser" in label
+        assert "deprecated" in label
 
     def test_jira_skeleton_ack_label(self):
-        """product_jira_skeleton_ prefix should produce correct ack label."""
+        """product_jira_skeleton_ prefix should produce deprecated ack label."""
         from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
             _ack_action,
         )
         label = _ack_action("product_jira_skeleton_2", "testuser")
         assert "skeleton" in label.lower()
-        assert "testuser" in label
+        assert "deprecated" in label
 
     def test_jira_epics_ack_label(self):
-        """product_jira_epics_ prefix should produce correct ack label."""
+        """product_jira_epics_ prefix should produce deprecated ack label."""
         from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
             _ack_action,
         )
         label = _ack_action("product_jira_epics_3", "testuser")
         assert "epics" in label.lower()
+        assert "deprecated" in label
 
     def test_jira_subtasks_ack_label(self):
-        """product_jira_subtasks_ prefix should produce correct ack label."""
+        """product_jira_subtasks_ prefix should produce deprecated ack label."""
         from crewai_productfeature_planner.apis.slack.interactions_router._dispatch import (
             _ack_action,
         )
         label = _ack_action("product_jira_subtasks_1", "testuser")
         assert "sub-tasks" in label.lower() or "subtasks" in label.lower()
+        assert "deprecated" in label
 
     def test_view_details_ack_label(self):
         """product_view_ prefix should produce correct ack label."""
@@ -631,18 +630,18 @@ class TestDeliveryStatusDisplay:
         assert ":white_check_mark:" in text
         assert "Confluence PRD" in text
 
-    def test_confluence_not_published_has_button_only(self):
-        """Unpublished Confluence should NOT appear in status text,
-        only as a button."""
+    def test_confluence_not_published_no_publish_button(self):
+        """Unpublished Confluence should NOT appear in status text or as a button
+        (Confluence publishing removed from Slack in v0.71.0)."""
         products = [_PRODUCTS[0]]  # confluence_published=False
         blocks = product_list_blocks(products, _USER, _PROJECT_NAME, _PROJECT_ID)
         section_blocks = [b for b in blocks if b["type"] == "section"]
         text = section_blocks[0]["text"]["text"]
         assert "Confluence" not in text
-        # But button should exist
+        # Confluence publish button should NOT exist
         action_blocks = _product_action_blocks(blocks)
         action_ids = [e["action_id"] for e in action_blocks[0]["elements"]]
-        assert "product_confluence_1" in action_ids
+        assert "product_confluence_1" not in action_ids
 
     def test_jira_completed_shows_checkmark(self):
         """Completed Jira should show :white_check_mark: Jira Ticketing."""
@@ -700,8 +699,8 @@ class TestDeliveryStatusDisplay:
         assert "Confluence PRD" in text
         assert "Jira Ticketing" in text
 
-    def test_start_jira_skeleton_button_label(self):
-        """Not-started Jira should have 'Start Jira Skeleton' button after Confluence."""
+    def test_no_jira_skeleton_button_after_confluence(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
@@ -710,11 +709,11 @@ class TestDeliveryStatusDisplay:
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
-        jira_btn = next(e for e in elements if "jira_skeleton" in e["action_id"])
-        assert "Start" in jira_btn["text"]["text"]
+        action_ids = [e["action_id"] for e in elements]
+        assert not any("jira_skeleton" in aid for aid in action_ids)
 
-    def test_resume_jira_skeleton_button_label(self):
-        """In-progress Jira (skeleton_pending) should have 'Review' button."""
+    def test_no_jira_skeleton_review_button(self):
+        """Jira buttons removed from Slack in v0.71.0."""
         product = {
             **_PRODUCTS[0],
             "confluence_published": True,
@@ -723,9 +722,8 @@ class TestDeliveryStatusDisplay:
         blocks = product_list_blocks([product], _USER, _PROJECT_NAME, _PROJECT_ID)
         action_blocks = _product_action_blocks(blocks)
         elements = action_blocks[0]["elements"]
-        jira_btn = next(e for e in elements if "jira_skeleton" in e["action_id"])
-        assert "Review" in jira_btn["text"]["text"]
-        assert jira_btn.get("style") == "primary"
+        action_ids = [e["action_id"] for e in elements]
+        assert not any("jira_skeleton" in aid for aid in action_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -1775,9 +1773,9 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
             text=":gear: [1/2] Assessing delivery status",
         )
 
-    def test_jira_next_step_button_offered(self):
-        """After Confluence publish, a Jira next-step button should be posted
-        when Jira credentials are available."""
+    def test_no_jira_next_step_button_after_publish(self):
+        """After Confluence publish, NO Jira next-step button should be posted
+        (Jira buttons removed from Slack in v0.71.0)."""
         doc = {"run_id": "run-js-1", "idea": "Jira next step idea"}
         crew_mock = MagicMock()
         result_mock = MagicMock()
@@ -1831,20 +1829,12 @@ class TestHandleConfluencePublishHeartbeatAndNextStep:
                 "run-js-1", 1, "U1", "C1", "T1", send, client,
             )
 
-        # Jira next-step button should be posted via client.chat_postMessage
-        client.chat_postMessage.assert_called()
+        # jira_only_blocks() returns [] now, so no Jira button is posted
         jira_call = [
             c for c in client.chat_postMessage.call_args_list
             if c.kwargs.get("text") == "Create Jira Skeleton"
         ]
-        assert len(jira_call) == 1
-        blocks = jira_call[0].kwargs["blocks"]
-        action_ids = [
-            e["action_id"]
-            for b in blocks if b.get("type") == "actions"
-            for e in b.get("elements", [])
-        ]
-        assert "delivery_create_jira" in action_ids
+        assert len(jira_call) == 0
 
     def test_no_jira_button_without_credentials(self):
         """No Jira button should be offered when Jira credentials are

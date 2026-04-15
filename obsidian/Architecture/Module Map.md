@@ -123,6 +123,7 @@ tags:
 |-----------|---------|
 | `client.py` | `get_db()`, synchronous pymongo connection management |
 | `async_client.py` | `get_async_db()`, Motor async client for API endpoints |
+| `_tenant.py` | `TenantContext`, `tenant_filter()`, `tenant_fields()` — multi-tenancy query scoping |
 | `crew_jobs/` | Async job tracking (create, update, fail, reactivate) |
 | `working_ideas/` | In-progress PRD persistence (4 sub-modules) |
 | `product_requirements/` | Completed PRD + delivery records |

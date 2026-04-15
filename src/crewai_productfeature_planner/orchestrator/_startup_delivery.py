@@ -113,19 +113,13 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
 
         record = get_delivery_record(run_id)
 
-        # A record may have been prematurely marked "completed" by
-        # older code that treated absent Jira credentials as "done".
-        # Re-evaluate when Jira creds are now available but the
-        # jira_completed flag is still False.
+        # A record marked "completed" means delivery is done — trust it.
+        # Jira tickets must NEVER be created without explicit user
+        # approval (Jira Approval Gate Invariant).  If Jira credentials
+        # become available later, the user must initiate Jira creation
+        # manually via the API or the interactive Slack flow.
         if record and record.get("status") == "completed":
-            if has_jira and not record.get("jira_completed"):
-                logger.info(
-                    "[StartupDelivery] Re-evaluating run_id=%s — "
-                    "record marked completed but jira_completed is False",
-                    run_id,
-                )
-            else:
-                continue
+            continue
 
         confluence_done = bool(
             record and record.get("confluence_published")

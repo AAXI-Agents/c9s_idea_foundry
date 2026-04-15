@@ -21,6 +21,9 @@ from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
     CREW_JOBS_COLLECTION,
 )
+from crewai_productfeature_planner.mongodb.leases.repository import (
+    LEASES_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.product_requirements.repository import (
     PRODUCT_REQUIREMENTS_COLLECTION,
 )
@@ -61,10 +64,12 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("created_at", DESCENDING)]),
         IndexModel([("source", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("intent", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("created_at", DESCENDING)]),
     ],
     CREW_JOBS_COLLECTION: [
         IndexModel([("job_id", ASCENDING)], unique=True),
         IndexModel([("status", ASCENDING), ("queued_at", DESCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("status", ASCENDING)]),
     ],
     WORKING_COLLECTION: [
         IndexModel([("run_id", ASCENDING)], unique=True),
@@ -72,34 +77,46 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("project_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("slack_channel", ASCENDING), ("status", ASCENDING)]),
         IndexModel([("created_at", DESCENDING)]),
+        IndexModel([("enterprise_id", ASCENDING), ("organization_id", ASCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
     ],
     PRODUCT_REQUIREMENTS_COLLECTION: [
         IndexModel([("run_id", ASCENDING)], unique=True),
         IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+        IndexModel([("organization_id", ASCENDING)]),
     ],
     PROJECT_CONFIG_COLLECTION: [
         IndexModel([("project_id", ASCENDING)], unique=True),
         IndexModel([("name", ASCENDING)]),
         IndexModel([("created_at", DESCENDING)]),
+        IndexModel([("enterprise_id", ASCENDING), ("organization_id", ASCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("created_at", DESCENDING)]),
     ],
     PROJECT_MEMORY_COLLECTION: [
         IndexModel([("project_id", ASCENDING)], unique=True),
+        IndexModel([("organization_id", ASCENDING)]),
     ],
     USER_SESSION_COLLECTION: [
         IndexModel([("session_id", ASCENDING)], unique=True),
         IndexModel([("user_id", ASCENDING), ("active", ASCENDING)]),
         IndexModel([("channel", ASCENDING), ("context_type", ASCENDING), ("active", ASCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("user_id", ASCENDING)]),
     ],
     SLACK_OAUTH_COLLECTION: [
         IndexModel([("team_id", ASCENDING)], unique=True),
+        IndexModel([("organization_id", ASCENDING)]),
     ],
     USER_SUGGESTIONS_COLLECTION: [
         IndexModel([("suggestion_id", ASCENDING)], unique=True),
         IndexModel([("project_id", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("organization_id", ASCENDING)]),
     ],
     USER_PREFERENCES_COLLECTION: [
         IndexModel([("user_id", ASCENDING)], unique=True),
+    ],
+    LEASES_COLLECTION: [
+        IndexModel([("lease_name", ASCENDING)], unique=True),
     ],
 }
 

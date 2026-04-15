@@ -44,6 +44,9 @@ _stop_event = threading.Event()
 _DEFAULT_INTERVAL_SECONDS = 1800  # 30 minutes
 _DEFAULT_BUFFER_SECONDS = 3600  # 1 hour — refresh when < 1 h remaining
 
+_LEASE_NAME = "token_refresh_scheduler"
+_LEASE_TTL_SECONDS = 120  # 2 minutes — renewed every interval
+
 
 # ── Public helpers ────────────────────────────────────────────────────
 
@@ -110,12 +113,21 @@ def start_token_refresh_scheduler() -> bool:
 
 
 def stop_token_refresh_scheduler() -> None:
-    """Signal the scheduler thread to stop."""
+    """Signal the scheduler thread to stop and release the leader lease."""
     global _scheduler_thread  # noqa: PLW0603
     _stop_event.set()
     if _scheduler_thread is not None:
         _scheduler_thread.join(timeout=15)
         _scheduler_thread = None
+
+    # Release the leader lease so another instance can take over.
+    try:
+        from crewai_productfeature_planner.mongodb.leases import release_lease
+
+        release_lease(_LEASE_NAME)
+    except Exception:  # noqa: BLE001
+        pass  # best-effort — lease will expire via TTL
+
     logger.info("[TokenRefresh] Stopped")
 
 
@@ -137,21 +149,51 @@ def _get_buffer_seconds() -> int:
 
 
 def _scheduler_loop() -> None:
-    """Main loop — runs in a daemon thread."""
+    """Main loop — runs in a daemon thread.
+
+    Uses a MongoDB-based lease so only one instance of the application
+    actively refreshes tokens.  Other instances attempt to acquire the
+    lease each interval, becoming the new leader if the current one dies.
+    """
+    from crewai_productfeature_planner.mongodb.leases import (
+        acquire_lease,
+        renew_lease,
+    )
+
     interval = _get_interval_seconds()
+    lease_ttl = max(_LEASE_TTL_SECONDS, interval + 60)
     logger.debug("[TokenRefresh] Loop started (interval=%ds)", interval)
 
     # Run the first refresh check immediately on startup so tokens
     # that expired while the server was down get refreshed right away.
-    try:
-        _refresh_expiring_tokens()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[TokenRefresh] Initial refresh failed: %s", exc)
+    if acquire_lease(_LEASE_NAME, ttl_seconds=lease_ttl):
+        logger.info("[TokenRefresh] Acquired leader lease")
+        try:
+            _refresh_expiring_tokens()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[TokenRefresh] Initial refresh failed: %s", exc)
+    else:
+        logger.info(
+            "[TokenRefresh] Another instance holds the leader lease — "
+            "standing by"
+        )
 
     while not _stop_event.is_set():
         _stop_event.wait(timeout=interval)
         if _stop_event.is_set():
             break
+
+        # Try to acquire or renew the lease each interval.
+        is_leader = renew_lease(_LEASE_NAME, ttl_seconds=lease_ttl)
+        if not is_leader:
+            is_leader = acquire_lease(_LEASE_NAME, ttl_seconds=lease_ttl)
+
+        if not is_leader:
+            logger.debug(
+                "[TokenRefresh] Not the leader — skipping refresh sweep"
+            )
+            continue
+
         try:
             _refresh_expiring_tokens()
         except Exception as exc:  # noqa: BLE001

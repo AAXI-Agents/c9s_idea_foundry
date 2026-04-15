@@ -269,24 +269,47 @@ def get_valid_token(team_id: str | None = None) -> Optional[str]:
                 new_refresh = result.get("refresh_token", refresh_token)
                 new_expires_in = result.get("expires_in", 43200)
 
-                # Persist to MongoDB
-                update_tokens(
+                # Persist to MongoDB using CAS — only succeeds if our
+                # refresh_token is still current.  If another instance
+                # already refreshed (consuming the single-use token),
+                # the CAS filter won't match and we reload from DB.
+                from crewai_productfeature_planner.mongodb.slack_oauth.repository import (
+                    refresh_tokens_cas,
+                )
+
+                cas_ok = refresh_tokens_cas(
                     team_id=team_id,
-                    access_token=new_access,
-                    refresh_token=new_refresh,
+                    old_refresh_token=refresh_token,
+                    new_access_token=new_access,
+                    new_refresh_token=new_refresh,
                     expires_in=new_expires_in,
                 )
 
-                # Update in-memory cache
-                new_expires_at = time.time() + new_expires_in
-                _set_cache(team_id, new_access, new_refresh, new_expires_at)
-
-                logger.info(
-                    "[TokenManager] Token refreshed for team=%s (expires in %ds)",
-                    team_id,
-                    new_expires_in,
-                )
-                return new_access
+                if cas_ok:
+                    # We won the CAS race — update in-memory cache
+                    new_expires_at = time.time() + new_expires_in
+                    _set_cache(team_id, new_access, new_refresh, new_expires_at)
+                    logger.info(
+                        "[TokenManager] Token refreshed for team=%s (expires in %ds)",
+                        team_id,
+                        new_expires_in,
+                    )
+                    return new_access
+                else:
+                    # CAS miss — another instance already refreshed.
+                    # Reload the winning instance's tokens from MongoDB.
+                    logger.info(
+                        "[TokenManager] CAS miss for team=%s — reloading "
+                        "tokens from MongoDB",
+                        team_id,
+                    )
+                    fresh_doc = get_team(team_id)
+                    if fresh_doc and fresh_doc.get("access_token"):
+                        fa = fresh_doc["access_token"]
+                        fr = fresh_doc.get("refresh_token")
+                        fe = fresh_doc.get("expires_at", time.time() + 43200)
+                        _set_cache(team_id, fa, fr, fe)
+                        return fa
             except RuntimeError as exc:
                 err_msg = str(exc).lower()
                 if "invalid_refresh_token" in err_msg:

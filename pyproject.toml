@@ -19,6 +19,9 @@ dependencies = [
     "PyJWT[crypto]>=2.8",
 ]
 
+[project.optional-dependencies]
+gcs = ["google-cloud-storage>=2.14"]
+
 [project.scripts]
 crewai_productfeature_planner = "crewai_productfeature_planner.main:run"
 run_crew = "crewai_productfeature_planner.main:run"

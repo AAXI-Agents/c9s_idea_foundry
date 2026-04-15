@@ -135,36 +135,10 @@ def _handle_next_step_feedback(
             "describe your product/feature concept directly.",
             [BTN_NEW_IDEA],
         )
-    elif next_step == "publish":
-        from crewai_productfeature_planner.apis.slack._flow_handlers import (
-            handle_publish_intent,
-        )
-        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
-        handle_publish_intent(channel, thread_ts, user_id, SlackSendMessageTool())
-    elif next_step == "configure_missing_keys":
-        from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
-            missing_keys_buttons,
-        )
-        from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
-        text = (
-            ":key: Before publishing, you'll need to configure your "
-            "Confluence and Jira keys."
-        )
-        client = _get_slack_client()
-        if client:
-            try:
-                client.chat_postMessage(
-                    channel=channel, thread_ts=thread_ts,
-                    blocks=[
-                        {"type": "section", "text": {"type": "mrkdwn", "text": text}},
-                        *missing_keys_buttons(),
-                    ],
-                    text=text,
-                )
-            except Exception:
-                _post(text)
-        else:
-            _post(text)
+    elif next_step in ("publish", "configure_missing_keys"):
+        # Confluence/Jira publishing removed from Slack in v0.71.0
+        _post(":info: Publishing to Confluence and Jira is managed "
+              "through the web API. Use the API endpoints to publish.")
     elif next_step == "review_prd":
         from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
             check_publish_buttons,
@@ -187,11 +161,9 @@ def _handle_next_step_feedback(
         else:
             _post(text)
     elif next_step in ("create_jira_skeleton", "create_jira"):
-        from crewai_productfeature_planner.apis.slack._flow_handlers import (
-            handle_create_jira_intent,
-        )
-        from crewai_productfeature_planner.tools.slack_tools import SlackSendMessageTool
-        handle_create_jira_intent(channel, thread_ts, user_id, SlackSendMessageTool())
+        # Jira creation removed from Slack in v0.71.0
+        _post(":info: Jira ticket creation is managed through the web API. "
+              "Use the API endpoints to create Jira tickets.")
     else:
         from crewai_productfeature_planner.apis.slack.blocks._command_blocks import (
             BTN_HELP,

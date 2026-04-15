@@ -64,7 +64,7 @@ def product_list_blocks(
                     "type": "mrkdwn",
                     "text": (
                         "Completed ideas ready for delivery. "
-                        "Use the buttons to manage Confluence & Jira publishing."
+                        "Use the buttons to manage UX designs and view details."
                     ),
                 }
             ],
@@ -167,15 +167,7 @@ def product_list_blocks(
             )
 
         if not conf_published:
-            elements.append(
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": ":globe_with_meridians: Publish Confluence"},
-                    "action_id": f"product_confluence_{idx}",
-                    "value": btn_value,
-                    "style": "primary",
-                },
-            )
+            pass  # Confluence publishing removed from Slack in v0.71.0
 
         # UX Design buttons
         if ux_status != "generating":
@@ -189,123 +181,11 @@ def product_list_blocks(
                 },
             )
 
-        if conf_published and not jira_completed:
-            if jira_phase == "skeleton_pending":
-                # Skeleton generated — show review/approve button
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": ":clipboard: Review Jira Skeleton",
-                        },
-                        "action_id": f"product_jira_skeleton_{idx}",
-                        "value": btn_value,
-                        "style": "primary",
-                    },
-                )
-            elif not jira_phase:
-                # Skeleton not yet created
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": ":clipboard: Start Jira Skeleton",
-                        },
-                        "action_id": f"product_jira_skeleton_{idx}",
-                        "value": btn_value,
-                    },
-                )
-            if jira_phase == "skeleton_approved":
-                # Ready for Epics & Stories
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": ":jigsaw: Publish Epics & Stories"},
-                        "action_id": f"product_jira_epics_{idx}",
-                        "value": btn_value,
-                        "style": "primary",
-                    },
-                )
-            if jira_phase in ("epics_stories_done", "subtasks_ready"):
-                # Ready for Sub-tasks
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": ":hammer_and_wrench: Publish Sub-tasks"},
-                        "action_id": f"product_jira_subtasks_{idx}",
-                        "value": btn_value,
-                        "style": "primary",
-                    },
-                )
-            if jira_phase == "subtasks_pending":
-                # Sub-tasks generated, awaiting approval via review blocks
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": ":eyes: Review Sub-tasks"},
-                        "action_id": f"product_jira_subtasks_{idx}",
-                        "value": btn_value,
-                    },
-                )
-            if jira_phase in ("subtasks_done", "review_ready"):
-                # Ready for Staff Eng + QA Lead review sub-tasks
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": ":detective: Publish Review Sub-tasks"},
-                        "action_id": f"product_jira_reviews_{idx}",
-                        "value": btn_value,
-                        "style": "primary",
-                    },
-                )
-            if jira_phase == "review_pending":
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": ":eyes: Review Audit Sub-tasks"},
-                        "action_id": f"product_jira_reviews_{idx}",
-                        "value": btn_value,
-                    },
-                )
-            if jira_phase in ("review_done", "qa_test_ready"):
-                # Ready for QA Engineer test sub-tasks
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": ":test_tube: Publish QA Test Sub-tasks"},
-                        "action_id": f"product_jira_qa_tests_{idx}",
-                        "value": btn_value,
-                        "style": "primary",
-                    },
-                )
-            if jira_phase == "qa_test_pending":
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": ":eyes: Review QA Test Sub-tasks"},
-                        "action_id": f"product_jira_qa_tests_{idx}",
-                        "value": btn_value,
-                    },
-                )
-            # Fallback for any unrecognised jira_phase value — let the
-            # user start/restart the skeleton flow.
-            if jira_phase and jira_phase not in _JIRA_PHASE_LABELS:
-                elements.append(
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": ":clipboard: Restart Jira Skeleton",
-                        },
-                        "action_id": f"product_jira_skeleton_{idx}",
-                        "value": btn_value,
-                    },
-                )
+        # Jira buttons removed from Slack in v0.71.0 — Jira ticketing
+        # is managed through the web API.
 
         # Always include "View Details" for fully delivered products
-        if conf_published and jira_completed:
+        if conf_published:
             elements.append(
                 {
                     "type": "button",

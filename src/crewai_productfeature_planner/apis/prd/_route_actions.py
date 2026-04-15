@@ -30,6 +30,7 @@ from crewai_productfeature_planner.apis.shared import (
     pause_requested,
     runs,
 )
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.crew_jobs import (
     create_job,
     find_active_job,
@@ -119,9 +120,11 @@ async def kickoff_prd_flow(
     """Trigger the iterative PRD generation flow."""
     logger.info("[API] PRD kickoff by user_id=%s", user.get("user_id"))
 
+    tenant = TenantContext.from_user(user)
+
     # Validate project_id exists in projectConfig (if provided)
     if request.project_id:
-        project = get_project(request.project_id)
+        project = get_project(request.project_id, tenant=tenant)
         if project is None:
             raise HTTPException(
                 status_code=422,
@@ -133,6 +136,23 @@ async def kickoff_prd_flow(
             )
 
     # Reject duplicate idea submitted to the same project within 24h
+    # Also check for active (in-progress) flows with the same idea
+    from crewai_productfeature_planner.mongodb.working_ideas import (
+        find_active_duplicate_idea,
+    )
+    active_dup = find_active_duplicate_idea(
+        request.idea, project_id=request.project_id or "",
+    )
+    if active_dup:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This idea already has an active flow "
+                f"(run_id={active_dup.get('run_id')}, "
+                f"status={active_dup.get('status')}). "
+                "Resume or archive the existing run first."
+            ),
+        )
     if request.project_id:
         dup = find_recent_duplicate_idea(request.idea, request.project_id)
         if dup is not None:
@@ -168,11 +188,11 @@ async def kickoff_prd_flow(
     runs[run_id] = run
 
     # Persist job to crewJobs collection (queued status)
-    create_job(job_id=run_id, flow_name="prd", idea=request.idea)
+    create_job(job_id=run_id, flow_name="prd", idea=request.idea, tenant=tenant)
 
     # Link idea to project (if provided)
     if request.project_id:
-        save_project_ref(run_id, request.project_id, idea=request.idea)
+        save_project_ref(run_id, request.project_id, idea=request.idea, tenant=tenant)
 
     # Store title in working idea (if provided)
     if request.title:

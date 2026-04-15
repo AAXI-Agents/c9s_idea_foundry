@@ -103,16 +103,51 @@ class TestGetValidToken:
 
         with patch(f"{_REPO}.get_team", return_value=doc), \
              patch(f"{_REPO}.get_all_teams"), \
-             patch(f"{_REPO}.update_tokens") as mock_update, \
+             patch(f"{_REPO}.refresh_tokens_cas", return_value=True) as mock_cas, \
              patch.object(tm, "_do_refresh", return_value=mock_refresh):
             token = tm.get_valid_token(TEAM_A)
 
         assert token == "xoxe.xoxb-refreshed"
-        mock_update.assert_called_once()
-        call_kwargs = mock_update.call_args.kwargs
+        mock_cas.assert_called_once()
+        call_kwargs = mock_cas.call_args.kwargs
         assert call_kwargs["team_id"] == TEAM_A
-        assert call_kwargs["access_token"] == "xoxe.xoxb-refreshed"
-        assert call_kwargs["refresh_token"] == "xoxr-new"
+        assert call_kwargs["new_access_token"] == "xoxe.xoxb-refreshed"
+        assert call_kwargs["new_refresh_token"] == "xoxr-new"
+        assert call_kwargs["old_refresh_token"] == "xoxr-old"
+
+    def test_cas_miss_reloads_from_mongodb(self, monkeypatch):
+        """When another instance already refreshed (CAS miss), reload
+        the winning instance's tokens from MongoDB instead of returning
+        a stale token."""
+        monkeypatch.setenv("SLACK_CLIENT_ID", "cid")
+        monkeypatch.setenv("SLACK_CLIENT_SECRET", "csec")
+
+        doc = _fake_team_doc(
+            access_token="xoxe.xoxb-old",
+            refresh_token="xoxr-old",
+            expires_at=time.time() - 100,  # expired
+        )
+        fresh_doc = _fake_team_doc(
+            access_token="xoxe.xoxb-winner",
+            refresh_token="xoxr-winner",
+            expires_at=time.time() + 43200,
+        )
+        mock_refresh = {
+            "ok": True,
+            "access_token": "xoxe.xoxb-loser",
+            "refresh_token": "xoxr-loser",
+            "expires_in": 43200,
+        }
+
+        # get_team called twice: once for initial load, once for CAS miss reload
+        with patch(f"{_REPO}.get_team", side_effect=[doc, fresh_doc]), \
+             patch(f"{_REPO}.get_all_teams"), \
+             patch(f"{_REPO}.refresh_tokens_cas", return_value=False), \
+             patch.object(tm, "_do_refresh", return_value=mock_refresh):
+            token = tm.get_valid_token(TEAM_A)
+
+        # Should return the winning instance's token, not the loser's
+        assert token == "xoxe.xoxb-winner"
 
     def test_falls_back_to_expired_token_on_refresh_failure(self, monkeypatch):
         monkeypatch.setenv("SLACK_CLIENT_ID", "cid")

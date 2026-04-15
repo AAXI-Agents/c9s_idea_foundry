@@ -8,6 +8,7 @@ Database: Deletes from ``projectConfig`` collection via ``delete_project()``.
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +28,8 @@ async def delete_project(project_id: str, user: dict = Depends(require_sso_user)
     )
 
     logger.info("[Projects] DELETE project_id=%s user_id=%s", project_id, user.get("user_id"))
-    existing = _get_project(project_id)
+    tenant = TenantContext.from_user(user)
+    existing = _get_project(project_id, tenant=tenant)
     if not existing:
         logger.warning("[Projects] Not found for delete project_id=%s", project_id)
         raise HTTPException(
@@ -35,5 +37,5 @@ async def delete_project(project_id: str, user: dict = Depends(require_sso_user)
             detail=f"Project not found: {project_id}",
         )
 
-    _delete_project(project_id)
+    _delete_project(project_id, tenant=tenant)
     logger.info("[Projects] Deleted project_id=%s", project_id)

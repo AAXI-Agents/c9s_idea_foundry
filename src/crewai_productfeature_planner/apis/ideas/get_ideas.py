@@ -25,6 +25,7 @@ from crewai_productfeature_planner.apis.ideas.models import (
     idea_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -79,7 +80,10 @@ async def list_ideas(
     db = get_async_db()
     coll = db[WORKING_COLLECTION]
 
-    query: dict[str, Any] = {}
+    tenant = TenantContext.from_user(user)
+    t_filter = tenant_filter(tenant)
+
+    query: dict[str, Any] = {**t_filter}
     if project_id:
         query["project_id"] = project_id
     if idea_status:
