@@ -79,7 +79,7 @@ class TestSSOLoginRedirect:
         resp = client.get("/auth/sso/login", follow_redirects=False)
         assert resp.status_code == 307
         location = resp.headers["location"]
-        assert "sso.example.com/oauth/authorize" in location
+        assert "sso.example.com/sso/oauth/authorize" in location
         assert "client_id=test-client-id" in location
         assert "response_type=code" in location
 

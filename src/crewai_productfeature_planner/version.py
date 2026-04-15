@@ -3609,6 +3609,23 @@ _CODEX: list[CodexEntry] = [
             "3 web UI gap tickets created for frontend changes."
         ),
     ),
+    CodexEntry(
+        version="0.72.1",
+        date=date(2026, 4, 15),
+        summary=(
+            "SSO proxy path fix — all upstream SSO server calls now "
+            "use the correct /sso/ prefix. Previously, proxy calls in "
+            "router.py and sso_auth.py omitted the /sso segment "
+            "(e.g. /auth/login instead of /sso/auth/login), causing "
+            "404 errors from the upstream SSO server. Fixed 13 proxy "
+            "paths in router.py (login, register, password-reset, "
+            "token refresh, reauth, logout, Google login, OAuth "
+            "authorize, OAuth token exchange) and 2 paths in "
+            "sso_auth.py (public-key fetch, introspection). "
+            "Updated test assertion for OAuth authorize URL. "
+            "All 48 SSO tests pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

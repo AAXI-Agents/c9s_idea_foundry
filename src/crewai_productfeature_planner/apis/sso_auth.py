@@ -193,7 +193,7 @@ async def _fetch_pem_directly(
     """Fetch PEM from the ``/sso/oauth/public-key`` endpoint."""
     try:
         resp = await client.get(
-            f"{base_url}/oauth/public-key",
+            f"{base_url}/sso/oauth/public-key",
             headers=headers,
         )
         if resp.status_code != 200:
@@ -287,7 +287,7 @@ async def _introspect_remotely(token: str) -> dict[str, Any] | None:
             payload["client_secret"] = client_secret
         headers: dict[str, str] = {"ngrok-skip-browser-warning": "true"}
         resp = await client.post(
-            f"{base_url}/oauth/introspect",
+            f"{base_url}/sso/oauth/introspect",
             json=payload,
             headers=headers,
         )
