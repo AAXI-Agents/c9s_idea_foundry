@@ -68,6 +68,14 @@ def ensure_crewai_event_bus() -> None:
         # ThreadPoolExecutor, and starts a new event-loop thread.
         bus._initialize()
 
+        # Defensively remove the atexit handler again — while
+        # _initialize() itself doesn't re-register it, future
+        # CrewAI versions might.
+        try:
+            atexit.unregister(bus.shutdown)
+        except Exception:
+            pass
+
         logger.info(
             "[CrewAI-BusFix] Event bus reinitialised successfully "
             "(executor_alive=%s)",

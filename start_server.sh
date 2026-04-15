@@ -29,18 +29,24 @@ if [[ -z "${SSL_CERT_FILE:-}" ]]; then
 	fi
 fi
 
-PORT="${API_PORT:-8000}"
 ENV="${SERVER_ENV:-DEV}"
+
+# Resolve port: DEV uses DOMAIN_NAME_DEV_PORT, others use API_PORT
+if [[ "$ENV" == "DEV" ]]; then
+	PORT="${DOMAIN_NAME_DEV_PORT:-8000}"
+else
+	PORT="${API_PORT:-8000}"
+fi
 
 # Kill any existing process on the API port
 echo "Stopping any process on port $PORT..."
 lsof -ti:"$PORT" | xargs kill -9 2>/dev/null || true
 
-# Only kill ngrok if we're in DEV mode (ngrok is used)
-if [[ "$ENV" == "DEV" ]]; then
-	lsof -ti:4040 | xargs kill -9 2>/dev/null || true
-	pkill -f "ngrok" 2>/dev/null || true
-fi
+# NOTE: Do NOT kill ngrok here.  The Python startup code
+# (ngrok_tunnel.py) cleanly disconnects tunnels via the local agent
+# API before killing the process.  If we pkill ngrok first, the cloud
+# never receives a clean disconnect and holds the static domain for
+# 30-60 s (causing ERR_NGROK_334 on restart).
 
 # Wait until the port is actually free (up to 5 seconds)
 for i in {1..10}; do

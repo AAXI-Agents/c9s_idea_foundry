@@ -155,16 +155,19 @@ def crew_kickoff_with_retry(
     last_exc: Exception | None = None
     attempt = 0  # normal-retry counter (excludes rate-limit retries)
     rate_limit_attempts = 0
+    shutdown_retries = 0  # separate budget for event-bus recovery
 
-    # Ensure the CrewAI event bus is alive before the first attempt.
-    # The bus can be left in a dead state after a prior server restart
-    # or atexit handler fires (see crewai_bus_fix.py for details).
     from crewai_productfeature_planner.scripts.crewai_bus_fix import (
         ensure_crewai_event_bus,
     )
-    ensure_crewai_event_bus()
 
     while True:
+        # Ensure the CrewAI event bus is alive before every attempt.
+        # The bus can die mid-kickoff (executor shut down by atexit,
+        # GC, or race condition in CrewAI internals) — checking each
+        # iteration lets us recover transparently.
+        ensure_crewai_event_bus()
+
         try:
             result = crew.kickoff()
             if attempt > 0 or rate_limit_attempts > 0:
@@ -189,11 +192,25 @@ def crew_kickoff_with_retry(
                 )
                 raise BillingError(str(exc)) from exc
 
-            # ── Non-retryable: executor/server shutdown ──
+            # ── Recoverable: executor/event-bus shutdown ──
+            # The CrewAI event bus ThreadPoolExecutor can die mid-
+            # kickoff (atexit race, GC, or CrewAI internals).
+            # Reinitialise the bus and retry once; only give up if
+            # the second attempt also hits a shutdown error.
             if any(pat in exc_str for pat in _SHUTDOWN_PATTERNS):
+                shutdown_retries += 1
+                if shutdown_retries <= 1:
+                    logger.warning(
+                        "[Retry] %s hit shutdown error — "
+                        "reinitialising event bus and retrying "
+                        "(shutdown attempt %d): %s",
+                        step_label, shutdown_retries, exc,
+                    )
+                    ensure_crewai_event_bus()
+                    continue  # retry without counting against normal budget
                 logger.warning(
-                    "[Retry] %s hit shutdown error — stopping "
-                    "immediately (no retry): %s",
+                    "[Retry] %s hit shutdown error again after "
+                    "bus reinit — stopping (no further retry): %s",
                     step_label, exc,
                 )
                 raise ShutdownError(str(exc)) from exc

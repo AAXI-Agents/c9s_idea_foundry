@@ -22,9 +22,10 @@ from __future__ import annotations
 import logging
 import os
 import ssl
+import time
 
 import certifi
-from pyngrok import conf, ngrok
+from pyngrok import conf, exception as ngrok_exc, ngrok
 
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -54,6 +55,52 @@ def _configure_auth() -> None:
     logger.debug("Ngrok auth token configured")
 
 
+def _force_kill_ngrok() -> None:
+    """Aggressively tear down any running ngrok process.
+
+    1. Probe the local ngrok agent API (``localhost:4040``) to see if
+       an agent is running.  If reachable, ask pyngrok to disconnect
+       all tunnels — this notifies the cloud so it releases the static
+       domain immediately instead of waiting for heartbeat timeout.
+    2. Ask pyngrok to kill its managed ngrok agent.
+    3. As a last resort, ``pkill -9 ngrok`` at the OS level in case
+       pyngrok lost track of the process.
+    """
+    import subprocess
+    from urllib.error import URLError
+    from urllib.request import urlopen
+
+    # Step 1: check if a local ngrok agent is up, then disconnect cleanly.
+    try:
+        urlopen("http://localhost:4040/api/tunnels", timeout=2)  # noqa: S310
+        agent_alive = True
+    except (URLError, OSError):
+        agent_alive = False
+
+    if agent_alive:
+        try:
+            ngrok.disconnect_all()
+            logger.info("Cleanly disconnected all ngrok tunnels via local agent")
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Step 2: kill pyngrok's managed ngrok agent.
+    try:
+        ngrok.kill()
+    except Exception:  # noqa: BLE001
+        pass
+    # Step 3: OS-level kill for orphaned ngrok processes.
+    try:
+        subprocess.run(  # noqa: S603, S607
+            ["pkill", "-9", "-f", "ngrok"],
+            capture_output=True,
+            timeout=5,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    logger.info("Force-killed all ngrok processes")
+
+
 def start_tunnel(port: int = DEFAULT_PORT, **kwargs) -> str:
     """Open an ngrok tunnel and return the public URL.
 
@@ -80,7 +127,48 @@ def start_tunnel(port: int = DEFAULT_PORT, **kwargs) -> str:
         kwargs["domain"] = ngrok_domain
         logger.info("Using static ngrok domain: %s", ngrok_domain)
 
-    tunnel = ngrok.connect(port, **kwargs)
+    # When using a static domain, proactively kill any stale ngrok
+    # process so the cloud can release the endpoint before we connect.
+    if "domain" in kwargs:
+        _force_kill_ngrok()
+
+    # Retry with increasing delays — the ngrok cloud can take up to 60s
+    # to release a static domain after the old agent dies (heartbeat
+    # timeout).  Total wait: 10+15+20+20 = 65s.
+    #
+    # IMPORTANT: do NOT kill the ngrok agent between retries!  Each
+    # ngrok.connect() reuses the running agent.  Killing it would create
+    # a new stale cloud session that resets the heartbeat timeout, making
+    # the problem worse.
+    _RETRY_DELAYS = [10, 15, 20, 20]
+    last_exc: Exception | None = None
+
+    for attempt in range(1 + len(_RETRY_DELAYS)):
+        try:
+            tunnel = ngrok.connect(port, **kwargs)
+            break
+        except ngrok_exc.PyngrokNgrokHTTPError as exc:
+            if "ERR_NGROK_334" not in str(exc) and "already online" not in str(exc):
+                raise
+            last_exc = exc
+            if attempt < len(_RETRY_DELAYS):
+                delay = _RETRY_DELAYS[attempt]
+                logger.warning(
+                    "Ngrok domain already online (ERR_NGROK_334) — "
+                    "retry %d/%d in %ds (waiting for cloud release)",
+                    attempt + 1, len(_RETRY_DELAYS), delay,
+                )
+                time.sleep(delay)
+            else:
+                logger.error(
+                    "Ngrok domain still online after %d retries (~%ds) "
+                    "— giving up.  The domain may be held by another "
+                    "machine or a stuck cloud session.",
+                    len(_RETRY_DELAYS),
+                    sum(_RETRY_DELAYS),
+                )
+                raise last_exc  # noqa: TRY201
+
     public_url = tunnel.public_url
     logger.info("Ngrok tunnel opened: %s -> localhost:%d", public_url, port)
     return public_url
@@ -117,6 +205,11 @@ def get_server_env() -> str:
 def is_dev() -> bool:
     """Return ``True`` when running in DEV mode (ngrok tunnel)."""
     return get_server_env() == "DEV"
+
+
+def has_ngrok_token() -> bool:
+    """Return ``True`` when ``NGROK_AUTHTOKEN`` is set and non-empty."""
+    return bool(os.environ.get("NGROK_AUTHTOKEN", "").strip())
 
 
 def get_public_url(port: int = DEFAULT_PORT) -> str:

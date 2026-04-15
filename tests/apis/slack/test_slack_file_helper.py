@@ -127,9 +127,12 @@ class TestUploadContentFile:
         assert result is False
 
     @patch(
+        "crewai_productfeature_planner.apis.slack._slack_file_helper.time.sleep"
+    )
+    @patch(
         "crewai_productfeature_planner.tools.slack_tools._get_slack_client"
     )
-    def test_exception_returns_false(self, mock_get_client):
+    def test_exception_returns_false(self, mock_get_client, _mock_sleep):
         from crewai_productfeature_planner.apis.slack._slack_file_helper import (
             upload_content_file,
         )

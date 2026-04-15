@@ -475,6 +475,7 @@ def start_api():
     from crewai_productfeature_planner.scripts.ngrok_tunnel import (
         get_public_url,
         get_server_env,
+        has_ngrok_token,
         is_dev,
         start_tunnel,
     )
@@ -493,6 +494,17 @@ def start_api():
         # Explicit --ngrok flag overrides SERVER_ENV.
         public_url = start_tunnel(port=args.port)
         logger.info("[Env] --ngrok flag: tunnel at %s", public_url)
+    elif is_dev() and not has_ngrok_token():
+        # DEV mode but no NGROK_AUTHTOKEN — skip tunnel, run local only.
+        logger.warning(
+            "[Env] SERVER_ENV=DEV but NGROK_AUTHTOKEN is empty — "
+            "skipping ngrok tunnel. Server will run on localhost:%d only.",
+            args.port,
+        )
+        print(
+            f"\n⚠️  NGROK_AUTHTOKEN not set — running local-only on "
+            f"http://localhost:{args.port}\n"
+        )
     elif is_dev():
         # DEV mode: start ngrok tunnel automatically.
         public_url = get_public_url(port=args.port)

@@ -102,7 +102,10 @@ class TestInstallCrewaiBusFix:
         bus._shutting_down = True
         with patch("atexit.unregister") as mock_unreg:
             install_crewai_bus_fix()
-        mock_unreg.assert_called_once_with(bus.shutdown)
+        # Called once in _unregister_crewai_atexit, and once
+        # defensively after _initialize() inside ensure_crewai_event_bus.
+        assert mock_unreg.call_count == 2
+        mock_unreg.assert_called_with(bus.shutdown)
         assert bus._shutting_down is False
         assert _is_executor_alive(bus)
 

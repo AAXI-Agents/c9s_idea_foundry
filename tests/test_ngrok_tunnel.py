@@ -22,6 +22,18 @@ def _set_dummy_keys(monkeypatch):
     monkeypatch.setenv("NGROK_AUTHTOKEN", "test-ngrok-token")
 
 
+@pytest.fixture(autouse=True)
+def _no_force_kill():
+    """Prevent _force_kill_ngrok from running in most tests.
+
+    Tests that need to exercise the kill/retry logic patch it themselves.
+    """
+    with patch(
+        "crewai_productfeature_planner.scripts.ngrok_tunnel._force_kill_ngrok"
+    ):
+        yield
+
+
 # ── _configure_auth ──────────────────────────────────────────
 
 
@@ -45,8 +57,9 @@ def test_configure_auth_raises_when_missing(monkeypatch):
 # ── start_tunnel ─────────────────────────────────────────────
 
 
-def test_start_tunnel_returns_public_url():
+def test_start_tunnel_returns_public_url(monkeypatch):
     """start_tunnel should return the public URL from ngrok."""
+    monkeypatch.delenv("NGROK_DOMAIN", raising=False)
     mock_tunnel = MagicMock()
     mock_tunnel.public_url = "https://abc123.ngrok.io"
 
@@ -63,8 +76,9 @@ def test_start_tunnel_returns_public_url():
     mock_ngrok.connect.assert_called_once_with(3000)
 
 
-def test_start_tunnel_uses_default_port():
+def test_start_tunnel_uses_default_port(monkeypatch):
     """When no port is given it should use DEFAULT_PORT."""
+    monkeypatch.delenv("NGROK_DOMAIN", raising=False)
     mock_tunnel = MagicMock()
     mock_tunnel.public_url = "https://xyz.ngrok.io"
 
@@ -80,8 +94,9 @@ def test_start_tunnel_uses_default_port():
     mock_ngrok.connect.assert_called_once_with(DEFAULT_PORT)
 
 
-def test_start_tunnel_forwards_kwargs():
+def test_start_tunnel_forwards_kwargs(monkeypatch):
     """Extra kwargs should be forwarded to ngrok.connect."""
+    monkeypatch.delenv("NGROK_DOMAIN", raising=False)
     mock_tunnel = MagicMock()
     mock_tunnel.public_url = "https://sub.ngrok.io"
 
@@ -311,3 +326,80 @@ def test_get_public_url_preserves_existing_scheme(monkeypatch):
     monkeypatch.setenv("DOMAIN_NAME_PROD", "https://already-set.example.com")
 
     assert get_public_url() == "https://already-set.example.com"
+
+
+# ── ERR_NGROK_334 retry ─────────────────────────────────────
+
+
+def _make_err_334():
+    """Create a PyngrokNgrokHTTPError for ERR_NGROK_334."""
+    from pyngrok.exception import PyngrokNgrokHTTPError
+
+    err_msg = (
+        "ngrok client exception, API returned 502: "
+        '{"error_code":103,"msg":"failed to start tunnel",'
+        '"details":{"err":"ERR_NGROK_334"}}'
+    )
+    return PyngrokNgrokHTTPError(
+        err_msg,
+        url="http://localhost:4040/api/tunnels",
+        status_code=502,
+        message=err_msg,
+        headers={},
+        body="ERR_NGROK_334",
+    )
+
+
+def test_start_tunnel_retries_on_err_ngrok_334(monkeypatch, _no_force_kill):
+    """When the domain is already online (ERR_NGROK_334), wait and retry."""
+    monkeypatch.setenv("NGROK_DOMAIN", "myapp.ngrok-free.dev")
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.public_url = "https://myapp.ngrok-free.dev"
+
+    mock_kill = MagicMock()
+
+    with (
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel._force_kill_ngrok", mock_kill),
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.conf") as mock_conf,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.ngrok") as mock_ngrok,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.time") as mock_time,
+    ):
+        mock_conf.get_default.return_value = MagicMock()
+        # First connect (attempt 0) fails, retry (attempt 1) succeeds.
+        mock_ngrok.connect.side_effect = [_make_err_334(), mock_tunnel]
+
+        url = start_tunnel(port=8000)
+
+    assert url == "https://myapp.ngrok-free.dev"
+    assert mock_ngrok.connect.call_count == 2
+    # Only the proactive kill before the first attempt — no kill between retries
+    assert mock_kill.call_count == 1
+    # Sleep with first retry delay (10s)
+    mock_time.sleep.assert_called_once_with(10)
+
+
+def test_start_tunnel_gives_up_after_max_retries(monkeypatch, _no_force_kill):
+    """After exhausting retries, the ERR_NGROK_334 should be re-raised."""
+    from pyngrok.exception import PyngrokNgrokHTTPError
+
+    monkeypatch.setenv("NGROK_DOMAIN", "myapp.ngrok-free.dev")
+
+    mock_kill = MagicMock()
+
+    with (
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel._force_kill_ngrok", mock_kill),
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.conf") as mock_conf,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.ngrok") as mock_ngrok,
+        patch("crewai_productfeature_planner.scripts.ngrok_tunnel.time"),
+    ):
+        mock_conf.get_default.return_value = MagicMock()
+        # All 5 attempts (1 initial + 4 retries) fail.
+        mock_ngrok.connect.side_effect = [_make_err_334() for _ in range(5)]
+
+        with pytest.raises(PyngrokNgrokHTTPError, match="ERR_NGROK_334"):
+            start_tunnel(port=8000)
+
+    assert mock_ngrok.connect.call_count == 5
+    # Only the proactive kill — no kill between retries
+    assert mock_kill.call_count == 1

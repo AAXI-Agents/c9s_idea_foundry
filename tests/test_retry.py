@@ -397,9 +397,9 @@ def test_server_error_uses_normal_retry_budget():
 # ── Shutdown errors ───────────────────────────────────────────
 
 
-def test_shutdown_futures_not_retried():
-    """'cannot schedule new futures after shutdown' should raise ShutdownError
-    immediately without retrying."""
+def test_shutdown_futures_retried_once_then_fails():
+    """'cannot schedule new futures after shutdown' should reinitialise
+    the bus and retry once before raising ShutdownError."""
     crew = _make_crew(
         side_effect=RuntimeError(
             "cannot schedule new futures after shutdown"
@@ -410,12 +410,13 @@ def test_shutdown_futures_not_retried():
             crew_kickoff_with_retry(
                 crew, step_label="test", max_retries=3, base_delay=5.0,
             )
-        assert crew.kickoff.call_count == 1
+        # 1st attempt fails + 1 recovery retry = 2 calls
+        assert crew.kickoff.call_count == 2
         mock_sleep.assert_not_called()
 
 
-def test_shutdown_interpreter_not_retried():
-    """'interpreter shutdown' should raise ShutdownError immediately."""
+def test_shutdown_interpreter_retried_once_then_fails():
+    """'interpreter shutdown' should retry once then raise ShutdownError."""
     crew = _make_crew(
         side_effect=RuntimeError(
             "cannot schedule new futures after interpreter shutdown"
@@ -426,14 +427,32 @@ def test_shutdown_interpreter_not_retried():
             crew_kickoff_with_retry(
                 crew, step_label="test", max_retries=3, base_delay=5.0,
             )
-        assert crew.kickoff.call_count == 1
+        assert crew.kickoff.call_count == 2
         mock_sleep.assert_not_called()
 
 
 def test_shutdown_error_chains_original():
-    """ShutdownError should chain the original exception."""
+    """ShutdownError should chain the original (second-attempt) exception."""
     original = RuntimeError("cannot schedule new futures after shutdown")
     crew = _make_crew(side_effect=original)
     with pytest.raises(ShutdownError) as exc_info:
         crew_kickoff_with_retry(crew, step_label="test", max_retries=3)
-    assert exc_info.value.__cause__ is original
+    # Chains the exception from the second attempt (same error)
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+def test_shutdown_recovered_after_bus_reinit():
+    """If the first attempt hits a shutdown error but the second succeeds,
+    the result should be returned (no ShutdownError)."""
+    success_output = MagicMock(raw="recovered")
+    crew = _make_crew(
+        side_effect=[
+            RuntimeError("cannot schedule new futures after shutdown"),
+            success_output,
+        ],
+    )
+    result = crew_kickoff_with_retry(
+        crew, step_label="test", max_retries=3, base_delay=5.0,
+    )
+    assert result is success_output
+    assert crew.kickoff.call_count == 2

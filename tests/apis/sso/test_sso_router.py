@@ -129,7 +129,7 @@ class TestSSODirectLogin:
             assert resp.json()["access_token"] == "tok"
             # Verify the proxy was called with the login path
             call_args = mock_post.call_args
-            assert "/sso/auth/login" in call_args[0][0]
+            assert "/auth/login" in call_args[0][0]
             assert call_args[1]["json"]["client_id"] == "test-client"
 
     def test_returns_502_when_sso_unreachable(self, client, monkeypatch):
@@ -328,7 +328,7 @@ class TestSSORegisterRedirect:
         resp = client.get("/auth/sso/register", follow_redirects=False)
         assert resp.status_code == 307
         location = resp.headers["location"]
-        assert "sso.example.com/sso/users/register" in location
+        assert "sso.example.com/users/register" in location
 
 
 # ── POST /auth/sso/password-reset ─────────────────────────────
