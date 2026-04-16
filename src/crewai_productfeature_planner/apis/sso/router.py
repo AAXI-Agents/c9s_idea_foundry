@@ -178,7 +178,7 @@ async def sso_login(
         "state": state,
     })
 
-    authorize_url = f"{sso_base}/sso/oauth/authorize?{params}"
+    authorize_url = f"{sso_base}/oauth/authorize?{params}"
     return RedirectResponse(authorize_url)
 
 
@@ -223,7 +223,7 @@ async def sso_callback(
     try:
         async with httpx.AsyncClient(timeout=10.0) as ac:
             resp = await ac.post(
-                f"{sso_base}/sso/oauth/token",
+                f"{sso_base}/oauth/token",
                 json={
                     "grant_type": "authorization_code",
                     "code": code,
@@ -314,7 +314,7 @@ async def sso_direct_login(request: Request):
     payload = {**body, "client_id": client_id}
 
     return await _sso_proxy_post(
-        "/sso/auth/login",
+        "/auth/login",
         json=payload,
         label="Direct login",
     )
@@ -350,7 +350,7 @@ async def sso_login_verify_2fa(request: Request):
         )
 
     return await _sso_proxy_post(
-        "/sso/auth/login/verify-2fa",
+        "/auth/login/verify-2fa",
         json=body,
         label="Login verify-2fa",
     )
@@ -386,7 +386,7 @@ async def sso_google_login(request: Request):
         )
 
     return await _sso_proxy_post(
-        "/sso/auth/google",
+        "/auth/google",
         json=body,
         label="Google login",
     )
@@ -412,7 +412,7 @@ async def sso_register_redirect(
     sso_base = _sso_base_url()
     login_url = f"{_get_public_url()}/auth/sso/login?redirect_after={redirect_after}"
     params = urlencode({"redirect_uri": login_url})
-    return RedirectResponse(f"{sso_base}/sso/users/register?{params}")
+    return RedirectResponse(f"{sso_base}/users/register?{params}")
 
 
 @router.post(
@@ -449,7 +449,7 @@ async def sso_register_user(request: Request):
             body["app_id"] = app_id
 
     return await _sso_proxy_post(
-        "/sso/users/register",
+        "/users/register",
         json=body,
         label="Register",
     )
@@ -481,7 +481,7 @@ async def sso_register_verify_2fa(request: Request):
         )
 
     return await _sso_proxy_post(
-        "/sso/users/register/verify-2fa",
+        "/users/register/verify-2fa",
         json=body,
         label="Register verify-2fa",
     )
@@ -510,7 +510,7 @@ async def sso_register_resend_2fa(request: Request):
         return JSONResponse({"error": "email is required"}, status_code=400)
 
     return await _sso_proxy_post(
-        "/sso/users/register/resend-2fa",
+        "/users/register/resend-2fa",
         json=body,
         label="Register resend-2fa",
     )
@@ -642,7 +642,7 @@ async def sso_password_reset_request(request: Request):
         return JSONResponse({"error": "email is required"}, status_code=400)
 
     return await _sso_proxy_post(
-        "/sso/users/password-reset",
+        "/users/password-reset",
         json=body,
         label="Password-reset",
     )
@@ -674,7 +674,7 @@ async def sso_password_reset_confirm(request: Request):
         )
 
     return await _sso_proxy_post(
-        "/sso/users/password-reset/confirm",
+        "/users/password-reset/confirm",
         json=body,
         label="Password-reset confirm",
     )
@@ -714,7 +714,7 @@ async def sso_token_refresh(request: Request):
     payload = {**body, "client_id": client_id}
 
     return await _sso_proxy_post(
-        "/sso/auth/refresh",
+        "/auth/refresh",
         json=payload,
         label="Token refresh",
     )
@@ -753,7 +753,7 @@ async def sso_reauth(request: Request):
     auth_header = request.headers.get("authorization")
 
     return await _sso_proxy_post(
-        "/sso/auth/reauth",
+        "/auth/reauth",
         json=body,
         auth=auth_header,
         label="Reauth",
@@ -790,7 +790,7 @@ async def sso_reauth_verify_2fa(request: Request):
     auth_header = request.headers.get("authorization")
 
     return await _sso_proxy_post(
-        "/sso/auth/reauth/verify-2fa",
+        "/auth/reauth/verify-2fa",
         json=body,
         auth=auth_header,
         label="Reauth verify-2fa",
@@ -817,7 +817,7 @@ async def sso_logout(request: Request):
     auth_header = request.headers.get("authorization")
 
     return await _sso_proxy_post(
-        "/sso/auth/logout",
+        "/auth/logout",
         auth=auth_header,
         label="Logout",
     )
@@ -840,7 +840,7 @@ async def sso_logout_all(request: Request):
     auth_header = request.headers.get("authorization")
 
     return await _sso_proxy_post(
-        "/sso/auth/logout-all",
+        "/auth/logout-all",
         auth=auth_header,
         label="Logout-all",
     )

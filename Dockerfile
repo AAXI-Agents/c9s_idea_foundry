@@ -7,10 +7,11 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files first for layer caching
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 
-# Install production dependencies (including optional GCS support)
-RUN uv pip install --system ".[gcs]"
+# Export locked dependency versions and install them
+RUN uv export --frozen --no-dev --extra gcs --no-emit-project > requirements.txt \
+    && uv pip install --system -r requirements.txt
 
 # ── Stage 2: Runtime ───────────────────────────────────────────────────
 FROM python:3.12-slim
@@ -29,7 +30,7 @@ COPY knowledge/ knowledge/
 RUN mkdir -p output/prds logs
 
 # Non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser \
+RUN groupadd -r appuser && useradd -r -g appuser -m appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
@@ -45,7 +46,9 @@ ENV PORT=8000 \
     SERVER_ENV=PROD \
     # Python optimisations
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    # Make src/ importable without pip install -e
+    PYTHONPATH=/app/src
 
 # Health check — Cloud Run also probes this
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
