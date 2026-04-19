@@ -101,7 +101,7 @@ async def _fetch_and_save_public_key() -> str | None:
     1. **JWKS** (recommended) — ``GET /.well-known/jwks.json``.
        Converts the JWK RSA key to PEM format.  Supports key rotation
        via ``kid`` matching.
-    2. **PEM fallback** — ``GET /sso/oauth/public-key`` (or ``/sso/auth/public-key``).
+    2. **PEM fallback** — ``GET /oauth/public-key`` (or ``/auth/public-key``).
        Returns ``public_key_pem`` directly.
 
     Saves the PEM to ``SSO_JWT_PUBLIC_KEY_PATH`` and clears the LRU
@@ -190,10 +190,10 @@ async def _fetch_pem_directly(
     base_url: str,
     headers: dict[str, str],
 ) -> str | None:
-    """Fetch PEM from the ``/sso/oauth/public-key`` endpoint."""
+    """Fetch PEM from the ``/oauth/public-key`` endpoint."""
     try:
         resp = await client.get(
-            f"{base_url}/sso/oauth/public-key",
+            f"{base_url}/oauth/public-key",
             headers=headers,
         )
         if resp.status_code != 200:
@@ -268,7 +268,7 @@ def _get_sso_http_client() -> httpx.AsyncClient:
 
 
 async def _introspect_remotely(token: str) -> dict[str, Any] | None:
-    """Call the SSO service's ``/sso/oauth/introspect`` endpoint.
+    """Call the SSO service's ``/oauth/introspect`` endpoint.
 
     Returns the introspection dict on success (``active: True``),
     None on failure.  Authenticates using client credentials
@@ -287,7 +287,7 @@ async def _introspect_remotely(token: str) -> dict[str, Any] | None:
             payload["client_secret"] = client_secret
         headers: dict[str, str] = {"ngrok-skip-browser-warning": "true"}
         resp = await client.post(
-            f"{base_url}/sso/oauth/introspect",
+            f"{base_url}/oauth/introspect",
             json=payload,
             headers=headers,
         )
