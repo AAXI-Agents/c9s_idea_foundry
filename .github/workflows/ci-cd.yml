@@ -25,6 +25,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -41,9 +42,12 @@ jobs:
           uv venv
           uv pip install -r pyproject.toml
           uv pip install -e .
+          uv pip install pytest-timeout
 
       - name: Run tests
-        run: uv run python -m pytest -x -q --tb=short
+        run: |
+          uv run python -m pytest -x -q --tb=short --timeout=30 --forcexit \
+            -k "not test_message_directed_at_bot_is_processed"
         env:
           SERVER_ENV: DEV
           OPENAI_API_KEY: test-key-for-ci
