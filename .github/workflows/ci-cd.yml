@@ -46,7 +46,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run python -m pytest -x -q --tb=short --timeout=30 --forcexit \
+          uv run python -m pytest -x -q --tb=short --timeout=30 \
             -k "not test_message_directed_at_bot_is_processed"
         env:
           SERVER_ENV: DEV
