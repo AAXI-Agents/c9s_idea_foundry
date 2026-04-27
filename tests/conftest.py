@@ -22,8 +22,16 @@ these fixtures with their own patches.
    import time so every test (and the conftest import chain) succeeds.
 """
 
+import os as _os
 import sys as _sys
 _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 5000))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Force-exit in CI to prevent crewai background threads from hanging."""
+    if _os.environ.get("CI"):
+        _os._exit(exitstatus)
+
 
 import logging
 from logging.handlers import TimedRotatingFileHandler

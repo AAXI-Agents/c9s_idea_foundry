@@ -46,17 +46,8 @@ jobs:
 
       - name: Run tests
         run: |
-          # Run pytest with a wrapper that force-exits after completion.
-          # CrewAI spawns background embedding threads that prevent clean exit.
-          uv run python -c "
-          import subprocess, sys, os
-          result = subprocess.run(
-              [sys.executable, '-m', 'pytest', '-x', '-q', '--tb=short', '--timeout=30',
-               '-k', 'not test_message_directed_at_bot_is_processed'],
-              timeout=300,
-          )
-          os._exit(result.returncode)
-          "
+          uv run python -m pytest -x -q --tb=short --timeout=30 \
+            -k "not test_message_directed_at_bot_is_processed"
         env:
           SERVER_ENV: DEV
           OPENAI_API_KEY: test-key-for-ci
