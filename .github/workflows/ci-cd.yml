@@ -48,6 +48,7 @@ jobs:
           SERVER_ENV: DEV
           OPENAI_API_KEY: test-key-for-ci
           GOOGLE_API_KEY: test-key-for-ci
+          MONGODB_ATLAS_URI: mongodb+srv://ci:ci@localhost:27017/
 
   # ── Deploy ─────────────────────────────────────────────────────
   deploy:
