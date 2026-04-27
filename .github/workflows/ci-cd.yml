@@ -46,6 +46,8 @@ jobs:
         run: uv run python -m pytest -x -q --tb=short
         env:
           SERVER_ENV: DEV
+          OPENAI_API_KEY: test-key-for-ci
+          GOOGLE_API_KEY: test-key-for-ci
 
   # ── Deploy ─────────────────────────────────────────────────────
   deploy:
