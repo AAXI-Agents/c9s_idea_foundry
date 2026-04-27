@@ -1,0 +1,103 @@
+# ── GitHub Actions — CI/CD Pipeline ──────────────────────────────
+#
+# Runs tests on every push/PR, and deploys to GCP Cloud Run on
+# push to main.
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'crewai-489014' }}
+  REGION: ${{ vars.GCP_REGION || 'asia-southeast1' }}
+  SERVICE_NAME: ${{ vars.GCP_SERVICE_NAME || 'c9s-idea-foundry-api' }}
+
+jobs:
+  # ── Test ───────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install -r pyproject.toml
+          uv pip install -e .
+
+      - name: Run tests
+        run: uv run python -m pytest -x -q --tb=short
+        env:
+          SERVER_ENV: DEV
+
+  # ── Deploy ─────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Cloud Run
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --source . \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8000 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --timeout 300 \
+            --update-env-vars "MONGODB_ATLAS_URI=${{ secrets.MONGODB_ATLAS_URI_UAT }},MONGODB_DB=${{ vars.MONGODB_DB_UAT }},SERVER_ENV=UAT" \
+            --quiet
+
+      - name: Verify deployment
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --region ${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "Service URL: $URL"
+          for i in 1 2 3 4 5; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health" || echo "000")
+            if [ "${HTTP_CODE}" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt ${i}: HTTP ${HTTP_CODE} — retrying in 10s..."
+            sleep 10
+          done
+          echo "Health check failed!"
+          exit 1
