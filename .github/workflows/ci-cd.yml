@@ -42,11 +42,11 @@ jobs:
           uv venv
           uv pip install -r pyproject.toml
           uv pip install -e .
-          uv pip install pytest-timeout
+          uv pip install pytest-timeout pytest-forcexit
 
       - name: Run tests
         run: |
-          uv run python -m pytest -x -q --tb=short --timeout=30 \
+          uv run python -m pytest -x -q --tb=short --timeout=30 --forcexit \
             -k "not test_message_directed_at_bot_is_processed"
         env:
           SERVER_ENV: DEV
