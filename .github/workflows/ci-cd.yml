@@ -43,8 +43,16 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run python -m pytest -x -q --tb=short --timeout=30 \
+          set +e
+          timeout 300 uv run python -m pytest -x -v --tb=short \
+            --timeout=30 --timeout-method=thread \
             -k "not test_message_directed_at_bot_is_processed"
+          code=$?
+          if [ "$code" -eq 124 ]; then
+            echo "::error::Tests timed out after 300s"
+            exit 1
+          fi
+          exit $code
         env:
           SERVER_ENV: DEV
           OPENAI_API_KEY: test-key-for-ci
