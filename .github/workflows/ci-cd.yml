@@ -43,7 +43,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run python -m pytest -x --tb=short \
+          uv run python -m pytest -x -v --tb=short \
             --timeout=30 --timeout-method=thread \
             -k "not test_message_directed_at_bot_is_processed"
         env:

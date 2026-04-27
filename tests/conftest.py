@@ -26,11 +26,21 @@ import os as _os
 import sys as _sys
 _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 5000))
 
+# Store exit status so atexit handler can use it
+_ci_exit_status = None
+
 
 def pytest_sessionfinish(session, exitstatus):
-    """Force-exit in CI to prevent crewai background threads from hanging."""
+    """Record exit status for the atexit handler."""
+    global _ci_exit_status
     if _os.environ.get("CI"):
-        _os._exit(exitstatus)
+        _ci_exit_status = exitstatus
+
+
+def pytest_unconfigure(config):
+    """Force-exit in CI after all reporting is done to prevent background thread hangs."""
+    if _ci_exit_status is not None:
+        _os._exit(_ci_exit_status)
 
 
 import logging
@@ -173,6 +183,16 @@ def _no_real_async_mongodb():
         yield mock_async_db
     # Reset singleton
     _async_mongo_client._async_client = None
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_real_slack():
+    """Return a mock Slack client so the circuit breaker in
+    ``_handle_thread_message`` does not block tests that lack a token."""
+    import crewai_productfeature_planner.tools.slack_tools as _slack_tools
+    mock_client = MagicMock()
+    with patch.object(_slack_tools, "_get_slack_client", return_value=mock_client):
+        yield mock_client
 
 
 @pytest.fixture(autouse=True)
