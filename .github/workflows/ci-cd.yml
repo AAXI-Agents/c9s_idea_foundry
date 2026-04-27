@@ -42,12 +42,21 @@ jobs:
           uv venv
           uv pip install -r pyproject.toml
           uv pip install -e .
-          uv pip install pytest-timeout pytest-forcexit
+          uv pip install pytest-timeout
 
       - name: Run tests
         run: |
-          uv run python -m pytest -x -q --tb=short --timeout=30 --forcexit \
-            -k "not test_message_directed_at_bot_is_processed"
+          # Run pytest with a wrapper that force-exits after completion.
+          # CrewAI spawns background embedding threads that prevent clean exit.
+          uv run python -c "
+          import subprocess, sys, os
+          result = subprocess.run(
+              [sys.executable, '-m', 'pytest', '-x', '-q', '--tb=short', '--timeout=30',
+               '-k', 'not test_message_directed_at_bot_is_processed'],
+              timeout=300,
+          )
+          os._exit(result.returncode)
+          "
         env:
           SERVER_ENV: DEV
           OPENAI_API_KEY: test-key-for-ci
