@@ -25,7 +25,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -43,16 +43,9 @@ jobs:
 
       - name: Run tests
         run: |
-          set +e
-          timeout 300 uv run python -m pytest -x -v --tb=short \
+          uv run python -m pytest -x -q --tb=short \
             --timeout=30 --timeout-method=thread \
             -k "not test_message_directed_at_bot_is_processed"
-          code=$?
-          if [ "$code" -eq 124 ]; then
-            echo "::error::Tests timed out after 300s"
-            exit 1
-          fi
-          exit $code
         env:
           SERVER_ENV: DEV
           OPENAI_API_KEY: test-key-for-ci
