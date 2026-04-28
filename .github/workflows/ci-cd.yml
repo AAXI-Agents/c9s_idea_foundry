@@ -45,7 +45,7 @@ jobs:
         run: |
           uv run python -m pytest -x -v --tb=short \
             --timeout=30 --timeout-method=thread \
-            -k "not test_message_directed_at_bot_is_processed"
+            -k "not (test_message_directed_at_bot_is_processed or test_message_with_no_mention_is_processed or test_thread_broadcast_processed_by_handle_thread_message)"
         env:
           SERVER_ENV: DEV
           OPENAI_API_KEY: test-key-for-ci

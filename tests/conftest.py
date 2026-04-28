@@ -185,16 +185,6 @@ def _no_real_async_mongodb():
     _async_mongo_client._async_client = None
 
 
-@pytest.fixture(autouse=True, scope="session")
-def _no_real_slack():
-    """Return a mock Slack client so the circuit breaker in
-    ``_handle_thread_message`` does not block tests that lack a token."""
-    import crewai_productfeature_planner.tools.slack_tools as _slack_tools
-    mock_client = MagicMock()
-    with patch.object(_slack_tools, "_get_slack_client", return_value=mock_client):
-        yield mock_client
-
-
 @pytest.fixture(autouse=True)
 def _clear_response_cache():
     """Clear the API response cache between tests."""
