@@ -22,8 +22,26 @@ these fixtures with their own patches.
    import time so every test (and the conftest import chain) succeeds.
 """
 
+import os as _os
 import sys as _sys
 _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 5000))
+
+# Store exit status so atexit handler can use it
+_ci_exit_status = None
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Record exit status for the atexit handler."""
+    global _ci_exit_status
+    if _os.environ.get("CI"):
+        _ci_exit_status = exitstatus
+
+
+def pytest_unconfigure(config):
+    """Force-exit in CI after all reporting is done to prevent background thread hangs."""
+    if _ci_exit_status is not None:
+        _os._exit(_ci_exit_status)
+
 
 import logging
 from logging.handlers import TimedRotatingFileHandler
