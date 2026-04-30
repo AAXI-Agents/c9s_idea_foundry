@@ -84,10 +84,13 @@ def build_confluence_publish_stage(flow: "PRDFlow") -> AgentStage:
 
         logger.info(
             "[ConfluencePublish] Publishing PRD to Confluence: '%s'"
-            " (project space_key=%s, existing_page_id=%s)",
+            " (project space_key=%s, existing_page_id=%s,"
+            " enterprise_id=%s, organization_id=%s)",
             title,
             ctx_space or "<env>",
             existing_page_id or "<new>",
+            pc.get("enterprise_id", ""),
+            pc.get("organization_id", ""),
         )
         with confluence_project_context(
             space_key=ctx_space, parent_id=ctx_parent,

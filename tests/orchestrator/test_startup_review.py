@@ -61,6 +61,36 @@ class TestDiscoverPublishablePrds:
         assert items[0]["source"] == "mongodb"
         assert items[0]["title"] == "Feature A"
 
+    @patch(_ASSEMBLE, return_value="# PRD\n\nContent")
+    @patch(_FIND_NO_CONF)
+    def test_returns_tenant_fields_from_mongodb_docs(self, mock_find, _assemble):
+        """Discovered items include enterprise_id/organization_id from the document."""
+        mock_find.return_value = [
+            {
+                "run_id": "run-t1",
+                "idea": "Tenant Feature",
+                "output_file": "",
+                "enterprise_id": "ent-123",
+                "organization_id": "org-456",
+            },
+        ]
+        items = _discover_publishable_prds()
+        assert len(items) == 1
+        assert items[0]["enterprise_id"] == "ent-123"
+        assert items[0]["organization_id"] == "org-456"
+
+    @patch(_ASSEMBLE, return_value="# PRD\n\nContent")
+    @patch(_FIND_NO_CONF)
+    def test_tenant_fields_default_empty_when_missing(self, mock_find, _assemble):
+        """Tenant fields default to empty string when not present on document."""
+        mock_find.return_value = [
+            {"run_id": "run-old", "idea": "Legacy", "output_file": ""},
+        ]
+        items = _discover_publishable_prds()
+        assert len(items) == 1
+        assert items[0]["enterprise_id"] == ""
+        assert items[0]["organization_id"] == ""
+
     @patch(_ASSEMBLE, return_value="")
     @patch(_FIND_NO_CONF)
     def test_skips_docs_with_no_content(self, mock_find, _assemble):

@@ -14,6 +14,7 @@ from crewai_productfeature_planner.apis.ideas.models import (
     idea_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -35,7 +36,8 @@ async def update_idea_status(run_id: str, body: IdeaStatusUpdate, user: dict = D
         mark_paused,
     )
 
-    doc = find_run_any_status(run_id)
+    tenant = TenantContext.from_user(user)
+    doc = find_run_any_status(run_id, tenant=tenant)
     if not doc:
         logger.warning("[Ideas] Not found for status update run_id=%s", run_id)
         raise HTTPException(
@@ -68,5 +70,5 @@ async def update_idea_status(run_id: str, body: IdeaStatusUpdate, user: dict = D
     elif body.status == "paused":
         mark_paused(run_id)
 
-    updated = find_run_any_status(run_id)
+    updated = find_run_any_status(run_id, tenant=tenant)
     return IdeaItem(**idea_fields(updated or doc))

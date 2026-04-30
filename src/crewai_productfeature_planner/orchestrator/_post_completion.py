@@ -94,6 +94,14 @@ def build_post_completion_crew(
             ctx_key,
         )
 
+    logger.info(
+        "[PostCompletion] Building delivery crew for run_id=%s "
+        "enterprise_id=%s organization_id=%s",
+        flow.state.run_id,
+        pc.get("enterprise_id", ""),
+        pc.get("organization_id", ""),
+    )
+
     # Determine what needs delivery
     confluence_done = bool(getattr(flow.state, "confluence_url", ""))
     jira_done = bool(getattr(flow.state, "jira_output", ""))

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from crewai_productfeature_planner.apis.ideas.models import IdeaItem, idea_fields
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +28,8 @@ async def get_idea(run_id: str, user: dict = Depends(require_sso_user)) -> IdeaI
     )
 
     logger.info("[Ideas] GET run_id=%s user_id=%s", run_id, user.get("user_id"))
-    doc = find_run_any_status(run_id)
+    tenant = TenantContext.from_user(user)
+    doc = find_run_any_status(run_id, tenant=tenant)
     if not doc:
         logger.warning("[Ideas] Not found run_id=%s", run_id)
         raise HTTPException(

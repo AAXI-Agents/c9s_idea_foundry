@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -76,7 +77,8 @@ async def get_run_versions(
         find_run_any_status,
     )
 
-    idea_doc = find_run_any_status(run_id)
+    tenant = TenantContext.from_user(user)
+    idea_doc = find_run_any_status(run_id, tenant=tenant)
     if idea_doc is None:
         raise HTTPException(status_code=404, detail="Run not found")
 

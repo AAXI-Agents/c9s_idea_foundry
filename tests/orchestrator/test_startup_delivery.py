@@ -453,6 +453,46 @@ class TestDiscoverPendingDeliveries:
         assert len(items) == 1
         assert items[0]["run_id"] == "r1"
 
+    @patch(f"{_MOD}._has_jira_credentials", return_value=True)
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_items_include_tenant_fields(self, mock_db, _rec, _asm, _jira):
+        """Discovered items include enterprise_id/organization_id from the document."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r1",
+                "status": "completed",
+                "idea": "Tenant feature",
+                "enterprise_id": "ent-AAA",
+                "organization_id": "org-BBB",
+                "executive_summary": [{"content": "ES", "iteration": 1}],
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert len(items) == 1
+        assert items[0]["enterprise_id"] == "ent-AAA"
+        assert items[0]["organization_id"] == "org-BBB"
+
+    @patch(f"{_MOD}._has_jira_credentials", return_value=True)
+    @patch(_ASSEMBLE, return_value="# PRD content")
+    @patch(_GET_REC, return_value=None)
+    @patch(_GET_DB)
+    def test_tenant_fields_default_empty_for_legacy_docs(self, mock_db, _rec, _asm, _jira):
+        """Legacy documents without tenant fields get empty strings."""
+        mock_db.return_value = _mock_db_with_docs([
+            {
+                "run_id": "r-old",
+                "status": "completed",
+                "idea": "Legacy",
+                "executive_summary": [{"content": "ES", "iteration": 1}],
+            },
+        ])
+        items = _discover_pending_deliveries()
+        assert len(items) == 1
+        assert items[0]["enterprise_id"] == ""
+        assert items[0]["organization_id"] == ""
+
 
 # ── build_startup_delivery_crew ──────────────────────────────────────
 

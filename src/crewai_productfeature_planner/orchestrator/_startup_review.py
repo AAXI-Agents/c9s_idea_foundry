@@ -57,12 +57,21 @@ def _discover_publishable_prds() -> list[dict]:
             output_file = doc.get("output_file", "")
             if output_file:
                 seen_files.add(output_file)
+            ent_id = doc.get("enterprise_id", "")
+            org_id = doc.get("organization_id", "")
+            logger.debug(
+                "[StartupMarkdownReview] Discovered PRD run_id=%s "
+                "enterprise_id=%s organization_id=%s",
+                run_id, ent_id, org_id,
+            )
             items.append({
                 "run_id": run_id,
                 "title": make_page_title(doc.get("idea")),
                 "content": content,
                 "source": "mongodb",
                 "output_file": output_file,
+                "enterprise_id": ent_id,
+                "organization_id": org_id,
             })
     except Exception as exc:
         logger.warning(
@@ -166,11 +175,24 @@ def build_startup_markdown_review_stage() -> AgentStage:
             )
             return True
         _ctx["items"] = items
-        logger.info(
-            "[StartupMarkdownReview] Found %d unpublished PRD(s) — "
-            "awaiting user-triggered publish",
-            len(items),
+
+        # Log tenant distribution for audit trail.
+        from collections import Counter
+        tenant_counts = Counter(
+            (i.get("enterprise_id", ""), i.get("organization_id", ""))
+            for i in items
         )
+        logger.info(
+            "[StartupMarkdownReview] Found %d unpublished PRD(s) "
+            "across %d tenant(s) — awaiting user-triggered publish",
+            len(items), len(tenant_counts),
+        )
+        for (ent, org), count in tenant_counts.items():
+            logger.debug(
+                "[StartupMarkdownReview]   enterprise_id=%s "
+                "organization_id=%s: %d PRD(s)",
+                ent or "<none>", org or "<none>", count,
+            )
         return True  # Always skip execution — discovery is logged only
 
     def _run() -> StageResult:

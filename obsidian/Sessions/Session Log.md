@@ -9,6 +9,37 @@ tags:
 
 ---
 
+## Session — 2026-04-16 (v0.72.2)
+
+**Focus**: Multi-tenancy Phase 5 — Background process tenant scoping
+
+### Changes Applied
+Completed the final phase (Phase 5) of the multi-tenancy data isolation gap ticket. All 4 orchestrator background process files now include tenant context logging for audit trails:
+
+1. **`_startup_review.py`** — Discovered PRD items include `enterprise_id`/`organization_id` from the source document. Tenant distribution summary logged at INFO level. Per-item tenant logged at DEBUG level.
+2. **`_startup_delivery.py`** — Pending delivery items include tenant fields. Tenant distribution summary logged. Crew builder logs tenant context when building agent teams.
+3. **`_post_completion.py`** — Logs tenant context (from project config) when building post-completion delivery crew.
+4. **`_confluence.py`** — Confluence publish log messages include tenant context from project config.
+
+### Tests
+- 4 new tests: tenant field propagation in `test_startup_review.py` (2 tests) and `test_startup_delivery.py` (2 tests)
+- All 182 orchestrator tests pass
+
+### Files Changed
+- `orchestrator/_startup_review.py` — tenant fields in items + distribution logging
+- `orchestrator/_startup_delivery.py` — tenant fields in items + distribution logging + crew builder logging
+- `orchestrator/_post_completion.py` — tenant context logging
+- `orchestrator/_confluence.py` — tenant context in publish logging
+- `tests/orchestrator/test_startup_review.py` — 2 new tests
+- `tests/orchestrator/test_startup_delivery.py` — 2 new tests
+- `version.py` — v0.72.2
+
+### Gap Ticket
+- `GAP-multi-tenancy-data-isolation.md` → status: resolved, archived to User Feedback Archive/
+- `QUESTIONS-multi-tenancy-design.md` → archived to User Feedback Archive/
+
+---
+
 ## Session — 2026-04-15 (v0.72.0)
 
 **Focus**: Multi-tenancy data isolation — Implementation Phase 1

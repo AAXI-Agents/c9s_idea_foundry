@@ -176,6 +176,13 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
             (record.get("confluence_url") if record else "")
             or doc.get("confluence_url", "")
         )
+        ent_id = doc.get("enterprise_id", "")
+        org_id = doc.get("organization_id", "")
+        logger.debug(
+            "[StartupDelivery] Pending delivery run_id=%s "
+            "enterprise_id=%s organization_id=%s",
+            run_id, ent_id, org_id,
+        )
         items.append({
             "run_id": run_id,
             "idea": doc.get("idea", "PRD"),
@@ -187,7 +194,28 @@ def _discover_pending_deliveries() -> list[DeliveryItem]:
             "finalized_idea": finalized_idea,
             "func_reqs": func_reqs,
             "doc": doc,
+            "enterprise_id": ent_id,
+            "organization_id": org_id,
         })
+
+    # Log tenant distribution for audit trail.
+    if items:
+        from collections import Counter
+        tenant_counts = Counter(
+            (i.get("enterprise_id", ""), i.get("organization_id", ""))
+            for i in items
+        )
+        logger.info(
+            "[StartupDelivery] Found %d pending delivery item(s) "
+            "across %d tenant(s)",
+            len(items), len(tenant_counts),
+        )
+        for (ent, org), count in tenant_counts.items():
+            logger.debug(
+                "[StartupDelivery]   enterprise_id=%s "
+                "organization_id=%s: %d item(s)",
+                ent or "<none>", org or "<none>", count,
+            )
 
     return items
 
@@ -254,6 +282,14 @@ def build_startup_delivery_crew(
     run_id = item["run_id"]
     page_title = make_page_title(item["idea"])
     task_configs = get_task_configs()
+
+    logger.info(
+        "[StartupDelivery] Building delivery crew for run_id=%s "
+        "enterprise_id=%s organization_id=%s",
+        run_id,
+        item.get("enterprise_id", ""),
+        item.get("organization_id", ""),
+    )
 
     # ── Set project-level Jira key override (if configured) ────
     from crewai_productfeature_planner.mongodb.project_config import (

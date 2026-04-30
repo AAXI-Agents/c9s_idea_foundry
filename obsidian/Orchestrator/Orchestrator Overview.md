@@ -55,6 +55,15 @@ paths (no user interaction). Jira ticket creation requires the phased
 approval flow. See [[Coding Standards]] §6 and
 `tests/flows/test_jira_approval_gate.py`.
 
+### Multi-Tenancy (v0.72.2)
+
+Background processes use **Global Scan + Tenant-Scoped Processing**:
+- Discovery functions scan globally (no tenant filter)
+- Discovered items carry `enterprise_id`/`organization_id` from the source document
+- Tenant distribution is logged at INFO level for audit trails
+- Per-item tenant context logged at DEBUG level
+- Crew builders log tenant context when building agent teams
+
 ## When to Load Which File
 
 | Task | File(s) |

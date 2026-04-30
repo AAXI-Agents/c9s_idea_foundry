@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -66,7 +67,7 @@ def _iso(val) -> str:
     return str(val)
 
 
-def _build_timeline(run_id: str, limit: int) -> list[TimelineEvent]:
+def _build_timeline(run_id: str, limit: int, *, tenant: TenantContext | None = None) -> list[TimelineEvent]:
     """Query all three collections and merge into a sorted timeline."""
     from crewai_productfeature_planner.mongodb.agent_interactions import (
         find_interactions,
@@ -82,7 +83,7 @@ def _build_timeline(run_id: str, limit: int) -> list[TimelineEvent]:
     events: list[TimelineEvent] = []
 
     # ── Working idea events ───────────────────────────────────────
-    idea_doc = find_run_any_status(run_id)
+    idea_doc = find_run_any_status(run_id, tenant=tenant)
     if idea_doc:
         # Idea submission
         events.append(TimelineEvent(
@@ -240,12 +241,13 @@ async def get_run_timeline(
         find_run_any_status,
     )
 
-    idea_doc = find_run_any_status(run_id)
+    tenant = TenantContext.from_user(user)
+    idea_doc = find_run_any_status(run_id, tenant=tenant)
     if idea_doc is None:
         raise HTTPException(status_code=404, detail="Run not found")
 
     try:
-        events = _build_timeline(run_id, limit=limit)
+        events = _build_timeline(run_id, limit=limit, tenant=tenant)
     except Exception as exc:
         logger.error(
             "[Timeline] Failed to build timeline for run_id=%s: %s",

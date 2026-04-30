@@ -3626,6 +3626,24 @@ _CODEX: list[CodexEntry] = [
             "All 48 SSO tests pass."
         ),
     ),
+    CodexEntry(
+        version="0.72.2",
+        date=date(2026, 4, 16),
+        summary=(
+            "Multi-tenancy Phase 5 — background process tenant scoping. "
+            "Added tenant context logging (enterprise_id, organization_id) "
+            "to all 4 orchestrator background process files: "
+            "_startup_review.py (discovered PRDs include tenant fields, "
+            "tenant distribution summary logged), _startup_delivery.py "
+            "(pending deliveries include tenant fields, per-tenant audit "
+            "logging, crew builder logs tenant context), "
+            "_post_completion.py (logs tenant from project config), "
+            "_confluence.py (logs tenant in publish messages). "
+            "Added 4 new tests for tenant field propagation in "
+            "startup_review and startup_delivery. "
+            "All 182 orchestrator tests pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

@@ -736,7 +736,9 @@ def find_completed_ideas_by_project(
         return []
 
 
-def find_run_any_status(run_id: str) -> dict[str, Any] | None:
+def find_run_any_status(
+    run_id: str, *, tenant: TenantContext | None = None
+) -> dict[str, Any] | None:
     """Fetch a working-idea document by *run_id* regardless of status.
 
     Unlike :func:`get_run_documents` this does **not** exclude
@@ -747,9 +749,12 @@ def find_run_any_status(run_id: str) -> dict[str, Any] | None:
     """
     try:
         db = _common.get_db()
-        doc = db[WORKING_COLLECTION].find_one(
-            {"run_id": run_id, "status": {"$ne": "archived"}}
-        )
+        query: dict[str, Any] = {
+            "run_id": run_id,
+            "status": {"$ne": "archived"},
+            **tenant_filter(tenant),
+        }
+        doc = db[WORKING_COLLECTION].find_one(query)
         if doc is None:
             logger.info("[MongoDB] No document (any status) for run_id=%s", run_id)
         return doc

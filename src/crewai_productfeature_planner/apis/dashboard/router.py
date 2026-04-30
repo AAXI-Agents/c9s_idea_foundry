@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from pymongo.errors import PyMongoError
 
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
 from crewai_productfeature_planner.mongodb.working_ideas import _common
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
@@ -74,9 +75,12 @@ async def get_dashboard_stats(
         db = _common.get_db()
         coll = db[WORKING_COLLECTION]
 
+        tenant = TenantContext.from_user(user)
+        t_filter = tenant_filter(tenant)
+
         # Single aggregation pipeline for all counts.
         pipeline = [
-            {"$match": {"status": {"$ne": "archived"}}},
+            {"$match": {"status": {"$ne": "archived"}, **t_filter}},
             {
                 "$group": {
                     "_id": None,
