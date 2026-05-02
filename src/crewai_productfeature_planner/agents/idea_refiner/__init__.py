@@ -1,10 +1,11 @@
-"""Gemini-powered Idea Refinement agent module.
+"""Idea Refiner module — DEPRECATED, use idea_manager instead.
 
-This agent acts as an industry-expert user to iteratively refine a raw
-product idea before PRD generation begins.
+This module re-exports from the consolidated Idea Manager agent for
+backward compatibility.  All new code should import from
+``crewai_productfeature_planner.agents.idea_manager``.
 """
 
-from crewai_productfeature_planner.agents.idea_refiner.agent import (
+from crewai_productfeature_planner.agents.idea_manager import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MIN_ITERATIONS,
     OptionsCallback,

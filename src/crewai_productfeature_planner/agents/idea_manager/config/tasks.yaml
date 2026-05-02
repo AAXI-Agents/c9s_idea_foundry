@@ -1,0 +1,182 @@
+# ── Idea Refinement Tasks ─────────────────────────────────────
+
+refine_idea_task:
+  description: >
+    You are an industry expert reviewing a product feature idea.
+
+    ## The Idea (current version)
+    {idea}
+
+    ## Your Task
+    1. **Identify the industry / domain** this idea belongs to (e.g.,
+       FinTech, HealthTech, E-commerce, Developer Tools, etc.).
+    2. **Adopt the persona** of a demanding but constructive expert
+       user or stakeholder in that industry.
+    3. **Probe the idea** — ask 3-5 hard questions a real user would
+       ask (who benefits, what pain-point, competitive gap, risks,
+       regulatory concerns, scalability, etc.).
+    4. **Answer those questions yourself** using your domain expertise,
+       adding concrete details, data points, and real-world context.
+    5. **Produce a refined version** of the idea that incorporates
+       all the additional detail and context you uncovered.
+
+    The refined idea should be a self-contained, richly detailed
+    description — not a list of Q&As.  Write it as if you are
+    explaining the idea to a Product Manager who will build a PRD.
+
+    This is iteration {iteration} of {max_iterations}.
+    {previous_feedback}
+  expected_output: >
+    A refined and enriched description of the product idea (400-800
+    words) that includes concrete details about the target market,
+    user pain-points, competitive landscape, key features, and
+    success criteria.  Written in clear, professional prose — NOT
+    bullet-point fragments.
+
+evaluate_quality_task:
+  description: >
+    Evaluate whether the following refined product idea is detailed
+    and specific enough to serve as the foundation for a comprehensive
+    Product Requirements Document (PRD).
+
+    ## Refined Idea
+    {refined_idea}
+
+    ## Evaluation Criteria
+    Rate each criterion 1-5:
+    1. **Target audience clarity** — Is it clear WHO this is for?
+    2. **Problem definition** — Is the pain-point well-articulated?
+    3. **Solution specificity** — Are key features described concretely?
+    4. **Competitive context** — Is differentiation addressed?
+    5. **Success criteria** — Are measurable outcomes mentioned?
+
+    ## Decision Rules
+    - All five criteria must score >= 3 for READY.
+    - If this is iteration {iteration} of {max_iterations} and
+      iteration >= {min_iterations}, lean towards READY unless the
+      idea is clearly inadequate.
+
+    End your evaluation with exactly one of:
+      IDEA_READY  — the idea is rich enough for PRD generation.
+      NEEDS_MORE  — provide 2-3 specific improvements needed.
+  expected_output: >
+    A brief evaluation (100-200 words) with scores for each criterion,
+    followed by exactly IDEA_READY or NEEDS_MORE on the final line.
+
+generate_alternatives_task:
+  description: >
+    Based on the current refined idea, generate 3 distinct alternative
+    directions for the product. Each alternative should explore a
+    meaningfully different strategic angle.
+
+    ## Current Refined Idea
+    {idea}
+
+    ## Your Task
+    1. Identify the core value proposition in the current idea.
+    2. Generate 3 distinct alternatives, each with a clear
+       differentiating theme (e.g. "Enterprise-focused",
+       "Consumer-first", "Platform/API approach").
+    3. Each alternative should be 150-250 words.
+    4. Highlight the key trade-off vs the current direction.
+
+    Present all 3 as numbered options:
+    OPTION 1: <title>
+    <description>
+
+    OPTION 2: <title>
+    <description>
+
+    OPTION 3: <title>
+    <description>
+  expected_output: >
+    Three distinct product direction alternatives, each 150-250 words,
+    clearly numbered as OPTION 1, OPTION 2, OPTION 3 and differentiated
+    by strategic theme.
+
+# ── Idea Query / Advisory Tasks ───────────────────────────────
+
+idea_query_task:
+  description: >
+    A user is asking a question or providing feedback during an active
+    product idea iteration.  You have access to the full iteration
+    state.  Your job is to answer their question accurately and, when
+    appropriate, provide a recommendation that can steer the next
+    iteration.
+
+    ## User Message
+    {user_message}
+
+    ## Conversation History
+    {conversation_history}
+
+    ## Current Iteration State
+
+    ### Status & Progress
+    {status_summary}
+
+    ### Current Refined Idea
+    {current_idea}
+
+    ### Iteration History (Idea Refinement)
+    {refinement_history}
+
+    ### Executive Summary
+    {executive_summary}
+
+    ### Requirements Breakdown
+    {requirements_breakdown}
+
+    ### Engineering Plan
+    {engineering_plan}
+
+    ### Completed PRD Sections
+    {completed_sections}
+
+    ### Active Critiques / Feedback
+    {active_critiques}
+
+    ## Your Task
+
+    1. **Answer the user's question** directly using the iteration data
+       above.  Be specific — quote from the actual content when it helps.
+
+    2. **Identify the user's intent:**
+       - *Information request* — they want to know what's been produced
+         (e.g. "what's the current summary?", "show me the requirements")
+       - *Steering feedback* — they want to influence the next iteration
+         (e.g. "add mobile support", "focus more on security")
+       - *Gap analysis* — they want to know what's missing or weak
+         (e.g. "what's left?", "any issues?")
+
+    3. **For steering feedback**, produce a structured recommendation:
+       - What specific change the user wants
+       - Which agent(s) should incorporate it (Idea Manager, Product
+         Manager, Engineering Manager, etc.)
+       - How it affects the current iteration phase
+       - A concise instruction that can be appended to the next
+         agent's context
+
+    4. **For gap analysis**, scan the iteration state and identify:
+       - Sections with weak or missing content
+       - Inconsistencies between sections
+       - Missing user personas, edge cases, or requirements
+       - Success metrics that don't align with the problem statement
+
+    Keep your response concise but comprehensive.  Use bullet points
+    and bold text.  Never suggest typing a command.
+
+  expected_output: >
+    A clear, structured response that:
+    - Directly answers the user's question with specific data from the
+      iteration state
+    - When the user provides steering feedback, includes a
+      "## Steering Recommendation" section with:
+      - **Target agent**: Which agent should incorporate the feedback
+      - **Instruction**: A concise directive for the agent
+      - **Impact**: How this changes the iteration direction
+    - When performing gap analysis, includes a "## Gaps & Recommendations"
+      section with prioritised items
+
+    Format: Use Slack-compatible markdown (bold with *, bullet with -).
+    Keep the total response under 2000 characters for readability.

@@ -1,11 +1,11 @@
-"""Idea Agent module — in-thread analyst for active idea iterations.
+"""Idea Agent module — DEPRECATED, use idea_manager instead.
 
-Routes user questions about in-progress ideas to a context-aware agent
-that can answer with specific iteration data and produce steering
-recommendations for downstream agents.
+This module re-exports from the consolidated Idea Manager agent for
+backward compatibility.  All new code should import from
+``crewai_productfeature_planner.agents.idea_manager``.
 """
 
-from crewai_productfeature_planner.agents.idea_agent.agent import (
+from crewai_productfeature_planner.agents.idea_manager import (
     create_idea_agent,
     extract_steering_feedback,
     handle_idea_query,

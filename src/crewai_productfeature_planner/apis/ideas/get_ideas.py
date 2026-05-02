@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from crewai_productfeature_planner.apis._response_cache import response_cache
+from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
 from crewai_productfeature_planner.apis.ideas.models import (
     IDEA_LIST_PROJECTION,
     IdeaItem,
@@ -25,7 +26,7 @@ from crewai_productfeature_planner.apis.ideas.models import (
     idea_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
-from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
+from crewai_productfeature_planner.mongodb._tenant import tenant_filter
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -47,6 +48,17 @@ async def list_ideas(
         alias="status",
         description="Filter by status (inprogress, completed, paused, failed, archived)",
     ),
+    include_archived: bool = Query(
+        default=False,
+        description=(
+            "Include archived ideas in the result. Defaults to False so that "
+            "user-archived ('deleted') ideas do not reappear in the dashboard."
+        ),
+    ),
+    organization_id: str | None = Query(
+        default=None,
+        description="Filter by organization (enterprise admins only)",
+    ),
     user: dict = Depends(require_sso_user),
 ) -> IdeaListResponse:
     """Return a paginated list of ideas, newest first."""
@@ -65,7 +77,9 @@ async def list_ideas(
 
     # ── Check response cache ──────────────────────────────────
     cache_params = dict(page=page, page_size=page_size,
-                        project_id=project_id, status=idea_status)
+                        project_id=project_id, status=idea_status,
+                        include_archived=include_archived,
+                        organization_id=organization_id)
     cached = response_cache.get("ideas", **cache_params)
     if cached is not None:
         logger.debug("[Ideas] cache hit for page=%d size=%d", page, page_size)
@@ -80,14 +94,23 @@ async def list_ideas(
     db = get_async_db()
     coll = db[WORKING_COLLECTION]
 
-    tenant = TenantContext.from_user(user)
+    tenant = resolve_tenant_context(user, organization_id)
     t_filter = tenant_filter(tenant)
 
     query: dict[str, Any] = {**t_filter}
     if project_id:
         query["project_id"] = project_id
     if idea_status:
+        # Explicit status filter wins — caller can opt in to deleted/archived/failed/completed.
         query["status"] = idea_status
+    elif not include_archived:
+        # Default behaviour: hide terminal-state ideas from the dashboard.
+        # 'deleted' is the user-facing soft-delete (DELETE /ideas/{id}) and
+        # must NEVER appear in the default dashboard listing. 'archived' is
+        # the internal restart-PRD state. 'failed' is terminated state the
+        # user already saw. 'completed' means a PRD has been generated —
+        # these ideas no longer need attention in the active list.
+        query["status"] = {"$nin": ["deleted", "archived", "failed", "completed"]}
 
     skip = (page - 1) * page_size
     total = await coll.count_documents(query)

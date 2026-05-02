@@ -87,7 +87,9 @@ def _human_duration(ms: int) -> str:
 # ── queries (early – used by create_job guard) ───────────────
 
 
-def find_active_job() -> dict[str, Any] | None:
+def find_active_job(
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
     """Return the single incomplete job, if any.
 
     An *active* job is one whose status is in ``queued``, ``running``,
@@ -98,9 +100,11 @@ def find_active_job() -> dict[str, Any] | None:
         The active job document, or ``None``.
     """
     try:
-        return get_db()[CREW_JOBS_COLLECTION].find_one(
-            {"status": {"$in": _INCOMPLETE_STATUSES}}
-        )
+        query: dict[str, Any] = {
+            "status": {"$in": _INCOMPLETE_STATUSES},
+            **tenant_filter(tenant),
+        }
+        return get_db()[CREW_JOBS_COLLECTION].find_one(query)
     except PyMongoError as exc:
         logger.error("[CrewJobs] Failed to query active job: %s", exc)
         return None
@@ -179,12 +183,18 @@ def create_job(
 # ── status transitions ───────────────────────────────────────
 
 
-def update_job_status(job_id: str, status: str, **extra: Any) -> bool:
+def update_job_status(
+    job_id: str,
+    status: str,
+    tenant: TenantContext | None = None,
+    **extra: Any,
+) -> bool:
     """Generic status update for a job.
 
     Args:
         job_id: The job identifier.
         status: New status value.
+        tenant: Optional tenant context for defense-in-depth.
         **extra: Additional fields to ``$set``.
 
     Returns:
@@ -196,8 +206,9 @@ def update_job_status(job_id: str, status: str, **extra: Any) -> bool:
         **extra,
     }
     try:
+        query: dict[str, Any] = {"job_id": job_id, **tenant_filter(tenant)}
         result = get_db()[CREW_JOBS_COLLECTION].update_one(
-            {"job_id": job_id},
+            query,
             {"$set": update_fields},
         )
         if result.modified_count:
@@ -208,7 +219,7 @@ def update_job_status(job_id: str, status: str, **extra: Any) -> bool:
         return False
 
 
-def update_job_started(job_id: str) -> bool:
+def update_job_started(job_id: str, tenant: TenantContext | None = None) -> bool:
     """Mark a job as ``running`` and record ``started_at``.
 
     Also computes ``queue_time_ms`` and ``queue_time_human`` from the
@@ -220,7 +231,8 @@ def update_job_started(job_id: str) -> bool:
     now = datetime.now(timezone.utc)
     try:
         db = get_db()
-        doc = db[CREW_JOBS_COLLECTION].find_one({"job_id": job_id})
+        query: dict[str, Any] = {"job_id": job_id, **tenant_filter(tenant)}
+        doc = db[CREW_JOBS_COLLECTION].find_one(query)
         if doc is None:
             logger.warning("[CrewJobs] Job %s not found for started update", job_id)
             return False
@@ -233,7 +245,7 @@ def update_job_started(job_id: str) -> bool:
             queue_time_human = _human_duration(queue_time_ms)
 
         result = db[CREW_JOBS_COLLECTION].update_one(
-            {"job_id": job_id},
+            query,
             {"$set": {
                 "status": "running",
                 "started_at": now,
@@ -253,7 +265,7 @@ def update_job_started(job_id: str) -> bool:
         return False
 
 
-def update_job_completed(job_id: str, status: str = "completed") -> bool:
+def update_job_completed(job_id: str, status: str = "completed", tenant: TenantContext | None = None) -> bool:
     """Mark a job as completed (or paused) and compute running duration.
 
     Computes ``running_time_ms`` and ``running_time_human`` from the
@@ -262,6 +274,7 @@ def update_job_completed(job_id: str, status: str = "completed") -> bool:
     Args:
         job_id: The job identifier.
         status: Terminal status — ``"completed"`` or ``"paused"``.
+        tenant: Optional tenant context for defense-in-depth.
 
     Returns:
         ``True`` if the document was updated.
@@ -269,7 +282,8 @@ def update_job_completed(job_id: str, status: str = "completed") -> bool:
     now = datetime.now(timezone.utc)
     try:
         db = get_db()
-        doc = db[CREW_JOBS_COLLECTION].find_one({"job_id": job_id})
+        query: dict[str, Any] = {"job_id": job_id, **tenant_filter(tenant)}
+        doc = db[CREW_JOBS_COLLECTION].find_one(query)
         if doc is None:
             logger.warning("[CrewJobs] Job %s not found for completed update", job_id)
             return False
@@ -282,7 +296,7 @@ def update_job_completed(job_id: str, status: str = "completed") -> bool:
             running_time_human = _human_duration(running_time_ms)
 
         result = db[CREW_JOBS_COLLECTION].update_one(
-            {"job_id": job_id},
+            query,
             {"$set": {
                 "status": status,
                 "completed_at": now,
@@ -302,7 +316,7 @@ def update_job_completed(job_id: str, status: str = "completed") -> bool:
         return False
 
 
-def update_job_failed(job_id: str, error: str) -> bool:
+def update_job_failed(job_id: str, error: str, tenant: TenantContext | None = None) -> bool:
     """Mark a job as ``failed`` with an error message and compute running duration.
 
     Returns:
@@ -311,7 +325,8 @@ def update_job_failed(job_id: str, error: str) -> bool:
     now = datetime.now(timezone.utc)
     try:
         db = get_db()
-        doc = db[CREW_JOBS_COLLECTION].find_one({"job_id": job_id})
+        query: dict[str, Any] = {"job_id": job_id, **tenant_filter(tenant)}
+        doc = db[CREW_JOBS_COLLECTION].find_one(query)
 
         running_time_ms: int | None = None
         running_time_human: str | None = None
@@ -343,7 +358,7 @@ def update_job_failed(job_id: str, error: str) -> bool:
             update_fields["queue_time_human"] = queue_time_human
 
         result = get_db()[CREW_JOBS_COLLECTION].update_one(
-            {"job_id": job_id},
+            query,
             {"$set": update_fields},
         )
         if result.modified_count:
@@ -354,7 +369,7 @@ def update_job_failed(job_id: str, error: str) -> bool:
         return False
 
 
-def reactivate_job(job_id: str) -> bool:
+def reactivate_job(job_id: str, tenant: TenantContext | None = None) -> bool:
     """Reset an existing job document back to ``queued`` for a resume.
 
     Clears terminal-state fields (``error``, ``completed_at``,
@@ -366,8 +381,9 @@ def reactivate_job(job_id: str) -> bool:
     """
     now = datetime.now(timezone.utc)
     try:
+        query: dict[str, Any] = {"job_id": job_id, **tenant_filter(tenant)}
         result = get_db()[CREW_JOBS_COLLECTION].update_one(
-            {"job_id": job_id},
+            query,
             {"$set": {
                 "status": "queued",
                 "error": None,
@@ -395,14 +411,22 @@ def reactivate_job(job_id: str) -> bool:
 # ── queries ───────────────────────────────────────────────────
 
 
-def find_job(job_id: str) -> dict[str, Any] | None:
+def find_job(
+    job_id: str,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
     """Fetch a single job document by ``job_id``.
+
+    Args:
+        job_id: The job identifier.
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         The document dict, or ``None`` if not found or on error.
     """
     try:
-        doc = get_db()[CREW_JOBS_COLLECTION].find_one({"job_id": job_id})
+        query: dict[str, Any] = {"job_id": job_id, **tenant_filter(tenant)}
+        doc = get_db()[CREW_JOBS_COLLECTION].find_one(query)
         return doc
     except PyMongoError as exc:
         logger.error("[CrewJobs] Failed to find job %s: %s", job_id, exc)

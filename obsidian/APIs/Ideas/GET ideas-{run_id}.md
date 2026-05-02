@@ -72,17 +72,19 @@ Run not found.
 
 | Status | Meaning | Can transition to |
 |--------|---------|-------------------|
-| `inprogress` | PRD flow is actively running | `completed`, `paused`, `failed`, `archived` |
-| `completed` | PRD generation finished successfully | `archived` |
-| `paused` | Flow paused (user-initiated or error) — can be resumed | `inprogress` (via resume), `archived` |
-| `failed` | Flow failed — can be resumed after fixing the issue | `inprogress` (via resume), `archived` |
-| `archived` | Soft-deleted — hidden from default views | (terminal) |
+| `inprogress` | PRD flow is actively running | `completed`, `paused`, `failed`, `deleted` |
+| `completed` | PRD generation finished successfully | `deleted` |
+| `paused` | Flow paused (user-initiated or error) — can be resumed | `inprogress` (via resume), `deleted` |
+| `failed` | Flow failed — can be resumed after fixing the issue | `inprogress` (via resume), `deleted` |
+| `archived` | Internal lifecycle state — used when restarting a PRD (old run archived) | (terminal, internal) |
+| `deleted` | User-facing soft-delete — permanently hidden from all listings | (terminal) |
 
 ```
-inprogress → completed → archived
+inprogress → completed → deleted (user action)
 inprogress → paused → inprogress (resume)
 inprogress → failed → inprogress (resume)
-any status → archived
+any status → deleted (via DELETE /ideas/{run_id})
+any status → archived (internal restart only)
 ```
 
 ---

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from crewai_productfeature_planner.agents.idea_agent.agent import (
+from crewai_productfeature_planner.agents.idea_manager.agent import (
     DEFAULT_LLM_TIMEOUT,
     DEFAULT_LLM_MAX_RETRIES,
     _extract_iteration_context,
@@ -28,7 +28,7 @@ def _set_keys(monkeypatch):
 def _mock_idea_agent_llm():
     """Prevent real LLM construction."""
     with patch(
-        "crewai_productfeature_planner.agents.idea_agent.agent._build_idea_agent_llm",
+        "crewai_productfeature_planner.agents.idea_manager.agent._build_basic_llm",
         return_value="gemini/gemini-3-flash-preview",
     ):
         yield
@@ -49,7 +49,7 @@ def _skip_fast_path(request):
         yield
         return
     with patch(
-        "crewai_productfeature_planner.agents.idea_agent.agent._handle_idea_query_fast",
+        "crewai_productfeature_planner.agents.idea_manager.agent._handle_idea_query_fast",
         return_value=None,
     ):
         yield
@@ -101,8 +101,8 @@ def test_create_idea_agent_no_tools():
 def test_load_yaml_agent():
     """Agent YAML should load and contain expected keys."""
     config = _load_yaml("agent.yaml")
-    assert "idea_agent" in config
-    agent_cfg = config["idea_agent"]
+    assert "idea_manager" in config
+    agent_cfg = config["idea_manager"]
     assert "role" in agent_cfg
     assert "goal" in agent_cfg
     assert "backstory" in agent_cfg
@@ -265,7 +265,7 @@ def test_handle_idea_query_calls_crew(monkeypatch):
     mock_result.__str__ = lambda _: "The current idea focuses on mobile payments."
 
     with patch(
-        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
         return_value=mock_result,
     ):
         doc = _make_flow_doc()
@@ -282,7 +282,7 @@ def test_handle_idea_query_includes_history(monkeypatch):
     mock_result.__str__ = lambda _: "Summary response"
 
     with patch(
-        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
         return_value=mock_result,
     ) as mock_crew:
         doc = _make_flow_doc()
@@ -355,7 +355,7 @@ class TestHandleIdeaQueryFastPath:
         return_value=None,
     )
     @patch(
-        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
     )
     def test_falls_back_to_crewai_when_fast_fails(
         self, mock_kickoff, mock_chat,
@@ -372,7 +372,7 @@ class TestHandleIdeaQueryFastPath:
         mock_kickoff.assert_called_once()
 
     @patch(
-        "crewai_productfeature_planner.scripts.retry.crew_kickoff_with_retry",
+        "crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
     )
     def test_uses_crewai_when_env_var_set(
         self, mock_kickoff, monkeypatch,

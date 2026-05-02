@@ -106,11 +106,13 @@ async def kickoff_ux_design(
         user.get("user_id"), run_id,
     )
 
+    from crewai_productfeature_planner.mongodb._tenant import TenantContext
     from crewai_productfeature_planner.mongodb.working_ideas import (
         find_run_any_status,
     )
 
-    idea_doc = find_run_any_status(run_id)
+    tenant = TenantContext.from_user(user)
+    idea_doc = find_run_any_status(run_id, tenant=tenant)
     if idea_doc is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
@@ -239,11 +241,13 @@ async def get_ux_design_status(
         user.get("user_id"), run_id,
     )
 
+    from crewai_productfeature_planner.mongodb._tenant import TenantContext
     from crewai_productfeature_planner.mongodb.working_ideas import (
         find_run_any_status,
     )
 
-    idea_doc = find_run_any_status(run_id)
+    tenant = TenantContext.from_user(user)
+    idea_doc = find_run_any_status(run_id, tenant=tenant)
     if idea_doc is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 

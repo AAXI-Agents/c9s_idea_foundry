@@ -452,7 +452,10 @@ async def resume_prd(
         )
 
     from crewai_productfeature_planner.mongodb import find_unfinalized
-    unfinalized = find_unfinalized()
+    from crewai_productfeature_planner.mongodb._tenant import TenantContext
+
+    tenant = TenantContext.from_user(user)
+    unfinalized = find_unfinalized(tenant=tenant)
     run_info = next((r for r in unfinalized if r["run_id"] == request.run_id), None)
     if run_info is None:
         raise HTTPException(

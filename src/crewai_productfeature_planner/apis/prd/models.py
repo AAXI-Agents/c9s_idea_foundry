@@ -37,6 +37,7 @@ from ._requests import (
 from ._responses import (
     ActivityEvent,
     ActivityLogResponse,
+    AgentRosterItem,
     PRDActionResponse,
     PRDDraftDetail,
     PRDKickoffResponse,

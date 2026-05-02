@@ -102,6 +102,34 @@ class PRDSectionDetail(BaseModel):
     )
 
 
+class AgentRosterItem(BaseModel):
+    """One agent participating in a flow run."""
+
+    id: str = Field(..., description="Agent registry ID (e.g. 'product_manager').")
+    name: str = Field(default="", description="Human-readable display name.")
+    role: str = Field(default="", description="Org chart role.")
+    title: str = Field(default="", description="Job title.")
+    reports_to: str | None = Field(
+        default=None, description="Agent ID of supervisor, or null for top."
+    )
+    status: str = Field(
+        default="idle",
+        description="Agent status within this run: idle, active, waiting_approval, error, done.",
+    )
+    current_step: int | None = Field(
+        default=None, description="1-based step the agent is on, null if idle/done."
+    )
+    last_activity_at: str | None = Field(
+        default=None, description="ISO-8601 timestamp of last activity in this run."
+    )
+    tokens_used: int = Field(
+        default=0, description="Cumulative tokens consumed for this run."
+    )
+    cost_usd: float = Field(
+        default=0.0, description="Cumulative cost in USD for this run."
+    )
+
+
 class PRDDraftDetail(BaseModel):
     """Structured draft state for API responses."""
 
@@ -259,6 +287,20 @@ class PRDRunStatusResponse(BaseModel):
         default_factory=PRDDraftDetail,
         description="Full structured draft with per-section state.",
     )
+    agents: list[AgentRosterItem] = Field(
+        default_factory=list,
+        description=(
+            "Agents that have participated in this flow run, with "
+            "per-run token/cost data and current status."
+        ),
+    )
+    cost_tracking_available: bool = Field(
+        default=True,
+        description=(
+            "Whether per-agent cost/token tracking is available. "
+            "When False, tokens_used and cost_usd are always 0."
+        ),
+    )
 
 
 class PRDResumableRun(BaseModel):
@@ -336,6 +378,26 @@ class ActivityEvent(BaseModel):
     predicted_next_step: dict | None = Field(
         default=None, description="LLM-predicted next action."
     )
+    agent_id: str | None = Field(
+        default=None,
+        description="Agent registry ID that produced this event (e.g. 'product_manager').",
+    )
+    severity: str = Field(
+        default="info",
+        description="Event severity: 'debug', 'info', 'warn', or 'error'.",
+    )
+    tokens_delta: int = Field(
+        default=0,
+        description="Tokens consumed by this event; 0 if unknown.",
+    )
+    cost_usd_delta: float = Field(
+        default=0.0,
+        description="Cost in USD for this event; 0.0 if unknown.",
+    )
+    summary: str = Field(
+        default="",
+        description="One-line human summary of the event.",
+    )
 
 
 class ActivityLogResponse(BaseModel):
@@ -345,4 +407,11 @@ class ActivityLogResponse(BaseModel):
     count: int = Field(default=0, description="Number of activity events returned.")
     events: list[ActivityEvent] = Field(
         default_factory=list, description="Activity events, newest first."
+    )
+    cost_tracking_available: bool = Field(
+        default=True,
+        description=(
+            "Whether per-event cost/token tracking is available. "
+            "When False, tokens_delta and cost_usd_delta are always 0."
+        ),
     )

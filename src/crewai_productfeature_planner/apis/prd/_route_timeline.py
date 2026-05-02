@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
-from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -67,7 +66,7 @@ def _iso(val) -> str:
     return str(val)
 
 
-def _build_timeline(run_id: str, limit: int, *, tenant: TenantContext | None = None) -> list[TimelineEvent]:
+def _build_timeline(run_id: str, limit: int, tenant=None) -> list[TimelineEvent]:
     """Query all three collections and merge into a sorted timeline."""
     from crewai_productfeature_planner.mongodb.agent_interactions import (
         find_interactions,
@@ -152,7 +151,7 @@ def _build_timeline(run_id: str, limit: int, *, tenant: TenantContext | None = N
             ))
 
     # ── Job lifecycle events ──────────────────────────────────────
-    job_doc = find_job(run_id)
+    job_doc = find_job(run_id, tenant=tenant)
     if job_doc:
         if job_doc.get("queued_at"):
             events.append(TimelineEvent(
@@ -169,7 +168,7 @@ def _build_timeline(run_id: str, limit: int, *, tenant: TenantContext | None = N
             ))
 
     # ── Agent interactions ────────────────────────────────────────
-    interactions = find_interactions(run_id=run_id, limit=limit)
+    interactions = find_interactions(run_id=run_id, limit=limit, tenant=tenant)
     for doc in interactions:
         events.append(TimelineEvent(
             timestamp=_iso(doc.get("created_at", "")),
@@ -184,7 +183,7 @@ def _build_timeline(run_id: str, limit: int, *, tenant: TenantContext | None = N
         ))
 
     # ── Delivery events ───────────────────────────────────────────
-    delivery = get_delivery_record(run_id)
+    delivery = get_delivery_record(run_id, tenant=tenant)
     if delivery:
         if delivery.get("confluence_published"):
             events.append(TimelineEvent(
@@ -237,6 +236,7 @@ async def get_run_timeline(
     user: dict = Depends(require_sso_user),
 ):
     """Return the full PRD journey timeline for a run."""
+    from crewai_productfeature_planner.mongodb._tenant import TenantContext
     from crewai_productfeature_planner.mongodb.working_ideas import (
         find_run_any_status,
     )

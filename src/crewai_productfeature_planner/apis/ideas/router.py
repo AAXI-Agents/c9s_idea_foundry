@@ -4,6 +4,7 @@ Route modules:
     get_ideas.py          — GET /ideas (paginated list)
     get_idea.py           — GET /ideas/{run_id}
     patch_idea_status.py  — PATCH /ideas/{run_id}/status
+    delete_idea.py        — DELETE /ideas/{run_id} (soft delete)
 
 Shared:
     models.py             — IdeaItem, IdeaListResponse, IdeaStatusUpdate, idea_fields()
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from crewai_productfeature_planner.apis.ideas.delete_idea import router as delete_idea_router
 from crewai_productfeature_planner.apis.ideas.get_ideas import router as get_ideas_router
 from crewai_productfeature_planner.apis.ideas.get_idea import router as get_idea_router
 from crewai_productfeature_planner.apis.ideas.patch_idea_status import router as patch_status_router
@@ -26,6 +28,7 @@ router = APIRouter(
 router.include_router(get_ideas_router)
 router.include_router(get_idea_router)
 router.include_router(patch_status_router)
+router.include_router(delete_idea_router)
 
 # Re-export models for backward compatibility
 from crewai_productfeature_planner.apis.ideas.models import (  # noqa: E402, F401

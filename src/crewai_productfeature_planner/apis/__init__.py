@@ -24,6 +24,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from crewai_productfeature_planner.apis.admin.router import router as admin_router
+from crewai_productfeature_planner.apis.approvals.router import router as approvals_router
+from crewai_productfeature_planner.apis.company.router import router as company_router
 from crewai_productfeature_planner.apis.dashboard.router import router as dashboard_router
 from crewai_productfeature_planner.apis.health.router import router as health_router
 from crewai_productfeature_planner.apis.ideas.router import router as ideas_router
@@ -37,6 +40,7 @@ from crewai_productfeature_planner.apis.slack.interactions_router import router 
 from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
 from crewai_productfeature_planner.apis.slack.router import router as slack_router
 from crewai_productfeature_planner.apis.integrations.router import router as integrations_router
+from crewai_productfeature_planner.apis.ideation import ideation_router, ideation_ws_router
 from crewai_productfeature_planner.apis.sso.router import router as sso_auth_router
 from crewai_productfeature_planner.apis.sso_webhooks import router as sso_webhooks_router
 from crewai_productfeature_planner.apis.user_profile.router import router as user_profile_router
@@ -511,6 +515,14 @@ app = FastAPI(
             "description": "Service liveness and readiness checks.",
         },
         {
+            "name": "Admin",
+            "description": (
+                "Enterprise admin endpoints for managing organizations, "
+                "cross-org project listings, tenant reassignment, and "
+                "audit logging. Requires enterprise_admin role."
+            ),
+        },
+        {
             "name": "Flow Runs",
             "description": (
                 "Start flows, list runs, query status, list resumable runs, "
@@ -610,10 +622,19 @@ app = FastAPI(
                 "or status, view details, and update status."
             ),
         },
+        {
+            "name": "Approvals",
+            "description": (
+                "Cross-project pending approvals queue. "
+                "Lists items the user can act on: PRD sections awaiting "
+                "approval, paused runs, and completed PRDs awaiting publishing."
+            ),
+        },
     ],
 )
 
 app.include_router(health_router)
+app.include_router(admin_router)
 app.include_router(dashboard_router)
 app.include_router(prd_router)
 app.include_router(prd_ws_router)
@@ -628,13 +649,20 @@ app.include_router(integrations_router)
 app.include_router(sso_auth_router)
 app.include_router(sso_webhooks_router)
 app.include_router(user_profile_router)
+app.include_router(ideation_router)
+app.include_router(ideation_ws_router)
+app.include_router(company_router)
+app.include_router(approvals_router)
 
 # ── CORS — required for web-based SSO login flows ────────────
 import os as _os
 
 _cors_origins = [
     o.strip()
-    for o in _os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    for o in _os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:3001",
+    ).split(",")
     if o.strip()
 ]
 app.add_middleware(

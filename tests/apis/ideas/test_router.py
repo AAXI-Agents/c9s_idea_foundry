@@ -110,7 +110,11 @@ class TestListIdeas:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?project_id=proj1")
         assert resp.status_code == 200
-        coll.count_documents.assert_awaited_once_with({"project_id": "proj1"})
+        # Default behaviour: terminal-state ideas (including completed/PRD-generated)
+        # are excluded unless explicitly requested via ?status= or ?include_archived=true.
+        coll.count_documents.assert_awaited_once_with(
+            {"project_id": "proj1", "status": {"$nin": ["deleted", "archived", "failed", "completed"]}}
+        )
 
     def test_filter_by_status(self, client):
         coll = self._mock_collection([], total=0)
@@ -129,6 +133,32 @@ class TestListIdeas:
         coll.count_documents.assert_awaited_once_with(
             {"project_id": "proj1", "status": "paused"}
         )
+
+    def test_default_excludes_archived_failed_and_completed(self, client):
+        """Regression: GET /ideas must hide terminal-state ideas by default.
+
+        Without this, ideas the user has 'deleted' (archived via PATCH
+        /ideas/{id}/status) reappear in the dashboard listing and the
+        delete looks broken. Completed (PRD-generated) ideas are also
+        excluded — they no longer need attention in the active list.
+        """
+        coll = self._mock_collection([], total=0)
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+            mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
+            resp = client.get("/ideas")
+        assert resp.status_code == 200
+        coll.count_documents.assert_awaited_once_with(
+            {"status": {"$nin": ["deleted", "archived", "failed", "completed"]}}
+        )
+
+    def test_include_archived_opt_in(self, client):
+        """include_archived=true returns the unfiltered (legacy) view."""
+        coll = self._mock_collection([], total=0)
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+            mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
+            resp = client.get("/ideas?include_archived=true")
+        assert resp.status_code == 200
+        coll.count_documents.assert_awaited_once_with({})
 
     def test_pagination_math(self, client):
         coll = self._mock_collection([], total=51)
@@ -205,6 +235,10 @@ class TestUpdateIdeaStatus:
             patch(
                 f"{_STATUS}.mark_archived",
             ) as mock_archive,
+            patch(
+                "crewai_productfeature_planner.apis.ideas.patch_idea_status."
+                "response_cache"
+            ) as mock_cache,
         ):
             resp = client.patch(
                 "/ideas/run001/status", json={"status": "archived"}
@@ -212,6 +246,9 @@ class TestUpdateIdeaStatus:
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
         mock_archive.assert_called_once_with("run001")
+        # Regression: PATCH must invalidate the GET /ideas list cache
+        # so the just-archived idea disappears immediately.
+        mock_cache.invalidate.assert_called_once_with("ideas")
 
     def test_pause(self, client):
         doc = _make_idea_doc()
@@ -241,6 +278,84 @@ class TestUpdateIdeaStatus:
                 "/ideas/nonexistent/status", json={"status": "archived"}
             )
         assert resp.status_code == 404
+
+
+# ── DELETE /ideas/{run_id} (soft delete) ─────────────────────
+
+
+class TestDeleteIdea:
+    def test_soft_delete(self, client):
+        doc = _make_idea_doc(status="completed")
+        with (
+            patch(
+                f"{_QUERIES}.find_run_any_status",
+                return_value=doc,
+            ),
+            patch(f"{_STATUS}.mark_deleted") as mock_delete,
+            patch(
+                "crewai_productfeature_planner.apis.ideas.delete_idea."
+                "response_cache"
+            ) as mock_cache,
+            patch(
+                "crewai_productfeature_planner.apis.ideas.delete_idea."
+                "_cascade_ideation_session", return_value="",
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.ideas.delete_idea."
+                "_cascade_product_requirements",
+                return_value={"jira_cleared": 0, "confluence_cleared": 0},
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.ideas.delete_idea."
+                "_clear_ux_state", return_value=0,
+            ),
+            patch(
+                "crewai_productfeature_planner.apis.ideas.delete_idea."
+                "_broadcast_idea_deleted",
+            ),
+        ):
+            resp = client.delete("/ideas/run001")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "deleted"
+        assert body["run_id"] == "run001"
+        mock_delete.assert_called_once_with("run001")
+        # Regression: list cache must be invalidated so the deleted
+        # idea disappears from the dashboard immediately.
+        mock_cache.invalidate.assert_called_once_with("ideas")
+
+    def test_not_found(self, client):
+        with patch(
+            f"{_QUERIES}.find_run_any_status",
+            return_value=None,
+        ):
+            resp = client.delete("/ideas/nonexistent")
+        assert resp.status_code == 404
+
+    def test_inprogress_returns_409(self, client):
+        """Regression: in-flight ideas must not be deleted — user must pause first."""
+        doc = _make_idea_doc(status="inprogress")
+        with patch(f"{_QUERIES}.find_run_any_status", return_value=doc):
+            resp = client.delete("/ideas/run001")
+        assert resp.status_code == 409
+
+    def test_default_listing_excludes_deleted(self, client):
+        """Regression: GET /ideas must hide soft-deleted rows by default."""
+        coll = MagicMock()
+        coll.count_documents = AsyncMock(return_value=0)
+        cursor = MagicMock()
+        cursor.sort.return_value = cursor
+        cursor.skip.return_value = cursor
+        cursor.limit.return_value = cursor
+        cursor.to_list = AsyncMock(return_value=[])
+        coll.find.return_value = cursor
+        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+            mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
+            resp = client.get("/ideas")
+        assert resp.status_code == 200
+        coll.count_documents.assert_awaited_once_with(
+            {"status": {"$nin": ["deleted", "archived", "failed", "completed"]}}
+        )
 
     def test_invalid_status(self, client):
         resp = client.patch(

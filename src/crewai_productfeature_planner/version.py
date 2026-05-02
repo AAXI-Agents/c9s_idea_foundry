@@ -3628,20 +3628,141 @@ _CODEX: list[CodexEntry] = [
     ),
     CodexEntry(
         version="0.72.2",
-        date=date(2026, 4, 16),
+        date=date(2026, 4, 15),
         summary=(
-            "Multi-tenancy Phase 5 — background process tenant scoping. "
-            "Added tenant context logging (enterprise_id, organization_id) "
-            "to all 4 orchestrator background process files: "
-            "_startup_review.py (discovered PRDs include tenant fields, "
-            "tenant distribution summary logged), _startup_delivery.py "
-            "(pending deliveries include tenant fields, per-tenant audit "
-            "logging, crew builder logs tenant context), "
-            "_post_completion.py (logs tenant from project config), "
-            "_confluence.py (logs tenant in publish messages). "
-            "Added 4 new tests for tenant field propagation in "
-            "startup_review and startup_delivery. "
-            "All 182 orchestrator tests pass."
+            "SSO proxy non-JSON response fix — _sso_proxy_post now "
+            "catches JSONDecodeError when the upstream SSO server "
+            "returns non-JSON (HTML error page, empty body with "
+            "non-204 status). Previously this fell into the generic "
+            "except handler and returned a misleading 'SSO server "
+            "unreachable' 502. Now returns a clear 'SSO server "
+            "returned non-JSON response (HTTP <status>)' message "
+            "and logs the raw response body for troubleshooting. "
+            "Also fixed pre-existing register redirect test "
+            "assertion for /sso/ prefix. 49 SSO tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.72.3",
+        date=date(2026, 4, 15),
+        summary=(
+            "Multi-tenancy Phase 2 — tenant-scoped read paths. "
+            "Extended tenant filtering to all user-facing read "
+            "endpoints: find_run_any_status, find_unfinalized, "
+            "find_job, find_interactions now accept optional "
+            "TenantContext. Wired TenantContext.from_user(user) "
+            "through GET /ideas/{run_id}, PATCH /ideas/status, "
+            "GET /flow/runs/*/activity, GET /flow/runs, "
+            "GET /flow/jobs, GET /flow/runs/resumable, and "
+            "GET /flow/runs/*/status. Background processes "
+            "correctly use None (global access) by design. "
+            "550 affected tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.72.4",
+        date=date(2026, 5, 1),
+        summary=(
+            "Fix archived ideas reappearing in dashboard. Two bugs: "
+            "(1) GET /ideas had no default status filter, so archived "
+            "(user-'deleted') and failed runs kept appearing in the "
+            "default list. Now excludes status in {archived, failed} "
+            "unless caller passes ?status= or ?include_archived=true. "
+            "(2) PATCH /ideas/{run_id}/status did not invalidate the "
+            "5s response_cache, so archive/pause changes were hidden "
+            "by stale cached pages. Added response_cache.invalidate("
+            "'ideas') after every status update. New regression tests: "
+            "test_default_excludes_archived_and_failed, "
+            "test_include_archived_opt_in, plus cache-invalidation "
+            "assertion in test_archive."
+        ),
+    ),
+    CodexEntry(
+        version="0.73.0",
+        date=date(2026, 5, 1),
+        summary=(
+            "Proper soft-delete for ideas. Distinguish user-facing "
+            "DELETE from internal 'archived' state. New endpoint "
+            "DELETE /ideas/{run_id} performs a soft delete: cancels "
+            "any running flow, unblocks pending approval gates, sets "
+            "workingIdeas.status='deleted' (with deleted_at), mirrors "
+            "to crewJobs, and invalidates the GET /ideas response "
+            "cache so the row disappears from the dashboard "
+            "immediately. New mongodb.working_ideas.mark_deleted() "
+            "helper. GET /ideas default filter now excludes "
+            "{deleted, archived, failed} so soft-deleted rows never "
+            "leak back. 'archived' remains an internal lifecycle "
+            "state used by restart-PRD; 'deleted' is the user-visible "
+            "trash action. 124 affected tests pass including "
+            "TestDeleteIdea (soft_delete, not_found, "
+            "default_listing_excludes_deleted)."
+        ),
+    ),
+    CodexEntry(
+        version="0.73.1",
+        date=date(2026, 5, 2),
+        summary=(
+            "Documentation compliance fix — v0.73.0 soft-delete was "
+            "missing from OpenAPI spec, Module Map, workingIdeas "
+            "Schema, API Overview, and status lifecycle docs. "
+            "All 6 documentation gaps fixed. Archived resolved "
+            "QUESTIONS-paperclip-integration.md."
+        ),
+    ),
+    CodexEntry(
+        version="0.74.0",
+        date=date(2026, 5, 2),
+        summary=(
+            "Ideation API contract alignment + WebSocket token auth. "
+            "Rewrote models/router to match frontend TypeScript interfaces: "
+            "step names (ideation/persona/solution/primary_goal/tech_stack), "
+            "paginated list, messages response shape, respond/advance/rollback "
+            "response models. Added iterate/DELETE/PATCH endpoints. Added JWT "
+            "token validation on WS connect via ?token= query param. "
+            "Updated repository with step_to_name/name_to_step helpers, "
+            "count_sessions, list_sessions_paginated, update_session_metadata."
+        ),
+    ),
+    CodexEntry(
+        version="0.75.0",
+        date=date(2026, 5, 2),
+        summary=(
+            "Multi-tenancy hardening — endpoint-level tenant isolation. "
+            "Added TenantContext threading to all user-facing routes "
+            "(timeline, versions, ux-design, resume, publishing). "
+            "19+ repository helpers now accept optional tenant param with "
+            "tenant_filter() merge. Admin reassignment cascade includes "
+            "enterprise_id in update filters. 17 new regression tests."
+        ),
+    ),
+    CodexEntry(
+        version="0.76.0",
+        date=date(2026, 5, 2),
+        summary=(
+            "Structured Q&A ideation pipeline — all 5 steps now return "
+            "StructuredIdeationResponse with 3-5 clarifying questions, "
+            "each carrying 3 recommendations (pro/con/complexity). "
+            "C-suite agent personas (CEO, PM, UX Architect, CTO). "
+            "Added Pydantic models (Recommendation, ClarifyingQuestion, "
+            "QuestionAnswer), output_pydantic on Task, JSON fallback "
+            "parser, _format_answers_as_context helper, metadata on "
+            "append_message, structured WebSocket payloads. "
+            "Updated frontend contract docs with decision-card schema."
+        ),
+    ),
+    CodexEntry(
+        version="0.77.0",
+        date=date(2026, 5, 2),
+        summary=(
+            "Paperclip UI backend features — Activity WS enrichment "
+            "(agent_id, severity, tokens_delta, cost_usd_delta, summary "
+            "on ActivityEvent + cost_tracking_available). Agent roster on "
+            "GET /flow/runs/{run_id} (per-run agent stats aggregated from "
+            "agentInteraction + agentRegistry). New GET /approvals/pending "
+            "endpoint (cross-project pending approvals queue). New "
+            "GET /projects/{project_id}/backlog endpoint (kanban-style "
+            "backlog with server-side blocked_by computation). "
+            "17 new tests, 3110 total passing."
         ),
     ),
 ]

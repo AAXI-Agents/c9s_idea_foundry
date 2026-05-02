@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from crewai_productfeature_planner.agents.requirements_breakdown.agent import (
-    DEFAULT_MAX_ITERATIONS,
-    DEFAULT_MIN_ITERATIONS,
+from crewai_productfeature_planner.agents.product_manager.agent import (
+    DEFAULT_REQUIREMENTS_MAX_ITERATIONS,
+    DEFAULT_REQUIREMENTS_MIN_ITERATIONS,
     DEFAULT_LLM_TIMEOUT,
     DEFAULT_LLM_MAX_RETRIES,
-    _build_breakdown_llm,
-    _get_iteration_limits,
+    _build_requirements_llm,
+    _get_requirements_iteration_limits,
     _load_yaml,
     create_requirements_breakdown_agent,
     breakdown_requirements,
@@ -85,7 +85,7 @@ def test_build_llm_default_model(monkeypatch):
     """Without REQUIREMENTS_BREAKDOWN_MODEL or GEMINI_RESEARCH_MODEL, uses the default."""
     monkeypatch.delenv("REQUIREMENTS_BREAKDOWN_MODEL", raising=False)
     monkeypatch.delenv("GEMINI_RESEARCH_MODEL", raising=False)
-    llm = _build_breakdown_llm()
+    llm = _build_requirements_llm()
     assert "gemini" in llm.model.lower()
 
 
@@ -93,7 +93,7 @@ def test_build_llm_respects_requirements_model(monkeypatch):
     """REQUIREMENTS_BREAKDOWN_MODEL should take precedence over GEMINI_RESEARCH_MODEL."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MODEL", "gemini-custom-model")
     monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-3.1-pro-preview")
-    llm = _build_breakdown_llm()
+    llm = _build_requirements_llm()
     assert "gemini-custom-model" in llm.model
 
 
@@ -101,28 +101,28 @@ def test_build_llm_falls_back_to_gemini_research_model(monkeypatch):
     """Without REQUIREMENTS_BREAKDOWN_MODEL, should use GEMINI_RESEARCH_MODEL."""
     monkeypatch.delenv("REQUIREMENTS_BREAKDOWN_MODEL", raising=False)
     monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-2.5-pro")
-    llm = _build_breakdown_llm()
+    llm = _build_requirements_llm()
     assert "gemini-2.5-pro" in llm.model
 
 
 def test_build_llm_adds_prefix(monkeypatch):
     """Model names without '/' should get 'gemini/' prepended."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MODEL", "gemini-3-flash-preview")
-    llm = _build_breakdown_llm()
+    llm = _build_requirements_llm()
     assert "gemini" in llm.model.lower()
 
 
 def test_build_llm_no_double_prefix(monkeypatch):
     """Already-qualified model names should not be double-prefixed."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MODEL", "gemini/gemini-3-flash-preview")
-    llm = _build_breakdown_llm()
+    llm = _build_requirements_llm()
     assert "gemini/gemini/" not in llm.model
 
 
 def test_build_llm_returns_llm_object(monkeypatch):
-    """_build_breakdown_llm should return a valid LLM object."""
+    """_build_requirements_llm should return a valid LLM object."""
     monkeypatch.delenv("REQUIREMENTS_BREAKDOWN_MODEL", raising=False)
-    llm = _build_breakdown_llm()
+    llm = _build_requirements_llm()
     assert llm is not None
     assert hasattr(llm, "model")
 
@@ -134,16 +134,16 @@ def test_iteration_limits_defaults(monkeypatch):
     """Default limits should be (3, 10)."""
     monkeypatch.delenv("REQUIREMENTS_BREAKDOWN_MIN_ITERATIONS", raising=False)
     monkeypatch.delenv("REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS", raising=False)
-    min_i, max_i = _get_iteration_limits()
-    assert min_i == DEFAULT_MIN_ITERATIONS
-    assert max_i == DEFAULT_MAX_ITERATIONS
+    min_i, max_i = _get_requirements_iteration_limits()
+    assert min_i == DEFAULT_REQUIREMENTS_MIN_ITERATIONS
+    assert max_i == DEFAULT_REQUIREMENTS_MAX_ITERATIONS
 
 
 def test_iteration_limits_from_env(monkeypatch):
     """Env vars should override defaults."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MIN_ITERATIONS", "5")
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS", "8")
-    min_i, max_i = _get_iteration_limits()
+    min_i, max_i = _get_requirements_iteration_limits()
     assert min_i == 5
     assert max_i == 8
 
@@ -152,7 +152,7 @@ def test_iteration_limits_clamp_min(monkeypatch):
     """Min should be clamped to at least 1."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MIN_ITERATIONS", "0")
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS", "5")
-    min_i, max_i = _get_iteration_limits()
+    min_i, max_i = _get_requirements_iteration_limits()
     assert min_i == 1
     assert max_i == 5
 
@@ -161,7 +161,7 @@ def test_iteration_limits_max_at_least_min(monkeypatch):
     """Max should be at least min."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MIN_ITERATIONS", "7")
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS", "3")
-    min_i, max_i = _get_iteration_limits()
+    min_i, max_i = _get_requirements_iteration_limits()
     assert max_i >= min_i
 
 
@@ -169,7 +169,7 @@ def test_iteration_limits_cap(monkeypatch):
     """Max should be capped at 20, min at 10."""
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MIN_ITERATIONS", "50")
     monkeypatch.setenv("REQUIREMENTS_BREAKDOWN_MAX_ITERATIONS", "100")
-    min_i, max_i = _get_iteration_limits()
+    min_i, max_i = _get_requirements_iteration_limits()
     assert min_i <= 10
     assert max_i <= 20
 
@@ -180,10 +180,10 @@ def test_iteration_limits_cap(monkeypatch):
 def test_load_agent_yaml():
     """Agent YAML should contain requirements_breakdown key."""
     config = _load_yaml("agent.yaml")
-    assert "requirements_breakdown" in config
-    assert "role" in config["requirements_breakdown"]
-    assert "goal" in config["requirements_breakdown"]
-    assert "backstory" in config["requirements_breakdown"]
+    assert "product_manager" in config
+    assert "role" in config["product_manager"]
+    assert "goal" in config["product_manager"]
+    assert "backstory" in config["product_manager"]
 
 
 def test_load_tasks_yaml():
@@ -219,8 +219,8 @@ def test_evaluate_task_has_required_placeholders():
 
 def test_default_constants():
     """Module-level defaults should be sensible."""
-    assert DEFAULT_MIN_ITERATIONS == 3
-    assert DEFAULT_MAX_ITERATIONS == 10
+    assert DEFAULT_REQUIREMENTS_MIN_ITERATIONS == 3
+    assert DEFAULT_REQUIREMENTS_MAX_ITERATIONS == 10
     assert DEFAULT_LLM_TIMEOUT == 300
     assert DEFAULT_LLM_MAX_RETRIES == 3
 
@@ -250,7 +250,7 @@ def test_breakdown_stops_at_requirements_ready(monkeypatch):
             result.raw = "Needs more detail. NEEDS_MORE"
         return result
 
-    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.product_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("Build a dashboard with AI")
 
@@ -281,7 +281,7 @@ def test_breakdown_runs_max_iterations(monkeypatch):
         result.raw = "Still needs work. NEEDS_MORE"
         return result
 
-    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.product_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("Build a feature")
 
@@ -308,7 +308,7 @@ def test_breakdown_ignores_ready_before_min(monkeypatch):
         result.raw = "Looks good. REQUIREMENTS_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.product_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("Some idea")
 
@@ -330,7 +330,7 @@ def test_breakdown_returns_tuple(monkeypatch):
         result.raw = "REQUIREMENTS_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.product_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history = breakdown_requirements("An idea")
 
@@ -360,7 +360,7 @@ def test_breakdown_saves_iterations_with_run_id(monkeypatch):
         result.raw = "NEEDS_MORE" if call_count < 2 else "REQUIREMENTS_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.product_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
          patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db") as mock_db:
         mock_collection = MagicMock()
@@ -386,7 +386,7 @@ def test_breakdown_no_run_id_skips_save(monkeypatch):
         result.raw = "REQUIREMENTS_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.product_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
          patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db") as mock_db:
         mock_collection = MagicMock()
@@ -418,7 +418,7 @@ def test_breakdown_passes_previous_requirements(monkeypatch):
         result.raw = "NEEDS_MORE" if call_count < 2 else "REQUIREMENTS_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.requirements_breakdown.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.product_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         breakdown_requirements("Build a dashboard")
 

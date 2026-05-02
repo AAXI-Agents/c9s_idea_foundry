@@ -1097,7 +1097,7 @@ def test_maybe_refine_idea_runs_with_credentials(monkeypatch):
     flow.state.idea = "Raw idea"
 
     with patch(
-        "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+        "crewai_productfeature_planner.agents.idea_manager.refine_idea",
         return_value=("Enriched idea with details", [{"iteration": 1, "idea": "Enriched idea with details", "evaluation": "IDEA_READY"}], []),
     ):
         flow._maybe_refine_idea()
@@ -1126,7 +1126,7 @@ def test_maybe_refine_idea_continues_on_failure(monkeypatch):
     flow.state.idea = "Raw idea"
 
     with patch(
-        "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+        "crewai_productfeature_planner.agents.idea_manager.refine_idea",
         side_effect=RuntimeError("Gemini API error"),
     ):
         flow._maybe_refine_idea()

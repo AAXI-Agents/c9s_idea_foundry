@@ -69,6 +69,7 @@ async def get_run_versions(
     user: dict = Depends(require_sso_user),
 ):
     """Return version history for a PRD run."""
+    from crewai_productfeature_planner.mongodb._tenant import TenantContext
     from crewai_productfeature_planner.mongodb.product_requirements import (
         get_current_version,
         get_version_history,
@@ -83,8 +84,8 @@ async def get_run_versions(
         raise HTTPException(status_code=404, detail="Run not found")
 
     try:
-        history = get_version_history(run_id)
-        current = get_current_version(run_id)
+        history = get_version_history(run_id, tenant=tenant)
+        current = get_current_version(run_id, tenant=tenant)
     except Exception as exc:
         logger.error(
             "[Versions] Failed to fetch version history for run_id=%s: %s",

@@ -57,11 +57,15 @@ def _compute_status(confluence_published: bool, jira_completed: bool) -> str:
 # ── Queries ───────────────────────────────────────────────────────────
 
 
-def get_delivery_record(run_id: str) -> dict[str, Any] | None:
+def get_delivery_record(
+    run_id: str,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
     """Fetch the delivery record for *run_id*, or ``None`` if absent."""
     try:
         db = get_db()
-        doc = db[PRODUCT_REQUIREMENTS_COLLECTION].find_one({"run_id": run_id})
+        query: dict[str, Any] = {"run_id": run_id, **tenant_filter(tenant)}
+        doc = db[PRODUCT_REQUIREMENTS_COLLECTION].find_one(query)
         return doc
     except PyMongoError as exc:
         logger.error(
@@ -71,7 +75,9 @@ def get_delivery_record(run_id: str) -> dict[str, Any] | None:
         return None
 
 
-def find_pending_delivery() -> list[dict[str, Any]]:
+def find_pending_delivery(
+    tenant: TenantContext | None = None,
+) -> list[dict[str, Any]]:
     """Find delivery records that are not yet fully completed.
 
     Returns records whose ``status`` is ``"new"`` or ``"inprogress"``
@@ -79,9 +85,13 @@ def find_pending_delivery() -> list[dict[str, Any]]:
     """
     try:
         db = get_db()
+        query: dict[str, Any] = {
+            "status": {"$in": ["new", "inprogress"]},
+            **tenant_filter(tenant),
+        }
         docs = list(
             db[PRODUCT_REQUIREMENTS_COLLECTION]
-            .find({"status": {"$in": ["new", "inprogress"]}})
+            .find(query)
             .sort("created_at", 1)
         )
         logger.info(
@@ -462,17 +472,23 @@ def save_version_snapshot(
         return False
 
 
-def get_version_history(run_id: str) -> list[dict]:
+def get_version_history(
+    run_id: str,
+    tenant: TenantContext | None = None,
+) -> list[dict]:
     """Return the ``version_history`` array for *run_id*, or ``[]``."""
-    record = get_delivery_record(run_id)
+    record = get_delivery_record(run_id, tenant=tenant)
     if record is None:
         return []
     return record.get("version_history") or []
 
 
-def get_current_version(run_id: str) -> int:
+def get_current_version(
+    run_id: str,
+    tenant: TenantContext | None = None,
+) -> int:
     """Return the ``current_version`` for *run_id*, or ``0``."""
-    record = get_delivery_record(run_id)
+    record = get_delivery_record(run_id, tenant=tenant)
     if record is None:
         return 0
     return record.get("current_version", 0)

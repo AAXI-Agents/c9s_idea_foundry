@@ -16,16 +16,18 @@ tags:
 | Domain | Folder | Endpoints | Auth |
 |--------|--------|-----------|------|
 | **Health** | [[Health/]] | 5 | None (probes), SSO (token mgmt) |
-| **Projects** | [[Projects/]] | 5 | SSO |
-| **Ideas** | [[Ideas/]] | 3 | SSO |
+| **Projects** | [[Projects/]] | 6 | SSO |
+| **Ideas** | [[Ideas/]] | 4 | SSO |
+| **Approvals** | — | 1 | SSO |
 | **PRD Flow** | [[PRD Flow/]] | 10 | SSO |
+| **Ideation Flow** | — | 10 + WS | SSO (REST) / JWT query param (WS) |
 | **Publishing** | [[Publishing/]] | 9 | SSO |
 | **Integrations** | [[Integrations/]] | 1 | SSO |
 | **Slack** | [[Slack/]] | 5 | Slack HMAC |
 | **SSO** | [[SSO API]] | 18 | None / Bearer |
 | **SSO Webhooks** | [[SSO Webhooks/]] | 1 | Webhook HMAC |
 
-**Total**: 57 endpoints across 12 routers
+**Total**: 71 endpoints across 14 routers
 
 ---
 
@@ -47,23 +49,31 @@ tags:
 |----------|------|
 | `GET /dashboard/stats` | — |
 
-### Projects (5 endpoints)
+### Projects (6 endpoints)
 
 | Endpoint | Page |
 |----------|------|
 | `GET /projects` | [[Projects/GET projects]] |
 | `GET /projects/{project_id}` | [[Projects/GET projects-{project_id}]] |
+| `GET /projects/{project_id}/backlog` | — |
 | `POST /projects` | [[Projects/POST projects]] |
 | `PATCH /projects/{project_id}` | [[Projects/PATCH projects-{project_id}]] |
 | `DELETE /projects/{project_id}` | [[Projects/DELETE projects-{project_id}]] |
 
-### Ideas (3 endpoints)
+### Ideas (4 endpoints)
 
 | Endpoint | Page |
 |----------|------|
 | `GET /ideas` | [[Ideas/GET ideas]] |
 | `GET /ideas/{run_id}` | [[Ideas/GET ideas-{run_id}]] |
 | `PATCH /ideas/{run_id}/status` | [[Ideas/PATCH ideas-{run_id}-status]] |
+| `DELETE /ideas/{run_id}` | [[Ideas/DELETE ideas-{run_id}]] |
+
+### Approvals (1 endpoint)
+
+| Endpoint | Page |
+|----------|------|
+| `GET /approvals/pending` | — |
 
 ### PRD Flow (14 endpoints)
 
@@ -83,6 +93,22 @@ tags:
 | `POST /flow/ux/kickoff` | — |
 | `GET /flow/ux/status/{run_id}` | — |
 | `WS /flow/runs/{run_id}/ws` | — |
+
+### Ideation Flow (10 + WS)
+
+| Endpoint | Page |
+|----------|------|
+| `POST /flow/ideation/kickoff` | — |
+| `GET /flow/ideation/sessions` | — |
+| `GET /flow/ideation/sessions/{id}` | — |
+| `GET /flow/ideation/sessions/{id}/messages` | — |
+| `POST /flow/ideation/sessions/{id}/respond` | — |
+| `POST /flow/ideation/sessions/{id}/iterate` | — |
+| `POST /flow/ideation/sessions/{id}/advance` | — |
+| `POST /flow/ideation/sessions/{id}/rollback` | — |
+| `DELETE /flow/ideation/sessions/{id}` | — |
+| `PATCH /flow/ideation/sessions/{id}` | — |
+| `WS /ws/ideation/{session_id}?token=` | — |
 
 ### Publishing (9 endpoints)
 

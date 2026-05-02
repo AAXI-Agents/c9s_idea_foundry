@@ -1,6 +1,6 @@
 """Tests for GET /flow/runs/{run_id}/activity endpoint."""
 
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -89,7 +89,7 @@ class TestActivityLog:
         assert len(body["events"]) == 2
         assert body["events"][0]["interaction_id"] == "abc123"
         assert body["events"][1]["predicted_next_step"]["confidence"] == 0.9
-        mock_find.assert_called_once_with(run_id="run-123", limit=50)
+        mock_find.assert_called_once_with(run_id="run-123", limit=50, tenant=ANY)
 
     def test_activity_respects_limit(self, client):
         """Should pass limit query param to find_interactions."""
@@ -100,7 +100,7 @@ class TestActivityLog:
             resp = client.get("/flow/runs/run-123/activity?limit=10")
 
         assert resp.status_code == 200
-        mock_find.assert_called_once_with(run_id="run-123", limit=10)
+        mock_find.assert_called_once_with(run_id="run-123", limit=10, tenant=ANY)
 
     def test_activity_empty_list(self, client):
         """Should return empty events list when no interactions exist."""

@@ -58,7 +58,7 @@ class TestRequirementsBreakdownStage:
         stage = build_requirements_breakdown_stage(flow)
 
         with patch(
-            "crewai_productfeature_planner.agents.requirements_breakdown"
+            "crewai_productfeature_planner.agents.product_manager"
             ".breakdown_requirements",
             return_value=("## Feature 1\nreqs", [{"iteration": 1}]),
         ):

@@ -44,7 +44,7 @@ def build_requirements_breakdown_stage(flow: "PRDFlow") -> AgentStage:
         return False
 
     def _run() -> StageResult:
-        from crewai_productfeature_planner.agents.requirements_breakdown import (
+        from crewai_productfeature_planner.agents.product_manager import (
             breakdown_requirements,
         )
         from crewai_productfeature_planner.scripts.memory_loader import (

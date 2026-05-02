@@ -11,7 +11,7 @@ tags:
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 (runs after executive summary approval) |
-| **Agent** | [[Requirements Breakdown]] |
+| **Agent** | [[Product Manager]] (Requirements Breakdown variant) |
 | **LLM Tier** | Research (Gemini) |
 | **Source** | `orchestrator/_requirements.py` |
 | **Stage Factory** | `build_requirements_breakdown_stage(flow)` |
@@ -140,7 +140,7 @@ Next:   → CEO Review Flow (Phase 1.5a)
 
 ---
 
-See also: [[PRD Flow]], [[Requirements Breakdown]], [[Executive Summary Flow|Step 2 — Executive Summary Flow]], [[CEO Review Flow|Step 4 — CEO Review Flow]]
+See also: [[PRD Flow]], [[Product Manager]], [[Executive Summary Flow|Step 2 — Executive Summary Flow]], [[CEO Review Flow|Step 4 — CEO Review Flow]]
 
 
 ---

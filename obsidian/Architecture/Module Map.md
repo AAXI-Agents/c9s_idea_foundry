@@ -64,6 +64,7 @@ tags:
 | `ideas/get_ideas.py` | GET /ideas — paginated list with filters |
 | `ideas/get_idea.py` | GET /ideas/{run_id} — single idea |
 | `ideas/patch_idea_status.py` | PATCH /ideas/{run_id}/status — archive/pause |
+| `ideas/delete_idea.py` | DELETE /ideas/{run_id} — soft-delete with cascade |
 | `projects/router.py` | Assembles projects route modules |
 | `projects/models.py` | ProjectCreate, ProjectUpdate, ProjectItem, project_fields() |
 | `projects/get_projects.py` | GET /projects — paginated list |
@@ -71,12 +72,21 @@ tags:
 | `projects/post_project.py` | POST /projects — create project |
 | `projects/patch_project.py` | PATCH /projects/{project_id} — update project |
 | `projects/delete_project.py` | DELETE /projects/{project_id} — delete project |
+| `projects/get_backlog.py` | GET /projects/{project_id}/backlog — kanban-style backlog with blocked_by |
+| `approvals/__init__.py` | Approvals module init + router re-export |
+| `approvals/router.py` | GET /approvals/pending — cross-project pending approvals queue |
+| `approvals/models.py` | ApprovalItem, ApprovalAction, ApprovalListResponse |
 | `prd/router.py` | `/flow/prd/*` — kickoff, approve, pause, resume, runs, jobs |
 | `prd/models.py` | Pydantic request/response schemas |
 | `prd/service.py` | Flow execution helpers (run, resume, restore state) |
 | `prd/_route_timeline.py` | `GET /flow/runs/{run_id}/timeline` — unified PRD journey timeline |
 | `prd/_route_versions.py` | `GET /flow/runs/{run_id}/versions` — PRD version history |
 | `prd/_route_websocket.py` | `WS /flow/runs/{run_id}/ws` — real-time WebSocket for agent activity |
+| `ideation/__init__.py` | Re-exports: broadcast, broadcast_sync, ideation_ws_router, ideation_router |
+| `ideation/router.py` | 10 REST endpoints for interactive ideation flow |
+| `ideation/models.py` | Pydantic request/response models (frontend-compatible shapes) |
+| `ideation/service.py` | Business logic: start, respond, iterate, advance, rollback |
+| `ideation/_route_websocket.py` | `WS /ws/ideation/{session_id}` — real-time streaming with JWT auth |
 | `publishing/` | Publishing automation (router, service, watcher, scheduler) |
 | `slack/` | Full Slack integration (see [[Slack Integration]]) |
 | `slack/_slack_file_helper.py` | Truncation + file upload for long Slack content (v0.31.2) |
@@ -134,6 +144,7 @@ tags:
 | `user_session/` | User session management |
 | `user_suggestions/` | Ambiguous intent tracking for self-learning |
 | `users/` | Application user accounts (SSO + Slack provisioned) |
+| `ideation_sessions/` | Interactive ideation session CRUD (step_to_name, count, paginate, metadata) |
 
 ## Tools (`tools/`)
 

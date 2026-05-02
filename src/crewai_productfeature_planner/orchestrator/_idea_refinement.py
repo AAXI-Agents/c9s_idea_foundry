@@ -41,7 +41,7 @@ def build_idea_refinement_stage(flow: "PRDFlow") -> AgentStage:
         return False
 
     def _run() -> StageResult:
-        from crewai_productfeature_planner.agents.idea_refiner import (
+        from crewai_productfeature_planner.agents.idea_manager import (
             refine_idea,
         )
         from crewai_productfeature_planner.scripts.memory_loader import (

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
-from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
+from crewai_productfeature_planner.mongodb._tenant import tenant_filter
 from crewai_productfeature_planner.mongodb.working_ideas import _common
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
@@ -65,6 +66,10 @@ class DashboardStats(BaseModel):
     },
 )
 async def get_dashboard_stats(
+    organization_id: str | None = Query(
+        default=None,
+        description="Filter by organization (enterprise admins only)",
+    ),
     user: dict = Depends(require_sso_user),
 ) -> DashboardStats:
     """Aggregate idea counts from the workingIdeas collection."""
@@ -75,7 +80,7 @@ async def get_dashboard_stats(
         db = _common.get_db()
         coll = db[WORKING_COLLECTION]
 
-        tenant = TenantContext.from_user(user)
+        tenant = resolve_tenant_context(user, organization_id)
         t_filter = tenant_filter(tenant)
 
         # Single aggregation pipeline for all counts.

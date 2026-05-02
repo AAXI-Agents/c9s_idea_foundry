@@ -377,7 +377,7 @@ class PRDFlow(Flow[PRDState]):
 
         logger.info("[IdeaRefiner] Refining idea before PRD generation")
         try:
-            from crewai_productfeature_planner.agents.idea_refiner import refine_idea
+            from crewai_productfeature_planner.agents.idea_manager import refine_idea
 
             self.state.original_idea = self.state.idea
             project_id = resolve_project_id(self.state.run_id)

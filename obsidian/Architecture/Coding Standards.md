@@ -60,13 +60,15 @@ When context capacity reaches 75%:
 - Drop intermediate search/read results
 - Keep only: current task state, file paths, key decisions, todo list
 
-### Obsidian Knowledge Updates
+### Weekly Changelog Updates
 
-Every new session or iteration must update the Obsidian vault:
-- Update [[Version History]] with new codex entries
-- Update [[Session Log]] with session summary
+Changelog lives in `obsidian/Changelog/` as **one file per ISO week**, named by the Monday date: `YYYY-MM-DD.md` (e.g. `2026-04-28.md`).
+
+Every coding session must update the current week's `Changelog/YYYY-MM-DD.md`:
+- Add a version table row (version, date, one-line summary)
+- Add a session entry below the week's table (focus, root cause, changes, files, tests)
+- If the current week's file doesn't exist, create it with YAML frontmatter (`week`, `versions` list) + heading + version table
 - Update relevant knowledge pages for structural changes
-- See [[Session Entry]] template for format
 
 ## 5. Command Prompt Permissions
 

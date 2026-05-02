@@ -31,7 +31,10 @@ class TestAllCollections:
 
     EXPECTED = {
         "agentInteraction",
+        "agentRegistry",
+        "companyActivity",
         "crewJobs",
+        "ideationSessions",
         "leases",
         "userSession",
         "userSuggestions",

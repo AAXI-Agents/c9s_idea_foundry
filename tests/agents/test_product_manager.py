@@ -75,7 +75,7 @@ def test_create_product_manager_role():
     with _mock_build_tools(), _mock_build_llm():
         agent = create_product_manager()
 
-    assert agent.role == "Senior Product Manager"
+    assert agent.role == "Senior Product Manager & Solutions Architect"
 
 
 def test_create_product_manager_backstory_mentions_smart():
@@ -600,7 +600,7 @@ class TestCreateProductManagerTier:
         mock_llm.assert_called_once_with(
             provider=PROVIDER_OPENAI, model_tier="basic",
         )
-        assert agent.role == "Senior Product Manager"
+        assert agent.role == "Senior Product Manager & Solutions Architect"
 
     def test_research_tier_is_default(self, monkeypatch):
         """Default model_tier should be 'research'."""

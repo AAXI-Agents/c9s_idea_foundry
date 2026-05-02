@@ -468,7 +468,7 @@ def _handle_idea_agent(
     from crewai_productfeature_planner.tools.slack_tools import _get_slack_client
 
     try:
-        from crewai_productfeature_planner.agents.idea_agent import (
+        from crewai_productfeature_planner.agents.idea_manager import (
             handle_idea_query,
             extract_steering_feedback,
         )
@@ -490,7 +490,7 @@ def _handle_idea_agent(
         # If the response contains steering feedback, persist it so
         # downstream agents can incorporate it in the next iteration.
         try:
-            from crewai_productfeature_planner.agents.idea_agent import (
+            from crewai_productfeature_planner.agents.idea_manager import (
                 extract_steering_feedback,
             )
             steering = extract_steering_feedback(agent_response)

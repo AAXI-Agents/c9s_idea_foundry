@@ -103,7 +103,7 @@ These flows can be triggered independently without running the full PRD pipeline
 |------|------|----------|---------|
 | 1 | [[Idea Refinement Flow\|Step 1 — Idea Refinement Flow]] | [[Idea Refiner]] | 3-10 iterative enrichment cycles |
 | 2 | [[Executive Summary Flow\|Step 2 — Executive Summary Flow]] | [[Product Manager]] | Multi-agent draft→critique→refine loop |
-| 3 | [[Requirements Breakdown Flow\|Step 3 — Requirements Breakdown Flow]] | [[Requirements Breakdown]] | Entities, state machines, API contracts |
+| 3 | [[Requirements Breakdown Flow\|Step 3 — Requirements Breakdown Flow]] | [[Product Manager]] | Entities, state machines, API contracts |
 | 4 | [[CEO Review Flow\|Step 4 — CEO Review Flow]] | [[CEO Reviewer]] | 10-star Executive Product Summary |
 | 5 | [[Section Drafting Flow\|Step 5 — Section Drafting Flow]] | [[Product Manager]] | 9 sections with critique scoring |
 | 6 | [[Engineering Plan Flow\|Step 6 — Engineering Plan Flow]] | [[Engineering Manager]] | Architecture, data model, deployment (requires all sections) |

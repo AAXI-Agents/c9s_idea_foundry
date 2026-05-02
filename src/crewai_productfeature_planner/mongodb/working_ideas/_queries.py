@@ -186,15 +186,18 @@ def find_resumable_on_startup() -> tuple[list[dict[str, Any]], list[dict[str, An
                 # Mark as failed
                 db[WORKING_COLLECTION].update_one(
                     {"_id": doc["_id"]},
-                    {"$set": {
-                        "status": "failed",
-                        "error": (
-                            f"Run was in '{prev_status}' status when the "
-                            f"server restarted. No Slack context available "
-                            f"for auto-resume."
-                        ),
-                        "update_date": now,
-                    }},
+                    {
+                        "$set": {
+                            "status": "failed",
+                            "error": (
+                                f"Run was in '{prev_status}' status when the "
+                                f"server restarted. No Slack context available "
+                                f"for auto-resume."
+                            ),
+                            "update_date": now,
+                        },
+                        "$unset": {"_active_idea_key": ""},
+                    },
                 )
                 failed.append(info)
                 logger.warning(
@@ -239,15 +242,18 @@ def fail_unfinalized_on_startup() -> list[dict[str, Any]]:
             prev_status = doc.get("status", "unknown")
             db[WORKING_COLLECTION].update_one(
                 {"_id": doc["_id"]},
-                {"$set": {
-                    "status": "failed",
-                    "error": (
-                        f"Run was in '{prev_status}' status when the server "
-                        f"restarted. Terminated to apply new code changes. "
-                        f"Say 'create prd' to start a fresh run."
-                    ),
-                    "update_date": now,
-                }},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error": (
+                            f"Run was in '{prev_status}' status when the server "
+                            f"restarted. Terminated to apply new code changes. "
+                            f"Say 'create prd' to start a fresh run."
+                        ),
+                        "update_date": now,
+                    },
+                    "$unset": {"_active_idea_key": ""},
+                },
             )
             logger.warning(
                 "[MongoDB] Startup recovery: working idea %s (%s -> failed) — "
@@ -275,13 +281,18 @@ def fail_unfinalized_on_startup() -> list[dict[str, Any]]:
         return []
 
 
-def find_unfinalized() -> list[dict[str, Any]]:
+def find_unfinalized(
+    tenant: TenantContext | None = None,
+) -> list[dict[str, Any]]:
     """Find working ideas that have not been finalized.
 
     Queries ``workingIdeas`` for documents whose status is not
     ``completed``.  Failed runs are included so they can be
     resumed — the underlying executive summary and requirements
     data is still valid.
+
+    Args:
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         A list of dicts, each containing:
@@ -294,8 +305,9 @@ def find_unfinalized() -> list[dict[str, Any]]:
     try:
         db = _common.get_db()
 
-        query = {
+        query: dict[str, Any] = {
             "status": {"$nin": ["completed", "archived"]},
+            **tenant_filter(tenant),
         }
         docs = list(db[WORKING_COLLECTION].find(query).sort("created_at", -1))
         runs = []
@@ -737,12 +749,17 @@ def find_completed_ideas_by_project(
 
 
 def find_run_any_status(
-    run_id: str, *, tenant: TenantContext | None = None
+    run_id: str,
+    tenant: TenantContext | None = None,
 ) -> dict[str, Any] | None:
     """Fetch a working-idea document by *run_id* regardless of status.
 
     Unlike :func:`get_run_documents` this does **not** exclude
     ``completed`` documents.  Only ``archived`` runs are filtered out.
+
+    Args:
+        run_id: The run identifier.
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         The document dict, or ``None`` if not found.

@@ -21,7 +21,9 @@ from crewai_productfeature_planner.apis.prd.models import (
 from crewai_productfeature_planner.apis.shared import (
     runs,
 )
+from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.crew_jobs import (
     find_job,
     list_jobs,
@@ -62,6 +64,80 @@ ws_only_router.include_router(ws_router)
 # ── Helpers ───────────────────────────────────────────────────
 
 
+def _build_agent_roster(
+    run_id: str,
+    *,
+    tenant: TenantContext | None = None,
+) -> tuple[list[dict], bool]:
+    """Build agent roster data for a run by aggregating interactions.
+
+    Returns:
+        (roster_items, cost_tracking_available)
+    """
+    from crewai_productfeature_planner.mongodb.agent_interactions import (
+        find_interactions,
+    )
+    from crewai_productfeature_planner.mongodb.agent_registry import (
+        list_agents,
+    )
+
+    # Get all interactions for this run
+    interactions = find_interactions(run_id=run_id, limit=500, tenant=tenant)
+
+    # Build per-agent aggregation from interactions
+    agent_data: dict[str, dict] = {}
+    cost_available = False
+    for doc in interactions:
+        meta = doc.get("metadata") or {}
+        agent_id = meta.get("agent_id")
+        if not agent_id:
+            continue
+
+        if agent_id not in agent_data:
+            agent_data[agent_id] = {
+                "tokens_used": 0,
+                "cost_usd": 0.0,
+                "last_activity_at": None,
+            }
+        entry = agent_data[agent_id]
+        entry["tokens_used"] += meta.get("tokens_delta", 0)
+        entry["cost_usd"] += meta.get("cost_usd_delta", 0.0)
+        if meta.get("tokens_delta", 0) > 0:
+            cost_available = True
+
+        created = doc.get("created_at")
+        if hasattr(created, "isoformat"):
+            created = created.isoformat()
+        elif created is not None:
+            created = str(created)
+        if created and (
+            entry["last_activity_at"] is None
+            or created > entry["last_activity_at"]
+        ):
+            entry["last_activity_at"] = created
+
+    # Enrich with registry data
+    registry = {a["agent_id"]: a for a in list_agents()}
+
+    roster = []
+    for aid, data in agent_data.items():
+        reg = registry.get(aid, {})
+        roster.append({
+            "id": aid,
+            "name": reg.get("display_name", aid),
+            "role": reg.get("role", ""),
+            "title": reg.get("title", ""),
+            "reports_to": reg.get("reports_to"),
+            "status": reg.get("status", "idle"),
+            "current_step": None,
+            "last_activity_at": data["last_activity_at"],
+            "tokens_used": data["tokens_used"],
+            "cost_usd": round(data["cost_usd"], 6),
+        })
+
+    return roster, cost_available
+
+
 def _build_run_response(run) -> dict:
     """Build a PRDRunStatusResponse dict from an in-memory FlowRun."""
     draft = run.current_draft
@@ -83,10 +159,22 @@ def _build_run_response(run) -> dict:
     data["sections_approved"] = approved_count
     data["sections_total"] = total_sections
     data["current_step"] = current_step
+    # Agent roster
+    try:
+        roster, cost_avail = _build_agent_roster(run.run_id)
+        data["agents"] = roster
+        data["cost_tracking_available"] = cost_avail
+    except Exception:
+        logger.debug("[PRD] Failed to build agent roster for run_id=%s", run.run_id, exc_info=True)
+        data["agents"] = []
+        data["cost_tracking_available"] = False
     return data
 
 
-def _build_run_response_from_db(run_id: str) -> dict:
+def _build_run_response_from_db(
+    run_id: str,
+    tenant: TenantContext | None = None,
+) -> dict:
     """Reconstruct a run-status response from MongoDB.
 
     Queries ``crewJobs`` for lifecycle metadata and ``workingIdeas`` for
@@ -97,7 +185,7 @@ def _build_run_response_from_db(run_id: str) -> dict:
         PRDDraft,
     )
 
-    job = find_job(run_id)
+    job = find_job(run_id, tenant=tenant)
     if job is None:
         raise HTTPException(status_code=404, detail="Run not found")
 
@@ -112,7 +200,7 @@ def _build_run_response_from_db(run_id: str) -> dict:
         from crewai_productfeature_planner.mongodb.working_ideas import (
             find_run_any_status,
         )
-        idea_doc = find_run_any_status(run_id) or {}
+        idea_doc = find_run_any_status(run_id, tenant=tenant) or {}
     except Exception:
         logger.debug(
             "[PRD] Could not restore draft for run_id=%s, using empty draft",
@@ -134,7 +222,7 @@ def _build_run_response_from_db(run_id: str) -> dict:
         (s.iteration for s in draft.sections), default=0,
     )
 
-    return {
+    result = {
         "run_id": run_id,
         "flow_name": job.get("flow_name", "prd"),
         "status": job.get("status", "unknown"),
@@ -172,6 +260,16 @@ def _build_run_response_from_db(run_id: str) -> dict:
             all_approved=draft.all_approved(),
         ).model_dump(),
     }
+    # Agent roster enrichment
+    try:
+        roster, cost_avail = _build_agent_roster(run_id, tenant=tenant)
+        result["agents"] = roster
+        result["cost_tracking_available"] = cost_avail
+    except Exception:
+        logger.debug("[PRD] Failed to build agent roster for run_id=%s", run_id, exc_info=True)
+        result["agents"] = []
+        result["cost_tracking_available"] = False
+    return result
 
 
 @router.get(
@@ -203,7 +301,8 @@ async def get_run_status(run_id: str, user: dict = Depends(require_sso_user)):
         return _build_run_response(run)
 
     # Fallback: reconstruct from MongoDB for runs lost after restart.
-    return _build_run_response_from_db(run_id)
+    tenant = TenantContext.from_user(user)
+    return _build_run_response_from_db(run_id, tenant=tenant)
 
 
 @router.get(
@@ -232,8 +331,9 @@ async def get_run_activity(
         find_interactions,
     )
 
+    tenant = TenantContext.from_user(user)
     try:
-        docs = find_interactions(run_id=run_id, limit=limit)
+        docs = find_interactions(run_id=run_id, limit=limit, tenant=tenant)
     except Exception as exc:
         logger.error(
             "[PRD] Failed to query activity for run_id=%s: %s",
@@ -248,6 +348,15 @@ async def get_run_activity(
         created = doc.get("created_at")
         if hasattr(created, "isoformat"):
             created = created.isoformat()
+        meta = doc.get("metadata") or {}
+        # Derive severity from metadata flags
+        severity = "info"
+        if meta.get("error") or doc.get("intent") == "error":
+            severity = "error"
+        elif meta.get("retry") or meta.get("rate_limited"):
+            severity = "warn"
+        elif meta.get("debug"):
+            severity = "debug"
         events.append(ActivityEvent(
             interaction_id=doc.get("interaction_id", ""),
             source=doc.get("source", ""),
@@ -257,6 +366,11 @@ async def get_run_activity(
             user_id=doc.get("user_id"),
             created_at=str(created) if created else "",
             predicted_next_step=doc.get("predicted_next_step"),
+            agent_id=meta.get("agent_id"),
+            severity=severity,
+            tokens_delta=meta.get("tokens_delta", 0),
+            cost_usd_delta=meta.get("cost_usd_delta", 0.0),
+            summary=doc.get("agent_response", "")[:120],
         ))
 
     return ActivityLogResponse(
@@ -279,7 +393,13 @@ async def get_run_activity(
         **_ERROR_RESPONSES,
     },
 )
-async def list_runs(user: dict = Depends(require_sso_user)):
+async def list_runs(
+    organization_id: str | None = Query(
+        default=None,
+        description="Filter by organization (enterprise admins only)",
+    ),
+    user: dict = Depends(require_sso_user),
+):
     # Start with active in-memory runs.
     seen: set[str] = set()
     result = []
@@ -295,8 +415,9 @@ async def list_runs(user: dict = Depends(require_sso_user)):
         })
 
     # Supplement with persistent jobs from MongoDB.
+    tenant = resolve_tenant_context(user, organization_id)
     try:
-        db_jobs = list_jobs(limit=100)
+        db_jobs = list_jobs(limit=100, tenant=tenant)
     except Exception:
         db_jobs = []
     for doc in db_jobs:
@@ -339,8 +460,9 @@ async def list_runs(user: dict = Depends(require_sso_user)):
 async def list_resumable_runs(user: dict = Depends(require_sso_user)):
     from crewai_productfeature_planner.mongodb import find_unfinalized
 
+    tenant = TenantContext.from_user(user)
     try:
-        unfinalized = find_unfinalized()
+        unfinalized = find_unfinalized(tenant=tenant)
     except Exception as exc:
         logger.error("[PRD] Failed to query resumable runs: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to query resumable runs") from exc
@@ -407,11 +529,16 @@ async def list_all_jobs(
     status: str | None = None,
     flow_name: str | None = None,
     limit: int = Query(default=50, ge=1, le=500),
+    organization_id: str | None = Query(
+        default=None,
+        description="Filter by organization (enterprise admins only)",
+    ),
     user: dict = Depends(require_sso_user),
 ):
     """List persistent job records, optionally filtered."""
+    tenant = resolve_tenant_context(user, organization_id)
     try:
-        docs = list_jobs(status=status, flow_name=flow_name, limit=limit)
+        docs = list_jobs(status=status, flow_name=flow_name, limit=limit, tenant=tenant)
     except Exception as exc:
         logger.error("[PRD] Failed to list jobs: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list jobs") from exc
@@ -436,8 +563,9 @@ async def list_all_jobs(
 )
 async def get_job(job_id: str, user: dict = Depends(require_sso_user)):
     """Fetch a single persistent job record."""
+    tenant = TenantContext.from_user(user)
     try:
-        doc = find_job(job_id)
+        doc = find_job(job_id, tenant=tenant)
     except Exception as exc:
         logger.error("[PRD] Failed to find job %s: %s", job_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to find job") from exc

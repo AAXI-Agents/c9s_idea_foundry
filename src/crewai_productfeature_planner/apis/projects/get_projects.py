@@ -15,13 +15,14 @@ from math import ceil
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from crewai_productfeature_planner.apis._response_cache import response_cache
+from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
 from crewai_productfeature_planner.apis.projects.models import (
     ProjectItem,
     ProjectListResponse,
     project_fields,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
-from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
+from crewai_productfeature_planner.mongodb._tenant import tenant_filter
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -37,6 +38,10 @@ router = APIRouter()
 async def list_projects(
     page: int = Query(default=1, ge=1, description="Page number (1-based)"),
     page_size: int = Query(default=10, ge=1, le=100, description="Items per page (1-100)"),
+    organization_id: str | None = Query(
+        default=None,
+        description="Filter by organization (enterprise admins only)",
+    ),
     user: dict = Depends(require_sso_user),
 ) -> ProjectListResponse:
     """Return a paginated list of projects, newest first."""
@@ -48,7 +53,7 @@ async def list_projects(
         )
 
     # ── Check response cache ──────────────────────────────────
-    cache_params = dict(page=page, page_size=page_size)
+    cache_params = dict(page=page, page_size=page_size, organization_id=organization_id)
     cached = response_cache.get("projects", **cache_params)
     if cached is not None:
         logger.debug("[Projects] cache hit for page=%d size=%d", page, page_size)
@@ -60,7 +65,7 @@ async def list_projects(
         PROJECT_CONFIG_COLLECTION,
     )
 
-    tenant = TenantContext.from_user(user)
+    tenant = resolve_tenant_context(user, organization_id)
     t_filter = tenant_filter(tenant)
 
     db = get_async_db()

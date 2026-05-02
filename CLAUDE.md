@@ -85,10 +85,10 @@ when you need deep context on a topic.
 | **Server startup/shutdown** | `Architecture/Server Lifecycle.md` |
 | **Environment variables** | `Architecture/Environment Variables.md` |
 | **Coding standards** | `Architecture/Coding Standards.md` |
-| **Agent configs & roles** | `Agents/Agent Roles.md` |
-| **LLM model tiers** | `Agents/LLM Model Tiers.md` |
+| **Agent configs & roles** | `Architecture/Agent Roles.md` |
+| **LLM model tiers** | `Architecture/LLM Model Tiers.md` |
 | **API endpoints** | `APIs/API Overview.md` |
-| **Version history / changelog** | `Changelog/Version History.md` |
+| **Weekly changelog** | `Changelog/YYYY-MM-DD.md` (one file per ISO week Monday) |
 | **MongoDB schemas** | `Database/MongoDB Schema.md` |
 | **PRD generation flow** | `Flows/PRD Flow.md` (index → 10 flow pages) |
 | **Slack integration** | `Integrations/Slack Integration.md` |
@@ -100,7 +100,7 @@ when you need deep context on a topic.
 | **Test patterns & patches** | `Testing/Testing Guide.md` |
 | **CrewAI tools** | `Tools/Tools Overview.md` |
 | **User feedback / gap tickets** | `User Feedback/` (use `_template.md`) |
-| **Session log** | `Sessions/Session Log.md` |
+
 
 ### When to Update Which Page
 
@@ -109,7 +109,7 @@ when you need deep context on a topic.
 | New module / file added | `Architecture/Module Map.md` |
 | New API endpoint | `APIs/API Overview.md` + affected per-route file in `APIs/<Domain>/` (Health, Projects, Ideas, PRD Flow, Publishing, Slack, SSO Webhooks) |
 | Changed API request/response schema | Affected per-route file in `APIs/<Domain>/` — update field tables |
-| New agent or model change | `Agents/Agent Roles.md` + affected agent page (`Agents/Idea Refiner.md`, `Agents/Product Manager.md`, `Agents/Requirements Breakdown.md`, `Agents/Orchestrator.md`, `Agents/CEO Reviewer.md`, `Agents/Engineering Manager.md`, `Agents/Staff Engineer.md`, `Agents/QA Lead.md`, `Agents/QA Engineer.md`, `Agents/UX Designer.md`, `Agents/Engagement Manager.md`, `Agents/Idea Agent.md`), `Agents/LLM Model Tiers.md` |
+| New agent or model change | `Architecture/Agent Roles.md` + affected agent page (`Agents/Idea Refiner.md`, `Agents/Product Manager.md`, `Agents/Orchestrator.md`, `Agents/CEO Reviewer.md`, `Agents/Engineering Manager.md`, `Agents/Staff Engineer.md`, `Agents/QA Lead.md`, `Agents/QA Engineer.md`, `Agents/UX Designer.md`, `Agents/Engagement Manager.md`, `Agents/Idea Agent.md`), `Architecture/LLM Model Tiers.md` |
 | Changed agent role/goal/backstory/task | Affected `Agents/<Agent>.md` page — update role, goal, backstory, or task sections |
 | New Slack intent or action | `Integrations/Slack Integration.md`, affected file in `APIs/Slack/` |
 | MongoDB schema change | `Database/MongoDB Schema.md` + affected collection page (`Database/crewJobs Schema.md`, `Database/workingIdeas Schema.md`, `Database/productRequirements Schema.md`, `Database/projectConfig Schema.md`, `Database/projectMemory Schema.md`, `Database/agentInteraction Schema.md`, `Database/userSession Schema.md`, `Database/slackOAuth Schema.md`, `Database/userSuggestions Schema.md`) |
@@ -117,9 +117,8 @@ when you need deep context on a topic.
 | New env var | `Architecture/Environment Variables.md` |
 | Pipeline stage change | `Orchestrator/Orchestrator Overview.md`, `Flows/PRD Flow.md` + affected flow page (`Flows/Idea Refinement Flow.md`, `Flows/Executive Summary Flow.md`, `Flows/Requirements Breakdown Flow.md`, `Flows/CEO Review Flow.md`, `Flows/Engineering Plan Flow.md`, `Flows/Section Drafting Flow.md`, `Flows/Finalization Flow.md`, `Flows/UX Design Flow.md`, `Flows/Confluence Publishing Flow.md`, `Flows/Jira Ticketing Flow.md`) |
 | Changed flow step/approval gate/skip condition | Affected `Flows/<Flow>.md` page — update step details, skip conditions, data flow |
-| Version bump | `Changelog/Version History.md` |
+| Version bump / every session | `Changelog/YYYY-MM-DD.md` — current week's file; add table row + session entry |
 | Gap / missing feature found | `User Feedback/<gap-name>.md` (copy from `_template.md`) |
-| Every session | `Sessions/Session Log.md` |
 
 ---
 
@@ -323,7 +322,7 @@ Every code change **must** update the relevant documentation artifacts:
 | Schema / model change | Affected `obsidian/Database/<collection> Schema.md` — update field tables, indexes, repository functions |
 | New MongoDB field or index | Affected `obsidian/Database/<collection> Schema.md` |
 | New repository function | Affected `obsidian/Database/<collection> Schema.md` — add to repository functions table |
-| New or changed agent | `obsidian/Agents/Agent Roles.md` + affected `obsidian/Agents/<Agent>.md` — update role, goal, backstory, tasks |
+| New or changed agent | `obsidian/Architecture/Agent Roles.md` + affected `obsidian/Agents/<Agent>.md` — update role, goal, backstory, tasks |
 | Changed agent role/goal/backstory/task | Affected `obsidian/Agents/<Agent>.md` — update role, goal, backstory, or task sections |
 | Pipeline or flow step change | `obsidian/Flows/PRD Flow.md` + affected `obsidian/Flows/<Flow>.md` — update step details, skip conditions, data flow |
 | Changed flow approval gate or skip condition | Affected `obsidian/Flows/<Flow>.md` — update approval gates, skip conditions |
@@ -363,7 +362,7 @@ workflow. The agent must:
    b. Implement the fix or new feature.
    c. Update the `## Resolution` section with version, date, and summary.
    d. Change frontmatter `status: open` → `status: resolved`.
-3. Bump version in `version.py` and update `Changelog/Version History.md`.
+3. Bump version in `version.py` and update the current week's `Changelog/YYYY-MM-DD.md`.
 
 **Archive completed tickets (Required):**
 
@@ -416,7 +415,7 @@ has a **## Change Requests** section at the bottom with **Pending** and
       with the date: `- [x] <request> *(completed YYYY-MM-DD)*`
    d. Remove the `_No pending change requests._` placeholder if items exist.
 3. Bump version in `version.py` (`Y` for new features, `Z` for fixes).
-4. Update `obsidian/Changelog/Version History.md`.
+4. Update the current week's `obsidian/Changelog/YYYY-MM-DD.md`.
 
 **Rules:**
 
@@ -437,15 +436,35 @@ has a **## Change Requests** section at the bottom with **Pending** and
 - **Compact mode** at 75% context capacity — summarise and continue
 - **All terminal commands allowed by default** — no need to ask permission
 
-### Obsidian Knowledge Updates (Required)
+### Weekly Changelog Updates (Required)
 
-The vault **must** be updated immediately after each code change:
+Changelog lives in `obsidian/Changelog/` as **one file per ISO week**,
+named by the Monday date: `YYYY-MM-DD.md` (e.g. `2026-04-28.md`).
 
-1. **Session start**: Read `Sessions/Session Log.md` for recent context
+The changelog **must** be updated during every coding session:
+
+1. **Session start**: Read the most recent `Changelog/YYYY-MM-DD.md` for context
 2. **After each code change**: Update affected Obsidian pages (see table above)
-3. **Session end**: Append summary to `Sessions/Session Log.md`
-4. **Knowledge sources**: Update `knowledge/*.txt` files when preferences,
+3. **During session**: Update the current week's `Changelog/YYYY-MM-DD.md` with:
+   - A version table row (version, date, one-line summary)
+   - A session entry below the week's table (focus, root cause, changes,
+     files, tests) — append to existing `### Session` entries for the week
+4. **New week**: If the current week's file doesn't exist yet, create it
+   with YAML frontmatter (`week`, `versions` list) + heading + version table
+5. **Knowledge sources**: Update `knowledge/*.txt` files when preferences,
    architecture, or PRD guidelines change — these feed CrewAI agents directly
+
+**Session entry format:**
+```markdown
+### Session — MM-DD (vX.Y.Z)
+
+**Focus**: One-line description of session goal
+
+- **Root Cause**: (if fixing a bug — what caused it)
+- **Changes**: Bullet summary of what was done
+- **Files**: Key files created/modified
+- **Tests**: Test counts and pass status
+```
 
 ---
 
@@ -461,3 +480,52 @@ Patch the name **where it is imported**, not where it is defined:
 | `_discover_publishable_prds` in `_startup_review.py` | `...orchestrator._startup_review._discover_publishable_prds` |
 
 → Full test patterns: `obsidian/Testing/Testing Guide.md`
+
+---
+
+## 17 · Knowledge Hub Sync
+
+> **This section is LAW.** Every session must sync knowledge with the centralized hub.
+
+| Field | Value |
+|-------|-------|
+| Hub repo | `c9s_knowledge_hub` |
+| Hub path | `enterprises/cloudninesoftware/projects/c9s_idea_foundry/` |
+| Project key | `c9s_idea_foundry` |
+| Type | `backend` |
+| Paired with | `c9s_idea_foundry_web` |
+
+### Session Start — Pull from Hub
+
+```bash
+cd ~/Projects/cloudninesoftware/c9s_knowledge_hub
+./scripts/sync-from-local.sh c9s_idea_foundry
+```
+
+### Session End — Push to Hub
+
+After every coding session, sync obsidian/ back to the hub:
+
+```bash
+cd ~/Projects/cloudninesoftware/c9s_knowledge_hub
+./scripts/sync-from-local.sh c9s_idea_foundry
+```
+
+### Cross-Project Search
+
+To search across all projects in the hub:
+
+```bash
+cd ~/Projects/cloudninesoftware/c9s_knowledge_hub
+grep -r "search term" enterprises/cloudninesoftware/projects/
+```
+
+### Cross-Project Awareness
+
+This repo is paired with **`c9s_idea_foundry_web`**. When working on integration points
+(API contracts, shared types, WebSocket events), check the paired project's
+knowledge in the hub:
+
+```bash
+ls ~/Projects/cloudninesoftware/c9s_knowledge_hub/enterprises/cloudninesoftware/projects/c9s_idea_foundry_web/
+```

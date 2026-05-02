@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from crewai_productfeature_planner.agents.idea_refiner.agent import (
+from crewai_productfeature_planner.agents.idea_manager.agent import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MIN_ITERATIONS,
     DEFAULT_LLM_TIMEOUT,
     DEFAULT_LLM_MAX_RETRIES,
-    _build_refiner_llm,
+    _build_research_llm,
     _get_iteration_limits,
     _load_yaml,
     create_idea_refiner,
@@ -78,42 +78,42 @@ def test_create_idea_refiner_reasoning_enabled():
 # ── LLM configuration tests ──────────────────────────────────
 
 
-def test_build_refiner_llm_default_model(monkeypatch):
+def test_build_research_llm_default_model(monkeypatch):
     """Without IDEA_REFINER_MODEL or GEMINI_RESEARCH_MODEL, uses the default."""
     monkeypatch.delenv("IDEA_REFINER_MODEL", raising=False)
     monkeypatch.delenv("GEMINI_RESEARCH_MODEL", raising=False)
-    llm = _build_refiner_llm()
+    llm = _build_research_llm()
     assert "gemini" in llm.model.lower()
 
 
-def test_build_refiner_llm_respects_idea_refiner_model(monkeypatch):
+def test_build_research_llm_respects_idea_refiner_model(monkeypatch):
     """IDEA_REFINER_MODEL should take precedence over GEMINI_RESEARCH_MODEL."""
     monkeypatch.setenv("IDEA_REFINER_MODEL", "gemini-custom-model")
     monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-3.1-pro-preview")
-    llm = _build_refiner_llm()
+    llm = _build_research_llm()
     assert "gemini-custom-model" in llm.model
 
 
-def test_build_refiner_llm_falls_back_to_gemini_research_model(monkeypatch):
+def test_build_research_llm_falls_back_to_gemini_research_model(monkeypatch):
     """Without IDEA_REFINER_MODEL, should use GEMINI_RESEARCH_MODEL."""
     monkeypatch.delenv("IDEA_REFINER_MODEL", raising=False)
     monkeypatch.setenv("GEMINI_RESEARCH_MODEL", "gemini-2.5-pro")
-    llm = _build_refiner_llm()
+    llm = _build_research_llm()
     assert "gemini-2.5-pro" in llm.model
 
 
-def test_build_refiner_llm_adds_prefix(monkeypatch):
+def test_build_research_llm_adds_prefix(monkeypatch):
     """Model names without '/' should get 'gemini/' prepended."""
     monkeypatch.setenv("IDEA_REFINER_MODEL", "gemini-3-flash-preview")
-    llm = _build_refiner_llm()
+    llm = _build_research_llm()
     # LiteLLM / GeminiCompletion may strip the prefix, but the model should include gemini
     assert "gemini" in llm.model.lower()
 
 
-def test_build_refiner_llm_no_double_prefix(monkeypatch):
+def test_build_research_llm_no_double_prefix(monkeypatch):
     """Already-qualified model names should not be double-prefixed."""
     monkeypatch.setenv("IDEA_REFINER_MODEL", "gemini/gemini-3-flash-preview")
-    llm = _build_refiner_llm()
+    llm = _build_research_llm()
     assert "gemini/gemini/" not in llm.model
 
 
@@ -170,10 +170,10 @@ def test_iteration_limits_cap(monkeypatch):
 def test_load_agent_yaml():
     """Agent YAML should contain idea_refiner key."""
     config = _load_yaml("agent.yaml")
-    assert "idea_refiner" in config
-    assert "role" in config["idea_refiner"]
-    assert "goal" in config["idea_refiner"]
-    assert "backstory" in config["idea_refiner"]
+    assert "idea_manager" in config
+    assert "role" in config["idea_manager"]
+    assert "goal" in config["idea_manager"]
+    assert "backstory" in config["idea_manager"]
 
 
 def test_load_tasks_yaml():
@@ -219,9 +219,9 @@ def test_refine_idea_stops_at_idea_ready(monkeypatch):
             result.raw = "Needs more detail. NEEDS_MORE"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
-         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+         patch("crewai_productfeature_planner.agents.idea_manager.agent._generate_alternatives",
                side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
         result, history, _ = refine_idea("Build a dashboard")
 
@@ -252,9 +252,9 @@ def test_refine_idea_runs_max_iterations(monkeypatch):
         result.raw = "Still needs work. NEEDS_MORE"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
-         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+         patch("crewai_productfeature_planner.agents.idea_manager.agent._generate_alternatives",
                side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
         result, history, _ = refine_idea("Build a feature")
 
@@ -281,9 +281,9 @@ def test_refine_idea_ignores_ready_before_min(monkeypatch):
         result.raw = "Looks good. IDEA_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
-         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+         patch("crewai_productfeature_planner.agents.idea_manager.agent._generate_alternatives",
                side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
         result, history, _ = refine_idea("Some idea")
 
@@ -306,7 +306,7 @@ def test_refine_idea_returns_tuple(monkeypatch):
         result.raw = "IDEA_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff):
         result, history, _ = refine_idea("Raw idea")
 
@@ -336,7 +336,7 @@ def test_refine_idea_saves_iterations_with_run_id(monkeypatch):
         result.raw = "Still improving. NEEDS_MORE" if call_count < 2 else "IDEA_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
          patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db") as mock_db:
         mock_collection = MagicMock()
@@ -366,7 +366,7 @@ def test_refine_idea_no_run_id_skips_save(monkeypatch):
         result.raw = "IDEA_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
          patch("crewai_productfeature_planner.mongodb.working_ideas._common.get_db") as mock_db:
         mock_collection = MagicMock()
@@ -378,7 +378,7 @@ def test_refine_idea_no_run_id_skips_save(monkeypatch):
 
 # ── Score parsing & direction change helpers ─────────────────
 
-from crewai_productfeature_planner.agents.idea_refiner.agent import (
+from crewai_productfeature_planner.agents.idea_manager.agent import (
     parse_evaluation_scores,
     compute_average_confidence,
     detect_direction_change,
@@ -482,9 +482,9 @@ def test_refine_idea_calls_options_callback(monkeypatch):
             result.raw = "4/5 4/5 4/5 4/5 4/5 NEEDS_MORE"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
-         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+         patch("crewai_productfeature_planner.agents.idea_manager.agent._generate_alternatives",
                side_effect=lambda agent, idea, configs: [idea, "alt_direction_B", "alt_direction_C"]):
         result, history, opts_history = refine_idea(
             "Build a dashboard",
@@ -518,9 +518,9 @@ def test_refine_idea_options_auto_select_without_callback(monkeypatch):
         result.raw = "4/5 4/5 4/5 4/5 4/5 IDEA_READY"
         return result
 
-    with patch("crewai_productfeature_planner.agents.idea_refiner.agent.crew_kickoff_with_retry",
+    with patch("crewai_productfeature_planner.agents.idea_manager.agent.crew_kickoff_with_retry",
                side_effect=mock_kickoff), \
-         patch("crewai_productfeature_planner.agents.idea_refiner.agent._generate_alternatives",
+         patch("crewai_productfeature_planner.agents.idea_manager.agent._generate_alternatives",
                side_effect=lambda agent, idea, configs: [idea, "alt2", "alt3"]):
         result, history, opts_history = refine_idea("Build something")
 

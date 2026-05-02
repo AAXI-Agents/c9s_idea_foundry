@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
+from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
 from crewai_productfeature_planner.apis.publishing.models import (
     CombinedPublishResult,
     ConfluenceBatchResult,
@@ -30,6 +31,7 @@ from crewai_productfeature_planner.apis.publishing.models import (
     WatcherStatusResponse,
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -40,6 +42,23 @@ def _safe_detail(exc: Exception) -> str:
     if isinstance(exc, RuntimeError):
         return "Service temporarily unavailable. Check server logs."
     return "An internal error occurred. Check server logs."
+
+
+def _verify_run_ownership(run_id: str, user: dict) -> None:
+    """Verify the authenticated user has access to the given run_id.
+
+    Raises 404 if the run does not exist within the user's tenant scope.
+    This prevents cross-tenant access to publishing operations.
+    """
+    from crewai_productfeature_planner.mongodb.working_ideas import find_run_any_status
+
+    tenant = TenantContext.from_user(user)
+    t_filter = tenant_filter(tenant)
+    if not t_filter:
+        return  # No tenant enforcement (dev mode / anonymous)
+    doc = find_run_any_status(run_id, tenant=tenant)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Run not found")
 
 router = APIRouter(
     prefix="/publishing",
@@ -72,7 +91,10 @@ _ERROR_RESPONSES: dict = {
     ),
     responses=_ERROR_RESPONSES,
 )
-async def list_pending(user: dict = Depends(require_sso_user)):
+async def list_pending(
+    organization_id: str | None = None,
+    user: dict = Depends(require_sso_user),
+):
     """Return all PRDs that need Confluence publish or Jira tickets."""
     from crewai_productfeature_planner.apis.publishing.service import (
         list_pending_prds,
@@ -80,6 +102,27 @@ async def list_pending(user: dict = Depends(require_sso_user)):
 
     try:
         items = list_pending_prds()
+
+        # Apply tenant scoping — filter items by run_id ownership
+        tenant = resolve_tenant_context(user, organization_id)
+        t_filter = tenant_filter(tenant)
+        if t_filter:
+            from crewai_productfeature_planner.mongodb.working_ideas._common import (
+                WORKING_COLLECTION,
+            )
+            from crewai_productfeature_planner.mongodb.client import get_db
+
+            db = get_db()
+            coll = db[WORKING_COLLECTION]
+            run_ids = [it["run_id"] for it in items if it.get("run_id")]
+            if run_ids:
+                query = {"run_id": {"$in": run_ids}, **t_filter}
+                allowed_ids = {
+                    doc["run_id"]
+                    for doc in coll.find(query, {"run_id": 1, "_id": 0})
+                }
+                items = [it for it in items if it.get("run_id") in allowed_ids]
+
         return PendingListResponse(count=len(items), items=items)
     except Exception as exc:
         logger.error("list_pending failed: %s", exc)
@@ -146,6 +189,7 @@ async def publish_confluence_single_endpoint(run_id: str, user: dict = Depends(r
         publish_confluence_single,
     )
 
+    _verify_run_ownership(run_id, user)
     try:
         result = publish_confluence_single(run_id)
         return ConfluencePublishResult(**result)
@@ -187,6 +231,7 @@ async def preview_confluence(run_id: str, user: dict = Depends(require_sso_user)
         preview_confluence_content,
     )
 
+    _verify_run_ownership(run_id, user)
     try:
         result = preview_confluence_content(run_id)
         return ConfluencePreviewResponse(**result)
@@ -258,6 +303,7 @@ async def create_jira_single_endpoint(run_id: str, user: dict = Depends(require_
         create_jira_single,
     )
 
+    _verify_run_ownership(run_id, user)
     try:
         result = create_jira_single(run_id)
         return JiraCreateResult(**result)
@@ -329,6 +375,7 @@ async def publish_single_all_endpoint(run_id: str, user: dict = Depends(require_
         publish_and_create_tickets,
     )
 
+    _verify_run_ownership(run_id, user)
     try:
         result = publish_and_create_tickets(run_id)
         return CombinedPublishResult(**result)
@@ -369,6 +416,7 @@ async def get_status_endpoint(run_id: str, user: dict = Depends(require_sso_user
         get_delivery_status,
     )
 
+    _verify_run_ownership(run_id, user)
     try:
         return get_delivery_status(run_id)
     except ValueError as exc:

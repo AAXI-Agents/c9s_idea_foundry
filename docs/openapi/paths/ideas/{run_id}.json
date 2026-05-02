@@ -25,5 +25,48 @@
       "401": { "description": "Missing or invalid SSO token." },
       "404": { "description": "Idea not found." }
     }
+  },
+  "delete": {
+    "tags": ["Ideas"],
+    "summary": "Soft-delete an idea with full cascade",
+    "description": "Performs a soft-delete: sets status='deleted' with deleted_at timestamp, mirrors to crewJobs, cancels any running flow, unblocks pending approval gates, and invalidates response cache. The document remains in MongoDB for audit purposes.",
+    "operationId": "deleteIdea",
+    "security": [{ "ssoAuth": [] }],
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Unique flow run identifier of the idea to delete."
+      },
+      {
+        "name": "purge_remote",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "boolean", "default": false },
+        "description": "Also delete linked Jira issues and Confluence pages via their REST APIs (best-effort)."
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Idea soft-deleted successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string", "example": "deleted" },
+                "run_id": { "type": "string" },
+                "cascaded": { "type": "object" }
+              }
+            }
+          }
+        }
+      },
+      "401": { "description": "Missing or invalid SSO token." },
+      "404": { "description": "Idea not found or not owned by authenticated user." },
+      "409": { "description": "Idea is in-flight (status=inprogress with active flow). Pause first." }
+    }
   }
 }

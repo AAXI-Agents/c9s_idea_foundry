@@ -11,16 +11,19 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from crewai_productfeature_planner.mongodb._tenant import (
     TenantContext,
     tenant_fields,
+    tenant_filter,
 )
 from crewai_productfeature_planner.mongodb.working_ideas import _common
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
+    _TERMINAL_STATUSES,
     _now_iso,
+    build_active_idea_key,
     logger,
 )
 
@@ -35,7 +38,7 @@ def _normalize_idea(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def mark_completed(run_id: str) -> int:
+def mark_completed(run_id: str, tenant: TenantContext | None = None) -> int:
     """Mark the working-idea document for *run_id* as ``completed``.
 
     Sets ``status`` to ``"completed"`` so that ``find_unfinalized``
@@ -46,13 +49,17 @@ def mark_completed(run_id: str) -> int:
     """
     try:
         now = datetime.now(timezone.utc)
+        query: dict[str, Any] = {"run_id": run_id, **tenant_filter(tenant)}
         result = _common.get_db()[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
-            {"$set": {
-                "status": "completed",
-                "completed_at": now.isoformat(),
-                "update_date": now.isoformat(),
-            }},
+            query,
+            {
+                "$set": {
+                    "status": "completed",
+                    "completed_at": now.isoformat(),
+                    "update_date": now.isoformat(),
+                },
+                "$unset": {"_active_idea_key": ""},
+            },
         )
         logger.info(
             "[MongoDB] Marked working-idea doc completed for run_id=%s (matched=%d)",
@@ -67,7 +74,7 @@ def mark_completed(run_id: str) -> int:
         return 0
 
 
-def mark_paused(run_id: str) -> int:
+def mark_paused(run_id: str, tenant: TenantContext | None = None) -> int:
     """Mark the working-idea document for *run_id* as ``paused``.
 
     Called after ``save_progress()`` writes partial output so the
@@ -79,8 +86,9 @@ def mark_paused(run_id: str) -> int:
     """
     try:
         now = _now_iso()
+        query: dict[str, Any] = {"run_id": run_id, **tenant_filter(tenant)}
         result = _common.get_db()[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
+            query,
             {"$set": {
                 "status": "paused",
                 "update_date": now,
@@ -99,7 +107,7 @@ def mark_paused(run_id: str) -> int:
         return 0
 
 
-def mark_archived(run_id: str) -> int:
+def mark_archived(run_id: str, tenant: TenantContext | None = None) -> int:
     """Mark the working-idea document for *run_id* as ``archived``.
 
     Archived runs are preserved for reference but excluded from
@@ -112,13 +120,17 @@ def mark_archived(run_id: str) -> int:
     """
     try:
         now = _now_iso()
+        query: dict[str, Any] = {"run_id": run_id, **tenant_filter(tenant)}
         result = _common.get_db()[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
-            {"$set": {
-                "status": "archived",
-                "archived_at": now,
-                "update_date": now,
-            }},
+            query,
+            {
+                "$set": {
+                    "status": "archived",
+                    "archived_at": now,
+                    "update_date": now,
+                },
+                "$unset": {"_active_idea_key": ""},
+            },
         )
         logger.info(
             "[MongoDB] Marked working-idea doc archived for run_id=%s (matched=%d)",
@@ -128,6 +140,49 @@ def mark_archived(run_id: str) -> int:
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to mark working idea archived for run_id=%s: %s",
+            run_id, exc,
+        )
+        return 0
+
+
+def mark_deleted(run_id: str, tenant: TenantContext | None = None) -> int:
+    """Soft-delete the working-idea document for *run_id*.
+
+    This is the user-facing 'delete' action. The document is kept in
+    MongoDB for audit purposes but its status is set to ``"deleted"``
+    so it is permanently hidden from every user-visible listing
+    (``GET /ideas`` excludes ``deleted`` by default).
+
+    Distinct from ``mark_archived``: archive is an internal lifecycle
+    state used when restarting a PRD flow (old run archived, new run
+    started with the same idea text). ``mark_deleted`` is what runs
+    when a user clicks the trash / X icon in the dashboard.
+
+    Returns:
+        The number of documents updated (0 or 1), or ``0`` on failure.
+    """
+    try:
+        now = _now_iso()
+        query: dict[str, Any] = {"run_id": run_id, **tenant_filter(tenant)}
+        result = _common.get_db()[WORKING_COLLECTION].update_one(
+            query,
+            {
+                "$set": {
+                    "status": "deleted",
+                    "deleted_at": now,
+                    "update_date": now,
+                },
+                "$unset": {"_active_idea_key": ""},
+            },
+        )
+        logger.info(
+            "[MongoDB] Soft-deleted working-idea doc for run_id=%s (matched=%d)",
+            run_id, result.modified_count,
+        )
+        return result.modified_count
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to soft-delete working idea for run_id=%s: %s",
             run_id, exc,
         )
         return 0
@@ -359,8 +414,14 @@ def save_project_ref(
             **(tenant_fields(tenant) if tenant else {}),
         }
         if idea:
+            normalized = _normalize_idea(idea)
             set_fields["idea"] = idea
-            set_fields["idea_normalized"] = _normalize_idea(idea)
+            set_fields["idea_normalized"] = normalized
+            # Compute dedup key for the sparse unique index
+            org_id = (tenant.organization_id if tenant else None) or ""
+            dedup_key = build_active_idea_key(org_id, project_id, normalized)
+            if dedup_key:
+                set_fields["_active_idea_key"] = dedup_key
         if tenant:
             set_fields.update(tenant_fields(tenant))
         result = _common.get_db()[WORKING_COLLECTION].update_one(
@@ -380,6 +441,13 @@ def save_project_ref(
             bool(result.upserted_id),
         )
         return modified
+    except DuplicateKeyError:
+        logger.warning(
+            "[MongoDB] Duplicate idea rejected by DB index "
+            "(project_id=%s, run_id=%s) — another active run has the same idea",
+            project_id, run_id,
+        )
+        return -1
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to save project ref for run_id=%s: %s",
@@ -430,8 +498,12 @@ def save_slack_context(
             **(tenant_fields(tenant) if tenant else {}),
         }
         if idea:
+            normalized = _normalize_idea(idea)
             set_fields["idea"] = idea
-            set_fields["idea_normalized"] = _normalize_idea(idea)
+            set_fields["idea_normalized"] = normalized
+            # Compute dedup key — note: project_id may not be known yet
+            # at Slack-context-save time. The key will be set when
+            # save_project_ref is called later with the project_id.
         if tenant:
             set_fields.update(tenant_fields(tenant))
         result = _common.get_db()[WORKING_COLLECTION].update_one(
@@ -450,6 +522,13 @@ def save_slack_context(
             result.matched_count, bool(result.upserted_id),
         )
         return modified
+    except DuplicateKeyError:
+        logger.warning(
+            "[MongoDB] Duplicate idea rejected by DB index "
+            "(run_id=%s, channel=%s) — another active run has the same idea",
+            run_id, slack_channel,
+        )
+        return -1
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to save Slack context for run_id=%s: %s",

@@ -8,6 +8,7 @@ Database: Calls ``mark_archived()`` or ``mark_paused()`` on ``workingIdeas``;
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from crewai_productfeature_planner.apis._response_cache import response_cache
 from crewai_productfeature_planner.apis.ideas.models import (
     IdeaItem,
     IdeaStatusUpdate,
@@ -69,6 +70,13 @@ async def update_idea_status(run_id: str, body: IdeaStatusUpdate, user: dict = D
             logger.debug("Could not archive crewJob for %s", run_id, exc_info=True)
     elif body.status == "paused":
         mark_paused(run_id)
+
+    # Invalidate the GET /ideas response cache so the just-archived /
+    # paused row disappears from the dashboard immediately instead of
+    # lingering for the 5-second TTL window. Without this, repeated
+    # 'delete' actions appear to do nothing because the cached list is
+    # served back to the client.
+    response_cache.invalidate("ideas")
 
     updated = find_run_any_status(run_id, tenant=tenant)
     return IdeaItem(**idea_fields(updated or doc))

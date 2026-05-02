@@ -58,7 +58,7 @@ class TestIdeaRefinementStage:
         stage = build_idea_refinement_stage(flow)
 
         with patch(
-            "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+            "crewai_productfeature_planner.agents.idea_manager.refine_idea",
             return_value=("refined idea", [{"iteration": 1}], []),
         ):
             result = stage.run()

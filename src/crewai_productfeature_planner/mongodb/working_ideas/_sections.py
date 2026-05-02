@@ -484,6 +484,7 @@ def save_failed(
                     "error": error,
                     "update_date": now,
                 },
+                "$unset": {"_active_idea_key": ""},
                 "$setOnInsert": {
                     "run_id": run_id,
                     "idea": idea,

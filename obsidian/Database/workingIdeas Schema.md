@@ -26,6 +26,7 @@ tags:
 | [[Ideas/]] | `GET /ideas` | Lists ideas by project/status |
 | [[Ideas/]] | `GET /ideas/{run_id}` | Reads single idea with progress |
 | [[Ideas/]] | `PATCH /ideas/{run_id}/status` | Updates status (archive/pause) |
+| [[Ideas/]] | `DELETE /ideas/{run_id}` | Soft-deletes idea (sets status=deleted) |
 | [[Slack/]] | Events router | Finds idea by thread for smart routing |
 | [[Publishing/]] | Publishing endpoints | Reads completed ideas for delivery |
 
@@ -53,6 +54,7 @@ tags:
 | `created_at` | `datetime (UTC)` | **Yes** | *now* | When the run was created |
 | `completed_at` | `datetime \| null` | No | `null` | When the run completed — set by `mark_completed()` |
 | `archived_at` | `datetime \| null` | No | `null` | When the run was archived — set by `mark_archived()` |
+| `deleted_at` | `string (ISO-8601) \| null` | No | `null` | When the run was soft-deleted by user — set by `mark_deleted()` |
 | `update_date` | `string (ISO-8601) \| null` | No | `null` | Last update timestamp — updated on every iteration save |
 
 ### Slack Context
@@ -116,11 +118,12 @@ tags:
 
 | Status | Description | Transitions to |
 |--------|-------------|----------------|
-| `inprogress` | PRD flow is actively running | `completed`, `paused`, `failed`, `archived` |
-| `completed` | PRD generation finished successfully | `archived` |
-| `paused` | Flow paused by user or auto-paused on error — can be resumed | `inprogress` (resume), `archived` |
-| `failed` | Flow failed — can be resumed after fixing | `inprogress` (resume), `archived` |
-| `archived` | Soft-deleted — hidden from default views | (terminal) |
+| `inprogress` | PRD flow is actively running | `completed`, `paused`, `failed`, `deleted` |
+| `completed` | PRD generation finished successfully | `deleted` |
+| `paused` | Flow paused by user or auto-paused on error — can be resumed | `inprogress` (resume), `deleted` |
+| `failed` | Flow failed — can be resumed after fixing | `inprogress` (resume), `deleted` |
+| `archived` | Internal lifecycle state — used when restarting a PRD flow (old run archived, new run started) | (terminal, internal) |
+| `deleted` | User-facing soft-delete — permanently hidden from all listings | (terminal) |
 
 ---
 
@@ -170,6 +173,7 @@ tags:
 | `mark_completed()` | Set status to `completed`, set `completed_at` |
 | `mark_paused()` | Set status to `paused` |
 | `mark_archived()` | Set status to `archived`, set `archived_at` |
+| `mark_deleted()` | Set status to `deleted`, set `deleted_at` — user-facing soft-delete |
 | `save_failed()` | Set status to `failed` with error message |
 
 ### Queries

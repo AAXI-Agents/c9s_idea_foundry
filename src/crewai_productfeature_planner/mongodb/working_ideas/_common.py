@@ -18,7 +18,27 @@ logger = get_logger(__name__)
 
 WORKING_COLLECTION = "workingIdeas"
 
+#: Terminal statuses that release the dedup key.
+_TERMINAL_STATUSES = frozenset({"archived", "completed", "failed", "deleted"})
+
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def build_active_idea_key(
+    organization_id: str | None,
+    project_id: str | None,
+    idea_normalized: str | None,
+) -> str | None:
+    """Compute the sparse unique dedup key for active ideas.
+
+    Returns a composite string ``"{org}:{project}:{idea_normalized}"``
+    when all components are present, or ``None`` otherwise (documents
+    with ``None`` are excluded from the sparse unique index).
+    """
+    if not project_id or not idea_normalized:
+        return None
+    org = organization_id or ""
+    return f"{org}:{project_id}:{idea_normalized}"

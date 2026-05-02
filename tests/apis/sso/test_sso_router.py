@@ -142,6 +142,34 @@ class TestSSODirectLogin:
             assert resp.status_code == 502
             assert "unreachable" in resp.json()["error"]
 
+    def test_returns_502_when_sso_returns_non_json(self, client, monkeypatch):
+        """Should return 502 with clear message when SSO returns non-JSON (e.g. HTML error page)."""
+        monkeypatch.setenv("SSO_BASE_URL", "https://sso.example.com")
+        monkeypatch.setenv("SSO_CLIENT_ID", "test-client")
+
+        html_body = b"<html><body>Bad Gateway</body></html>"
+        mock_response = httpx.Response(
+            status_code=500,
+            content=html_body,
+            headers={"content-type": "text/html"},
+            request=httpx.Request("POST", "https://sso.example.com/sso/auth/login"),
+        )
+
+        async def _fake_post(*args, **kwargs):
+            return mock_response
+
+        with patch("crewai_productfeature_planner.apis.sso.router.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.post = _fake_post
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = mock_client
+
+            resp = client.post("/auth/sso/login", json={"email": "a@b.com", "password": "pass"})
+            assert resp.status_code == 502
+            assert "non-JSON" in resp.json()["error"]
+            assert "HTTP 500" in resp.json()["error"]
+
 
 # ── POST /auth/sso/login/verify-2fa ──────────────────────────
 
@@ -328,7 +356,7 @@ class TestSSORegisterRedirect:
         resp = client.get("/auth/sso/register", follow_redirects=False)
         assert resp.status_code == 307
         location = resp.headers["location"]
-        assert "sso.example.com/users/register" in location
+        assert "sso.example.com/sso/users/register" in location
 
 
 # ── POST /auth/sso/password-reset ─────────────────────────────

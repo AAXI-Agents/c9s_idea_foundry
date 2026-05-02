@@ -21,9 +21,11 @@ tags:
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `page` | `int` | `1` | Page number (1-based) |
-| `page_size` | `int` | `10` | Items per page (10, 25, or 50) |
-| `project_id` | `string` | `""` | Filter by project |
-| `status` | `string` | `""` | Filter by status (e.g. `"completed"`, `"inprogress"`) |
+| `page_size` | `int` | `10` | Items per page (1–100) |
+| `project_id` | `string` | `null` | Filter by project |
+| `status` | `string` | `null` | Explicit status filter (e.g. `"completed"`, `"inprogress"`, `"paused"`, `"failed"`, `"archived"`, `"deleted"`) |
+| `include_archived` | `bool` | `false` | Include all statuses (removes default exclusion filter) |
+| `organization_id` | `string` | `null` | Filter by organization (enterprise admins only) |
 
 ---
 
@@ -64,13 +66,18 @@ See [[GET ideas-{run_id}]] for `IdeaItem` field descriptions.
 
 1. Build query filter from params:
    - If `project_id` provided: `{"project_id": project_id}`
-   - If `status` provided: `{"status": status}`
-   - Exclude `"archived"` by default unless `status = "archived"`
-2. Query `workingIdeas` collection: `.find(query).sort("created_at", -1)`
-3. Apply pagination: `.skip((page - 1) * page_size).limit(page_size)`
-4. Count total: `count_documents(query)`
-5. For each doc, compute `sections_done` from `sections` array length
-6. Join `confluence_url` from `productRequirements` if completed
+   - If `status` provided explicitly: `{"status": status}` (overrides default)
+   - Default (no `status`, `include_archived=false`): exclude terminal states
+     `{"status": {"$nin": ["deleted", "archived", "failed", "completed"]}}`
+   - `include_archived=true`: no status filter applied (returns all)
+2. Apply tenant filter from SSO token / `organization_id`
+3. Query `workingIdeas` collection: `.find(query, projection).sort("created_at", -1)`
+4. Apply pagination: `.skip((page - 1) * page_size).limit(page_size)`
+5. Count total: `count_documents(query)`
+6. For each doc, compute `sections_done` from `section` sub-document
+
+> **Note**: Completed ideas (PRD generated) are excluded by default.
+> To fetch them, pass `?status=completed` explicitly.
 
 ---
 

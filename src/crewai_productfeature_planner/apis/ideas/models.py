@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 # ── Constants ─────────────────────────────────────────────────
 
-VALID_STATUSES = {"inprogress", "completed", "paused", "failed", "archived"}
+VALID_STATUSES = {"inprogress", "completed", "paused", "failed", "archived", "deleted"}
 VALID_PAGE_SIZES = {5, 6, 10, 25, 50}
 _TOTAL_SECTIONS = 12
 
@@ -74,6 +74,35 @@ class IdeaStatusUpdate(BaseModel):
     status: Literal["archived", "paused"] = Field(
         description="New status. Only 'archived' and 'paused' transitions are supported."
     )
+
+
+class RemotePurgeResult(BaseModel):
+    """Result of remote Jira/Confluence deletion attempt."""
+
+    attempted: bool = False
+    jira_deleted: list[str] = Field(default_factory=list)
+    confluence_deleted: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class CascadeResult(BaseModel):
+    """Summary of cascaded deletions."""
+
+    ideation_session_id: str = ""
+    prd_run_id: str = ""
+    sections_count: int = 0
+    jira_links_cleared: int = 0
+    confluence_links_cleared: int = 0
+    ux_runs_cleared: int = 0
+    remote_purge: RemotePurgeResult = Field(default_factory=RemotePurgeResult)
+
+
+class DeleteIdeaResponse(BaseModel):
+    """Response for DELETE /ideas/{run_id}."""
+
+    status: str = "deleted"
+    run_id: str = ""
+    cascaded: CascadeResult = Field(default_factory=CascadeResult)
 
 
 # ── Helpers ───────────────────────────────────────────────────

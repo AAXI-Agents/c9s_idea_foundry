@@ -22,11 +22,11 @@ def _mock_agent_llm_builders():
     """
     with (
         patch(
-            "crewai_productfeature_planner.agents.idea_refiner.agent._build_refiner_llm",
+            "crewai_productfeature_planner.agents.idea_manager.agent._build_research_llm",
             return_value="gemini/gemini-3-flash-preview",
         ),
         patch(
-            "crewai_productfeature_planner.agents.requirements_breakdown.agent._build_breakdown_llm",
+            "crewai_productfeature_planner.agents.product_manager.agent._build_requirements_llm",
             return_value="gemini/gemini-3-flash-preview",
         ),
         patch(

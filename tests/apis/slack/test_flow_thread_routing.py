@@ -338,7 +338,7 @@ class TestSummaryIntegration:
         ), patch(
             f"{_AI_REPO}.log_interaction"
         ), patch(
-            "crewai_productfeature_planner.agents.idea_agent.handle_idea_query",
+            "crewai_productfeature_planner.agents.idea_manager.handle_idea_query",
             return_value="The AI chatbot idea is *In Progress* with 2/12 sections done.",
         ):
             MockInterp.return_value.run.return_value = json.dumps({

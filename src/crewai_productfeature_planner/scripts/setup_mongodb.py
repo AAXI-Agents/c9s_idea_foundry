@@ -17,7 +17,13 @@ from pymongo.errors import PyMongoError
 from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
     AGENT_INTERACTIONS_COLLECTION,
 )
+from crewai_productfeature_planner.mongodb.agent_registry import (
+    AGENT_REGISTRY_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
+from crewai_productfeature_planner.mongodb.company_activity import (
+    COMPANY_ACTIVITY_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
     CREW_JOBS_COLLECTION,
 )
@@ -45,6 +51,9 @@ from crewai_productfeature_planner.mongodb.user_suggestions import (
 from crewai_productfeature_planner.mongodb.user_preferences import (
     USER_PREFERENCES_COLLECTION,
 )
+from crewai_productfeature_planner.mongodb.ideation_sessions import (
+    IDEATION_SESSIONS_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
 )
@@ -66,6 +75,20 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("intent", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("organization_id", ASCENDING), ("created_at", DESCENDING)]),
     ],
+    AGENT_REGISTRY_COLLECTION: [
+        IndexModel([("agent_id", ASCENDING)], unique=True),
+        IndexModel([("department", ASCENDING)]),
+        IndexModel([("status", ASCENDING)]),
+        IndexModel([("reports_to", ASCENDING)]),
+    ],
+    COMPANY_ACTIVITY_COLLECTION: [
+        IndexModel([("event_id", ASCENDING)], unique=True),
+        IndexModel([("created_at", DESCENDING)]),
+        IndexModel([("agent_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("department", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("event_type", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("created_at", DESCENDING)]),
+    ],
     CREW_JOBS_COLLECTION: [
         IndexModel([("job_id", ASCENDING)], unique=True),
         IndexModel([("status", ASCENDING), ("queued_at", DESCENDING)]),
@@ -79,6 +102,14 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("created_at", DESCENDING)]),
         IndexModel([("enterprise_id", ASCENDING), ("organization_id", ASCENDING)]),
         IndexModel([("organization_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
+        # Dedup safety net: sparse unique index on computed key field.
+        # Set on active ideas, cleared on terminal status transitions.
+        IndexModel(
+            [("_active_idea_key", ASCENDING)],
+            unique=True,
+            sparse=True,
+            name="unique_active_idea_dedup",
+        ),
     ],
     PRODUCT_REQUIREMENTS_COLLECTION: [
         IndexModel([("run_id", ASCENDING)], unique=True),
@@ -117,6 +148,12 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
     ],
     LEASES_COLLECTION: [
         IndexModel([("lease_name", ASCENDING)], unique=True),
+    ],
+    IDEATION_SESSIONS_COLLECTION: [
+        IndexModel([("session_id", ASCENDING)], unique=True),
+        IndexModel([("user_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("user_id", ASCENDING)]),
+        IndexModel([("project_id", ASCENDING)]),
     ],
 }
 

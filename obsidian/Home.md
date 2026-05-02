@@ -36,7 +36,7 @@ aliases:
 
 ### Agents & Flows
 - [[PRD Flow]] — End-to-end PRD generation pipeline
-- [[Agent Roles]] — 12 agent pages (Idea Refiner, Product Manager, etc.)
+- [[Agent Roles]] — 11 agent pages (Idea Refiner, Product Manager, etc.)
 - [[LLM Model Tiers]] — Basic vs Research models and when to use each
 
 ### Integrations
@@ -47,8 +47,7 @@ aliases:
 
 ### Development
 - [[Testing Guide]] — Test structure, patch targets, common commands
-- [[Version History]] — Weekly changelog from v0.1.0 to current
-- [[Session Log]] — AI agent session tracking
+- `Changelog/YYYY-MM-DD.md` — Per-week version bumps + session details
 
 ### Knowledge
 - [[PRD Guidelines]] — 10-section template, quality criteria, iteration protocol
@@ -86,7 +85,7 @@ APIs/
   Slack/                   ← 5 per-route files
   SSO Webhooks/            ← 1 per-route file
 Changelog/
-  Version History.md       ← Weekly changelog
+  YYYY-MM-DD.md            ← One file per ISO week (named by Monday date)
 Database/
   MongoDB Schema.md        ← Index → 9 collection schema pages
 Flows/
@@ -100,10 +99,8 @@ Knowledge/
   User Preferences.md      ← User profile
 Orchestrator/
   Orchestrator Overview.md ← Pipeline stages
-Sessions/
-  Session Log.md           ← AI session tracking
 Templates/
-  Session Entry.md         ← Template for session entries
+  Session Entry.md         ← Template for session log entries
 Testing/
   Testing Guide.md         ← Test patterns & commands
 Tools/

@@ -58,7 +58,7 @@ class TestBuildDefaultPipeline:
         flow.state.idea = "raw idea"
 
         with patch(
-            "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+            "crewai_productfeature_planner.agents.idea_manager.refine_idea",
             return_value=("refined idea", [{"iteration": 1}], []),
         ):
             orch = build_default_pipeline(flow)
@@ -93,7 +93,7 @@ class TestBuildDefaultPipeline:
         flow.state.idea = "raw idea"
 
         with patch(
-            "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+            "crewai_productfeature_planner.agents.idea_manager.refine_idea",
             side_effect=RuntimeError("LLM down"),
         ):
             orch = build_default_pipeline(flow)
@@ -170,7 +170,7 @@ class TestOrchestratorProgressCallback:
         flow.progress_callback = cb
 
         with patch(
-            "crewai_productfeature_planner.agents.idea_refiner.refine_idea",
+            "crewai_productfeature_planner.agents.idea_manager.refine_idea",
             return_value=("refined", [{"iteration": 1}], []),
         ):
             orch = build_default_pipeline(flow)

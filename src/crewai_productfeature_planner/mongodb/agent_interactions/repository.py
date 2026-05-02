@@ -215,6 +215,7 @@ def find_interactions(
     run_id: str | None = None,
     since: datetime | None = None,
     limit: int = 100,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """Flexible query for interactions with optional filters.
 
@@ -228,11 +229,12 @@ def find_interactions(
         run_id: Filter by run ID.
         since: Return only interactions created after this datetime.
         limit: Maximum number of documents to return.
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         List of interaction documents, newest first.
     """
-    query: dict[str, Any] = {}
+    query: dict[str, Any] = {**tenant_filter(tenant)}
     if source is not None:
         query["source"] = source
     if intent is not None:

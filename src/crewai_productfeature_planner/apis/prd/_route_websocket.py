@@ -137,11 +137,24 @@ def _build_status_snapshot(run_id: str) -> dict[str, Any]:
     }
 
 
+def _derive_severity(doc: dict) -> str:
+    """Map interaction metadata to a severity level."""
+    meta = doc.get("metadata") or {}
+    if meta.get("error") or doc.get("intent") == "error":
+        return "error"
+    if meta.get("retry") or meta.get("rate_limited"):
+        return "warn"
+    if meta.get("debug"):
+        return "debug"
+    return "info"
+
+
 def _interaction_to_event(doc: dict) -> dict[str, Any]:
     """Convert an agentInteraction document to a WebSocket event."""
     created = doc.get("created_at")
     if hasattr(created, "isoformat"):
         created = created.isoformat()
+    meta = doc.get("metadata") or {}
     return {
         "type": "agent_activity",
         "interaction_id": doc.get("interaction_id", ""),
@@ -152,6 +165,10 @@ def _interaction_to_event(doc: dict) -> dict[str, Any]:
         "user_id": doc.get("user_id"),
         "created_at": str(created) if created else "",
         "predicted_next_step": doc.get("predicted_next_step"),
+        "agent_id": meta.get("agent_id"),
+        "severity": _derive_severity(doc),
+        "tokens_delta": meta.get("tokens_delta", 0),
+        "cost_usd_delta": meta.get("cost_usd_delta", 0.0),
     }
 
 

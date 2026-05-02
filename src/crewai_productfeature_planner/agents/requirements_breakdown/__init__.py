@@ -1,16 +1,15 @@
-"""Gemini-powered Requirements Breakdown agent module.
+"""Requirements Breakdown module — DEPRECATED, use product_manager instead.
 
-This agent takes a refined product idea and decomposes it into
-structured, data-architect-ready product requirements — each feature
-with AI agent capabilities, entity definitions, state transitions,
-and user-role augmentation details.
+This module re-exports from the consolidated Product Manager agent for
+backward compatibility.  All new code should import from
+``crewai_productfeature_planner.agents.product_manager``.
 """
 
-from crewai_productfeature_planner.agents.requirements_breakdown.agent import (
-    DEFAULT_MAX_ITERATIONS,
-    DEFAULT_MIN_ITERATIONS,
-    create_requirements_breakdown_agent,
+from crewai_productfeature_planner.agents.product_manager import (
+    DEFAULT_REQUIREMENTS_MAX_ITERATIONS as DEFAULT_MAX_ITERATIONS,
+    DEFAULT_REQUIREMENTS_MIN_ITERATIONS as DEFAULT_MIN_ITERATIONS,
     breakdown_requirements,
+    create_requirements_breakdown_agent,
 )
 
 __all__ = [

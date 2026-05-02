@@ -76,7 +76,23 @@ async def _sso_proxy_post(
             )
         if resp.status_code == 204 or not resp.content:
             return JSONResponse(content=None, status_code=resp.status_code)
-        return JSONResponse(resp.json(), status_code=resp.status_code)
+        try:
+            body = resp.json()
+        except (ValueError, UnicodeDecodeError):
+            # SSO returned non-JSON (HTML error page, empty body, etc.)
+            raw = resp.text[:500]
+            logger.error(
+                "[SSO] %s returned non-JSON response "
+                "(status=%d, body=%r)",
+                label,
+                resp.status_code,
+                raw,
+            )
+            return JSONResponse(
+                {"error": f"SSO server returned non-JSON response (HTTP {resp.status_code})"},
+                status_code=502,
+            )
+        return JSONResponse(body, status_code=resp.status_code)
     except httpx.ConnectError as exc:
         logger.error("[SSO] %s connect failed: %s", label, exc, exc_info=True)
         return JSONResponse(

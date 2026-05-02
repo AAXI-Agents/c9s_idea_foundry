@@ -5,39 +5,23 @@ tags:
 
 # Session Entry Template
 
-> Copy this template when starting a new session entry in [[Session Log]].
+> Append this format to the current week's `Changelog/YYYY-MM-DD.md` file.
 
 ```markdown
-## Session NNN — YYYY-MM-DD
+### Session — MM-DD (vX.Y.Z)
 
-**Scope**: Brief description of the session's focus
-**Version**: vX.Y.Z → vX.Y.Z
+**Focus**: One-line description of session goal
 
-### Work Done
-- Item 1
-- Item 2
-
-### Key Decisions
-- Decision 1
-- Decision 2
-
-### Files Modified
-- `path/to/file.py` — description of change
-
-### Obsidian Pages Updated
-- [[Page Name]] — what was updated
-
-### Bugs Found & Fixed
-- Description of bug and fix (if any)
-
-### Open Issues
-- Any remaining issues (if any)
+- **Root Cause**: (if fixing a bug — what caused it)
+- **Changes**: Bullet summary of what was done
+- **Files**: Key files created/modified
+- **Tests**: Test counts and pass status
 ```
 
 ## Checklist for Every Session
 
-- [ ] Append entry to [[Session Log]]
-- [ ] Update [[Version History]] if version bumped
+- [ ] Add version table row to current week's `Changelog/YYYY-MM-DD.md`
+- [ ] Add session entry below the week's table
 - [ ] Update affected knowledge pages (e.g., [[Module Map]], [[MongoDB Schema]])
 - [ ] Update [[Home]] if vault structure changed
 - [ ] Run tests and verify all pass before closing
