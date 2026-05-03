@@ -20,6 +20,11 @@ tags:
 | `SSO_ISSUER` | Expected JWT issuer claim (default `c9s-sso`) |
 | `SSO_EXPECTED_APP_ID` | When set, only accept tokens with this `app_id` (Idea Foundry) |
 | `SSO_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying SSO webhook payloads |
+| `DEV_USER_ROLE` | Role assumed by the SSO dev bypass when `SSO_ENABLED=false` (one of `USER` / `ENT_ADMIN` / `SYS_ADMIN`, default `USER`). Tests force `SYS_ADMIN`. Defaulting to `USER` keeps tenant filtering active in dev. |
+| `DEV_ENTERPRISE_ID` | Enterprise ID injected into the dev-bypass user claims (default `dev-enterprise`) |
+| `DEV_ORGANIZATION_ID` | Organization ID injected into the dev-bypass user claims (default `dev-org`) |
+| `DEFAULT_ENTERPRISE_ID` | Fallback enterprise ID used by tooling/migrations when a document has no explicit tenant |
+| `DEFAULT_ORGANIZATION_ID` | Fallback organization ID used by tooling/migrations when a document has no explicit tenant |
 
 > **Application name**: "Idea Foundry" — registered as an OAuth client in the SSO service. When `SSO_EXPECTED_APP_ID` is set, tokens must be issued through the OAuth authorization-code flow for that specific application.
 

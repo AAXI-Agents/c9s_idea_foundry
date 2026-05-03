@@ -137,16 +137,20 @@ def log_interaction(
 # ── queries ───────────────────────────────────────────────────
 
 
-def get_interaction(interaction_id: str) -> dict[str, Any] | None:
+def get_interaction(
+    interaction_id: str, *, tenant: TenantContext | None = None
+) -> dict[str, Any] | None:
     """Find a single interaction by its ``interaction_id``.
 
     Returns:
         The interaction document, or ``None``.
     """
     try:
-        return get_db()[AGENT_INTERACTIONS_COLLECTION].find_one(
-            {"interaction_id": interaction_id}
-        )
+        query: dict[str, Any] = {
+            "interaction_id": interaction_id,
+            **tenant_filter(tenant),
+        }
+        return get_db()[AGENT_INTERACTIONS_COLLECTION].find_one(query)
     except PyMongoError as exc:
         logger.error("[AgentInteraction] Failed to find interaction %s: %s",
                      interaction_id, exc)
@@ -156,20 +160,24 @@ def get_interaction(interaction_id: str) -> dict[str, Any] | None:
 def find_interactions_by_source(
     source: str,
     limit: int = 100,
+    *,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """Return interactions filtered by source, newest first.
 
     Args:
         source: ``"slack"``, ``"cli"``, or ``"slack_interactive"``.
         limit: Maximum number of documents to return.
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         List of interaction documents.
     """
     try:
+        query: dict[str, Any] = {"source": source, **tenant_filter(tenant)}
         cursor = (
             get_db()[AGENT_INTERACTIONS_COLLECTION]
-            .find({"source": source})
+            .find(query)
             .sort("created_at", -1)
             .limit(limit)
         )
@@ -183,20 +191,24 @@ def find_interactions_by_source(
 def find_interactions_by_intent(
     intent: str,
     limit: int = 100,
+    *,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """Return interactions filtered by intent, newest first.
 
     Args:
         intent: The intent name (e.g. ``"create_prd"``).
         limit: Maximum number of documents to return.
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         List of interaction documents.
     """
     try:
+        query: dict[str, Any] = {"intent": intent, **tenant_filter(tenant)}
         cursor = (
             get_db()[AGENT_INTERACTIONS_COLLECTION]
-            .find({"intent": intent})
+            .find(query)
             .sort("created_at", -1)
             .limit(limit)
         )
@@ -259,19 +271,23 @@ def find_interactions(
         return []
 
 
-def list_interactions(limit: int = 100) -> list[dict[str, Any]]:
+def list_interactions(
+    limit: int = 100, *, tenant: TenantContext | None = None
+) -> list[dict[str, Any]]:
     """Return the most recent interactions, newest first.
 
     Args:
         limit: Maximum number of documents to return.
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         List of interaction documents.
     """
     try:
+        query = tenant_filter(tenant)
         cursor = (
             get_db()[AGENT_INTERACTIONS_COLLECTION]
-            .find()
+            .find(query)
             .sort("created_at", -1)
             .limit(limit)
         )

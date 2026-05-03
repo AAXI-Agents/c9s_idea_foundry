@@ -225,7 +225,7 @@ class TestRepositoryTenantFiltering:
         tenant = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-a",
-            is_enterprise_admin=False,
+
         )
         result = get_delivery_record("r1", tenant=tenant)
         assert result is not None
@@ -251,7 +251,7 @@ class TestRepositoryTenantFiltering:
         tenant = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-a",
-            is_enterprise_admin=False,
+
         )
         result = find_pending_delivery(tenant=tenant)
         assert len(result) == 1
@@ -274,7 +274,7 @@ class TestRepositoryTenantFiltering:
         tenant = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-a",
-            is_enterprise_admin=False,
+
         )
         result = find_active_job(tenant=tenant)
         assert result is not None
@@ -297,7 +297,7 @@ class TestRepositoryTenantFiltering:
         tenant = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-a",
-            is_enterprise_admin=False,
+
         )
         result = update_job_status("j1", "completed", tenant=tenant)
         assert result is True
@@ -321,7 +321,7 @@ class TestRepositoryTenantFiltering:
         tenant = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-a",
-            is_enterprise_admin=False,
+
         )
         result = mark_completed("run-1", tenant=tenant)
         assert result == 1
@@ -345,7 +345,7 @@ class TestRepositoryTenantFiltering:
         tenant = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-a",
-            is_enterprise_admin=False,
+
         )
         result = mark_deleted("run-1", tenant=tenant)
         assert result == 1
@@ -370,7 +370,7 @@ class TestRepositoryTenantFiltering:
         tenant = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-a",
-            is_enterprise_admin=False,
+
         )
         result = reactivate_job("j1", tenant=tenant)
         assert result is True
@@ -380,8 +380,11 @@ class TestRepositoryTenantFiltering:
         assert call_args["organization_id"] == "org-a"
 
     def test_backward_compat_no_tenant(self):
-        """All tenant-optional functions still work without tenant arg."""
-        from crewai_productfeature_planner.mongodb._tenant import tenant_filter
+        """None tenant now returns blocked filter to prevent data leaks."""
+        from crewai_productfeature_planner.mongodb._tenant import (
+            _BLOCKED_FILTER,
+            tenant_filter,
+        )
 
-        # None tenant produces empty filter — backward compatible
-        assert tenant_filter(None) == {}
+        # None tenant returns blocked filter — strict multi-tenancy
+        assert tenant_filter(None) == _BLOCKED_FILTER

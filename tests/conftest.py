@@ -26,6 +26,16 @@ import os as _os
 import sys as _sys
 _sys.setrecursionlimit(max(_sys.getrecursionlimit(), 5000))
 
+# Force SSO disabled for tests — production .env may have SSO_ENABLED=true,
+# but tests use TestClient without real Bearer tokens. The dev bypass returns
+# a placeholder user with DEV_USER_ROLE; we force SYS_ADMIN here so the mock
+# DB suite (which doesn't exercise tenant filtering) keeps passing. Tests that
+# specifically validate tenant filtering must override this in their fixtures.
+_os.environ["SSO_ENABLED"] = "false"
+_os.environ["DEV_USER_ROLE"] = "SYS_ADMIN"
+_os.environ["DEV_ENTERPRISE_ID"] = "dev-enterprise"
+_os.environ["DEV_ORGANIZATION_ID"] = "dev-org"
+
 # Store exit status so atexit handler can use it
 _ci_exit_status = None
 

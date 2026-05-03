@@ -84,6 +84,7 @@ def exec_summary_user_gate(
         save_finalized_idea(
             run_id=flow.state.run_id,
             finalized_idea=flow.state.finalized_idea,
+            tenant=flow._tenant,
         )
         logger.info(
             "[ExecSummary] Copied executive summary to "
@@ -238,6 +239,7 @@ def iterate_executive_summary(
             iteration=0,
             error=str(exc),
             step="draft_executive_summary",
+            tenant=flow._tenant,
         )
         raise
 
@@ -265,6 +267,7 @@ def iterate_executive_summary(
         iteration=1,
         content=current_content,
         critique=None,
+        tenant=flow._tenant,
     )
     logger.info(
         "[ExecSummary] Initial draft (%d chars)", len(current_content),
@@ -336,6 +339,7 @@ def iterate_executive_summary(
                 iteration=iteration,
                 error=str(exc),
                 step=f"critique_exec_summary_iter{iteration}",
+                tenant=flow._tenant,
             )
             logger.warning(
                 "[ExecSummary] Critique unrecoverable at iteration "
@@ -352,6 +356,7 @@ def iterate_executive_summary(
             run_id=flow.state.run_id,
             iteration=iteration,
             critique=critique_text,
+            tenant=flow._tenant,
         )
         # Update in-memory model
         current_iter = flow.state.executive_summary.iterations[-1]
@@ -435,6 +440,7 @@ def iterate_executive_summary(
                 iteration=iteration,
                 error=str(exc),
                 step=f"refine_exec_summary_iter{iteration}",
+                tenant=flow._tenant,
             )
             logger.warning(
                 "[ExecSummary] Refine unrecoverable at iteration "
@@ -468,6 +474,7 @@ def iterate_executive_summary(
             iteration=iteration,
             content=current_content,
             critique=None,
+            tenant=flow._tenant,
         )
         logger.info(
             "[ExecSummary] Refined iteration %d (%d chars)",
@@ -504,6 +511,7 @@ def iterate_executive_summary(
     save_finalized_idea(
         run_id=flow.state.run_id,
         finalized_idea=flow.state.finalized_idea,
+        tenant=flow._tenant,
     )
     logger.info(
         "[ExecSummary] Copied executive summary to finalized_idea "

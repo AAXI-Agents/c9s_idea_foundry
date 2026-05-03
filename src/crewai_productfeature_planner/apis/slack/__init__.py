@@ -1,1 +1,1 @@
-"""Slack integration subpackage — routers, verification, interactions, and tools."""
+"""Slack integration subpackage — OAuth and request verification only."""

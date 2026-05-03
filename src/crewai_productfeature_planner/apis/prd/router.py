@@ -296,12 +296,16 @@ def _build_run_response_from_db(
 )
 async def get_run_status(run_id: str, user: dict = Depends(require_sso_user)):
     """Check the status of a flow run."""
+    from crewai_productfeature_planner.apis.shared import run_visible_to_tenant
+
+    tenant = TenantContext.from_user(user)
     run = runs.get(run_id)
     if run is not None:
+        if not run_visible_to_tenant(run, tenant):
+            raise HTTPException(status_code=404, detail="Run not found")
         return _build_run_response(run)
 
     # Fallback: reconstruct from MongoDB for runs lost after restart.
-    tenant = TenantContext.from_user(user)
     return _build_run_response_from_db(run_id, tenant=tenant)
 
 
@@ -401,9 +405,14 @@ async def list_runs(
     user: dict = Depends(require_sso_user),
 ):
     # Start with active in-memory runs.
+    from crewai_productfeature_planner.apis.shared import run_visible_to_tenant
+
+    tenant = resolve_tenant_context(user, organization_id)
     seen: set[str] = set()
     result = []
     for run in runs.values():
+        if not run_visible_to_tenant(run, tenant):
+            continue
         seen.add(run.run_id)
         result.append({
             "run_id": run.run_id,
@@ -415,7 +424,6 @@ async def list_runs(
         })
 
     # Supplement with persistent jobs from MongoDB.
-    tenant = resolve_tenant_context(user, organization_id)
     try:
         db_jobs = list_jobs(limit=100, tenant=tenant)
     except Exception:

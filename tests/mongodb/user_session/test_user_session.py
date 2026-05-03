@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.user_session import (
     USER_SESSION_COLLECTION,
     end_active_session,
@@ -14,6 +15,8 @@ from crewai_productfeature_planner.mongodb.user_session import (
     start_session,
     switch_session,
 )
+
+_SYS = TenantContext.system()
 
 
 @pytest.fixture(autouse=True)
@@ -193,7 +196,7 @@ def test_get_active_session_found(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = get_active_session("U123")
+    result = get_active_session("U123", tenant=_SYS)
 
     assert result == expected
     col.find_one.assert_called_once_with(
@@ -236,7 +239,7 @@ def test_get_session_found(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = get_session("s42")
+    result = get_session("s42", tenant=_SYS)
 
     assert result == expected
     col.find_one.assert_called_once_with(
@@ -275,7 +278,7 @@ def test_list_sessions(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = list_sessions("U123", limit=5)
+    result = list_sessions("U123", limit=5, tenant=_SYS)
 
     assert len(result) == 2
     col.find.assert_called_once_with({"user_id": "U123"}, {"_id": 0})

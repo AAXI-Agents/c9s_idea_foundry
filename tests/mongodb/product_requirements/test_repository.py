@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.product_requirements.repository import (
     PRODUCT_REQUIREMENTS_COLLECTION,
     _compute_status,
@@ -13,6 +14,8 @@ from crewai_productfeature_planner.mongodb.product_requirements.repository impor
     get_jira_tickets,
     upsert_delivery_record,
 )
+
+_SYS = TenantContext.system()
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +61,7 @@ def test_get_delivery_record_found(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_col)
     mock_get_db.return_value = mock_db
 
-    result = get_delivery_record("r1")
+    result = get_delivery_record("r1", tenant=_SYS)
 
     assert result == {"run_id": "r1", "status": "new"}
     mock_col.find_one.assert_called_once_with({"run_id": "r1"})
@@ -108,7 +111,7 @@ def test_find_pending_delivery_returns_docs(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_col)
     mock_get_db.return_value = mock_db
 
-    result = find_pending_delivery()
+    result = find_pending_delivery(tenant=_SYS)
 
     assert len(result) == 2
     mock_col.find.assert_called_once_with(

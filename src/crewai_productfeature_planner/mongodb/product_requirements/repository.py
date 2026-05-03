@@ -108,7 +108,12 @@ def find_pending_delivery(
 # ── Atomic claims (multi-instance safety) ─────────────────────────────
 
 
-def claim_for_confluence(run_id: str, holder: str) -> bool:
+def claim_for_confluence(
+    run_id: str,
+    holder: str,
+    *,
+    tenant: TenantContext | None = None,
+) -> bool:
     """Atomically claim a delivery record for Confluence publishing.
 
     Uses ``find_one_and_update`` with a filter that matches only when
@@ -121,6 +126,7 @@ def claim_for_confluence(run_id: str, holder: str) -> bool:
     Args:
         run_id: The flow run identifier.
         holder: Unique instance identifier (e.g. ``hostname-pid``).
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         ``True`` if this instance won the claim, ``False`` otherwise.
@@ -141,6 +147,7 @@ def claim_for_confluence(run_id: str, holder: str) -> bool:
                     {"confluence_claim_expires": {"$lt": time.time()}},
                     {"confluence_claimed_by": holder},
                 ],
+                **tenant_filter(tenant),
             },
             {
                 "$set": {
@@ -172,11 +179,21 @@ def claim_for_confluence(run_id: str, holder: str) -> bool:
         return False
 
 
-def claim_for_jira(run_id: str, holder: str) -> bool:
+def claim_for_jira(
+    run_id: str,
+    holder: str,
+    *,
+    tenant: TenantContext | None = None,
+) -> bool:
     """Atomically claim a delivery record for Jira ticket creation.
 
     Same pattern as :func:`claim_for_confluence` but for the Jira
     delivery step.
+
+    Args:
+        run_id: The flow run identifier.
+        holder: Unique instance identifier (e.g. ``hostname-pid``).
+        tenant: Optional tenant context for data isolation.
 
     Returns:
         ``True`` if this instance won the claim, ``False`` otherwise.
@@ -197,6 +214,7 @@ def claim_for_jira(run_id: str, holder: str) -> bool:
                     {"jira_claim_expires": {"$lt": time.time()}},
                     {"jira_claimed_by": holder},
                 ],
+                **tenant_filter(tenant),
             },
             {
                 "$set": {

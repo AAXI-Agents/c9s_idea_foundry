@@ -82,17 +82,17 @@ class TestWebSocketEndpoint:
             assert msg["status"] == "running"
 
     def test_connect_run_not_found(self, client):
-        """WebSocket should send error when run_id does not exist."""
-        with (
-            patch(
-                "crewai_productfeature_planner.mongodb.crew_jobs.find_job",
-                return_value=None,
-            ),
-            client.websocket_connect("/flow/runs/missing/ws") as ws,
+        """WebSocket should close with 4004 when the run is not visible to the tenant."""
+        from starlette.websockets import WebSocketDisconnect
+
+        with patch(
+            "crewai_productfeature_planner.mongodb.crew_jobs.find_job",
+            return_value=None,
         ):
-            msg = ws.receive_json()
-            assert msg["type"] == "error"
-            assert "not found" in msg["message"]
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with client.websocket_connect("/flow/runs/missing/ws") as ws:
+                    ws.receive_json()
+            assert exc_info.value.code == 4004
 
     def test_ping_pong(self, client):
         """Client sending ping should receive pong."""

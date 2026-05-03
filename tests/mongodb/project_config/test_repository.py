@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.project_config.repository import (
     PROJECT_CONFIG_COLLECTION,
     add_reference_url,
@@ -17,6 +18,8 @@ from crewai_productfeature_planner.mongodb.project_config.repository import (
     list_projects,
     update_project,
 )
+
+_SYS = TenantContext.system()
 
 
 @pytest.fixture(autouse=True)
@@ -152,7 +155,7 @@ def test_get_project_by_name_found(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = get_project_by_name("Foo")
+    result = get_project_by_name("Foo", tenant=_SYS)
     assert result == expected
     col.find_one.assert_called_once_with({"name": "Foo"}, {"_id": 0})
 
@@ -165,7 +168,7 @@ def test_get_project_by_name_db_error(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    assert get_project_by_name("X") is None
+    assert get_project_by_name("X", tenant=_SYS) is None
 
 
 # ── list_projects ────────────────────────────────────────────
@@ -223,7 +226,7 @@ def test_get_project_for_run_linked(mock_get_db):
     db.__getitem__ = MagicMock(side_effect=_getitem)
     mock_get_db.return_value = db
 
-    result = get_project_for_run("run-42")
+    result = get_project_for_run("run-42", tenant=_SYS)
     assert result is not None
     assert result["name"] == "Demo"
     wi_col.find_one.assert_called_once_with(
@@ -239,7 +242,7 @@ def test_get_project_for_run_no_project_id(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    assert get_project_for_run("run-42") is None
+    assert get_project_for_run("run-42", tenant=_SYS) is None
 
 
 @patch("crewai_productfeature_planner.mongodb.project_config.repository.get_db")
@@ -250,7 +253,7 @@ def test_get_project_for_run_no_working_idea(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    assert get_project_for_run("nope") is None
+    assert get_project_for_run("nope", tenant=_SYS) is None
 
 
 @patch("crewai_productfeature_planner.mongodb.project_config.repository.get_db")
@@ -261,7 +264,7 @@ def test_get_project_for_run_db_error(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    assert get_project_for_run("run-x") is None
+    assert get_project_for_run("run-x", tenant=_SYS) is None
 
 
 # ── update_project ───────────────────────────────────────────

@@ -32,25 +32,21 @@ def _set_dummy_keys(monkeypatch):
 class TestBuildManifest:
     """Tests for the manifest template builder."""
 
-    def test_sets_interactivity_url(self):
+    def test_no_interactivity_request_url(self):
         m = build_manifest(
             "https://example.ngrok.io/slack/interactions",
             "https://example.ngrok.io/slack/events",
             "https://example.ngrok.io/slack/oauth/callback",
         )
-        assert m["settings"]["interactivity"]["request_url"] == (
-            "https://example.ngrok.io/slack/interactions"
-        )
+        assert "request_url" not in m["settings"]["interactivity"]
 
-    def test_sets_events_url(self):
+    def test_no_events_request_url(self):
         m = build_manifest(
             "https://example.ngrok.io/slack/interactions",
             "https://example.ngrok.io/slack/events",
             "https://example.ngrok.io/slack/oauth/callback",
         )
-        assert m["settings"]["event_subscriptions"]["request_url"] == (
-            "https://example.ngrok.io/slack/events"
-        )
+        assert "request_url" not in m["settings"]["event_subscriptions"]
 
     def test_sets_oauth_redirect_url(self):
         m = build_manifest(
@@ -62,21 +58,20 @@ class TestBuildManifest:
             "https://example.ngrok.io/slack/oauth/callback"
         ]
 
-    def test_interactivity_is_enabled(self):
+    def test_interactivity_is_disabled(self):
         m = build_manifest("a", "b", "c")
-        assert m["settings"]["interactivity"]["is_enabled"] is True
+        assert m["settings"]["interactivity"]["is_enabled"] is False
 
-    def test_preserves_bot_events(self):
+    def test_bot_events_empty(self):
         m = build_manifest("a", "b", "c")
         bot_events = m["settings"]["event_subscriptions"]["bot_events"]
-        assert "app_mention" in bot_events
-        assert "message.im" in bot_events
+        assert bot_events == []
 
     def test_preserves_scopes(self):
         m = build_manifest("a", "b", "c")
         scopes = m["oauth_config"]["scopes"]["bot"]
         assert "chat:write" in scopes
-        assert "app_mentions:read" in scopes
+        assert "channels:read" in scopes
 
     def test_preserves_display_info(self):
         m = build_manifest("a", "b", "c")

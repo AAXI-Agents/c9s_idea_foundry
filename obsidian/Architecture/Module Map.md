@@ -88,8 +88,9 @@ tags:
 | `ideation/service.py` | Business logic: start, respond, iterate, advance, rollback |
 | `ideation/_route_websocket.py` | `WS /ws/ideation/{session_id}` — real-time streaming with JWT auth |
 | `publishing/` | Publishing automation (router, service, watcher, scheduler) |
-| `slack/` | Full Slack integration (see [[Slack Integration]]) |
-| `slack/_slack_file_helper.py` | Truncation + file upload for long Slack content (v0.31.2) |
+| `slack/` | OAuth-only Slack integration (see [[Slack Integration]]) |
+| `slack/oauth_router.py` | OAuth v2 callback |
+| `slack/verify.py` | HMAC-SHA256 request verification |
 | `dashboard/` | Dashboard aggregate statistics (`GET /dashboard/stats`) |
 | `integrations/` | Integration status endpoint (Confluence/Jira connection check) |
 | `sso/` | SSO auth router — 18 endpoints (login, register, 2FA, logout, etc.) |
@@ -153,7 +154,7 @@ tags:
 | `confluence_tool.py` | Confluence REST API publishing |
 | `jira_tool.py` | Jira REST API shim → `jira/` package |
 | `jira/` | Jira operations, helpers, ADF converter |
-| `slack_tools.py` | Send/read/post/interpret Slack messages |
+| `slack_tools.py` | Send/read Slack messages (OAuth retained) |
 | `slack_token_manager.py` | Token rotation, exchange, persistence |
 | `token_refresh_scheduler.py` | Background token refresh daemon (proactive rotation) |
 | `file_write_tool.py` | PRD file writer |

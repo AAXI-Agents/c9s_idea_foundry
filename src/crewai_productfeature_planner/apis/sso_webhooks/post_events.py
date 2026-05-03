@@ -83,9 +83,29 @@ def _handle_user_updated(data: dict[str, Any]) -> None:
 
 
 def _handle_user_deleted(data: dict[str, Any]) -> None:
-    """Handle user deletion — clean up their active sessions."""
+    """Handle user deletion — revoke active sessions and clear preferences."""
     user_id = data.get("user_id", "")
-    logger.info("[SSO Webhook] User deleted: %s", user_id)
+    logger.info("[SSO Webhook] User deleted: %s — revoking sessions", user_id)
+
+    if not user_id:
+        return
+
+    # Revoke active sessions.
+    try:
+        from crewai_productfeature_planner.mongodb.user_session import (
+            end_active_session,
+        )
+        ended = end_active_session(user_id=user_id)
+        if ended:
+            logger.info(
+                "[SSO Webhook] Ended %d active session(s) for deleted user %s",
+                ended, user_id,
+            )
+    except Exception:
+        logger.error(
+            "[SSO Webhook] Failed to revoke sessions for user %s",
+            user_id, exc_info=True,
+        )
 
 
 def _handle_login_success(data: dict[str, Any]) -> None:

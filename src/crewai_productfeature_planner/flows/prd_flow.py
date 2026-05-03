@@ -293,6 +293,15 @@ class PRDFlow(Flow[PRDState]):
         return None
 
     # ------------------------------------------------------------------
+    # Tenant context — reconstructed from state for repo calls
+    # ------------------------------------------------------------------
+    @property
+    def _tenant(self):
+        """Return the TenantContext from flow state, or None."""
+        from crewai_productfeature_planner.mongodb._tenant import TenantContext
+        return TenantContext.from_dict(self.state.tenant_dict)
+
+    # ------------------------------------------------------------------
     # Helper — notify progress
     # ------------------------------------------------------------------
     def _notify_progress(self, event_type: str, details: dict | None = None) -> None:
@@ -835,6 +844,7 @@ class PRDFlow(Flow[PRDState]):
                     step=f"draft_{section.key}",
                     section_key=section.key,
                     section_title=section.title,
+                    tenant=self._tenant,
                 )
                 raise
 
@@ -896,6 +906,7 @@ class PRDFlow(Flow[PRDState]):
                 section_key=section.key,
                 section_title=section.title,
                 agent_results=agent_results,
+                tenant=self._tenant,
             )
 
             logger.info("[Draft] Step %d/%d — Section '%s' generated (%d chars, %d agent(s))",

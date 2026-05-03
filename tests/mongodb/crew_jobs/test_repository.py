@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
     CREW_JOBS_COLLECTION,
     _human_duration,
@@ -21,6 +22,8 @@ from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
     update_job_started,
     update_job_status,
 )
+
+_SYS = TenantContext.system()
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +88,7 @@ def test_find_active_job_returns_doc(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = find_active_job()
+    result = find_active_job(tenant=_SYS)
     assert result == active
     mock_collection.find_one.assert_called_once_with(
         {"status": {"$in": ["queued", "running", "awaiting_approval"]}}
@@ -242,7 +245,7 @@ def test_update_job_status_updates_doc(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = update_job_status("run-1", "running")
+    result = update_job_status("run-1", "running", tenant=_SYS)
 
     assert result is True
     mock_collection.update_one.assert_called_once()
@@ -455,7 +458,7 @@ def test_find_job_returns_doc(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = find_job("run-1")
+    result = find_job("run-1", tenant=_SYS)
     assert result == expected
     mock_collection.find_one.assert_called_once_with({"job_id": "run-1"})
 

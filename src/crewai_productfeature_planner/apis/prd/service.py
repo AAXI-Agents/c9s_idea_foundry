@@ -181,6 +181,7 @@ def run_prd_flow(
     requirements_approval_callback: "Callable | None" = None,
     ceo_review_approval_callback: "Callable | None" = None,
     ux_design_review_approval_callback: "Callable | None" = None,
+    tenant_dict: dict | None = None,
 ) -> None:
     """Execute the PRD flow in background and update the run record.
 
@@ -240,6 +241,8 @@ def run_prd_flow(
         flow = PRDFlow()
         flow.state.idea = idea
         flow.state.run_id = run_id
+        if tenant_dict:
+            flow.state.tenant_dict = tenant_dict
         if progress_callback is not None:
             flow.progress_callback = progress_callback
         if exec_summary_user_feedback_callback is not None:
@@ -558,6 +561,7 @@ def resume_prd_flow(
     jira_review_callback: "Callable | None" = None,
     ceo_review_approval_callback: "Callable | None" = None,
     ux_design_review_approval_callback: "Callable | None" = None,
+    tenant_dict: dict | None = None,
 ) -> None:
     """Resume a previously paused/unfinalized PRD flow from MongoDB state.
 
@@ -651,6 +655,8 @@ def resume_prd_flow(
         flow = PRDFlow()
         flow.state.run_id = run_id
         flow.state.idea = idea
+        if tenant_dict:
+            flow.state.tenant_dict = tenant_dict
         flow.state.draft = draft
         flow.state.iteration = max(s.iteration for s in draft.sections)
         flow.state.executive_summary = exec_summary

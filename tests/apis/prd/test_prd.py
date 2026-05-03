@@ -1015,7 +1015,10 @@ def test_resume_auto_approve_returns_202(mock_find, mock_resume, client):
     body = resp.json()
     assert "auto-approve" in body["message"]
     # The service should have been called with auto_approve=True
-    mock_resume.assert_called_once_with("abc123", True)
+    mock_resume.assert_called_once_with(
+        "abc123", True,
+        tenant_dict={"enterprise_id": "dev-enterprise", "organization_id": "dev-org", "role": "SYS_ADMIN"},
+    )
 
 
 @patch("crewai_productfeature_planner.apis.prd._route_actions.resume_prd_flow")
@@ -1033,7 +1036,10 @@ def test_resume_no_auto_approve_default(mock_find, mock_resume, client):
     resp = client.post("/flow/prd/resume", json={"run_id": "abc123"})
     assert resp.status_code == 202
     # The service should have been called with auto_approve=False
-    mock_resume.assert_called_once_with("abc123", False)
+    mock_resume.assert_called_once_with(
+        "abc123", False,
+        tenant_dict={"enterprise_id": "dev-enterprise", "organization_id": "dev-org", "role": "SYS_ADMIN"},
+    )
 
 
 def test_resume_auto_approve_skips_callback():

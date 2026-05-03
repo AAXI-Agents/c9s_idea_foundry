@@ -40,6 +40,14 @@ class FlowRun(BaseModel):
     flow_name: str
     status: FlowStatus = FlowStatus.PENDING
     iteration: int = 0
+    enterprise_id: str = Field(
+        default="",
+        description="Enterprise ID of the user who kicked off the run (tenant scope).",
+    )
+    organization_id: str = Field(
+        default="",
+        description="Organization ID of the user who kicked off the run (tenant scope).",
+    )
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -144,3 +152,49 @@ def check_cancelled(run_id: str) -> None:
     """Raise :class:`FlowCancelled` if *run_id* has been cancelled."""
     if is_cancelled(run_id):
         raise FlowCancelled(f"Flow {run_id} was cancelled")
+
+
+def run_visible_to_tenant(run: "FlowRun", tenant) -> bool:
+    """Return True if *run* belongs to the caller's tenant scope.
+
+    Multi-tenancy guard for the in-memory ``runs`` dict. Mirrors the
+    rules in ``mongodb._tenant.tenant_filter()``:
+
+    - ``SYS_ADMIN`` (or system context) → all runs visible.
+    - ``ENT_ADMIN`` → all runs in their enterprise.
+    - ``USER`` → only runs in their own organization.
+    - Empty/None tenant → never visible (deny).
+
+    Used by ``GET /flow/runs/{run_id}`` and POST approve/pause/resume to
+    prevent cross-tenant reads or state mutations on the global
+    in-memory ``runs`` dict.
+    """
+    # Lazy import to avoid circular dependency with mongodb._tenant
+    from crewai_productfeature_planner.mongodb._tenant import (
+        TenantContext,
+        _SYSTEM_ENTERPRISE,
+    )
+    from crewai_productfeature_planner.rbac import Role
+
+    if not isinstance(tenant, TenantContext):
+        return False
+
+    # System / SYS_ADMIN — global visibility.
+    if tenant.enterprise_id == _SYSTEM_ENTERPRISE or tenant.role == Role.SYS_ADMIN:
+        return True
+
+    # Legacy in-memory runs created before this migration may not carry
+    # tenant fields. Treat empty enterprise_id on the run as "unknown" and
+    # deny non-admin reads to avoid accidental cross-tenant access.
+    if not run.enterprise_id:
+        return False
+
+    # ENT_ADMIN — any org under their enterprise.
+    if tenant.role == Role.ENT_ADMIN:
+        return run.enterprise_id == tenant.enterprise_id
+
+    # Regular user — must match both enterprise and org.
+    return (
+        run.enterprise_id == tenant.enterprise_id
+        and run.organization_id == tenant.organization_id
+    )

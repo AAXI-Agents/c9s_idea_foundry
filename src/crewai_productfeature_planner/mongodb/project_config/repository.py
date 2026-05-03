@@ -191,15 +191,18 @@ def get_project(
         return None
 
 
-def get_project_by_name(name: str) -> dict[str, Any] | None:
+def get_project_by_name(
+    name: str, *, tenant: TenantContext | None = None
+) -> dict[str, Any] | None:
     """Fetch a single project configuration by ``name``.
 
     Returns:
         The project document (without MongoDB ``_id``) or ``None``.
     """
     try:
+        query: dict[str, Any] = {"name": name, **tenant_filter(tenant)}
         doc = get_db()[PROJECT_CONFIG_COLLECTION].find_one(
-            {"name": name},
+            query,
             {"_id": 0},
         )
         return doc
@@ -239,7 +242,9 @@ def list_projects(
         return []
 
 
-def get_project_for_run(run_id: str) -> dict[str, Any] | None:
+def get_project_for_run(
+    run_id: str, *, tenant: TenantContext | None = None
+) -> dict[str, Any] | None:
     """Look up the project config associated with a PRD run.
 
     Reads the ``project_id`` field from the ``workingIdeas`` document
@@ -250,13 +255,17 @@ def get_project_for_run(run_id: str) -> dict[str, Any] | None:
     """
     try:
         db = get_db()
+        query: dict[str, Any] = {
+            "run_id": run_id,
+            **tenant_filter(tenant),
+        }
         doc = db["workingIdeas"].find_one(
-            {"run_id": run_id},
+            query,
             {"project_id": 1, "_id": 0},
         )
         if not doc or not doc.get("project_id"):
             return None
-        return get_project(doc["project_id"])
+        return get_project(doc["project_id"], tenant=tenant)
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to look up project for run_id=%s: %s",

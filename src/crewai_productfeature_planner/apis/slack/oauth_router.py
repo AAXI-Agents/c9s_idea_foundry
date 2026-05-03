@@ -12,16 +12,21 @@ Redirect URL (must match the manifest):
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import html as html_mod
 import json
 import os
 import ssl
+import time
 import urllib.parse
 import urllib.request
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
+from crewai_productfeature_planner.apis.sso_auth import require_sso_user
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -29,6 +34,97 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["Slack OAuth"])
 
 _OAUTH_V2_ACCESS_URL = "https://slack.com/api/oauth.v2.access"
+_SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
+
+# Signed-state TTL (seconds). Slack install flows complete within minutes.
+_STATE_TTL_SECONDS = 600
+
+
+def _state_secret() -> bytes:
+    """Secret used to sign Slack OAuth ``state`` tokens.
+
+    Falls back to ``SSO_WEBHOOK_SECRET`` so existing deployments continue
+    to work; operators can override with ``SLACK_OAUTH_STATE_SECRET``.
+    Returns ``b""`` when no secret is configured — in that case the
+    callback will still accept the install but with empty tenant fields
+    (legacy behaviour).
+    """
+    secret = (
+        os.environ.get("SLACK_OAUTH_STATE_SECRET", "").strip()
+        or os.environ.get("SSO_WEBHOOK_SECRET", "").strip()
+    )
+    return secret.encode("utf-8")
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(data: str) -> bytes:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
+
+
+def sign_install_state(tenant: TenantContext, *, ttl: int = _STATE_TTL_SECONDS) -> str:
+    """Build a signed ``state`` string carrying the installer's tenant.
+
+    Format: ``base64url(payload).base64url(hmac_sha256(secret, payload))``
+    Payload JSON: ``{"e": enterprise_id, "o": organization_id, "exp": <epoch>}``
+    """
+    payload = {
+        "e": tenant.enterprise_id,
+        "o": tenant.organization_id,
+        "exp": int(time.time()) + ttl,
+    }
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    secret = _state_secret()
+    if not secret:
+        # No secret configured — emit unsigned state (legacy behaviour).
+        return _b64url_encode(raw) + "."
+    sig = hmac.new(secret, raw, hashlib.sha256).digest()
+    return f"{_b64url_encode(raw)}.{_b64url_encode(sig)}"
+
+
+def verify_install_state(state: str) -> TenantContext | None:
+    """Verify a signed ``state`` token. Returns the tenant or ``None``.
+
+    Returns ``None`` when the state is malformed, expired, or the HMAC
+    signature does not match. Caller should treat ``None`` as "no tenant
+    context" — the callback then either rejects the install or stores it
+    with empty tenant fields depending on policy.
+    """
+    if not state or "." not in state:
+        return None
+    try:
+        payload_b64, sig_b64 = state.split(".", 1)
+        raw = _b64url_decode(payload_b64)
+        secret = _state_secret()
+        if secret:
+            if not sig_b64:
+                return None
+            expected = hmac.new(secret, raw, hashlib.sha256).digest()
+            actual = _b64url_decode(sig_b64)
+            if not hmac.compare_digest(expected, actual):
+                logger.warning("[Slack OAuth] state signature mismatch")
+                return None
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        logger.warning("[Slack OAuth] state decode failed", exc_info=True)
+        return None
+
+    exp = payload.get("exp")
+    if not isinstance(exp, int) or exp < int(time.time()):
+        logger.warning("[Slack OAuth] state expired")
+        return None
+
+    enterprise_id = payload.get("e") or ""
+    organization_id = payload.get("o") or ""
+    if not enterprise_id or not organization_id:
+        return None
+    return TenantContext(
+        enterprise_id=enterprise_id,
+        organization_id=organization_id,
+    )
 
 
 def _exchange_code(code: str, redirect_uri: str | None = None) -> dict:
@@ -73,7 +169,7 @@ def _exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     return body
 
 
-def _apply_tokens(result: dict) -> dict:
+def _apply_tokens(result: dict, *, tenant: TenantContext | None = None) -> dict:
     """Persist exchanged tokens to MongoDB ``slackOAuth`` and return a summary."""
     from crewai_productfeature_planner.mongodb.slack_oauth import upsert_team
     from crewai_productfeature_planner.tools.slack_token_manager import invalidate
@@ -131,8 +227,10 @@ def _apply_tokens(result: dict) -> dict:
                 app_id=app_id,
                 expires_in=expires_in,
                 authed_user_id=authed_user.get("id"),
+                tenant=tenant,
             )
             summary["persisted"] = doc is not None
+            summary["tenant_scoped"] = tenant is not None
 
             # Invalidate the in-memory cache so the next API call picks
             # up the freshly-stored token.
@@ -152,6 +250,65 @@ def _apply_tokens(result: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/slack/oauth/install",
+    tags=["Slack OAuth"],
+    summary="Begin a tenant-scoped Slack install",
+    response_description="Redirect to slack.com/oauth/v2/authorize",
+    description=(
+        "Authenticated entrypoint for installing or reinstalling the Slack "
+        "app. Issues a signed ``state`` token carrying the caller's "
+        "enterprise/organization, then redirects the browser to Slack's "
+        "OAuth authorize URL. The callback verifies the state and persists "
+        "the resulting tokens scoped to that tenant."
+    ),
+)
+async def slack_install_start(
+    request: Request,
+    user: dict = Depends(require_sso_user),
+):
+    """Issue a signed state and redirect to Slack's authorize URL."""
+    client_id = os.environ.get("SLACK_CLIENT_ID", "").strip()
+    if not client_id:
+        raise HTTPException(
+            status_code=500,
+            detail="SLACK_CLIENT_ID is not configured on the server.",
+        )
+
+    tenant = TenantContext.from_user(user)
+    if not tenant.enterprise_id or not tenant.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Slack installs require an enterprise/organization scope.",
+        )
+
+    state = sign_install_state(tenant)
+
+    # Build the redirect_uri from this request so it matches the manifest.
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/slack/oauth/callback"
+
+    scope = os.environ.get("SLACK_BOT_SCOPES", "").strip()
+    user_scope = os.environ.get("SLACK_USER_SCOPES", "").strip()
+
+    qs: dict[str, str] = {
+        "client_id": client_id,
+        "state": state,
+        "redirect_uri": redirect_uri,
+    }
+    if scope:
+        qs["scope"] = scope
+    if user_scope:
+        qs["user_scope"] = user_scope
+
+    target = f"{_SLACK_AUTHORIZE_URL}?{urllib.parse.urlencode(qs)}"
+    logger.info(
+        "[Slack OAuth] install start ent=%s org=%s user=%s",
+        tenant.enterprise_id, tenant.organization_id, user.get("user_id"),
+    )
+    return RedirectResponse(url=target, status_code=302)
 
 
 @router.get(
@@ -229,6 +386,27 @@ async def slack_oauth_callback(request: Request) -> HTMLResponse:
             status_code=400,
         )
 
+    # Verify the signed ``state`` carrying the installer's tenant.
+    state = params.get("state", "").strip()
+    install_tenant = verify_install_state(state) if state else None
+    require_state = os.environ.get("SLACK_OAUTH_REQUIRE_STATE", "true").strip().lower() in (
+        "true", "1", "yes",
+    )
+    if install_tenant is None and require_state:
+        logger.warning(
+            "[Slack OAuth] Rejecting install — missing/invalid signed state"
+        )
+        return HTMLResponse(
+            content=(
+                "<html><body>"
+                "<h1>Install Rejected</h1>"
+                "<p>The install request was not initiated from an authenticated"
+                " session. Start the install from the Idea Foundry admin UI.</p>"
+                "</body></html>"
+            ),
+            status_code=400,
+        )
+
     redirect_uri = str(request.url).split("?")[0]
 
     try:
@@ -258,7 +436,7 @@ async def slack_oauth_callback(request: Request) -> HTMLResponse:
         )
 
     try:
-        summary = _apply_tokens(result)
+        summary = _apply_tokens(result, tenant=install_tenant)
     except Exception as exc:
         logger.error("OAuth token persistence failed: %s", exc, exc_info=True)
         return HTMLResponse(

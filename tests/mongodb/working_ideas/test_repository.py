@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     WORKING_COLLECTION,
     ensure_section_field,
@@ -31,6 +32,8 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (
     update_executive_summary_critique,
     update_section_critique,
 )
+
+_SYS = TenantContext.system()
 
 
 @pytest.fixture(autouse=True)
@@ -564,7 +567,7 @@ def test_get_run_documents_returns_doc(wi_mocks):
     mock_collection.find_one.return_value = doc
 
 
-    result = get_run_documents("run-1")
+    result = get_run_documents("run-1", tenant=_SYS)
     assert result == [doc]
     mock_collection.find_one.assert_called_once_with(
         {"run_id": "run-1", "status": {"$nin": ["completed", "archived"]}}
@@ -577,7 +580,7 @@ def test_get_run_documents_returns_empty_on_error(wi_mocks):
     mock_collection.find_one.side_effect = ServerSelectionTimeoutError("timeout")
 
 
-    result = get_run_documents("run-1")
+    result = get_run_documents("run-1", tenant=_SYS)
     assert result == []
 
 
@@ -587,7 +590,7 @@ def test_get_run_documents_empty_result(wi_mocks):
     mock_collection.find_one.return_value = None
 
 
-    result = get_run_documents("run-nonexistent")
+    result = get_run_documents("run-nonexistent", tenant=_SYS)
     assert result == []
 
 
@@ -599,7 +602,7 @@ def test_mark_completed_updates_document(wi_mocks):
     mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
 
-    count = mark_completed("run-abc")
+    count = mark_completed("run-abc", tenant=_SYS)
 
     assert count == 1
     mock_db.__getitem__.assert_called_with(WORKING_COLLECTION)
@@ -992,7 +995,7 @@ def test_mark_paused_updates_status(wi_mocks):
     mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
 
-    result = mark_paused("run-1")
+    result = mark_paused("run-1", tenant=_SYS)
 
     assert result == 1
     call_args = mock_collection.update_one.call_args
@@ -1029,7 +1032,7 @@ def test_mark_archived_updates_status(wi_mocks):
     mock_collection, mock_db = wi_mocks
     mock_collection.update_one.return_value = MagicMock(modified_count=1)
 
-    count = mark_archived("run-archive")
+    count = mark_archived("run-archive", tenant=_SYS)
 
     assert count == 1
     call_args = mock_collection.update_one.call_args

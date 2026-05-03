@@ -225,6 +225,7 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
         finalized_idea=flow.state.idea,
         section_key="ux_design",
         section_title="UX Design — Draft",
+        tenant=flow._tenant,
     )
 
     # Write draft file (overwrite any existing).
@@ -322,6 +323,7 @@ def run_ux_design_review(flow: PRDFlow, initial_draft: str) -> str:
         finalized_idea=flow.state.idea,
         section_key="ux_design",
         section_title="UX Design — Final",
+        tenant=flow._tenant,
     )
 
     # Write final file.

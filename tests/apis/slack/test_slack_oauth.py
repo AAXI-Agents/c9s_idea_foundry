@@ -18,6 +18,8 @@ def _clean_oauth_env(monkeypatch):
         "SLACK_BYPASS",
     ):
         monkeypatch.delenv(key, raising=False)
+    # Legacy callback tests do not exercise the new signed-state flow.
+    monkeypatch.setenv("SLACK_OAUTH_REQUIRE_STATE", "false")
 
 
 async def _get_callback(params: str = ""):

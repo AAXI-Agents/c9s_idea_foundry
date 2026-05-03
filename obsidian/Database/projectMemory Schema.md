@@ -73,13 +73,14 @@ Each element in `idea_iteration`, `knowledge`, and `tools` arrays:
 
 | Function | Purpose |
 |----------|---------|
-| `upsert_project_memory()` | Ensure document exists — creates empty scaffold if not |
-| `get_project_memory()` | Fetch full project memory document |
-| `list_memory_entries(project_id, category)` | Return entries in a specific category |
-| `get_memories_for_agent()` | Load memories relevant to an agent role (for backstory enrichment) |
-| `add_memory_entry()` | Append entry to a category array |
-| `replace_category_entries()` | Replace all entries in a category |
-| `clear_category()` | Clear all entries in a category |
+| `upsert_project_memory(*, tenant)` | Ensure document exists — creates empty scaffold if not (tenant-filtered) |
+| `get_project_memory(*, tenant)` | Fetch full project memory document (tenant-filtered) |
+| `list_memory_entries(project_id, category, *, tenant)` | Return entries in a specific category (tenant-filtered) |
+| `get_memories_for_agent(*, tenant)` | Load memories relevant to an agent role (tenant-filtered) |
+| `add_memory_entry(*, tenant)` | Append entry to a category array (tenant-filtered) |
+| `replace_category_entries(*, tenant)` | Replace all entries in a category (tenant-filtered) |
+| `clear_category(*, tenant)` | Clear all entries in a category (tenant-filtered) |
+| `delete_memory_entry(*, tenant)` | Delete a specific entry from a category (tenant-filtered) |
 
 ---
 

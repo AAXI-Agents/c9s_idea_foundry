@@ -314,7 +314,7 @@ def test_finalize_saves_prd(_mock_proj, _mock_post, mock_writer_cls, mock_mark_c
     assert "saved" in result.lower()
 
     # Working ideas should be marked completed
-    mock_mark_completed.assert_called_once_with("test-run-123")
+    mock_mark_completed.assert_called_once_with("test-run-123", tenant=None)
 
     # Output file path should be stored in MongoDB
     mock_save_output.assert_called_once_with(
@@ -366,7 +366,7 @@ def test_save_progress_with_idea_and_requirements(_mock_proj, mock_writer_cls, m
     )
 
     # Working idea status updated to paused
-    mock_mark_paused.assert_called_once_with(flow.state.run_id)
+    mock_mark_paused.assert_called_once_with(flow.state.run_id, tenant=None)
 
 
 @patch("crewai_productfeature_planner.flows._finalization.mark_paused")

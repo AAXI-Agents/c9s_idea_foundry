@@ -80,13 +80,14 @@ The `predicted_next_step` field (when present):
 | Function | Purpose |
 |----------|---------|
 | `log_interaction()` | Insert new interaction document |
-| `get_interaction(interaction_id)` | Fetch by ID |
-| `find_interactions_by_source()` | Filter by source, newest first |
-| `find_interactions_by_intent()` | Filter by intent, newest first |
-| `find_interactions()` | Flexible query with optional filters (source, intent, user_id, run_id, since) |
-| `list_interactions()` | Return most recent interactions |
+| `get_interaction(interaction_id, *, tenant)` | Fetch by ID (tenant-filtered) |
+| `find_interactions_by_source(*, tenant)` | Filter by source, newest first (tenant-filtered) |
+| `find_interactions_by_intent(*, tenant)` | Filter by intent, newest first (tenant-filtered) |
+| `find_interactions(*, tenant)` | Flexible query with optional filters (source, intent, user_id, run_id, since) (tenant-filtered) |
+| `list_interactions(*, tenant)` | Return most recent interactions (tenant-filtered) |
 | `has_bot_thread_history()` | Check if bot has prior interaction in a Slack thread |
 | `record_next_step_feedback()` | Record whether user followed LLM's predicted next step |
+| `update_next_step_prediction()` | Update the predicted next step for an interaction |
 
 ---
 

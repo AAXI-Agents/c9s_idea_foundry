@@ -174,6 +174,7 @@ def run_ceo_review(flow: PRDFlow) -> str:
         finalized_idea=flow.state.idea,
         section_key="executive_product_summary",
         section_title="Executive Product Summary",
+        tenant=flow._tenant,
     )
 
     flow.state.update_date = datetime.now(timezone.utc).isoformat()
@@ -289,6 +290,7 @@ def run_eng_plan(flow: PRDFlow) -> str:
         finalized_idea=flow.state.idea,
         section_key="engineering_plan",
         section_title="Engineering Plan",
+        tenant=flow._tenant,
     )
 
     flow.state.update_date = datetime.now(timezone.utc).isoformat()

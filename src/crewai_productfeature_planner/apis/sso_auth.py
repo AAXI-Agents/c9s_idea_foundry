@@ -359,13 +359,25 @@ async def require_sso_user(request: Request) -> dict[str, Any]:
     placeholder user so existing dev workflows are unaffected.
     """
     if not _sso_enabled():
-        logger.debug("[SSO] Auth bypassed — SSO disabled")
+        # Dev-only bypass. Default role is USER so tenant filtering still
+        # applies. Set DEV_USER_ROLE=SYS_ADMIN to see all tenants in dev.
+        dev_role = os.environ.get("DEV_USER_ROLE", "USER").strip().upper() or "USER"
+        if dev_role not in ("USER", "ENT_ADMIN", "SYS_ADMIN"):
+            dev_role = "USER"
+        dev_ent = os.environ.get("DEV_ENTERPRISE_ID", "dev-enterprise")
+        dev_org = os.environ.get("DEV_ORGANIZATION_ID", "dev-org")
+        logger.debug(
+            "[SSO] Auth bypassed — SSO disabled (dev_role=%s ent=%s org=%s)",
+            dev_role, dev_ent, dev_org,
+        )
         return {
             "user_id": "anonymous",
             "email": "dev@localhost",
-            "roles": ["admin"],
+            "roles": [dev_role],
             "app_name": APP_NAME,
-            "display_name": "Developer (SSO disabled)",
+            "display_name": f"Developer ({dev_role})",
+            "enterprise_id": dev_ent,
+            "organization_id": dev_org,
         }
 
     # Extract Bearer token from Authorization header.
@@ -406,15 +418,21 @@ async def require_sso_user(request: Request) -> dict[str, Any]:
     _validate_app_id(claims)
 
     user_id = claims.get("sub", "")
-    logger.info("[SSO] Authenticated user_id=%s path=%s", user_id, request.url.path)
+    enterprise_id = claims.get("enterprise_id", "")
+    organization_id = claims.get("organization_id", "")
+    roles = claims.get("roles", [])
+    logger.info(
+        "[SSO] Authenticated user_id=%s email=%s roles=%s enterprise_id=%s organization_id=%s path=%s",
+        user_id, claims.get("email", ""), roles, enterprise_id, organization_id, request.url.path,
+    )
     return {
         "user_id": user_id,
         "email": claims.get("email", ""),
-        "roles": claims.get("roles", []),
+        "roles": roles,
         "app_id": claims.get("app_id", ""),
         "app_name": APP_NAME,
-        "enterprise_id": claims.get("enterprise_id", ""),
-        "organization_id": claims.get("organization_id", ""),
+        "enterprise_id": enterprise_id,
+        "organization_id": organization_id,
         "display_name": claims.get("email", ""),
     }
 

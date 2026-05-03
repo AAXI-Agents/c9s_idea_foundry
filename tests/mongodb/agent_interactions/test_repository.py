@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.agent_interactions.repository import (
     AGENT_INTERACTIONS_COLLECTION,
     find_interactions,
@@ -16,6 +17,8 @@ from crewai_productfeature_planner.mongodb.agent_interactions.repository import 
     list_interactions,
     log_interaction,
 )
+
+_SYS = TenantContext.system()
 
 
 @pytest.fixture(autouse=True)
@@ -196,7 +199,7 @@ def test_get_interaction_found(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = get_interaction("abc123")
+    result = get_interaction("abc123", tenant=_SYS)
     assert result == doc
     mock_collection.find_one.assert_called_once_with({"interaction_id": "abc123"})
 
@@ -210,7 +213,7 @@ def test_get_interaction_not_found(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    assert get_interaction("nonexistent") is None
+    assert get_interaction("nonexistent", tenant=_SYS) is None
 
 
 @patch("crewai_productfeature_planner.mongodb.agent_interactions.repository.get_db")
@@ -222,7 +225,7 @@ def test_get_interaction_db_error(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    assert get_interaction("abc123") is None
+    assert get_interaction("abc123", tenant=_SYS) is None
 
 
 # ── find_interactions_by_source ───────────────────────────────
@@ -241,7 +244,7 @@ def test_find_by_source(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = find_interactions_by_source("slack", limit=50)
+    result = find_interactions_by_source("slack", limit=50, tenant=_SYS)
     assert result == docs
     mock_collection.find.assert_called_once_with({"source": "slack"})
     mock_cursor.sort.assert_called_once_with("created_at", -1)
@@ -257,7 +260,7 @@ def test_find_by_source_db_error(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    assert find_interactions_by_source("slack") == []
+    assert find_interactions_by_source("slack", tenant=_SYS) == []
 
 
 # ── find_interactions_by_intent ───────────────────────────────
@@ -276,7 +279,7 @@ def test_find_by_intent(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = find_interactions_by_intent("create_prd")
+    result = find_interactions_by_intent("create_prd", tenant=_SYS)
     assert result == docs
     mock_collection.find.assert_called_once_with({"intent": "create_prd"})
 
@@ -290,7 +293,7 @@ def test_find_by_intent_db_error(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    assert find_interactions_by_intent("help") == []
+    assert find_interactions_by_intent("help", tenant=_SYS) == []
 
 
 # ── find_interactions (flexible query) ────────────────────────
@@ -309,7 +312,7 @@ def test_find_interactions_no_filters(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = find_interactions()
+    result = find_interactions(tenant=_SYS)
     assert result == docs
     mock_collection.find.assert_called_once_with({})
 
@@ -335,6 +338,7 @@ def test_find_interactions_all_filters(mock_get_db):
         run_id="run123",
         since=since,
         limit=10,
+        tenant=_SYS,
     )
 
     assert result == docs
@@ -358,7 +362,7 @@ def test_find_interactions_db_error(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    assert find_interactions(source="slack") == []
+    assert find_interactions(source="slack", tenant=_SYS) == []
 
 
 # ── list_interactions ─────────────────────────────────────────
@@ -377,9 +381,9 @@ def test_list_interactions(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    result = list_interactions()
+    result = list_interactions(tenant=_SYS)
     assert result == docs
-    mock_collection.find.assert_called_once_with()
+    mock_collection.find.assert_called_once_with({})
     mock_cursor.sort.assert_called_once_with("created_at", -1)
     mock_cursor.limit.assert_called_once_with(100)
 
@@ -396,7 +400,7 @@ def test_list_interactions_custom_limit(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    list_interactions(limit=5)
+    list_interactions(limit=5, tenant=_SYS)
     mock_cursor.limit.assert_called_once_with(5)
 
 
@@ -409,7 +413,7 @@ def test_list_interactions_db_error(mock_get_db):
     mock_db.__getitem__ = MagicMock(return_value=mock_collection)
     mock_get_db.return_value = mock_db
 
-    assert list_interactions() == []
+    assert list_interactions(tenant=_SYS) == []
 
 
 # ── has_bot_thread_history ────────────────────────────────────

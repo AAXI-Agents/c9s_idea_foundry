@@ -398,6 +398,7 @@ async def list_audit_log(
     from crewai_productfeature_planner.mongodb.admin_audit_log import (
         list_audit_entries,
     )
+    from crewai_productfeature_planner.rbac import Role
 
     enterprise_id = user.get("enterprise_id", "")
     logger.info(
@@ -410,7 +411,7 @@ async def list_audit_log(
     tenant = TenantContext(
         enterprise_id=enterprise_id,
         organization_id="",
-        is_enterprise_admin=True,
+        role=Role.ENT_ADMIN,
     )
 
     items_raw, total = list_audit_entries(

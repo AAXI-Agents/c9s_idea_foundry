@@ -101,7 +101,7 @@ def save_progress(flow: PRDFlow) -> str:
 
     # Update workingIdeas status from "failed" → "paused" so a
     # subsequent restart treats this as a resumable run.
-    mark_paused(flow.state.run_id)
+    mark_paused(flow.state.run_id, tenant=flow._tenant)
 
     return save_result
 
@@ -185,7 +185,7 @@ def finalize(flow: PRDFlow) -> str:
     )
 
     # Mark working-idea document as completed
-    mark_completed(flow.state.run_id)
+    mark_completed(flow.state.run_id, tenant=flow._tenant)
 
     # Save v1 version snapshot on first finalization
     try:

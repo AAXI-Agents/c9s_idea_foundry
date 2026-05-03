@@ -14,7 +14,11 @@ from typing import Any
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
-from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_fields
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -210,13 +214,19 @@ def get_team(team_id: str) -> dict[str, Any] | None:
         return None
 
 
-def get_all_teams() -> list[dict[str, Any]]:
+def get_all_teams(
+    *,
+    tenant: TenantContext | None = None,
+) -> list[dict[str, Any]]:
     """Return all installed team OAuth records.
 
-    Useful for multi-workspace diagnostics.
+    When *tenant* is ``None``, returns an empty list (blocked).
+    SYS_ADMIN callers pass ``TenantContext.system()`` for global access.
     """
     try:
-        return list(get_db()[SLACK_OAUTH_COLLECTION].find({}))
+        return list(
+            get_db()[SLACK_OAUTH_COLLECTION].find(tenant_filter(tenant))
+        )
     except PyMongoError as exc:
         logger.error("[SlackOAuth] Failed to list teams: %s", exc)
         return []

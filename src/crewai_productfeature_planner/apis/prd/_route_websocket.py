@@ -20,8 +20,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -92,12 +93,19 @@ def broadcast_sync(run_id: str, event: dict[str, Any]) -> None:
 # ── Helpers ────────────────────────────────────────────────────
 
 
-def _build_status_snapshot(run_id: str) -> dict[str, Any]:
+def _build_status_snapshot(
+    run_id: str,
+    *,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any]:
     """Build a status snapshot from in-memory runs or MongoDB."""
-    from crewai_productfeature_planner.apis.shared import runs
+    from crewai_productfeature_planner.apis.shared import (
+        run_visible_to_tenant,
+        runs,
+    )
 
     run = runs.get(run_id)
-    if run is not None:
+    if run is not None and (tenant is None or run_visible_to_tenant(run, tenant)):
         return {
             "type": "status_update",
             "run_id": run_id,
@@ -111,10 +119,10 @@ def _build_status_snapshot(run_id: str) -> dict[str, Any]:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    # Fallback: check MongoDB for persisted runs
+    # Fallback: check MongoDB for persisted runs (tenant-scoped)
     from crewai_productfeature_planner.mongodb.crew_jobs import find_job
 
-    job = find_job(run_id)
+    job = find_job(run_id, tenant=tenant)
     if job is not None:
         return {
             "type": "status_update",
@@ -179,6 +187,8 @@ async def _poll_loop(
     ws: WebSocket,
     run_id: str,
     poll_interval: float = 2.0,
+    *,
+    tenant: TenantContext | None = None,
 ) -> None:
     """Background polling task — sends status updates and new interactions.
 
@@ -195,15 +205,15 @@ async def _poll_loop(
     while True:
         try:
             # Status check
-            snapshot = _build_status_snapshot(run_id)
+            snapshot = _build_status_snapshot(run_id, tenant=tenant)
             current_status = snapshot.get("status", "")
 
             if current_status != last_status:
                 await ws.send_json(snapshot)
                 last_status = current_status
 
-            # New interactions since last check
-            kwargs: dict[str, Any] = {"run_id": run_id, "limit": 10}
+            # New interactions since last check (tenant-scoped)
+            kwargs: dict[str, Any] = {"run_id": run_id, "limit": 10, "tenant": tenant}
             if last_interaction_ts is not None:
                 kwargs["since"] = last_interaction_ts
 
@@ -245,21 +255,97 @@ async def _poll_loop(
 _enable_poll_loop: bool = True
 
 
+async def _validate_ws_token(token: str | None) -> dict[str, Any] | None:
+    """Validate a JWT token for WebSocket auth (mirrors REST /flow/* auth).
+
+    Returns the user claims dict on success, or ``None`` on failure.
+    When ``SSO_ENABLED`` is off (dev mode), returns a synthetic SYS_ADMIN
+    user so local development continues to work without tokens.
+    """
+    import os
+
+    if os.environ.get("SSO_ENABLED", "false").strip().lower() not in ("true", "1", "yes"):
+        return {
+            "user_id": "anonymous",
+            "roles": ["SYS_ADMIN"],
+            "enterprise_id": os.environ.get("DEV_ENTERPRISE_ID", "dev-enterprise"),
+            "organization_id": os.environ.get("DEV_ORGANIZATION_ID", "dev-org"),
+        }
+
+    if not token:
+        return None
+
+    from crewai_productfeature_planner.apis.sso_auth import (
+        _decode_jwt_locally,
+        _introspect_remotely,
+    )
+
+    claims = await _introspect_remotely(token)
+    if claims is None:
+        claims = _decode_jwt_locally(token)
+    return claims
+
+
 @ws_router.websocket("/flow/runs/{run_id}/ws")
-async def flow_run_websocket(websocket: WebSocket, run_id: str):
+async def flow_run_websocket(
+    websocket: WebSocket,
+    run_id: str,
+    token: str | None = Query(default=None),
+):
     """Bidirectional WebSocket for real-time flow run updates.
 
-    On connect, sends the current run status snapshot immediately,
-    then polls for status changes and new agent interactions.
-    The client can send JSON messages (e.g. ``{"type": "ping"}``).
+    Authenticates via ``?token=`` query param (JWT access token), then
+    verifies the run belongs to the caller's tenant before accepting the
+    connection. On connect, sends the current run status snapshot
+    immediately, then polls for status changes and new agent
+    interactions. The client can send JSON messages
+    (e.g. ``{"type": "ping"}``).
     """
+    # Validate token before accepting the connection.
+    user = await _validate_ws_token(token)
+    if not user:
+        await websocket.close(code=4001)
+        logger.warning("[WS] Rejected — invalid/missing token run_id=%s", run_id)
+        return
+
+    tenant = TenantContext.from_user(user)
+
+    # Verify the run belongs to this tenant before accepting. If we cannot
+    # find a matching run in either the in-memory store or MongoDB, close
+    # with 4004 so we don't leak existence across tenants.
+    from crewai_productfeature_planner.apis.shared import (
+        run_visible_to_tenant,
+        runs,
+    )
+    from crewai_productfeature_planner.mongodb.crew_jobs import find_job
+
+    in_memory = runs.get(run_id)
+    has_access = False
+    if in_memory is not None:
+        has_access = run_visible_to_tenant(in_memory, tenant)
+    if not has_access:
+        # Fallback to MongoDB — tenant_filter blocks cross-tenant docs.
+        if find_job(run_id, tenant=tenant) is not None:
+            has_access = True
+
+    if not has_access:
+        await websocket.close(code=4004)
+        logger.warning(
+            "[WS] Rejected — run_id=%s not visible to tenant ent=%s org=%s",
+            run_id, tenant.enterprise_id, tenant.organization_id,
+        )
+        return
+
     await websocket.accept()
-    logger.info("[WS] Client connected for run_id=%s", run_id)
+    logger.info(
+        "[WS] Client connected for run_id=%s ent=%s org=%s",
+        run_id, tenant.enterprise_id, tenant.organization_id,
+    )
 
     await _register(run_id, websocket)
 
-    # Send initial status snapshot
-    snapshot = _build_status_snapshot(run_id)
+    # Send initial status snapshot (tenant-scoped)
+    snapshot = _build_status_snapshot(run_id, tenant=tenant)
     try:
         await websocket.send_json(snapshot)
     except Exception:  # noqa: BLE001
@@ -269,7 +355,7 @@ async def flow_run_websocket(websocket: WebSocket, run_id: str):
     # Start background poll task (disabled in tests)
     poll_task = None
     if _enable_poll_loop:
-        poll_task = asyncio.create_task(_poll_loop(websocket, run_id))
+        poll_task = asyncio.create_task(_poll_loop(websocket, run_id, tenant=tenant))
 
     try:
         while True:
@@ -288,7 +374,7 @@ async def flow_run_websocket(websocket: WebSocket, run_id: str):
             if msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
             elif msg_type == "get_status":
-                snap = _build_status_snapshot(run_id)
+                snap = _build_status_snapshot(run_id, tenant=tenant)
                 await websocket.send_json(snap)
             else:
                 await websocket.send_json({

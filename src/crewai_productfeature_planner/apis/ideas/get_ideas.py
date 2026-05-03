@@ -76,10 +76,15 @@ async def list_ideas(
         )
 
     # ── Check response cache ──────────────────────────────────
+    tenant = resolve_tenant_context(user, organization_id)
+    t_filter = tenant_filter(tenant)
+
     cache_params = dict(page=page, page_size=page_size,
                         project_id=project_id, status=idea_status,
                         include_archived=include_archived,
-                        organization_id=organization_id)
+                        organization_id=organization_id,
+                        _ent=tenant.enterprise_id, _org=tenant.organization_id,
+                        _role=tenant.role.value)
     cached = response_cache.get("ideas", **cache_params)
     if cached is not None:
         logger.debug("[Ideas] cache hit for page=%d size=%d", page, page_size)
@@ -93,9 +98,6 @@ async def list_ideas(
 
     db = get_async_db()
     coll = db[WORKING_COLLECTION]
-
-    tenant = resolve_tenant_context(user, organization_id)
-    t_filter = tenant_filter(tenant)
 
     query: dict[str, Any] = {**t_filter}
     if project_id:

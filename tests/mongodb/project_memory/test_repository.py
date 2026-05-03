@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
+from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.project_memory.repository import (
     PROJECT_MEMORY_COLLECTION,
     MemoryCategory,
@@ -17,6 +18,8 @@ from crewai_productfeature_planner.mongodb.project_memory.repository import (
     replace_category_entries,
     upsert_project_memory,
 )
+
+_SYS = TenantContext.system()
 
 
 @pytest.fixture(autouse=True)
@@ -120,7 +123,7 @@ def test_get_project_memory_returns_doc(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    doc = get_project_memory("proj-1")
+    doc = get_project_memory("proj-1", tenant=_SYS)
 
     assert doc == expected
     col.find_one.assert_called_once_with(
@@ -136,7 +139,7 @@ def test_get_project_memory_not_found(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    assert get_project_memory("nonexistent") is None
+    assert get_project_memory("nonexistent", tenant=_SYS) is None
 
 
 @patch("crewai_productfeature_planner.mongodb.project_memory.repository.get_db")
@@ -147,7 +150,7 @@ def test_get_project_memory_db_error(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    assert get_project_memory("proj-1") is None
+    assert get_project_memory("proj-1", tenant=_SYS) is None
 
 
 # ── list_memory_entries ───────────────────────────────────────
@@ -167,7 +170,7 @@ def test_list_memory_entries_returns_category(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    entries = list_memory_entries("proj-1", MemoryCategory.IDEA_ITERATION)
+    entries = list_memory_entries("proj-1", MemoryCategory.IDEA_ITERATION, tenant=_SYS)
     assert len(entries) == 1
     assert entries[0]["content"] == "Focus on MVP"
 
@@ -180,7 +183,7 @@ def test_list_memory_entries_empty_on_missing(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    assert list_memory_entries("proj-1", MemoryCategory.TOOLS) == []
+    assert list_memory_entries("proj-1", MemoryCategory.TOOLS, tenant=_SYS) == []
 
 
 # ── get_memories_for_agent ────────────────────────────────────
@@ -200,7 +203,7 @@ def test_get_memories_for_agent_all_categories(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = get_memories_for_agent("proj-1", "Product Manager")
+    result = get_memories_for_agent("proj-1", "Product Manager", tenant=_SYS)
 
     assert result["idea_iteration"] == [{"content": "a"}]
     assert result["knowledge"] == [{"content": "b", "kind": "note"}]
@@ -215,7 +218,7 @@ def test_get_memories_for_agent_missing_doc(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = get_memories_for_agent("proj-1", "Idea Refiner")
+    result = get_memories_for_agent("proj-1", "Idea Refiner", tenant=_SYS)
 
     assert result == {
         "idea_iteration": [],
@@ -239,7 +242,7 @@ def test_add_memory_entry_appends(mock_get_db):
 
     result = add_memory_entry(
         "proj-1", MemoryCategory.IDEA_ITERATION,
-        "Be concise", added_by="U123",
+        "Be concise", added_by="U123", tenant=_SYS,
     )
 
     assert result is True
@@ -265,7 +268,7 @@ def test_add_memory_entry_knowledge_with_kind(mock_get_db):
 
     add_memory_entry(
         "proj-1", MemoryCategory.KNOWLEDGE,
-        "https://docs.example.com", kind="link",
+        "https://docs.example.com", kind="link", tenant=_SYS,
     )
 
     push_call = col.update_one.call_args_list[1]
@@ -284,7 +287,7 @@ def test_add_memory_entry_tools_no_kind(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    add_memory_entry("proj-1", MemoryCategory.TOOLS, "PostgreSQL")
+    add_memory_entry("proj-1", MemoryCategory.TOOLS, "PostgreSQL", tenant=_SYS)
 
     push_call = col.update_one.call_args_list[1]
     entry = push_call[0][1]["$push"]["tools"]
@@ -303,7 +306,7 @@ def test_add_memory_entry_db_error(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = add_memory_entry("proj-1", MemoryCategory.TOOLS, "Redis")
+    result = add_memory_entry("proj-1", MemoryCategory.TOOLS, "Redis", tenant=_SYS)
 
     assert result is False
 
@@ -326,7 +329,7 @@ def test_replace_category_entries(mock_get_db):
         {"content": "Entry B", "added_by": "U456"},
     ]
     result = replace_category_entries(
-        "proj-1", MemoryCategory.TOOLS, new_entries,
+        "proj-1", MemoryCategory.TOOLS, new_entries, tenant=_SYS,
     )
 
     assert result is True
@@ -349,7 +352,7 @@ def test_clear_category(mock_get_db):
     db, _ = _mock_db(col)
     mock_get_db.return_value = db
 
-    result = clear_category("proj-1", MemoryCategory.IDEA_ITERATION)
+    result = clear_category("proj-1", MemoryCategory.IDEA_ITERATION, tenant=_SYS)
 
     assert result is True
     set_call = col.update_one.call_args_list[1]
@@ -369,7 +372,7 @@ def test_delete_memory_entry_removes(mock_get_db):
     mock_get_db.return_value = db
 
     result = delete_memory_entry(
-        "proj-1", MemoryCategory.KNOWLEDGE, "https://old.link",
+        "proj-1", MemoryCategory.KNOWLEDGE, "https://old.link", tenant=_SYS,
     )
 
     assert result is True
@@ -387,7 +390,7 @@ def test_delete_memory_entry_not_found(mock_get_db):
     mock_get_db.return_value = db
 
     result = delete_memory_entry(
-        "proj-1", MemoryCategory.TOOLS, "nonexistent",
+        "proj-1", MemoryCategory.TOOLS, "nonexistent", tenant=_SYS,
     )
 
     assert result is False
@@ -402,7 +405,7 @@ def test_delete_memory_entry_db_error(mock_get_db):
     mock_get_db.return_value = db
 
     result = delete_memory_entry(
-        "proj-1", MemoryCategory.IDEA_ITERATION, "something",
+        "proj-1", MemoryCategory.IDEA_ITERATION, "something", tenant=_SYS,
     )
 
     assert result is False

@@ -100,30 +100,11 @@ def section_approval_loop(
     min_iter, max_iter = _get_section_iteration_limits()
     total_steps = len(flow.state.draft.sections)
 
+    run_id = getattr(flow.state, "run_id", "") or ""
+
     while not section.is_approved:
         user_feedback: str | None = None
         available = list(section.agent_results.keys()) or list(agents.keys())
-
-        # ── Drain queued Slack feedback (if any) ──────────
-        # When a user replies in a Slack thread while section drafting
-        # is in progress (no explicit gate), the feedback is queued in
-        # _queued_feedback.  Drain it here so it replaces the AI critic.
-        run_id = getattr(flow.state, "run_id", "") or ""
-        if run_id:
-            try:
-                from crewai_productfeature_planner.apis.slack.interactive_handlers._run_state import (
-                    drain_queued_feedback,
-                )
-                queued = drain_queued_feedback(run_id)
-                if queued:
-                    user_feedback = queued
-                    logger.info(
-                        "[SectionLoop] Using queued Slack feedback for "
-                        "section '%s' run_id=%s (%d chars)",
-                        section.title, run_id, len(queued),
-                    )
-            except Exception:  # noqa: BLE001
-                pass
 
         # ── Optional user gate (callback) ─────────────────
         if flow.approval_callback is not None:
@@ -282,6 +263,7 @@ def section_approval_loop(
                     step=f"critique_{section.key}",
                     section_key=section.key,
                     section_title=section.title,
+                    tenant=flow._tenant,
                 )
                 logger.warning(
                     "[Critique] Section '%s' unrecoverable at "
@@ -301,6 +283,7 @@ def section_approval_loop(
             section_key=section.key,
             iteration=section.iteration,
             critique=flow.state.critique,
+            tenant=flow._tenant,
         )
 
         # ── Check termination conditions ──────────────────
@@ -388,6 +371,7 @@ def section_approval_loop(
                 step=f"refine_{section.key}",
                 section_key=section.key,
                 section_title=section.title,
+                tenant=flow._tenant,
             )
             logger.warning(
                 "[Refine] Section '%s' unrecoverable at "
@@ -458,6 +442,7 @@ def section_approval_loop(
             section_key=section.key,
             section_title=section.title,
             selected_agent=section.selected_agent,
+            tenant=flow._tenant,
         )
 
         logger.debug(

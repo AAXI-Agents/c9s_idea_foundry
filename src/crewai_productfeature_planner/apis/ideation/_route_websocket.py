@@ -87,9 +87,12 @@ def broadcast_sync(session_id: str, event: dict[str, Any]) -> None:
         pass
 
 
-def _build_session_snapshot(session_id: str) -> dict[str, Any]:
+def _build_session_snapshot(
+    session_id: str,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any]:
     """Build a status snapshot from the session document."""
-    session = get_session(session_id=session_id)
+    session = get_session(session_id=session_id, tenant=tenant)
     if not session:
         return {
             "type": "error",
@@ -117,7 +120,12 @@ async def _validate_ws_token(token: str | None) -> dict[str, Any] | None:
 
     # If SSO is disabled, allow all connections (dev mode)
     if os.environ.get("SSO_ENABLED", "false").strip().lower() not in ("true", "1", "yes"):
-        return {"user_id": "anonymous", "roles": ["admin"]}
+        return {
+            "user_id": "anonymous",
+            "roles": ["SYS_ADMIN"],
+            "enterprise_id": os.environ.get("DEV_ENTERPRISE_ID", "dev-enterprise"),
+            "organization_id": os.environ.get("DEV_ORGANIZATION_ID", "dev-org"),
+        }
 
     if not token:
         return None
@@ -152,10 +160,15 @@ async def ideation_websocket(
         logger.warning("[IdeationWS] Rejected — invalid/missing token session=%s", session_id)
         return
 
+    # Resolve tenant context from JWT claims (same as REST endpoints).
+    tenant = TenantContext.from_user(user)
+
     await websocket.accept()
 
-    # Verify session exists
-    session = get_session(session_id=session_id)
+    # Verify session exists AND is visible to this tenant. Passing
+    # tenant=tenant means cross-tenant session_ids return None and the
+    # WebSocket is closed before any data is sent.
+    session = get_session(session_id=session_id, tenant=tenant)
     if not session:
         await websocket.send_text(json.dumps({
             "type": "error",
@@ -168,7 +181,7 @@ async def ideation_websocket(
     logger.info("[IdeationWS] Client connected session=%s", session_id)
 
     # Send initial state snapshot
-    snapshot = _build_session_snapshot(session_id)
+    snapshot = _build_session_snapshot(session_id, tenant=tenant)
     await websocket.send_text(json.dumps(snapshot, default=str))
 
     try:
@@ -189,7 +202,7 @@ async def ideation_websocket(
                 await websocket.send_text(json.dumps({"event": "pong"}))
 
             elif msg_type == "get_status":
-                snapshot = _build_session_snapshot(session_id)
+                snapshot = _build_session_snapshot(session_id, tenant=tenant)
                 await websocket.send_text(json.dumps(snapshot, default=str))
 
             elif msg_type == "respond":
@@ -218,6 +231,7 @@ async def ideation_websocket(
                 result = await handle_user_response(
                     session_id=session_id,
                     content=content,
+                    tenant=tenant,
                 )
                 if result:
                     await broadcast(session_id, {
@@ -239,7 +253,7 @@ async def ideation_websocket(
                     handle_advance,
                 )
 
-                result = await handle_advance(session_id=session_id)
+                result = await handle_advance(session_id=session_id, tenant=tenant)
                 if result.get("completed"):
                     await broadcast(session_id, {
                         "event": "session_completed",
@@ -262,7 +276,7 @@ async def ideation_websocket(
                     handle_rollback,
                 )
 
-                result = await handle_rollback(session_id=session_id)
+                result = await handle_rollback(session_id=session_id, tenant=tenant)
                 if "error" not in result:
                     await broadcast(session_id, {
                         "event": "step_advanced",

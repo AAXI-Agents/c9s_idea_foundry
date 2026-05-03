@@ -4,18 +4,24 @@ Verifies that:
 1. ``TenantContext`` factory methods produce correct contexts
 2. ``tenant_filter()`` returns correct MongoDB query filters
 3. ``tenant_fields()`` returns correct document fields
-4. ``tenant_filter(None)`` returns empty dict (backward compat)
+4. ``tenant_filter(None)`` returns blocked filter (strict reads)
+5. ``tenant_fields(None)`` raises ``TenantWriteViolation`` (strict writes)
 """
 
 from __future__ import annotations
 
+import pytest
+
 from crewai_productfeature_planner.mongodb._tenant import (
     TenantContext,
+    TenantWriteViolation,
+    _BLOCKED_FILTER,
     _SYSTEM_ENTERPRISE,
     _SYSTEM_ORG,
     tenant_fields,
     tenant_filter,
 )
+from crewai_productfeature_planner.rbac import Role
 
 
 # ── TenantContext.from_user ───────────────────────────────────
@@ -26,11 +32,12 @@ class TestFromUser:
         user = {
             "enterprise_id": "ent-1",
             "organization_id": "org-1",
-            "roles": ["user"],
+            "roles": ["USER"],
         }
         ctx = TenantContext.from_user(user)
         assert ctx.enterprise_id == "ent-1"
         assert ctx.organization_id == "org-1"
+        assert ctx.role == Role.USER
         assert ctx.is_enterprise_admin is False
 
     def test_enterprise_admin(self):
@@ -40,16 +47,40 @@ class TestFromUser:
             "roles": ["user", "enterprise_admin"],
         }
         ctx = TenantContext.from_user(user)
+        assert ctx.role == Role.ENT_ADMIN
         assert ctx.is_enterprise_admin is True
+
+    def test_enterprise_admin_new_role(self):
+        user = {
+            "enterprise_id": "ent-1",
+            "organization_id": "org-1",
+            "roles": ["ENT_ADMIN"],
+        }
+        ctx = TenantContext.from_user(user)
+        assert ctx.role == Role.ENT_ADMIN
+        assert ctx.is_enterprise_admin is True
+
+    def test_sys_admin(self):
+        user = {
+            "enterprise_id": "ent-1",
+            "organization_id": "org-1",
+            "roles": ["SYS_ADMIN"],
+        }
+        ctx = TenantContext.from_user(user)
+        assert ctx.role == Role.SYS_ADMIN
+        assert ctx.is_enterprise_admin is True
+        assert ctx.is_sys_admin is True
 
     def test_missing_fields(self):
         ctx = TenantContext.from_user({})
         assert ctx.enterprise_id == ""
         assert ctx.organization_id == ""
+        assert ctx.role == Role.USER
         assert ctx.is_enterprise_admin is False
 
     def test_none_roles(self):
         ctx = TenantContext.from_user({"roles": None})
+        assert ctx.role == Role.USER
         assert ctx.is_enterprise_admin is False
 
 
@@ -62,6 +93,7 @@ class TestFromSlackInstall:
         ctx = TenantContext.from_slack_install(install)
         assert ctx.enterprise_id == "ent-2"
         assert ctx.organization_id == "org-2"
+        assert ctx.role == Role.USER
         assert ctx.is_enterprise_admin is False
 
     def test_missing_fields(self):
@@ -84,18 +116,28 @@ class TestSystemContext:
 
 
 class TestTenantFilter:
-    def test_none_returns_empty(self):
-        assert tenant_filter(None) == {}
+    def test_none_returns_blocked_filter(self):
+        """tenant_filter(None) blocks reads — returns impossible filter."""
+        result = tenant_filter(None)
+        assert result == _BLOCKED_FILTER
 
     def test_system_returns_empty(self):
         ctx = TenantContext.system()
+        assert tenant_filter(ctx) == {}
+
+    def test_sys_admin_returns_empty(self):
+        ctx = TenantContext(
+            enterprise_id="ent-1",
+            organization_id="org-1",
+            role=Role.SYS_ADMIN,
+        )
         assert tenant_filter(ctx) == {}
 
     def test_regular_user_scopes_by_org(self):
         ctx = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-1",
-            is_enterprise_admin=False,
+            role=Role.USER,
         )
         assert tenant_filter(ctx) == {"organization_id": "org-1"}
 
@@ -103,7 +145,7 @@ class TestTenantFilter:
         ctx = TenantContext(
             enterprise_id="ent-1",
             organization_id="org-1",
-            is_enterprise_admin=True,
+            role=Role.ENT_ADMIN,
         )
         assert tenant_filter(ctx) == {"enterprise_id": "ent-1"}
 
@@ -111,17 +153,17 @@ class TestTenantFilter:
         ctx = TenantContext(
             enterprise_id="ent-1",
             organization_id="",
-            is_enterprise_admin=False,
+            role=Role.USER,
         )
         assert tenant_filter(ctx) == {"enterprise_id": "ent-1"}
 
-    def test_no_tenant_info_returns_empty(self):
+    def test_no_tenant_info_returns_blocked(self):
         ctx = TenantContext(
             enterprise_id="",
             organization_id="",
-            is_enterprise_admin=False,
+            role=Role.USER,
         )
-        assert tenant_filter(ctx) == {}
+        assert tenant_filter(ctx) == _BLOCKED_FILTER
 
 
 # ── tenant_fields ─────────────────────────────────────────────
@@ -139,5 +181,7 @@ class TestTenantFields:
             "organization_id": "org-1",
         }
 
-    def test_none_returns_empty(self):
-        assert tenant_fields(None) == {}
+    def test_none_raises_write_violation(self):
+        """tenant_fields(None) raises — writes require tenant context."""
+        with pytest.raises(TenantWriteViolation):
+            tenant_fields(None)

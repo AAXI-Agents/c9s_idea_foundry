@@ -124,15 +124,8 @@ def build_manifest(
     raw = _MANIFEST_PATH.read_text(encoding="utf-8")
     manifest: dict[str, Any] = json.loads(raw)
 
-    # Settings → interactivity
+    # Settings — interactivity disabled (interaction endpoints removed)
     settings = manifest.setdefault("settings", {})
-    interactivity = settings.setdefault("interactivity", {})
-    interactivity["is_enabled"] = True
-    interactivity["request_url"] = interactions_url
-
-    # Settings → event subscriptions
-    events = settings.setdefault("event_subscriptions", {})
-    events["request_url"] = events_url
 
     # OAuth → redirect URLs
     oauth = manifest.setdefault("oauth_config", {})

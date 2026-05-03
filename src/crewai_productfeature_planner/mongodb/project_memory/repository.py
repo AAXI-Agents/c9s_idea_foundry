@@ -58,7 +58,7 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
-from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_fields
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_fields, tenant_filter
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
@@ -140,16 +140,20 @@ def upsert_project_memory(
 # ── Read ─────────────────────────────────────────────────────────────
 
 
-def get_project_memory(project_id: str) -> dict[str, Any] | None:
+def get_project_memory(
+    project_id: str, *, tenant: TenantContext | None = None
+) -> dict[str, Any] | None:
     """Fetch the full project-memory document.
 
     Returns:
         The document (without ``_id``) or ``None``.
     """
     try:
-        return _collection().find_one(
-            {"project_id": project_id}, {"_id": 0},
-        )
+        query: dict[str, Any] = {
+            "project_id": project_id,
+            **tenant_filter(tenant),
+        }
+        return _collection().find_one(query, {"_id": 0})
     except PyMongoError as exc:
         logger.error(
             "[MongoDB] Failed to fetch projectMemory project_id=%s: %s",
@@ -161,13 +165,15 @@ def get_project_memory(project_id: str) -> dict[str, Any] | None:
 def list_memory_entries(
     project_id: str,
     category: MemoryCategory,
+    *,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """Return all entries in a specific category.
 
     Returns:
         A list of entry dicts, or ``[]`` on error / missing doc.
     """
-    doc = get_project_memory(project_id)
+    doc = get_project_memory(project_id, tenant=tenant)
     if not doc:
         return []
     return doc.get(category.value, [])
@@ -176,6 +182,8 @@ def list_memory_entries(
 def get_memories_for_agent(
     project_id: str,
     agent_role: str,
+    *,
+    tenant: TenantContext | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Load project memories relevant to an agent.
 
@@ -188,7 +196,7 @@ def get_memories_for_agent(
     Returns:
         ``{category: [entries]}`` — empty lists when nothing stored.
     """
-    doc = get_project_memory(project_id)
+    doc = get_project_memory(project_id, tenant=tenant)
     if not doc:
         logger.debug(
             "[ProjectMemory] No memory found for project_id=%s agent=%s",
@@ -220,6 +228,7 @@ def add_memory_entry(
     *,
     added_by: str = "system",
     kind: str | None = None,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Append a single entry to a memory category array.
 
@@ -230,6 +239,7 @@ def add_memory_entry(
         added_by: Slack ``user_id`` or ``"system"``.
         kind: Only for ``knowledge`` entries — ``"link"`` / ``"document"``
             / ``"note"``.  Ignored for other categories.
+        tenant: Tenant context for data isolation.
 
     Returns:
         ``True`` on success.
@@ -244,10 +254,14 @@ def add_memory_entry(
 
     try:
         # Ensure the document exists first
-        upsert_project_memory(project_id)
+        upsert_project_memory(project_id, tenant=tenant)
 
+        query: dict[str, Any] = {
+            "project_id": project_id,
+            **tenant_filter(tenant),
+        }
         result = _collection().update_one(
-            {"project_id": project_id},
+            query,
             {
                 "$push": {category.value: entry},
                 "$set": {"updated_at": _now_iso()},
@@ -273,6 +287,8 @@ def replace_category_entries(
     project_id: str,
     category: MemoryCategory,
     entries: list[dict[str, Any]],
+    *,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Replace all entries in a category with the given list.
 
@@ -282,9 +298,13 @@ def replace_category_entries(
         ``True`` on success.
     """
     try:
-        upsert_project_memory(project_id)
+        upsert_project_memory(project_id, tenant=tenant)
+        query: dict[str, Any] = {
+            "project_id": project_id,
+            **tenant_filter(tenant),
+        }
         result = _collection().update_one(
-            {"project_id": project_id},
+            query,
             {"$set": {
                 category.value: entries,
                 "updated_at": _now_iso(),
@@ -306,13 +326,15 @@ def replace_category_entries(
 def clear_category(
     project_id: str,
     category: MemoryCategory,
+    *,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Remove all entries from a category (set to ``[]``).
 
     Returns:
         ``True`` on success.
     """
-    return replace_category_entries(project_id, category, [])
+    return replace_category_entries(project_id, category, [], tenant=tenant)
 
 
 # ── Delete ───────────────────────────────────────────────────────────
@@ -322,6 +344,8 @@ def delete_memory_entry(
     project_id: str,
     category: MemoryCategory,
     content: str,
+    *,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Remove the first entry matching *content* from a category.
 
@@ -329,8 +353,12 @@ def delete_memory_entry(
         ``True`` if an entry was removed.
     """
     try:
+        query: dict[str, Any] = {
+            "project_id": project_id,
+            **tenant_filter(tenant),
+        }
         result = _collection().update_one(
-            {"project_id": project_id},
+            query,
             {
                 "$pull": {category.value: {"content": content}},
                 "$set": {"updated_at": _now_iso()},

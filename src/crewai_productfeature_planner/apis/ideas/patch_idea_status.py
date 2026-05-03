@@ -51,15 +51,7 @@ async def update_idea_status(run_id: str, body: IdeaStatusUpdate, user: dict = D
         # Signal cancellation to stop any running flow for this run
         from crewai_productfeature_planner.apis.shared import request_cancel
         request_cancel(run_id)
-        # Unblock any pending approval gates so the flow thread wakes up
-        try:
-            from crewai_productfeature_planner.apis.slack._flow_handlers import (
-                _unblock_gates_for_cancel,
-            )
-            _unblock_gates_for_cancel(run_id)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not unblock gates for %s", run_id, exc_info=True)
-        mark_archived(run_id)
+        mark_archived(run_id, tenant=tenant)
         # Also archive the crew job
         try:
             from crewai_productfeature_planner.mongodb.crew_jobs.repository import (
@@ -69,7 +61,7 @@ async def update_idea_status(run_id: str, body: IdeaStatusUpdate, user: dict = D
         except Exception:  # noqa: BLE001
             logger.debug("Could not archive crewJob for %s", run_id, exc_info=True)
     elif body.status == "paused":
-        mark_paused(run_id)
+        mark_paused(run_id, tenant=tenant)
 
     # Invalidate the GET /ideas response cache so the just-archived /
     # paused row disappears from the dashboard immediately instead of

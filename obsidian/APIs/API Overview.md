@@ -23,11 +23,11 @@ tags:
 | **Ideation Flow** | — | 10 + WS | SSO (REST) / JWT query param (WS) |
 | **Publishing** | [[Publishing/]] | 9 | SSO |
 | **Integrations** | [[Integrations/]] | 1 | SSO |
-| **Slack** | [[Slack/]] | 5 | Slack HMAC |
+| **Slack** | [[Slack/]] | 1 | Slack HMAC |
 | **SSO** | [[SSO API]] | 18 | None / Bearer |
 | **SSO Webhooks** | [[SSO Webhooks/]] | 1 | Webhook HMAC |
 
-**Total**: 71 endpoints across 14 routers
+**Total**: 67 endpoints across 14 routers
 
 ---
 
@@ -130,15 +130,13 @@ tags:
 |----------|------|
 | `GET /integrations/status` | [[Integrations/GET integrations-status]] |
 
-### Slack (5 endpoints)
+### Slack (1 endpoint — OAuth only)
 
 | Endpoint | Page |
 |----------|------|
-| `POST /slack/kickoff` | [[Slack/POST slack-kickoff]] |
-| `POST /slack/kickoff/sync` | [[Slack/POST slack-kickoff-sync]] |
-| `POST /slack/events` | [[Slack/POST slack-events]] |
-| `POST /slack/interactions` | [[Slack/POST slack-interactions]] |
 | `GET /slack/oauth/callback` | [[Slack/GET slack-oauth-callback]] |
+
+> **Note**: Slack idea interaction endpoints (kickoff, events, interactions) were removed in v5.1.0. Slack OAuth is retained for future notification delivery.
 
 ### SSO (18 endpoints)
 

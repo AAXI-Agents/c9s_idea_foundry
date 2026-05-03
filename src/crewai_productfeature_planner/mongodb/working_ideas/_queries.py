@@ -28,8 +28,15 @@ from crewai_productfeature_planner.mongodb.working_ideas._common import (
 _TOTAL_SECTIONS = 12
 
 
-def find_completed_without_confluence() -> list[dict[str, Any]]:
+def find_completed_without_confluence(
+    *, tenant: "TenantContext | None" = None,
+) -> list[dict[str, Any]]:
     """Find completed working ideas that have not been published to Confluence.
+
+    This is a **system-level** function that operates across all tenants.
+    Callers should pass ``TenantContext.system()`` to signal intentional
+    global access.  The tenant parameter is accepted but not used for
+    filtering because publishing scans all enterprises.
 
     Uses a two-phase approach to avoid fetching large full documents
     unnecessarily: first queries with a lightweight projection to
@@ -103,8 +110,14 @@ def find_completed_without_confluence() -> list[dict[str, Any]]:
         return []
 
 
-def find_completed_without_output() -> list[dict[str, Any]]:
+def find_completed_without_output(
+    *, tenant: "TenantContext | None" = None,
+) -> list[dict[str, Any]]:
     """Find completed working ideas that have no associated output file.
+
+    This is a **system-level** function that operates across all tenants.
+    Callers should pass ``TenantContext.system()`` to signal intentional
+    global access.
 
     Queries ``workingIdeas`` for documents whose ``status`` is
     ``"completed"`` and whose ``output_file`` field is either missing
@@ -137,8 +150,14 @@ def find_completed_without_output() -> list[dict[str, Any]]:
         return []
 
 
-def find_resumable_on_startup() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def find_resumable_on_startup(
+    *, tenant: "TenantContext | None" = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Partition unfinalized ideas into resumable vs failed on startup.
+
+    This is a **system-level** function that operates across all tenants.
+    Callers should pass ``TenantContext.system()`` to signal intentional
+    global access.
 
     Ideas with Slack context (``slack_channel`` + ``slack_thread_ts``)
     and ``inprogress`` or ``paused`` status are considered resumable.
@@ -218,8 +237,14 @@ def find_resumable_on_startup() -> tuple[list[dict[str, Any]], list[dict[str, An
         return [], []
 
 
-def fail_unfinalized_on_startup() -> list[dict[str, Any]]:
+def fail_unfinalized_on_startup(
+    *, tenant: "TenantContext | None" = None,
+) -> list[dict[str, Any]]:
     """Mark all unfinalized working ideas as ``failed`` on server restart.
+
+    This is a **system-level** function that operates across all tenants.
+    Callers should pass ``TenantContext.system()`` to signal intentional
+    global access.
 
     Similar to ``fail_incomplete_jobs_on_startup`` in crew_jobs, this
     ensures that old PRD runs are not resumed after a server restart.
@@ -783,7 +808,9 @@ def find_run_any_status(
         return None
 
 
-def get_run_documents(run_id: str) -> list[dict[str, Any]]:
+def get_run_documents(
+    run_id: str, *, tenant: "TenantContext | None" = None
+) -> list[dict[str, Any]]:
     """Fetch the working-idea document for a given run_id.
 
     In the single-document model there is at most one document per
@@ -796,9 +823,12 @@ def get_run_documents(run_id: str) -> list[dict[str, Any]]:
     """
     try:
         db = _common.get_db()
-        doc = db[WORKING_COLLECTION].find_one(
-            {"run_id": run_id, "status": {"$nin": ["completed", "archived"]}}
-        )
+        query: dict[str, Any] = {
+            "run_id": run_id,
+            "status": {"$nin": ["completed", "archived"]},
+            **tenant_filter(tenant),
+        }
+        doc = db[WORKING_COLLECTION].find_one(query)
         if doc is None:
             logger.info("[MongoDB] No document found for run_id=%s", run_id)
             return []
@@ -812,6 +842,8 @@ def get_run_documents(run_id: str) -> list[dict[str, Any]]:
 def find_idea_by_thread(
     channel: str,
     thread_ts: str,
+    *,
+    tenant: TenantContext | None = None,
 ) -> dict[str, Any] | None:
     """Find the most-recent working-idea document for a Slack thread.
 
@@ -826,6 +858,7 @@ def find_idea_by_thread(
                 "slack_channel": channel,
                 "slack_thread_ts": thread_ts,
                 "status": {"$ne": "archived"},
+                **tenant_filter(tenant),
             },
             sort=[("created_at", -1)],
         )
@@ -941,6 +974,7 @@ def find_recent_duplicate_idea(
     *,
     cooldown_hours: int = DUPLICATE_IDEA_COOLDOWN_HOURS,
     channel: str | None = None,
+    tenant: "TenantContext | None" = None,
 ) -> dict[str, Any] | None:
     """Check if the same idea was submitted to a project recently.
 
@@ -981,6 +1015,7 @@ def find_recent_duplicate_idea(
         extra: dict[str, Any] = {
             "status": {"$ne": "archived"},
             "created_at": {"$gte": cutoff.isoformat()},
+            **tenant_filter(tenant),
         }
 
         for scope in _build_scope_filters(project_id, channel):
@@ -1008,6 +1043,7 @@ def find_active_duplicate_idea(
     *,
     project_id: str | None = None,
     channel: str | None = None,
+    tenant: "TenantContext | None" = None,
 ) -> dict[str, Any] | None:
     """Check if the same idea already has an active (in-progress) flow.
 
@@ -1042,6 +1078,7 @@ def find_active_duplicate_idea(
 
         extra: dict[str, Any] = {
             "status": {"$in": ["inprogress", "paused"]},
+            **tenant_filter(tenant),
         }
 
         for scope in _build_scope_filters(project_id, channel):

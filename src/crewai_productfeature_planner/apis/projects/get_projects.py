@@ -53,7 +53,13 @@ async def list_projects(
         )
 
     # ── Check response cache ──────────────────────────────────
-    cache_params = dict(page=page, page_size=page_size, organization_id=organization_id)
+    tenant = resolve_tenant_context(user, organization_id)
+    t_filter = tenant_filter(tenant)
+
+    cache_params = dict(
+        page=page, page_size=page_size, organization_id=organization_id,
+        _ent=tenant.enterprise_id, _org=tenant.organization_id, _role=tenant.role.value,
+    )
     cached = response_cache.get("projects", **cache_params)
     if cached is not None:
         logger.debug("[Projects] cache hit for page=%d size=%d", page, page_size)
@@ -64,9 +70,6 @@ async def list_projects(
     from crewai_productfeature_planner.mongodb.project_config.repository import (
         PROJECT_CONFIG_COLLECTION,
     )
-
-    tenant = resolve_tenant_context(user, organization_id)
-    t_filter = tenant_filter(tenant)
 
     db = get_async_db()
     coll = db[PROJECT_CONFIG_COLLECTION]

@@ -80,9 +80,9 @@ Each element in the `slack_file_refs` array:
 |----------|---------|
 | `create_project()` | Create new project configuration |
 | `get_project(project_id)` | Fetch project by ID |
-| `get_project_by_name(name)` | Fetch project by name |
-| `list_projects(limit)` | List all projects, newest first |
-| `get_project_for_run(run_id)` | Look up project for a PRD run (via workingIdeas) |
+| `get_project_by_name(name, *, tenant)` | Fetch project by name (tenant-filtered) |
+| `list_projects(limit, *, tenant)` | List all projects, newest first (tenant-filtered) |
+| `get_project_for_run(run_id, *, tenant)` | Look up project for a PRD run via workingIdeas (tenant-filtered) |
 | `update_project()` | Update project fields (partial update) |
 | `add_reference_url()` | Append reference URL (no duplicates) |
 | `add_slack_file_ref()` | Append Slack file reference |

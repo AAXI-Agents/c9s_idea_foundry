@@ -139,6 +139,14 @@ class PRDState(BaseModel):
 
     run_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     idea: str = ""
+    tenant_dict: dict = Field(
+        default_factory=dict,
+        description=(
+            "Serialized TenantContext for tenant-scoped writes. "
+            "Set by service.py before kickoff. Empty dict means "
+            "no tenant (backward-compatible with internal flows)."
+        ),
+    )
     draft: PRDDraft = Field(default_factory=PRDDraft.create_empty)
     current_section_key: str = ""
     critique: str = ""

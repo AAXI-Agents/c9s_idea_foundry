@@ -245,7 +245,8 @@ class TestUpdateIdeaStatus:
             )
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
-        mock_archive.assert_called_once_with("run001")
+        mock_archive.assert_called_once()
+        assert mock_archive.call_args[0][0] == "run001"
         # Regression: PATCH must invalidate the GET /ideas list cache
         # so the just-archived idea disappears immediately.
         mock_cache.invalidate.assert_called_once_with("ideas")
@@ -267,7 +268,8 @@ class TestUpdateIdeaStatus:
             )
         assert resp.status_code == 200
         assert resp.json()["status"] == "paused"
-        mock_pause.assert_called_once_with("run001")
+        mock_pause.assert_called_once()
+        assert mock_pause.call_args[0][0] == "run001"
 
     def test_not_found(self, client):
         with patch(

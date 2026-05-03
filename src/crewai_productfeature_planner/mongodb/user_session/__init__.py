@@ -31,6 +31,7 @@ from pymongo.errors import PyMongoError
 from crewai_productfeature_planner.mongodb._tenant import (
     TenantContext,
     tenant_fields,
+    tenant_filter,
 )
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.scripts.logging_config import get_logger
@@ -135,6 +136,7 @@ def switch_session(
     channel: str,
     project_id: str,
     project_name: str,
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """End the current session and start a new one atomically.
 
@@ -149,20 +151,25 @@ def switch_session(
         channel=channel,
         project_id=project_id,
         project_name=project_name,
+        tenant=tenant,
     )
 
 
 # ── queries ───────────────────────────────────────────────────
 
 
-def get_active_session(user_id: str) -> dict[str, Any] | None:
+def get_active_session(
+    user_id: str,
+    *,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
     """Return the user's currently active session, or ``None``.
 
     There should be at most one active session per user at any time.
     """
     try:
         return get_db()[USER_SESSION_COLLECTION].find_one(
-            {"user_id": user_id, "active": True},
+            {"user_id": user_id, "active": True, **tenant_filter(tenant)},
             {"_id": 0},
         )
     except PyMongoError as exc:
@@ -174,11 +181,15 @@ def get_active_session(user_id: str) -> dict[str, Any] | None:
         return None
 
 
-def get_session(session_id: str) -> dict[str, Any] | None:
+def get_session(
+    session_id: str,
+    *,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
     """Return a session by its ``session_id``."""
     try:
         return get_db()[USER_SESSION_COLLECTION].find_one(
-            {"session_id": session_id},
+            {"session_id": session_id, **tenant_filter(tenant)},
             {"_id": 0},
         )
     except PyMongoError as exc:
@@ -194,12 +205,13 @@ def list_sessions(
     user_id: str,
     *,
     limit: int = 20,
+    tenant: TenantContext | None = None,
 ) -> list[dict[str, Any]]:
     """Return the user's recent sessions (newest first)."""
     try:
         cursor = (
             get_db()[USER_SESSION_COLLECTION]
-            .find({"user_id": user_id}, {"_id": 0})
+            .find({"user_id": user_id, **tenant_filter(tenant)}, {"_id": 0})
             .sort("started_at", -1)
             .limit(limit)
         )

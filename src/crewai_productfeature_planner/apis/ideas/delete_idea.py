@@ -70,7 +70,11 @@ def _cascade_ideation_session(run_id: str, tenant: TenantContext) -> str:
     return ""
 
 
-def _cascade_product_requirements(run_id: str) -> dict[str, int]:
+def _cascade_product_requirements(
+    run_id: str,
+    *,
+    tenant: "TenantContext | None" = None,
+) -> dict[str, int]:
     """Set deleted_at on the delivery record and return link counts cleared."""
     from datetime import datetime, timezone
 
@@ -79,13 +83,15 @@ def _cascade_product_requirements(run_id: str) -> dict[str, int]:
 
     try:
         from crewai_productfeature_planner.mongodb.client import get_db
+        from crewai_productfeature_planner.mongodb._tenant import tenant_filter
         from crewai_productfeature_planner.mongodb.product_requirements.repository import (
             PRODUCT_REQUIREMENTS_COLLECTION,
         )
 
         db = get_db()
         col = db[PRODUCT_REQUIREMENTS_COLLECTION]
-        doc = col.find_one({"run_id": run_id})
+        query = {"run_id": run_id, **tenant_filter(tenant)}
+        doc = col.find_one(query)
         if doc:
             if doc.get("confluence_page_id") or doc.get("confluence_url"):
                 confluence_cleared = 1
@@ -93,7 +99,7 @@ def _cascade_product_requirements(run_id: str) -> dict[str, int]:
                 jira_cleared = len(doc["jira_tickets"])
 
             col.update_one(
-                {"run_id": run_id},
+                query,
                 {"$set": {"deleted_at": datetime.now(timezone.utc).isoformat(), "status": "deleted"}},
             )
     except Exception:  # noqa: BLE001
@@ -105,17 +111,22 @@ def _cascade_product_requirements(run_id: str) -> dict[str, int]:
     return {"jira_cleared": jira_cleared, "confluence_cleared": confluence_cleared}
 
 
-def _clear_ux_state(run_id: str) -> int:
+def _clear_ux_state(
+    run_id: str,
+    *,
+    tenant: "TenantContext | None" = None,
+) -> int:
     """Clear UX design pointers on workingIdeas. Returns 1 if cleared, else 0."""
     try:
         from crewai_productfeature_planner.mongodb.client import get_db
+        from crewai_productfeature_planner.mongodb._tenant import tenant_filter
         from crewai_productfeature_planner.mongodb.working_ideas._common import (
             WORKING_COLLECTION,
         )
 
         db = get_db()
         result = db[WORKING_COLLECTION].update_one(
-            {"run_id": run_id, "ux_design_status": {"$exists": True, "$ne": ""}},
+            {"run_id": run_id, "ux_design_status": {"$exists": True, "$ne": ""}, **tenant_filter(tenant)},
             {"$set": {"ux_design_status": "deleted", "ux_output_file": ""}},
         )
         return 1 if result.modified_count else 0
@@ -307,10 +318,10 @@ async def delete_idea(
     session_id = _cascade_ideation_session(run_id, tenant)
 
     # 4. Cascade to productRequirements.
-    req_counts = _cascade_product_requirements(run_id)
+    req_counts = _cascade_product_requirements(run_id, tenant=tenant)
 
     # 5. Clear UX design state.
-    ux_cleared = _clear_ux_state(run_id)
+    ux_cleared = _clear_ux_state(run_id, tenant=tenant)
 
     # 6. Remote purge (best-effort).
     purge_result = RemotePurgeResult()

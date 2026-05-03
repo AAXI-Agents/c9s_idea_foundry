@@ -3765,6 +3765,172 @@ _CODEX: list[CodexEntry] = [
             "17 new tests, 3110 total passing."
         ),
     ),
+    CodexEntry(
+        version="0.78.0",
+        date=date(2026, 5, 3),
+        summary=(
+            "Phase 1 multi-tenancy & RBAC isolation — Role enum "
+            "(SYS_ADMIN, ENT_ADMIN, USER) with resolve_role() from JWT "
+            "claims. TenantContext uses Role instead of is_enterprise_admin "
+            "bool. tenant_filter(None) returns blocked filter (safe reads). "
+            "tenant_fields(None) raises TenantWriteViolation (safe writes). "
+            "Fixed job concurrency isolation (find_active_job + "
+            "find_active_duplicate_idea + find_recent_duplicate_idea now "
+            "accept tenant). Added tenant params to all _sections.py write "
+            "functions with _safe_tenant_filter/_safe_tenant_fields for "
+            "backward-compatible flow callers. Dev mode auth returns "
+            "SYS_ADMIN role. require_sys_admin dependency added. "
+            "3048 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.79.0",
+        date=date(2026, 5, 3),
+        summary=(
+            "Remove all Slack idea interaction — retain OAuth only. "
+            "Deleted: router.py, events_router.py, interactions_router/ "
+            "(10 handlers), interactive_handlers/ (5 modules), blocks/ "
+            "(12 builders), _flow_handlers.py, _thread_state.py, "
+            "_intent_classifier.py, _intent_phrases.py, _message_handler.py, "
+            "_session_handlers/, _next_step.py, _slack_file_helper.py. "
+            "Removed SlackPostPRDResultTool + SlackInterpretMessageTool. "
+            "Decoupled _section_loop.py (drain_queued_feedback), "
+            "patch_idea_status.py (_unblock_gates_for_cancel), "
+            "apis/__init__.py (startup steps 8/8b, 3 routers, 3 tags). "
+            "Pruned slack_manifest.json (events, interactivity, scopes). "
+            "39+ test files removed. 2167 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.80.0",
+        date=date(2026, 5, 3),
+        summary=(
+            "Multi-tenancy Phase 2: flow tenant threading + repo isolation. "
+            "PRDState.tenant_dict field threads TenantContext through all "
+            "flow submodules (_section_loop, _executive_summary, "
+            "_ceo_eng_review, _ux_design, _finalization). Route actions "
+            "pass tenant_dict to run_prd_flow/resume_prd_flow. "
+            "project_config (get_project_by_name, get_project_for_run), "
+            "project_memory (all read/write functions), "
+            "agent_interactions (all read functions), and "
+            "working_ideas (get_run_documents) now accept tenant param "
+            "with proper filter enforcement. patch_idea_status threads "
+            "tenant to mark_archived/mark_paused. Startup functions "
+            "accept tenant param (system-level). 16 regression tests in "
+            "test_tenant_isolation_repos.py. 2192 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.81.0",
+        date=date(2026, 5, 3),
+        summary=(
+            "Multi-tenancy Phase 3: medium gaps + architecture hardening. "
+            "_cascade_product_requirements, _clear_ux_state, "
+            "find_idea_by_thread, claim_for_confluence, claim_for_jira "
+            "now accept tenant param with tenant_filter. userSession reads "
+            "(get_active_session, get_session, list_sessions, switch_session) "
+            "accept tenant. userPreferences (get/upsert) accept tenant with "
+            "tenant_fields on writes. slackOAuth.get_all_teams() restricted "
+            "via tenant_filter (blocks None callers). user.deleted SSO webhook "
+            "revokes active sessions. require_role(*allowed_roles) RBAC "
+            "dependency factory added to admin_deps.py. WebSocket auth "
+            "unified with REST (dev mode returns SYS_ADMIN + enterprise_id). "
+            "6 new compound indexes for enterprise-scoped queries. "
+            "2192 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.81.1",
+        date=date(2026, 5, 3),
+        summary=(
+            "Multi-tenancy completion: added test_rbac_middleware.py (12 tests "
+            "covering require_role, require_enterprise_admin, require_sys_admin) "
+            "and test_websocket_auth.py (7 tests covering dev-mode and SSO-mode "
+            "WebSocket token validation). Created migrate_slack_tenant.py for "
+            "assigning enterprise/org to existing Slack OAuth installs. "
+            "Resolved and archived all 3 multi-tenancy GAP tickets. "
+            "2210 tests passing."
+        ),
+    ),
+    CodexEntry(
+        version="0.81.2",
+        date=date(2026, 5, 3),
+        summary=(
+            "Fix multi-tenancy enforcement on GET /projects/ and GET /ideas/. "
+            "Root cause: SSO_ENABLED=false in .env bypasses JWT validation, "
+            "giving all users SYS_ADMIN role (global access). Fix: (1) response "
+            "cache now includes tenant context (enterprise_id, organization_id, "
+            "role) in cache key to prevent cross-tenant data leaks; (2) enhanced "
+            "SSO auth logging to trace enterprise_id/organization_id/roles from "
+            "JWT claims for debugging. Set SSO_ENABLED=true to enforce tenancy."
+        ),
+    ),
+    CodexEntry(
+        version="0.81.3",
+        date=date(2026, 5, 3),
+        summary=(
+            "Comprehensive multi-tenancy fix (third pass). Root cause was "
+            "two-fold: (A) SSO_ENABLED=false plus dev bypass hardcoded "
+            "SYS_ADMIN — every dev request got global access; (B) all 1,624 "
+            "legacy MongoDB documents across 7 collections (projectConfig, "
+            "workingIdeas, crewJobs, productRequirements, projectMemory, "
+            "slackOAuth, userSuggestions) were missing enterprise_id/"
+            "organization_id, so even with SSO enabled tenant filters would "
+            "match nothing. Fixes: (1) backfilled all 1,624 documents to the "
+            "cloudninesoftware enterprise via migrate_add_tenant_fields.py; "
+            "(2) hardened sso_auth.require_sso_user dev bypass to use "
+            "DEV_USER_ROLE env var (defaults to USER, validated against "
+            "USER/ENT_ADMIN/SYS_ADMIN); (3) enabled SSO_ENABLED=true in .env; "
+            "(4) added DEFAULT_ENTERPRISE_ID, DEFAULT_ORGANIZATION_ID, "
+            "DEV_USER_ROLE, DEV_ENTERPRISE_ID, DEV_ORGANIZATION_ID to .env; "
+            "(5) tests/conftest.py forces SSO_ENABLED=false and "
+            "DEV_USER_ROLE=SYS_ADMIN so the existing 2,210 tests stay isolated "
+            "from production env. Real tenant filtering now enforced."
+        ),
+    ),
+    CodexEntry(
+        version="0.82.0",
+        date=date(2026, 5, 3),
+        summary=(
+            "Multi-tenancy hardening for WebSockets, in-memory FlowRun "
+            "state, and Slack OAuth installs (resolves "
+            "GAP-security-multi-tenancy-audit). Fixes: "
+            "(F1) PRD WebSocket /flow/runs/{run_id}/ws now requires a JWT "
+            "?token= query param and verifies the run belongs to the "
+            "caller's tenant before accept() — closes 4001 on missing/"
+            "invalid token, 4004 on cross-tenant access. _build_status_"
+            "snapshot and _poll_loop now propagate TenantContext to "
+            "find_job and find_interactions so the DB fallback is "
+            "tenant-scoped. "
+            "(F2) Ideation WebSocket /ideation/sessions/{id}/ws now passes "
+            "the authenticated tenant into get_session, "
+            "_build_session_snapshot, handle_user_response, handle_advance, "
+            "and handle_rollback so cross-tenant payloads can no longer "
+            "leak through service-layer reads/writes. "
+            "(F3) FlowRun gained enterprise_id/organization_id fields "
+            "populated at kickoff; new run_visible_to_tenant() helper "
+            "enforces ENT_ADMIN-by-enterprise / USER-by-org / SYS_ADMIN-"
+            "global rules. PRD REST handlers (get_run_status, list_runs, "
+            "approve_prd, pause_prd, resume_prd) now return 404 (never "
+            "403) for cross-tenant access to avoid existence leaks. "
+            "(F4) New SSO-gated GET /slack/oauth/install endpoint issues "
+            "an HMAC-SHA256-signed state token (10 min TTL) carrying the "
+            "installer's enterprise_id/organization_id; the OAuth callback "
+            "verifies the signature and propagates tenant=TenantContext "
+            "into upsert_team so installs land scoped to the right "
+            "tenant. SLACK_OAUTH_REQUIRE_STATE=true by default; "
+            "SLACK_OAUTH_STATE_SECRET (or SSO_WEBHOOK_SECRET fallback) "
+            "signs the state. "
+            "Adds 14 new regression tests "
+            "(tests/apis/test_tenant_isolation_api.py) covering "
+            "run_visible_to_tenant matrix, REST 404 cross-tenant, WS "
+            "4001/4004 rejection, owner accept, Slack state round-trip / "
+            "tampering / expiry / missing. Updated "
+            "tests/apis/prd/test_websocket.py and "
+            "tests/apis/slack/test_slack_oauth.py to match the new "
+            "rejection semantics. Full suite: 2226 passed."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

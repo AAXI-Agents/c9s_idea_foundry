@@ -10,12 +10,43 @@ from typing import Any
 
 from pymongo.errors import PyMongoError
 
+from crewai_productfeature_planner.mongodb._tenant import (
+    TenantContext,
+    tenant_fields,
+    tenant_filter,
+)
 from crewai_productfeature_planner.mongodb.working_ideas import _common
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
     _now_iso,
     logger,
 )
+
+
+def _safe_tenant_fields(tenant: TenantContext | None) -> dict[str, Any]:
+    """Return tenant fields for $setOnInsert, or {} when tenant is None.
+
+    Unlike :func:`tenant_fields` which raises on None (enforcing write
+    safety), this helper gracefully returns an empty dict for legacy
+    callers that don't yet have tenant context.  The document will
+    still be created — it just won't have enterprise_id stamped.
+    """
+    if tenant is None:
+        return {}
+    return tenant_fields(tenant)
+
+
+def _safe_tenant_filter(tenant: TenantContext | None) -> dict[str, Any]:
+    """Return tenant filter for queries, or {} when tenant is None.
+
+    Unlike :func:`tenant_filter` which returns a blocked filter on None
+    (enforcing read safety at API boundaries), this helper gracefully
+    returns an empty dict for internal flow callers that don't yet have
+    tenant context.  The query will match by run_id alone.
+    """
+    if tenant is None:
+        return {}
+    return tenant_filter(tenant)
 
 
 def save_iteration(
@@ -26,6 +57,8 @@ def save_iteration(
     critique: str = "",
     step: str = "",
     finalized_idea: str = "",
+    *,
+    tenant: TenantContext | None = None,
     **extra: Any,
 ) -> str | None:
     """Persist a section iteration to the single ``workingIdeas`` document.
@@ -82,7 +115,7 @@ def save_iteration(
         # completed, or failed, preserve that status.
         _TERMINAL = {"archived", "completed", "failed"}
         existing = db[WORKING_COLLECTION].find_one(
-            {"run_id": run_id}, {"status": 1}
+            {"run_id": run_id, **_safe_tenant_filter(tenant)}, {"status": 1}
         )
         current_status = existing.get("status") if existing else None
 
@@ -102,6 +135,7 @@ def save_iteration(
                 "run_id": run_id,
                 "created_at": now,
                 "completed_at": None,
+                **_safe_tenant_fields(tenant),
             },
         }
 
@@ -109,7 +143,7 @@ def save_iteration(
             update_ops["$push"] = {f"section.{section_key}": iteration_record}
 
         result = db[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
+            {"run_id": run_id, **_safe_tenant_filter(tenant)},
             update_ops,
             upsert=True,
         )
@@ -137,6 +171,8 @@ def update_section_critique(
     section_key: str,
     iteration: int,
     critique: str,
+    *,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Update the critique field on an existing iteration record.
 
@@ -161,6 +197,7 @@ def update_section_critique(
             {
                 "run_id": run_id,
                 f"section.{section_key}.iteration": iteration,
+                **_safe_tenant_filter(tenant),
             },
             {
                 "$set": {
@@ -192,6 +229,8 @@ def save_executive_summary(
     iteration: int,
     content: str,
     critique: str | None = None,
+    *,
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """Persist an executive summary iteration to the ``workingIdeas`` document.
 
@@ -222,13 +261,13 @@ def save_executive_summary(
         # Never overwrite terminal statuses
         _TERMINAL = {"archived", "completed", "failed"}
         existing = db[WORKING_COLLECTION].find_one(
-            {"run_id": run_id}, {"status": 1}
+            {"run_id": run_id, **_safe_tenant_filter(tenant)}, {"status": 1}
         )
         current_status = existing.get("status") if existing else None
         _status_set = {} if current_status in _TERMINAL else {"status": "inprogress"}
 
         result = db[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
+            {"run_id": run_id, **_safe_tenant_filter(tenant)},
             {
                 "$push": {"executive_summary": record},
                 "$set": {
@@ -241,6 +280,7 @@ def save_executive_summary(
                     "created_at": now,
                     "completed_at": None,
                     "section": {},
+                    **_safe_tenant_fields(tenant),
                 },
             },
             upsert=True,
@@ -264,6 +304,8 @@ def update_executive_summary_critique(
     run_id: str,
     iteration: int,
     critique: str,
+    *,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Update the critique field on an existing executive summary record.
 
@@ -285,6 +327,7 @@ def update_executive_summary_critique(
             {
                 "run_id": run_id,
                 "executive_summary.iteration": iteration,
+                **_safe_tenant_filter(tenant),
             },
             {
                 "$set": {
@@ -313,6 +356,8 @@ def update_executive_summary_critique(
 def save_finalized_idea(
     run_id: str,
     finalized_idea: str,
+    *,
+    tenant: TenantContext | None = None,
 ) -> bool:
     """Copy the last executive summary content to the top-level ``finalized_idea`` field.
 
@@ -330,7 +375,7 @@ def save_finalized_idea(
     try:
         db = _common.get_db()
         result = db[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
+            {"run_id": run_id, **_safe_tenant_filter(tenant)},
             {
                 "$set": {
                     "finalized_idea": finalized_idea,
@@ -361,6 +406,8 @@ def save_pipeline_step(
     critique: str = "",
     step: str = "",
     finalized_idea: str = "",
+    *,
+    tenant: TenantContext | None = None,
 ) -> str | None:
     """Persist a pre-PRD pipeline iteration (requirements breakdown, etc.).
 
@@ -404,7 +451,7 @@ def save_pipeline_step(
         # Never overwrite terminal statuses
         _TERMINAL = {"archived", "completed", "failed"}
         existing = db[WORKING_COLLECTION].find_one(
-            {"run_id": run_id}, {"status": 1}
+            {"run_id": run_id, **_safe_tenant_filter(tenant)}, {"status": 1}
         )
         current_status = existing.get("status") if existing else None
 
@@ -417,7 +464,7 @@ def save_pipeline_step(
             set_fields["finalized_idea"] = finalized_idea
 
         result = db[WORKING_COLLECTION].update_one(
-            {"run_id": run_id},
+            {"run_id": run_id, **_safe_tenant_filter(tenant)},
             {
                 "$push": {f"{pipeline_key}": record},
                 "$set": set_fields,
@@ -427,6 +474,7 @@ def save_pipeline_step(
                     "created_at": now,
                     "completed_at": None,
                     "section": {},
+                    **_safe_tenant_fields(tenant),
                 },
             },
             upsert=True,
@@ -452,6 +500,8 @@ def save_failed(
     error: str,
     draft: dict[str, str] | None = None,
     step: str = "",
+    *,
+    tenant: TenantContext | None = None,
     **extra: Any,
 ) -> str | None:
     """Mark a run as failed in ``workingIdeas``.
@@ -472,12 +522,12 @@ def save_failed(
         # filter ``section: {$exists: false}`` guarantees we never
         # overwrite real section data.
         col.update_one(
-            {"run_id": run_id, "section": {"$exists": False}},
+            {"run_id": run_id, "section": {"$exists": False}, **_safe_tenant_filter(tenant)},
             {"$set": {"section": {}}},
         )
 
         result = col.update_one(
-            {"run_id": run_id},
+            {"run_id": run_id, **_safe_tenant_filter(tenant)},
             {
                 "$set": {
                     "status": "failed",
@@ -491,6 +541,7 @@ def save_failed(
                     "created_at": now,
                     "completed_at": None,
                     "section": {},
+                    **_safe_tenant_fields(tenant),
                 },
             },
             upsert=True,

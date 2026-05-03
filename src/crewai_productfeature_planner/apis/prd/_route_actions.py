@@ -141,7 +141,7 @@ async def kickoff_prd_flow(
         find_active_duplicate_idea,
     )
     active_dup = find_active_duplicate_idea(
-        request.idea, project_id=request.project_id or "",
+        request.idea, project_id=request.project_id or "", tenant=tenant,
     )
     if active_dup:
         raise HTTPException(
@@ -154,7 +154,7 @@ async def kickoff_prd_flow(
             ),
         )
     if request.project_id:
-        dup = find_recent_duplicate_idea(request.idea, request.project_id)
+        dup = find_recent_duplicate_idea(request.idea, request.project_id, tenant=tenant)
         if dup is not None:
             raise HTTPException(
                 status_code=409,
@@ -168,7 +168,7 @@ async def kickoff_prd_flow(
 
     # Enforce single active job — reject if one is already running
     try:
-        active = find_active_job()
+        active = find_active_job(tenant=tenant)
     except Exception as exc:
         logger.error("[API] Failed to check active jobs: %s", exc, exc_info=True)
         raise HTTPException(
@@ -184,7 +184,12 @@ async def kickoff_prd_flow(
         )
 
     run_id = uuid.uuid4().hex[:12]
-    run = FlowRun(run_id=run_id, flow_name="prd")
+    run = FlowRun(
+        run_id=run_id,
+        flow_name="prd",
+        enterprise_id=tenant.enterprise_id if tenant else "",
+        organization_id=tenant.organization_id if tenant else "",
+    )
     runs[run_id] = run
 
     # Persist job to crewJobs collection (queued status)
@@ -212,7 +217,10 @@ async def kickoff_prd_flow(
         request.idea[:80],
     )
 
-    background_tasks.add_task(run_prd_flow, run_id, request.idea, request.auto_approve)
+    background_tasks.add_task(
+        run_prd_flow, run_id, request.idea, request.auto_approve,
+        tenant_dict=tenant.to_dict() if tenant else None,
+    )
 
     if request.auto_approve:
         msg = (
@@ -262,8 +270,12 @@ async def kickoff_prd_flow(
 )
 async def approve_prd(request: PRDApproveRequest, user: dict = Depends(require_sso_user)):
     """Approve, continue refining, or provide critique feedback."""
+    from crewai_productfeature_planner.apis.shared import run_visible_to_tenant
+
+    tenant = TenantContext.from_user(user)
     run = runs.get(request.run_id)
-    if run is None:
+    if run is None or not run_visible_to_tenant(run, tenant):
+        # Return 404 (not 403) so we don't leak existence across tenants.
         raise HTTPException(status_code=404, detail="Run not found")
     if run.status != FlowStatus.AWAITING_APPROVAL:
         raise HTTPException(
@@ -355,8 +367,11 @@ async def approve_prd(request: PRDApproveRequest, user: dict = Depends(require_s
 )
 async def pause_prd(request: PRDPauseRequest, user: dict = Depends(require_sso_user)):
     """Pause a running or awaiting-approval flow."""
+    from crewai_productfeature_planner.apis.shared import run_visible_to_tenant
+
+    tenant = TenantContext.from_user(user)
     run = runs.get(request.run_id)
-    if run is None:
+    if run is None or not run_visible_to_tenant(run, tenant):
         raise HTTPException(status_code=404, detail="Run not found")
     if run.status not in (FlowStatus.RUNNING, FlowStatus.AWAITING_APPROVAL):
         raise HTTPException(
@@ -442,19 +457,25 @@ async def resume_prd(
     user: dict = Depends(require_sso_user),
 ):
     """Resume a paused/unfinalized PRD flow from saved state."""
-    existing = runs.get(request.run_id)
-    if existing is not None and existing.status in (
-        FlowStatus.RUNNING, FlowStatus.AWAITING_APPROVAL, FlowStatus.PENDING,
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Run is already active (status={existing.status.value})",
-        )
-
+    from crewai_productfeature_planner.apis.shared import run_visible_to_tenant
     from crewai_productfeature_planner.mongodb import find_unfinalized
     from crewai_productfeature_planner.mongodb._tenant import TenantContext
 
     tenant = TenantContext.from_user(user)
+
+    existing = runs.get(request.run_id)
+    if existing is not None:
+        # Block cross-tenant resumes of any active in-memory run.
+        if not run_visible_to_tenant(existing, tenant):
+            raise HTTPException(status_code=404, detail="Run not found")
+        if existing.status in (
+            FlowStatus.RUNNING, FlowStatus.AWAITING_APPROVAL, FlowStatus.PENDING,
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Run is already active (status={existing.status.value})",
+            )
+
     unfinalized = find_unfinalized(tenant=tenant)
     run_info = next((r for r in unfinalized if r["run_id"] == request.run_id), None)
     if run_info is None:
@@ -463,10 +484,18 @@ async def resume_prd(
             detail=f"Run {request.run_id} not found in resumable (unfinalized) runs",
         )
 
-    run = FlowRun(run_id=request.run_id, flow_name="prd")
+    run = FlowRun(
+        run_id=request.run_id,
+        flow_name="prd",
+        enterprise_id=tenant.enterprise_id if tenant else "",
+        organization_id=tenant.organization_id if tenant else "",
+    )
     runs[request.run_id] = run
 
-    background_tasks.add_task(resume_prd_flow, request.run_id, request.auto_approve)
+    background_tasks.add_task(
+        resume_prd_flow, request.run_id, request.auto_approve,
+        tenant_dict=tenant.to_dict() if tenant else None,
+    )
 
     sections_done = len(run_info.get("sections", []))
     total_sections = len(SECTION_KEYS)
