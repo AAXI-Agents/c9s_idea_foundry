@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Constants ─────────────────────────────────────────────────
@@ -57,6 +57,16 @@ class IdeaItem(BaseModel):
     confluence_url: str = ""
     jira_phase: str = ""
     ux_design_status: str = ""
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _none_to_default(cls, v: Any, info: Any) -> Any:
+        """Coerce None values to their field defaults (empty string / 0)."""
+        if v is None:
+            field = cls.model_fields[info.field_name]
+            if field.default is not None:
+                return field.default
+        return v
 
 
 class IdeaListResponse(BaseModel):
