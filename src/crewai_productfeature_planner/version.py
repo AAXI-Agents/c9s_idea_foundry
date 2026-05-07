@@ -4087,6 +4087,19 @@ _CODEX: list[CodexEntry] = [
             "51 new tests. 2576 tests pass."
         ),
     ),
+    CodexEntry(
+        version="0.89.1",
+        date=date(2026, 5, 7),
+        summary=(
+            "GitHub push webhook with debouncing (Decision #4 Option B). "
+            "POST /webhooks/github receives push events, verifies HMAC-SHA256, "
+            "debounces rapid pushes (5 min window), only triggers on default branch, "
+            "and re-analyzes all registered repos matching the pushed repo. "
+            "New: find_repos_by_github_identity MongoDB function, "
+            "GITHUB_WEBHOOK_SECRET + GITHUB_WEBHOOK_DEBOUNCE_SECONDS env vars. "
+            "11 new tests. 2587 tests pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

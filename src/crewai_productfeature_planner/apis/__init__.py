@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse
 from crewai_productfeature_planner.apis.admin.router import router as admin_router
 from crewai_productfeature_planner.apis.agentic_team import agentic_team_router
 from crewai_productfeature_planner.apis.approvals.router import router as approvals_router
+from crewai_productfeature_planner.apis.code_repos._route_github_webhook import router as github_webhook_router
 from crewai_productfeature_planner.apis.code_repos.router import router as code_repos_router
 from crewai_productfeature_planner.apis.company.router import router as company_router
 from crewai_productfeature_planner.apis.dashboard.router import router as dashboard_router
@@ -552,6 +553,7 @@ app.include_router(approvals_router)
 app.include_router(agentic_team_router)
 app.include_router(knowledge_router)
 app.include_router(code_repos_router)
+app.include_router(github_webhook_router)
 
 # ── CORS — required for web-based SSO login flows ────────────
 import os as _os
