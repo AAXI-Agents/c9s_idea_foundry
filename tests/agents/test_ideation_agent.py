@@ -276,3 +276,241 @@ class TestFormatAnswersAsContext:
         assert "Q1:" in result
         assert "Q2:" in result
         assert "Q3:" in result
+
+
+# ── MessageMetadata structured field tests ────────────────────
+
+
+class TestMessageMetadataStructured:
+    """Regression: MessageMetadata must preserve the 'structured' field."""
+
+    def test_structured_field_preserved(self):
+        """The 'structured' key must survive Pydantic validation."""
+        from crewai_productfeature_planner.apis.ideation.models import MessageMetadata
+
+        resp = _make_structured_response()
+        meta = MessageMetadata(
+            render_type="structured_questions",
+            can_iterate=True,
+            can_advance=False,
+            structured=resp.model_dump(),
+        )
+        assert meta.structured is not None
+        assert meta.structured["acknowledgment"] == resp.acknowledgment
+        assert len(meta.structured["questions"]) == 3
+
+    def test_structured_survives_model_dump(self):
+        """Round-trip through model_dump must keep 'structured'."""
+        from crewai_productfeature_planner.apis.ideation.models import MessageMetadata
+
+        resp = _make_structured_response()
+        meta = MessageMetadata(
+            render_type="structured_questions",
+            can_iterate=True,
+            can_advance=False,
+            structured=resp.model_dump(),
+        )
+        dumped = meta.model_dump()
+        assert "structured" in dumped
+        assert dumped["structured"]["acknowledgment"] == resp.acknowledgment
+
+    def test_structured_none_when_plain_text(self):
+        """Plain-text messages have metadata=None or structured=None."""
+        from crewai_productfeature_planner.apis.ideation.models import MessageMetadata
+
+        meta = MessageMetadata(render_type=None)
+        assert meta.structured is None
+
+    def test_error_field_preserved(self):
+        """The 'error' flag must survive validation."""
+        from crewai_productfeature_planner.apis.ideation.models import MessageMetadata
+
+        meta = MessageMetadata(error=True)
+        assert meta.error is True
+
+
+# ── Serialize message round-trip test ─────────────────────────
+
+
+class TestSerializeMessageStructured:
+    """Regression: _serialize_message must pass structured metadata through."""
+
+    def test_serialize_includes_structured(self):
+        from crewai_productfeature_planner.apis.ideation.router import (
+            _serialize_message,
+        )
+
+        resp = _make_structured_response()
+        raw_msg = {
+            "id": "test-msg-id",
+            "role": "agent",
+            "content": resp.acknowledgment,
+            "content_type": "cards",
+            "agent_name": "product_ideation_specialist",
+            "step": "a",
+            "timestamp": "2026-05-04T10:00:00Z",
+            "metadata": {
+                "render_type": "structured_questions",
+                "can_iterate": True,
+                "can_advance": False,
+                "structured": resp.model_dump(),
+            },
+        }
+
+        item = _serialize_message(raw_msg)
+        assert item.metadata is not None
+        assert item.metadata.render_type == "structured_questions"
+        assert item.metadata.structured is not None
+        assert len(item.metadata.structured["questions"]) == 3
+        assert item.metadata.can_iterate is True
+        assert item.metadata.can_advance is False
+        assert item.content_type == "cards"
+        assert item.agent_name == "product_ideation_specialist"
+        assert item.flow_step == "ideation"
+
+    def test_serialize_plain_text_message(self):
+        from crewai_productfeature_planner.apis.ideation.router import (
+            _serialize_message,
+        )
+
+        raw_msg = {
+            "id": "msg-2",
+            "role": "agent",
+            "content": "Just a text response.",
+            "step": "b",
+            "timestamp": "2026-05-04T10:00:00Z",
+        }
+
+        item = _serialize_message(raw_msg)
+        assert item.metadata is None
+        assert item.content_type == "text"
+        assert item.agent_name is None
+        assert item.flow_step == "persona"
+
+
+# ── Broadcast envelope shape tests ───────────────────────────
+
+
+class TestBroadcastMessageEnvelope:
+    """Regression: _broadcast_message must use {event, data} envelope."""
+
+    @patch(
+        "crewai_productfeature_planner.apis.ideation.service.broadcast_sync",
+        create=True,
+    )
+    def test_broadcast_message_envelope(self, mock_broadcast):
+        # Patch the lazy import inside _broadcast_message
+        with patch(
+            "crewai_productfeature_planner.apis.ideation._route_websocket.broadcast_sync",
+            mock_broadcast,
+        ):
+            from crewai_productfeature_planner.apis.ideation.service import (
+                _broadcast_message,
+            )
+
+            resp = _make_structured_response()
+            metadata = {
+                "render_type": "structured_questions",
+                "can_iterate": True,
+                "can_advance": False,
+                "structured": resp.model_dump(),
+            }
+            _broadcast_message(
+                "sess-1", "msg-1", "Ack text", "a", metadata,
+                agent_name="product_ideation_specialist",
+                content_type="cards",
+            )
+
+            assert mock_broadcast.called
+            call_args = mock_broadcast.call_args
+            payload = call_args[0][1]
+
+            # Must use {event, data} envelope
+            assert payload["event"] == "new_message"
+            assert "data" in payload
+            data = payload["data"]
+            assert data["id"] == "msg-1"
+            assert data["role"] == "agent"
+            assert data["agent_name"] == "product_ideation_specialist"
+            assert data["content_type"] == "cards"
+            assert data["flow_step"] == "ideation"
+            assert data["metadata"]["render_type"] == "structured_questions"
+            assert data["metadata"]["structured"] is not None
+
+    @patch(
+        "crewai_productfeature_planner.apis.ideation.service.broadcast_sync",
+        create=True,
+    )
+    def test_broadcast_typing_envelope(self, mock_broadcast):
+        with patch(
+            "crewai_productfeature_planner.apis.ideation._route_websocket.broadcast_sync",
+            mock_broadcast,
+        ):
+            from crewai_productfeature_planner.apis.ideation.service import (
+                _broadcast_typing,
+            )
+
+            _broadcast_typing("sess-1", "a")
+
+            assert mock_broadcast.called
+            call_args = mock_broadcast.call_args
+            payload = call_args[0][1]
+
+            assert payload["event"] == "agent_typing"
+            assert "data" in payload
+            assert payload["data"]["agent_name"] == "ideation_agent"
+            assert payload["data"]["step"] == "ideation"
+
+
+# ── Repository append_message agent_name/content_type tests ───
+
+
+class TestAppendMessageFields:
+    """Repository append_message must persist agent_name and content_type."""
+
+    @patch("crewai_productfeature_planner.mongodb.ideation_sessions.repository._col")
+    def test_stores_agent_name_and_content_type(self, mock_col):
+        from crewai_productfeature_planner.mongodb.ideation_sessions.repository import (
+            append_message,
+        )
+
+        mock_collection = MagicMock()
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+        mock_col.return_value = mock_collection
+
+        msg_id = append_message(
+            session_id="s1",
+            role="agent",
+            content="Hello",
+            step="a",
+            agent_name="product_ideation_specialist",
+            content_type="cards",
+        )
+
+        assert msg_id is not None
+        call_args = mock_collection.update_one.call_args
+        pushed_msg = call_args[0][1]["$push"]["messages"]
+        assert pushed_msg["agent_name"] == "product_ideation_specialist"
+        assert pushed_msg["content_type"] == "cards"
+
+    @patch("crewai_productfeature_planner.mongodb.ideation_sessions.repository._col")
+    def test_omits_agent_name_when_none(self, mock_col):
+        from crewai_productfeature_planner.mongodb.ideation_sessions.repository import (
+            append_message,
+        )
+
+        mock_collection = MagicMock()
+        mock_collection.update_one.return_value = MagicMock(modified_count=1)
+        mock_col.return_value = mock_collection
+
+        append_message(
+            session_id="s1",
+            role="user",
+            content="My idea",
+            step="a",
+        )
+
+        call_args = mock_collection.update_one.call_args
+        pushed_msg = call_args[0][1]["$push"]["messages"]
+        assert "agent_name" not in pushed_msg
+        assert "content_type" not in pushed_msg

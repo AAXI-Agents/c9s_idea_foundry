@@ -1,0 +1,1 @@
+{"post":{"tags":["UX Design"],"summary":"Trigger UX design generation","description":"Starts UX design generation for a completed PRD run.","parameters":[{"name":"run_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"202":{"description":"UX design job started"}}}}

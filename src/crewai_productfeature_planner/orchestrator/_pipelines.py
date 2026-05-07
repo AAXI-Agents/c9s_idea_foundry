@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from crewai_productfeature_planner.orchestrator._agentic_team import (
+    build_agentic_team_trigger_stage,
+)
 from crewai_productfeature_planner.orchestrator._confluence import (
     build_confluence_publish_stage,
 )
@@ -79,4 +82,5 @@ def build_post_completion_pipeline(flow: "PRDFlow") -> AgentOrchestrator:
     orchestrator = AgentOrchestrator()
     orchestrator.register(build_confluence_publish_stage(flow))
     orchestrator.register(build_jira_ticketing_stage(flow))
+    orchestrator.register(build_agentic_team_trigger_stage(flow))
     return orchestrator

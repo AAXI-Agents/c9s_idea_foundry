@@ -19,6 +19,7 @@ Each page documents every field with type, constraints, descriptions, API refere
 | Collection | Page | Records | Primary Key |
 |-----------|------|---------|-------------|
 | `crewJobs` | [[crewJobs Schema]] | Async job tracking for PRD flows | `job_id` |
+| `ideas` | [[ideas Schema]] | Idea entities — product feature concepts through lifecycle | `idea_id` |
 | `workingIdeas` | [[workingIdeas Schema]] | In-progress PRD persistence (iterations, sections, status) | `run_id` |
 | `productRequirements` | [[productRequirements Schema]] | Completed PRD delivery records (Confluence + Jira) | `run_id` |
 | `projectConfig` | [[projectConfig Schema]] | Per-project settings (Confluence, Jira, Figma) | `project_id` |

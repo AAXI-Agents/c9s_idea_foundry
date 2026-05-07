@@ -611,3 +611,114 @@ create_kanban_tasks_task:
       [PRIORITY] [CATEGORY] TASK_KEY: Summary — URL
     followed by a summary of dependency links created.
     If any creation failed, include the error details.
+
+ticket_breakdown_task:
+  description: >
+    Break down an Engineering Plan into a structured set of Jira tickets
+    ready for creation. This is a PLANNING step — no tickets are created yet.
+
+    ## Engineering Plan
+    {engineering_plan}
+
+    ## PRD Context
+    {prd_context}
+
+    ## Project Methodology
+    {methodology}
+
+    ## Instructions
+
+    Analyse the Engineering Plan and produce a ticket breakdown:
+
+    If methodology is **scrum**:
+    - Group work into Epics (one per implementation phase).
+    - Under each Epic, list User Stories with categories:
+      [Data Persistence], [Data Layer], [Data Presentation], [App & Data Security]
+    - For each Story, identify Sub-Tasks (atomic dev work items).
+    - Map dependencies between Epics and between Stories.
+
+    If methodology is **kanban**:
+    - Produce a flat list of Tasks with priority and category labels.
+    - Identify blocking dependencies between Tasks.
+
+    For ALL items include:
+    - Title (concise, descriptive)
+    - Category label
+    - Priority (critical/high/medium/low)
+    - Dependencies (blocked by which other items)
+    - Estimated complexity (S/M/L/XL)
+
+    Output ONLY the structured breakdown. Do NOT create any Jira issues.
+  expected_output: >
+    A structured ticket breakdown ready for user approval. Format
+    depends on methodology (scrum = Epics/Stories/Sub-tasks hierarchy,
+    kanban = flat task list). Each item has title, category, priority,
+    dependencies, and complexity estimate.
+
+ticket_creation_task:
+  description: >
+    Create Jira tickets from an approved ticket breakdown.
+
+    ## Approved Breakdown
+    {approved_breakdown}
+
+    ## Jira Project Key
+    {jira_project_key}
+
+    ## Confluence URL
+    {confluence_url}
+
+    ## Run ID
+    {run_id}
+
+    ## Instructions
+
+    Create all tickets in the approved breakdown using the Jira tool.
+    For each ticket:
+    1. Use the correct issue type (Epic, Story, Task, Sub-task).
+    2. Set parent links (Stories under Epics, Sub-tasks under Stories).
+    3. Apply labels: "prd", "auto-generated", plus category label.
+    4. Set priority field.
+    5. Add `is_blocked_by_key` dependency links.
+    6. Include run ID and Confluence URL in descriptions.
+    7. Write clear descriptions suitable for an AI coding agent.
+
+    Create tickets in dependency order (parents first, then children).
+    If any creation fails, log the error and continue with remaining tickets.
+  expected_output: >
+    A complete list of created Jira tickets with keys, URLs, types,
+    and parent relationships. Include a summary count by type
+    (Epics, Stories, Tasks, Sub-tasks) and any failures encountered.
+
+feature_identify_task:
+  description: >
+    Identify discrete features from a PRD or Engineering Plan and
+    structure them for tracking in the ideas system.
+
+    ## PRD / Engineering Plan
+    {content}
+
+    ## Idea Title
+    {idea_title}
+
+    ## Instructions
+
+    Extract the key features/capabilities described in the document.
+    For each feature:
+    1. **ID** — A short slug (e.g. "user-auth", "payment-flow")
+    2. **Title** — Human-readable feature name
+    3. **Description** — 1-2 sentence summary of what this feature does
+    4. **Priority** — critical / high / medium / low
+    5. **Dependencies** — List of other feature IDs this depends on
+    6. **Acceptance Criteria** — 3-5 bullet points defining "done"
+
+    Features should be:
+    - Independent enough to track separately
+    - Large enough to warrant multiple Jira tickets
+    - Small enough to complete in 1-3 sprints
+
+    Output as a structured list. Aim for 3-8 features per idea.
+  expected_output: >
+    A structured list of 3-8 features, each with: id, title,
+    description, priority, dependencies, and acceptance criteria.
+    Output in clean markdown format.

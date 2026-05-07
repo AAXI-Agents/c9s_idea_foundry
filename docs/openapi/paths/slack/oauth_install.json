@@ -1,0 +1,1 @@
+{"get":{"tags":["Slack OAuth"],"summary":"Begin a tenant-scoped Slack install","description":"Authenticated entrypoint for installing or reinstalling the Slack app. Issues an HMAC-signed state token and 302-redirects to slack.com/oauth/v2/authorize.","responses":{"302":{"description":"Redirect to Slack OAuth"}}}}

@@ -10,6 +10,9 @@ from crewai_productfeature_planner.apis import app
 _PKG = "crewai_productfeature_planner.apis.projects.router"
 _REPO = "crewai_productfeature_planner.mongodb.project_config.repository"
 _ASYNC_CLIENT = "crewai_productfeature_planner.mongodb.async_client"
+_STATS = "crewai_productfeature_planner.apis.projects._stats"
+_GET_PROJECTS = "crewai_productfeature_planner.apis.projects.get_projects"
+_GET_PROJECT = "crewai_productfeature_planner.apis.projects.get_project"
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +57,10 @@ class TestListProjects:
 
     def test_empty_list(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+        with (
+            patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db,
+            patch(f"{_STATS}.compute_project_stats_batch", new_callable=AsyncMock, return_value={}),
+        ):
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects")
         assert resp.status_code == 200
@@ -67,7 +73,10 @@ class TestListProjects:
     def test_default_page_size(self, client):
         docs = [_make_project_doc(project_id=f"p{i}") for i in range(3)]
         coll = self._mock_collection(docs, total=3)
-        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+        with (
+            patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db,
+            patch(f"{_STATS}.compute_project_stats_batch", new_callable=AsyncMock, return_value={}),
+        ):
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects")
         assert resp.status_code == 200
@@ -78,7 +87,10 @@ class TestListProjects:
 
     def test_page_size_25(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+        with (
+            patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db,
+            patch(f"{_STATS}.compute_project_stats_batch", new_callable=AsyncMock, return_value={}),
+        ):
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects?page_size=25")
         assert resp.status_code == 200
@@ -86,7 +98,10 @@ class TestListProjects:
 
     def test_page_size_50(self, client):
         coll = self._mock_collection([], total=0)
-        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+        with (
+            patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db,
+            patch(f"{_STATS}.compute_project_stats_batch", new_callable=AsyncMock, return_value={}),
+        ):
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects?page_size=50")
         assert resp.status_code == 200
@@ -101,7 +116,10 @@ class TestListProjects:
     def test_pagination_math(self, client):
         """total_pages is ceil(total / page_size)."""
         coll = self._mock_collection([], total=26)
-        with patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db:
+        with (
+            patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db,
+            patch(f"{_STATS}.compute_project_stats_batch", new_callable=AsyncMock, return_value={}),
+        ):
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/projects?page=2&page_size=10")
         body = resp.json()
@@ -113,6 +131,22 @@ class TestListProjects:
         resp = client.get("/projects?page=0")
         assert resp.status_code == 422  # FastAPI validation (ge=1)
 
+    def test_stats_populated(self, client):
+        """ideas_in_progress and features_completed come from batch stats."""
+        docs = [_make_project_doc(project_id="p1")]
+        coll = self._mock_collection(docs, total=1)
+        stats = {"p1": (3, 7)}
+        with (
+            patch(f"{_ASYNC_CLIENT}.get_async_db") as mock_db,
+            patch(f"{_STATS}.compute_project_stats_batch", new_callable=AsyncMock, return_value=stats),
+        ):
+            mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
+            resp = client.get("/projects")
+        assert resp.status_code == 200
+        item = resp.json()["items"][0]
+        assert item["ideas_in_progress"] == 3
+        assert item["features_completed"] == 7
+
 
 # ── GET /projects/{project_id} ───────────────────────────────
 
@@ -120,14 +154,25 @@ class TestListProjects:
 class TestGetProject:
     def test_found(self, client):
         doc = _make_project_doc()
-        with patch(
-            f"{_REPO}.get_project",
-            return_value=doc,
+        with (
+            patch(f"{_REPO}.get_project", return_value=doc),
+            patch(f"{_GET_PROJECT}.compute_single_project_stats", new_callable=AsyncMock, return_value=(0, 0)),
         ):
             resp = client.get("/projects/abc123")
         assert resp.status_code == 200
         assert resp.json()["project_id"] == "abc123"
         assert resp.json()["name"] == "Test Project"
+
+    def test_found_with_stats(self, client):
+        doc = _make_project_doc()
+        with (
+            patch(f"{_REPO}.get_project", return_value=doc),
+            patch(f"{_GET_PROJECT}.compute_single_project_stats", new_callable=AsyncMock, return_value=(2, 4)),
+        ):
+            resp = client.get("/projects/abc123")
+        assert resp.status_code == 200
+        assert resp.json()["ideas_in_progress"] == 2
+        assert resp.json()["features_completed"] == 4
 
     def test_not_found(self, client):
         with patch(

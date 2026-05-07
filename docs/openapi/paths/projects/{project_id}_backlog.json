@@ -1,0 +1,1 @@
+{"get":{"tags":["Projects"],"summary":"Get project backlog","description":"Kanban-style backlog with server-side blocked_by computation.","parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Backlog items"}}}}

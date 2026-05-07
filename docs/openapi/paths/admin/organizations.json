@@ -1,0 +1,1 @@
+{"get":{"tags":["Admin"],"summary":"List organizations in the enterprise","responses":{"200":{"description":"Organization list"}}}}

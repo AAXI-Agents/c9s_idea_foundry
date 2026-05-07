@@ -1,0 +1,1 @@
+{"get":{"tags":["Company"],"summary":"Get agent detail","parameters":[{"name":"agent_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Agent detail"}}}}

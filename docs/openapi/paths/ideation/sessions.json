@@ -1,0 +1,1 @@
+{"get":{"tags":["Ideation Flow"],"summary":"List ideation sessions","description":"Returns paginated list of ideation sessions.","responses":{"200":{"description":"Session list"}}}}

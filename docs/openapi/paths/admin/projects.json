@@ -1,0 +1,1 @@
+{"get":{"tags":["Admin"],"summary":"List all projects across orgs (enterprise-scoped)","responses":{"200":{"description":"Admin project list"}}}}

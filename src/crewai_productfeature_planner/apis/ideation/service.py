@@ -304,16 +304,22 @@ async def handle_advance(
     new_step = advance_step(session_id=session_id, tenant=tenant)
 
     if new_step is None:
-        # Session completed (was on last step) — auto-trigger PRD
+        # Session completed (was on last step) — auto-create Idea + trigger PRD
+        idea_doc = _auto_create_idea_from_session(
+            session_id=session_id, tenant=tenant
+        )
         prd_run_id = await trigger_prd_from_ideation(
             session_id=session_id, tenant=tenant
         )
-        return {
+        result: dict[str, Any] = {
             "previous_step": current_step,
             "new_step": None,
             "completed": True,
             "prd_run_id": prd_run_id,
         }
+        if idea_doc:
+            result["idea_id"] = idea_doc["idea_id"]
+        return result
 
     # Emit the agent's opening prompt for the new step
     append_message(
@@ -395,6 +401,7 @@ async def _run_agent_for_step(
 
     # Run the agent in a thread pool (CrewAI is synchronous)
     loop = asyncio.get_event_loop()
+    agent_errored = False
     try:
         agent_output = await loop.run_in_executor(
             _executor,
@@ -417,12 +424,16 @@ async def _run_agent_for_step(
             "I encountered an issue processing your input. "
             "Could you try rephrasing or providing more detail?"
         )
+        agent_errored = True
 
     # Determine content text and metadata based on output type
-    if isinstance(agent_output, StructuredIdeationResponse):
+    is_structured = isinstance(agent_output, StructuredIdeationResponse)
+    if is_structured:
         content_text = agent_output.acknowledgment
         msg_metadata = {
             "render_type": "structured_questions",
+            "can_iterate": True,
+            "can_advance": False,
             "structured": agent_output.model_dump(),
         }
         output_data = agent_output.model_dump()
@@ -431,13 +442,21 @@ async def _run_agent_for_step(
         msg_metadata = None
         output_data = content_text
 
+    content_type = "cards" if is_structured else "markdown"
+    agent_name = STEP_AGENTS.get(step, "ideation_agent")
+
     # Save agent response as message (with metadata for structured output)
+    if agent_errored:
+        msg_metadata = msg_metadata or {}
+        msg_metadata["error"] = True
     msg_id = append_message(
         session_id=session_id,
         role="agent",
         content=content_text,
         step=step,
         metadata=msg_metadata,
+        agent_name=agent_name,
+        content_type=content_type,
         tenant=tenant,
     )
 
@@ -450,7 +469,33 @@ async def _run_agent_for_step(
     )
 
     # Broadcast the agent message via WebSocket
-    _broadcast_message(session_id, msg_id, content_text, step, msg_metadata)
+    _broadcast_message(session_id, msg_id, content_text, step, msg_metadata,
+                       agent_name=agent_name, content_type=content_type)
+
+    # If the agent errored, also broadcast an explicit error event so
+    # frontends can show appropriate UI (retry button, etc.)
+    if agent_errored:
+        try:
+            from crewai_productfeature_planner.apis.ideation._route_websocket import (
+                broadcast_sync,
+            )
+            from datetime import datetime, timezone
+
+            broadcast_sync(session_id, {
+                "event": "error",
+                "data": {
+                    "code": "AGENT_ERROR",
+                    "message": "The AI agent encountered an error. You can retry your message.",
+                    "recoverable": True,
+                    "step": step,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            })
+        except Exception as exc:
+            logger.warning(
+                "[IdeationService] Failed to broadcast error event session=%s: %s",
+                session_id, exc,
+            )
 
     return {
         "id": msg_id,
@@ -516,16 +561,19 @@ def _broadcast_typing(session_id: str, step: str) -> None:
         from crewai_productfeature_planner.apis.ideation._route_websocket import (
             broadcast_sync,
         )
-        from datetime import datetime, timezone
 
         broadcast_sync(session_id, {
-            "type": "agent_typing",
-            "session_id": session_id,
-            "step": step,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": "agent_typing",
+            "data": {
+                "agent_name": "ideation_agent",
+                "step": step_to_name(step),
+            },
         })
-    except Exception:
-        pass  # WebSocket broadcast is best-effort
+    except Exception as exc:
+        logger.warning(
+            "[IdeationService] Failed to broadcast typing session=%s: %s",
+            session_id, exc,
+        )
 
 
 def _broadcast_message(
@@ -534,6 +582,9 @@ def _broadcast_message(
     content: str,
     step: str,
     metadata: dict | None = None,
+    *,
+    agent_name: str = "ideation_agent",
+    content_type: str = "markdown",
 ) -> None:
     """Broadcast a complete agent message via WebSocket (fire-and-forget)."""
     try:
@@ -542,20 +593,24 @@ def _broadcast_message(
         )
         from datetime import datetime, timezone
 
-        payload: dict[str, Any] = {
-            "type": "agent_message",
-            "session_id": session_id,
-            "id": msg_id,
-            "role": "agent",
-            "content": content,
-            "step": step,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        if metadata:
-            payload["metadata"] = metadata
-        broadcast_sync(session_id, payload)
-    except Exception:
-        pass
+        broadcast_sync(session_id, {
+            "event": "new_message",
+            "data": {
+                "id": msg_id,
+                "role": "agent",
+                "agent_name": agent_name,
+                "content": content,
+                "content_type": content_type,
+                "metadata": metadata,
+                "flow_step": step_to_name(step),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        })
+    except Exception as exc:
+        logger.warning(
+            "[IdeationService] Failed to broadcast message session=%s: %s",
+            session_id, exc,
+        )
 
 
 def _format_answers_as_context(
@@ -658,16 +713,40 @@ async def trigger_prd_from_ideation(
         flow_run = FlowRun(run_id=run_id, idea=structured_idea, status=FlowStatus.QUEUED)
         runs[run_id] = flow_run
 
-        # Run in background
+        # Run in background with error tracking
         loop = asyncio.get_event_loop()
-        loop.run_in_executor(
-            _executor,
-            lambda: run_prd_flow(
-                run_id=run_id,
-                idea=structured_idea,
-                auto_approve=True,
-            ),
-        )
+
+        def _run_prd_with_error_handling() -> None:
+            """Wrapper that catches errors and broadcasts them back."""
+            try:
+                run_prd_flow(
+                    run_id=run_id,
+                    idea=structured_idea,
+                    auto_approve=True,
+                )
+            except Exception as exc:
+                logger.error(
+                    "[IdeationService] PRD flow failed run_id=%s session=%s: %s",
+                    run_id, session_id, exc, exc_info=True,
+                )
+                # Broadcast error back to the session WebSocket
+                try:
+                    from crewai_productfeature_planner.apis.ideation._route_websocket import (
+                        broadcast_sync,
+                    )
+                    broadcast_sync(session_id, {
+                        "event": "error",
+                        "data": {
+                            "code": "PRD_GENERATION_FAILED",
+                            "message": "PRD generation failed. You can retry from the session.",
+                            "recoverable": True,
+                            "prd_run_id": run_id,
+                        },
+                    })
+                except Exception:
+                    pass  # Best effort — WS may already be closed
+
+        loop.run_in_executor(_executor, _run_prd_with_error_handling)
 
         logger.info(
             "[IdeationService] PRD flow triggered run_id=%s from session=%s",
@@ -684,3 +763,74 @@ async def trigger_prd_from_ideation(
             exc_info=True,
         )
         return None
+
+
+def _auto_create_idea_from_session(
+    *,
+    session_id: str,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
+    """Auto-create an Idea document when an ideation session completes.
+
+    Extracts title, project_id, and description from the session and
+    creates a new Idea in ``draft`` status linked to the session.
+
+    Returns:
+        The created idea document, or ``None`` on failure.
+    """
+    from crewai_productfeature_planner.mongodb.ideas.repository import (
+        create_idea as ideas_create,
+    )
+
+    session = get_session(session_id=session_id, tenant=tenant)
+    if not session:
+        logger.warning(
+            "[IdeationService] Cannot auto-create idea — session not found: %s",
+            session_id,
+        )
+        return None
+
+    # Build description from step outputs
+    steps_data = session.get("steps_data", {})
+    description_parts: list[str] = []
+    labels = {
+        "a": "Executive Summary & Mission",
+        "b": "User Personas",
+        "c": "Solution Architecture",
+        "d": "Feature Goals",
+        "e": "Technology Stack",
+    }
+    for step_key in STEP_ORDER:
+        output = steps_data.get(step_key, {}).get("output")
+        if output:
+            if isinstance(output, dict):
+                # Structured output — extract text summary
+                text = output.get("acknowledgment") or output.get("summary") or str(output)
+            else:
+                text = str(output)
+            description_parts.append(f"## {labels[step_key]}\n{text}")
+
+    description = "\n\n".join(description_parts) if description_parts else ""
+
+    idea_doc = ideas_create(
+        project_id=session.get("project_id") or "",
+        title=session.get("title") or "Untitled Idea",
+        description=description,
+        created_by=session.get("user_id") or "",
+        ideation_session_id=session_id,
+        tenant=tenant,
+    )
+
+    if idea_doc:
+        logger.info(
+            "[IdeationService] Auto-created idea=%s from session=%s",
+            idea_doc["idea_id"],
+            session_id,
+        )
+    else:
+        logger.error(
+            "[IdeationService] Failed to auto-create idea from session=%s",
+            session_id,
+        )
+
+    return idea_doc

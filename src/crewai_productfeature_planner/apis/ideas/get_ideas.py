@@ -105,6 +105,10 @@ async def list_ideas(
     if idea_status:
         # Explicit status filter wins — caller can opt in to deleted/archived/failed/completed.
         query["status"] = idea_status
+    elif project_id:
+        # Project detail view: show all ideas including completed (PRD done)
+        # but still hide deleted (user soft-delete) and archived (internal).
+        query["status"] = {"$nin": ["deleted", "archived"]}
     elif not include_archived:
         # Default behaviour: hide terminal-state ideas from the dashboard.
         # 'deleted' is the user-facing soft-delete (DELETE /ideas/{id}) and

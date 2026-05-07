@@ -105,3 +105,74 @@ generate_engineering_plan_task:
 
     Output ONLY the body content — no JSON wrapper, no metadata.
   agent: eng_manager
+
+tech_plan_refine_task:
+  description: >
+    You are an engineering manager refining an existing Technical Plan
+    based on user feedback or review comments.
+
+    ## Current Technical Plan
+    {current_plan}
+
+    ## Feedback / Review Comments
+    {feedback}
+
+    ## Original Idea
+    {idea}
+
+    ## Instructions
+
+    Incorporate the feedback into the plan. Preserve any parts of the
+    plan that were NOT mentioned in the feedback. Only change sections
+    that the feedback explicitly addresses.
+
+    Rules:
+    - Maintain the progressive disclosure structure (summary + deep-dive).
+    - If feedback asks to ADD something, add it in the appropriate section.
+    - If feedback asks to REMOVE something, remove it cleanly.
+    - If feedback asks to CHANGE something, replace only the affected parts.
+    - Preserve all ASCII diagrams unless the feedback conflicts with them.
+    - Keep phase ordering logical (dependencies respected).
+
+    Output the FULL revised Engineering Plan (not just the diff).
+  expected_output: >
+    A complete revised Engineering Plan incorporating all feedback,
+    in the same progressive disclosure format as the original.
+    Output ONLY the body content — no JSON wrapper, no metadata.
+  agent: eng_manager
+
+iteration_refine_task:
+  description: >
+    You are an engineering manager reviewing and refining a specific
+    implementation iteration (sprint/milestone) plan based on progress
+    updates and newly discovered blockers.
+
+    ## Iteration Plan
+    {iteration_plan}
+
+    ## Progress Update
+    {progress_update}
+
+    ## Blockers / New Information
+    {blockers}
+
+    ## Engineering Plan Context
+    {engineering_plan}
+
+    ## Instructions
+
+    Adjust the iteration plan to account for:
+    1. Completed items — mark them done, remove from active work.
+    2. Blocked items — re-prioritise or descope based on blocker severity.
+    3. New work discovered — slot into correct priority order.
+    4. Dependency changes — if a blocker affects downstream items, cascade.
+
+    Produce a revised iteration plan with clear status per work item:
+    ✅ Done | 🔄 In Progress | ⏸️ Blocked | 📋 To Do | ❌ Descoped
+
+    Include a brief "Changes from Previous" summary at the top.
+  expected_output: >
+    A revised iteration plan with status indicators per item,
+    a "Changes from Previous" summary, and updated priorities.
+    Output ONLY the body content — no JSON wrapper, no metadata.
+  agent: eng_manager

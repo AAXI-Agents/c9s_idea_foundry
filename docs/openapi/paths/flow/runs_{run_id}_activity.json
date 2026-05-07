@@ -1,0 +1,1 @@
+{"get":{"tags":["Flow Runs"],"summary":"Get agent activity log for a run","description":"Returns paginated agent interactions with enriched metadata.","parameters":[{"name":"run_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Activity log"}}}}

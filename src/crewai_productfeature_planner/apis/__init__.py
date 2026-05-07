@@ -18,6 +18,7 @@ Subpackages:
     - ``prd``     — PRD generation flow endpoints
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -25,12 +26,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from crewai_productfeature_planner.apis.admin.router import router as admin_router
+from crewai_productfeature_planner.apis.agentic_team import agentic_team_router
 from crewai_productfeature_planner.apis.approvals.router import router as approvals_router
+from crewai_productfeature_planner.apis.code_repos.router import router as code_repos_router
 from crewai_productfeature_planner.apis.company.router import router as company_router
 from crewai_productfeature_planner.apis.dashboard.router import router as dashboard_router
 from crewai_productfeature_planner.apis.health.router import router as health_router
 from crewai_productfeature_planner.apis.ideas.router import router as ideas_router
 from crewai_productfeature_planner.apis.prd.router import router as prd_router
+from crewai_productfeature_planner.apis.project_ideas.router import router as project_ideas_router
+from crewai_productfeature_planner.apis.project_ideas.router import ws_only_router as idea_ws_router
+from crewai_productfeature_planner.apis.project_ideas._route_jira_webhook import router as jira_webhook_router
 from crewai_productfeature_planner.apis.prd.router import ws_only_router as prd_ws_router
 from crewai_productfeature_planner.apis.projects.router import router as projects_router
 from crewai_productfeature_planner.apis.publishing.router import router as publishing_router
@@ -38,6 +44,7 @@ from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus  # noq
 from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
 from crewai_productfeature_planner.apis.integrations.router import router as integrations_router
 from crewai_productfeature_planner.apis.ideation import ideation_router, ideation_ws_router
+from crewai_productfeature_planner.apis.knowledge.router import router as knowledge_router
 from crewai_productfeature_planner.apis.sso.router import router as sso_auth_router
 from crewai_productfeature_planner.apis.sso_webhooks import router as sso_webhooks_router
 from crewai_productfeature_planner.apis.user_profile.router import router as user_profile_router
@@ -282,6 +289,23 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("SSO key refresh scheduler failed to start: %s", exc)
 
+    # 8d. Jira reconciliation: periodic poll for missed webhooks
+    _jira_reconciliation_task: asyncio.Task | None = None
+    try:
+        from crewai_productfeature_planner.services.jira_reconciliation import (
+            is_enabled as jira_recon_enabled,
+            reconciliation_loop,
+        )
+        if jira_recon_enabled():
+            _jira_reconciliation_task = asyncio.create_task(
+                reconciliation_loop(), name="jira-reconciliation"
+            )
+            _logger.info("Jira reconciliation: background task started")
+        else:
+            _logger.debug("Jira reconciliation: disabled (FEATURE_JIRA_RECONCILIATION != true)")
+    except Exception as exc:
+        _logger.warning("Jira reconciliation failed to start: %s", exc)
+
     # 9. Install a safety-net threading.excepthook so uncaught exceptions
     #    in background threads (e.g. CrewAI subprocess crashes) are logged
     #    instead of silently killing the thread.
@@ -304,6 +328,14 @@ async def _lifespan(application: FastAPI):
     # ── Shutdown ──────────────────────────────────────────────────
     # Restore original thread exception hook
     threading.excepthook = _original_excepthook
+
+    # Cancel Jira reconciliation background task
+    if _jira_reconciliation_task and not _jira_reconciliation_task.done():
+        _jira_reconciliation_task.cancel()
+        try:
+            await _jira_reconciliation_task
+        except asyncio.CancelledError:
+            pass
 
     try:
         from crewai_productfeature_planner.apis.publishing.watcher import stop_watcher
@@ -418,11 +450,80 @@ app = FastAPI(
             ),
         },
         {
+            "name": "Project Ideas",
+            "description": (
+                "Idea-centric CRUD under projects. "
+                "Create, list, detail, update, and delete ideas with "
+                "embedded feature tracking and completion percentages. "
+                "Nested under /projects/{project_id}/ideas."
+            ),
+        },
+        {
             "name": "Approvals",
             "description": (
                 "Cross-project pending approvals queue. "
                 "Lists items the user can act on: PRD sections awaiting "
                 "approval, paused runs, and completed PRDs awaiting publishing."
+            ),
+        },
+        {
+            "name": "Company",
+            "description": (
+                "Agent org chart, budget management, and activity feed. "
+                "View the AI agent roster, inspect individual agents, "
+                "manage token budgets, and browse company activity events."
+            ),
+        },
+        {
+            "name": "Ideation Flow",
+            "description": (
+                "Interactive structured Q&A ideation pipeline. "
+                "Start sessions, respond to agent questions, iterate, "
+                "advance/rollback steps, and stream via WebSocket."
+            ),
+        },
+        {
+            "name": "Dashboard",
+            "description": (
+                "Aggregate statistics for the web dashboard. "
+                "Returns idea counts by status for quick overview."
+            ),
+        },
+        {
+            "name": "User Profile",
+            "description": (
+                "User profile management. View merged SSO identity + "
+                "local preferences, and update preference fields."
+            ),
+        },
+        {
+            "name": "UX Design",
+            "description": (
+                "UX design generation for PRD runs. Trigger design "
+                "generation and poll status."
+            ),
+        },
+        {
+            "name": "Integrations",
+            "description": (
+                "Integration health checks. Verify connectivity to "
+                "external services (Confluence, Jira)."
+            ),
+        },
+        {
+            "name": "Knowledge",
+            "description": (
+                "Project knowledge management. Upload files, ingest URLs, "
+                "trigger Content Reviewer analysis, manage document inclusion, "
+                "and view aggregated summaries with contradiction detection."
+            ),
+        },
+        {
+            "name": "Code Repos",
+            "description": (
+                "GitHub repository management. Connect GitHub OAuth, register "
+                "repos, trigger Coding Agent analysis, and view structured "
+                "codebase summaries committed to the knowledge base."
             ),
         },
     ],
@@ -436,6 +537,9 @@ app.include_router(prd_ws_router)
 app.include_router(slack_oauth_router)
 app.include_router(projects_router)
 app.include_router(ideas_router)
+app.include_router(project_ideas_router)
+app.include_router(idea_ws_router)
+app.include_router(jira_webhook_router)
 app.include_router(publishing_router)
 app.include_router(integrations_router)
 app.include_router(sso_auth_router)
@@ -445,6 +549,9 @@ app.include_router(ideation_router)
 app.include_router(ideation_ws_router)
 app.include_router(company_router)
 app.include_router(approvals_router)
+app.include_router(agentic_team_router)
+app.include_router(knowledge_router)
+app.include_router(code_repos_router)
 
 # ── CORS — required for web-based SSO login flows ────────────
 import os as _os

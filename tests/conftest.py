@@ -69,6 +69,7 @@ import crewai_productfeature_planner.mongodb.agent_interactions.repository as _a
 import crewai_productfeature_planner.mongodb.project_config.repository as _pc_repo
 import crewai_productfeature_planner.mongodb.user_session as _us_repo
 import crewai_productfeature_planner.mongodb.ideation_sessions.repository as _is_repo
+import crewai_productfeature_planner.mongodb.ideas.repository as _ideas_repo
 import crewai_productfeature_planner.main as _main_mod
 import crewai_productfeature_planner.scripts.logging_config as _lc_mod
 import crewai_productfeature_planner.scripts.setup_mongodb as _setup_mongo
@@ -108,6 +109,7 @@ _PATCH_TARGETS: list[object] = [
     _pc_repo,
     _us_repo,
     _is_repo,
+    _ideas_repo,
     _main_mod,
     _setup_mongo,
 ]

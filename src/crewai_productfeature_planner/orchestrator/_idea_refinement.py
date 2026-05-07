@@ -53,11 +53,30 @@ def build_idea_refinement_stage(flow: "PRDFlow") -> AgentStage:
         flow.state.original_idea = flow.state.idea
         project_id = resolve_project_id(flow.state.run_id)
 
+        # Inject knowledge context into the idea for the refiner
+        idea_for_refiner = flow.state.idea
+        if project_id and not flow.state.knowledge_context:
+            from crewai_productfeature_planner.services.knowledge_context import (
+                build_knowledge_context,
+            )
+            knowledge_ctx = build_knowledge_context(
+                project_id, tenant=flow._tenant,
+            )
+            if knowledge_ctx:
+                flow.state.knowledge_context = knowledge_ctx
+                idea_for_refiner = (
+                    knowledge_ctx + "\n\n---\n\n## Idea\n\n" + flow.state.idea
+                )
+                logger.info(
+                    "[IdeaRefiner] Injected %d chars of knowledge context",
+                    len(knowledge_ctx),
+                )
+
         # Resolve options callback from the flow if available
         options_cb = getattr(flow, "_idea_options_callback", None)
 
         refined, history, options_history = refine_idea(
-            flow.state.idea,
+            idea_for_refiner,
             run_id=flow.state.run_id,
             project_id=project_id,
             options_callback=options_cb,

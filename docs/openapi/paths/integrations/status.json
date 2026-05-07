@@ -1,0 +1,1 @@
+{"get":{"tags":["Integrations"],"summary":"Get integration status","description":"Verify connectivity to external services (Confluence, Jira).","responses":{"200":{"description":"Integration status"}}}}

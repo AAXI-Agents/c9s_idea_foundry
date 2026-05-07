@@ -1,0 +1,1 @@
+{"patch":{"tags":["Company"],"summary":"Update agent budget","parameters":[{"name":"agent_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Updated agent detail"}}}}

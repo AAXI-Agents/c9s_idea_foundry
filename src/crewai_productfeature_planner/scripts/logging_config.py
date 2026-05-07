@@ -17,6 +17,7 @@ Log files are stored in the ``logs/`` directory with the naming pattern
 import json
 import logging
 import os
+import re
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -26,6 +27,39 @@ _DATE_FMT = "%Y-%m-%d %H:%M:%S"
 _LOG_FMT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
 _configured = False
+
+# Regex to redact sensitive tokens from log messages (e.g. WebSocket ?token=...).
+_TOKEN_REDACT_RE = re.compile(r"([\?&]token=)[^\s&\"']+")
+
+
+class _TokenRedactFilter(logging.Filter):
+    """Redact JWT/auth tokens from log messages to prevent credential leakage.
+
+    Handles two formats:
+    - Standard log records: token in ``record.msg`` or ``%(s)`` args.
+    - Uvicorn access records: args is a tuple
+      ``(client_addr, method, full_path, http_version, status_code)``
+      where ``full_path`` may contain ``?token=...``.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # ── Redact inside uvicorn-style tuple args ────────────
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _TOKEN_REDACT_RE.sub(r"\1[REDACTED]", str(a))
+                if isinstance(a, str) else a
+                for a in record.args
+            )
+        elif isinstance(record.args, dict):
+            record.args = {
+                k: _TOKEN_REDACT_RE.sub(r"\1[REDACTED]", str(v))
+                if isinstance(v, str) else v
+                for k, v in record.args.items()
+            }
+
+        # ── Redact the message itself ─────────────────────────
+        record.msg = _TOKEN_REDACT_RE.sub(r"\1[REDACTED]", str(record.msg))
+        return True
 
 # Mapping from Python log levels to GCP Cloud Logging severity names.
 _GCP_SEVERITY = {
@@ -83,10 +117,19 @@ def setup_logging() -> logging.Logger:
 
     root_level = logging.DEBUG if debug_enabled else logging.INFO
 
+    # ── Token redaction filter (applies to all handlers) ─────
+    redact_filter = _TokenRedactFilter()
+
     # ── Root project logger ───────────────────────────────────
     logger = logging.getLogger("crewai_productfeature_planner")
     logger.setLevel(root_level)
     logger.propagate = False
+    logger.addFilter(redact_filter)
+
+    # ── Apply redaction to Uvicorn's access logger ────────────
+    # Uvicorn logs full WebSocket URLs including ?token= query params.
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.addFilter(redact_filter)
 
     formatter = logging.Formatter(_LOG_FMT, datefmt=_DATE_FMT)
 
@@ -144,6 +187,65 @@ def get_logger(name: str) -> logging.Logger:
     """
     setup_logging()
     return logging.getLogger(f"crewai_productfeature_planner.{name}")
+
+
+def get_uvicorn_log_config() -> dict:
+    """Return a uvicorn-compatible log config with token redaction.
+
+    Uvicorn calls ``logging.config.dictConfig()`` on startup, which
+    replaces any filters we previously attached to ``uvicorn.access``.
+    By embedding the filter class directly in the config dict, the
+    filter survives uvicorn's logger reconfiguration.
+    """
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "filters": {
+            "token_redact": {
+                "()": _TokenRedactFilter,
+            },
+        },
+        "formatters": {
+            "default": {
+                "()": "uvicorn.logging.DefaultFormatter",
+                "fmt": "%(levelprefix)s %(message)s",
+                "use_colors": None,
+            },
+            "access": {
+                "()": "uvicorn.logging.AccessFormatter",
+                "fmt": '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+                "filters": ["token_redact"],
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+                "filters": ["token_redact"],
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "level": "INFO",
+            },
+            "uvicorn.access": {
+                "handlers": ["access"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }
 
 
 def is_verbose() -> bool:

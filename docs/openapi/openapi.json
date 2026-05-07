@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Idea Foundry API",
-    "description": "REST API for the Idea Foundry platform — an AI-powered Product Requirements Document (PRD) generator.\n\n## Overview\n\nIdea Foundry transforms raw product ideas into implementation-ready PRDs using multi-agent AI orchestration (CrewAI + Gemini). The API powers both the Slack bot and the web application frontend.\n\n## Web App Integration Guide\n\n### Authentication\nAll endpoints (except Health and Slack webhooks) require an SSO Bearer token:\n```\nAuthorization: Bearer <jwt_token>\n```\nWhen `SSO_ENABLED=false` (development mode), authentication is bypassed and an anonymous user context is returned.\n\n### Core Workflows\n\n**1. Project Management** — Create and manage projects that group related PRD ideas:\n- `GET/POST /projects` — List/create projects\n- `GET/PATCH/DELETE /projects/{project_id}` — Project CRUD\n\n**2. Idea Lifecycle** — Track ideas from inception to completion:\n- `GET /ideas` — List ideas with filters (project_id, status)\n- `GET /ideas/{run_id}` — Get idea details (sections progress, delivery status)\n- `PATCH /ideas/{run_id}/status` — Archive or pause an idea\n- `DELETE /ideas/{run_id}` — Soft-delete an idea (cascades to crewJobs, approval gates, cache)\n\n**3. PRD Generation Flow** — Kick off and manage AI-driven PRD creation:\n- `POST /flow/prd/kickoff` — Start a new PRD flow (returns 202 Accepted)\n- `GET /flow/runs/{run_id}` — Poll for progress (status, iteration, section content)\n- `POST /flow/prd/approve` — Approve or provide feedback on current section\n- `POST /flow/prd/pause` / `POST /flow/prd/resume` — Pause/resume flows\n- `GET /flow/prd/resumable` — List flows that can be resumed\n\n**4. Publishing & Delivery** — Publish completed PRDs to Confluence and Jira:\n- `GET /publishing/pending` — List PRDs ready for delivery\n- `POST /publishing/confluence/{run_id}` — Publish to Confluence\n- `POST /publishing/jira/{run_id}` — Create Jira tickets\n- `GET /publishing/status/{run_id}` — Check delivery status\n\n### Pagination\nList endpoints (`/projects`, `/ideas`) support cursor-based pagination:\n- `page` (1-based), `page_size` (10, 25, or 50)\n- Responses include `total`, `page`, `page_size`, `total_pages`\n\n### Error Handling\nAll errors return a structured `ErrorResponse` with `error_code`, `message`, and optional `detail`.\nHTTP status codes: 400 (validation), 401 (auth), 404 (not found), 409 (conflict), 422 (unprocessable), 500/503 (server error).\n\n### CORS\nConfigured via `CORS_ALLOWED_ORIGINS` env var (defaults to `http://localhost:3000`).\n\n### Idea Status Lifecycle\n```\ninprogress → completed → (published)\ninprogress → paused → (resume) → inprogress\ninprogress → failed → (resume) → inprogress\n* → deleted (user action via DELETE)\n* → archived (internal restart only)\n```",
-    "version": "0.73.0",
+    "description": "REST API for the Idea Foundry platform — an AI-powered Product Requirements Document (PRD) generator.\n\n## Overview\n\nIdea Foundry transforms raw product ideas into implementation-ready PRDs using multi-agent AI orchestration (CrewAI + Gemini). The API powers the web application frontend with full multi-tenancy isolation (enterprise/organization scoping).\n\n## Web App Integration Guide\n\n### Authentication\nAll endpoints (except Health probes) require an SSO Bearer token:\n```\nAuthorization: Bearer <jwt_token>\n```\nWhen `SSO_ENABLED=false` (development mode), authentication is bypassed and an anonymous user context is returned.\n\n### Multi-Tenancy\nAll data is scoped to the authenticated user's enterprise and organization. Cross-tenant access returns 404 (not 403) to prevent existence leaks. WebSocket endpoints require a `?token=` query parameter for JWT auth.\n\n### Core Workflows\n\n**1. Project Management** — Create and manage projects that group related PRD ideas:\n- `GET/POST /projects` — List/create projects\n- `GET/PATCH/DELETE /projects/{project_id}` — Project CRUD\n- `GET /projects/{project_id}/backlog` — Kanban-style backlog\n\n**2. Idea Lifecycle** — Track ideas from inception to completion:\n- `GET /ideas` — List ideas with filters (project_id, status)\n- `GET /ideas/{run_id}` — Get idea details\n- `PATCH /ideas/{run_id}/status` — Archive or pause an idea\n- `DELETE /ideas/{run_id}` — Soft-delete an idea\n\n**3. Ideation Flow** — Interactive structured Q&A to refine raw ideas:\n- `POST /flow/ideation/kickoff` — Start a guided ideation session\n- `POST /flow/ideation/sessions/{id}/respond` — Answer agent questions\n- `POST /flow/ideation/sessions/{id}/advance` — Move to next step\n- `WS /ws/ideation/{session_id}?token=` — Real-time streaming\n\n**4. PRD Generation Flow** — AI-driven PRD creation:\n- `POST /flow/prd/kickoff` — Start a new PRD flow (202 Accepted)\n- `GET /flow/runs/{run_id}` — Poll for progress\n- `POST /flow/prd/approve` — Approve or provide feedback\n- `WS /flow/runs/{run_id}/ws?token=` — Real-time agent activity\n\n**5. Publishing & Delivery** — Publish completed PRDs:\n- `POST /publishing/confluence/{run_id}` — Publish to Confluence\n- `POST /publishing/jira/{run_id}` — Create Jira tickets\n\n**6. Company & Agents** — AI agent management:\n- `GET /company/org-chart` — Agent org chart\n- `GET /company/agents` — List/inspect agents\n- `PATCH /company/agents/{agent_id}/budget` — Manage token budgets\n\n### Pagination\nList endpoints support cursor-based pagination:\n- `page` (1-based), `page_size` (10, 25, or 50)\n- Responses include `total`, `page`, `page_size`, `total_pages`\n\n### Error Handling\nAll errors return a structured `ErrorResponse` with `error_code`, `message`, and optional `detail`.\n\n### Idea Status Lifecycle\n```\ninprogress → completed → (published)\ninprogress → paused → (resume) → inprogress\ninprogress → failed → (resume) → inprogress\n* → deleted (user action via DELETE)\n* → archived (internal restart only)\n```",
+    "version": "0.82.0",
     "contact": {
       "name": "Idea Foundry"
     }
@@ -51,17 +51,8 @@
     "/flow/jobs/{job_id}": {
       "$ref": "./paths/flow/jobs_{job_id}.json"
     },
-    "/slack/kickoff": {
-      "$ref": "./paths/slack/kickoff.json"
-    },
-    "/slack/kickoff/sync": {
-      "$ref": "./paths/slack/kickoff_sync.json"
-    },
-    "/slack/events": {
-      "$ref": "./paths/slack/events.json"
-    },
-    "/slack/interactions": {
-      "$ref": "./paths/slack/interactions.json"
+    "/slack/oauth/install": {
+      "$ref": "./paths/slack/oauth_install.json"
     },
     "/slack/oauth/callback": {
       "$ref": "./paths/slack/oauth_callback.json"
@@ -110,6 +101,99 @@
     },
     "/sso/webhooks/events": {
       "$ref": "./paths/sso/webhooks_events.json"
+    },
+    "/ideas/{run_id}/delete": {
+      "$ref": "./paths/ideas/delete_{run_id}.json"
+    },
+    "/flow/runs/{run_id}/timeline": {
+      "$ref": "./paths/flow/runs_{run_id}_timeline.json"
+    },
+    "/flow/runs/{run_id}/versions": {
+      "$ref": "./paths/flow/runs_{run_id}_versions.json"
+    },
+    "/flow/runs/{run_id}/activity": {
+      "$ref": "./paths/flow/runs_{run_id}_activity.json"
+    },
+    "/flow/ux-design/{run_id}": {
+      "$ref": "./paths/flow/ux_design_{run_id}.json"
+    },
+    "/flow/ux/kickoff": {
+      "$ref": "./paths/flow/ux_kickoff.json"
+    },
+    "/flow/ux/status/{run_id}": {
+      "$ref": "./paths/flow/ux_status_{run_id}.json"
+    },
+    "/flow/ideation/kickoff": {
+      "$ref": "./paths/ideation/kickoff.json"
+    },
+    "/flow/ideation/sessions": {
+      "$ref": "./paths/ideation/sessions.json"
+    },
+    "/flow/ideation/sessions/{id}": {
+      "$ref": "./paths/ideation/sessions_{id}.json"
+    },
+    "/flow/ideation/sessions/{id}/messages": {
+      "$ref": "./paths/ideation/sessions_{id}_messages.json"
+    },
+    "/flow/ideation/sessions/{id}/respond": {
+      "$ref": "./paths/ideation/sessions_{id}_respond.json"
+    },
+    "/flow/ideation/sessions/{id}/iterate": {
+      "$ref": "./paths/ideation/sessions_{id}_iterate.json"
+    },
+    "/flow/ideation/sessions/{id}/advance": {
+      "$ref": "./paths/ideation/sessions_{id}_advance.json"
+    },
+    "/flow/ideation/sessions/{id}/rollback": {
+      "$ref": "./paths/ideation/sessions_{id}_rollback.json"
+    },
+    "/approvals/pending": {
+      "$ref": "./paths/approvals/pending.json"
+    },
+    "/projects/{project_id}/backlog": {
+      "$ref": "./paths/projects/{project_id}_backlog.json"
+    },
+    "/admin/organizations": {
+      "$ref": "./paths/admin/organizations.json"
+    },
+    "/admin/projects": {
+      "$ref": "./paths/admin/projects.json"
+    },
+    "/admin/projects/{project_id}/cascade-preview": {
+      "$ref": "./paths/admin/cascade_preview.json"
+    },
+    "/admin/projects/{project_id}/tenant": {
+      "$ref": "./paths/admin/reassign_tenant.json"
+    },
+    "/admin/audit-log": {
+      "$ref": "./paths/admin/audit_log.json"
+    },
+    "/company/org-chart": {
+      "$ref": "./paths/company/org_chart.json"
+    },
+    "/company/agents": {
+      "$ref": "./paths/company/agents.json"
+    },
+    "/company/agents/{agent_id}": {
+      "$ref": "./paths/company/agents_{agent_id}.json"
+    },
+    "/company/budget": {
+      "$ref": "./paths/company/budget.json"
+    },
+    "/company/agents/{agent_id}/budget": {
+      "$ref": "./paths/company/agents_{agent_id}_budget.json"
+    },
+    "/company/activity": {
+      "$ref": "./paths/company/activity.json"
+    },
+    "/dashboard/stats": {
+      "$ref": "./paths/dashboard/stats.json"
+    },
+    "/user/profile": {
+      "$ref": "./paths/user/profile.json"
+    },
+    "/integrations/status": {
+      "$ref": "./paths/integrations/status.json"
     }
   },
   "components": {

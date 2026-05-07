@@ -16,18 +16,27 @@ tags:
 | Domain | Folder | Endpoints | Auth |
 |--------|--------|-----------|------|
 | **Health** | [[Health/]] | 5 | None (probes), SSO (token mgmt) |
+| **Admin** | — | 5 | SSO (SYS_ADMIN / ENT_ADMIN) |
+| **Dashboard** | — | 1 | SSO |
 | **Projects** | [[Projects/]] | 6 | SSO |
 | **Ideas** | [[Ideas/]] | 4 | SSO |
+| **Project Ideas** | — | 7 | SSO |
 | **Approvals** | — | 1 | SSO |
-| **PRD Flow** | [[PRD Flow/]] | 10 | SSO |
+| **PRD Flow** | [[PRD Flow/]] | 14 | SSO |
 | **Ideation Flow** | — | 10 + WS | SSO (REST) / JWT query param (WS) |
+| **UX Design** | — | 3 | SSO |
 | **Publishing** | [[Publishing/]] | 9 | SSO |
+| **Company** | — | 6 | SSO |
+| **User Profile** | — | 2 | SSO |
 | **Integrations** | [[Integrations/]] | 1 | SSO |
-| **Slack** | [[Slack/]] | 1 | Slack HMAC |
+| **Slack OAuth** | [[Slack/]] | 2 | SSO (install) / None (callback) |
 | **SSO** | [[SSO API]] | 18 | None / Bearer |
 | **SSO Webhooks** | [[SSO Webhooks/]] | 1 | Webhook HMAC |
+| **Agentic Team** | — | 1 | Webhook HMAC |
+| **Knowledge** | — | 9 | SSO |
+| **Code Repos** | — | 8 | SSO |
 
-**Total**: 67 endpoints across 14 routers
+**Total**: 114 endpoints across 21 routers
 
 ---
 
@@ -48,6 +57,16 @@ tags:
 | Endpoint | Page |
 |----------|------|
 | `GET /dashboard/stats` | — |
+
+### Admin (5 endpoints)
+
+| Endpoint | Page |
+|----------|------|
+| `GET /admin/organizations` | — |
+| `GET /admin/projects` | — |
+| `GET /admin/projects/{project_id}/cascade-preview` | — |
+| `PATCH /admin/projects/{project_id}/tenant` | — |
+| `GET /admin/audit-log` | — |
 
 ### Projects (6 endpoints)
 
@@ -75,6 +94,18 @@ tags:
 |----------|------|
 | `GET /approvals/pending` | — |
 
+### Project Ideas (7 endpoints)
+
+| Endpoint | Page |
+|----------|------|
+| `POST /projects/{project_id}/ideas` | — |
+| `GET /projects/{project_id}/ideas` | — |
+| `GET /projects/{project_id}/ideas/{idea_id}` | — |
+| `PATCH /projects/{project_id}/ideas/{idea_id}` | — |
+| `PATCH /projects/{project_id}/ideas/{idea_id}/status` | — |
+| `PATCH /projects/{project_id}/ideas/{idea_id}/features` | — |
+| `DELETE /projects/{project_id}/ideas/{idea_id}` | — |
+
 ### PRD Flow (14 endpoints)
 
 | Endpoint | Page |
@@ -85,14 +116,22 @@ tags:
 | `POST /flow/prd/resume` | [[PRD Flow/POST flow-prd-resume]] |
 | `GET /flow/runs/{run_id}` | [[PRD Flow/GET flow-runs-{run_id}]] |
 | `GET /flow/runs/{run_id}/activity` | [[PRD Flow/GET flow-runs-{run_id}-activity]] |
+| `GET /flow/runs/{run_id}/timeline` | — |
+| `GET /flow/runs/{run_id}/versions` | — |
 | `GET /flow/runs` | [[PRD Flow/GET flow-runs]] |
 | `GET /flow/prd/resumable` | [[PRD Flow/GET flow-prd-resumable]] |
 | `GET /flow/jobs` | [[PRD Flow/GET flow-jobs]] |
 | `GET /flow/jobs/{job_id}` | [[PRD Flow/GET flow-jobs-{job_id}]] |
+| `WS /flow/runs/{run_id}/ws?token=` | — |
+| `POST /flow/ux-design/{run_id}` | — |
+
+### UX Design (3 endpoints)
+
+| Endpoint | Page |
+|----------|------|
 | `POST /flow/ux-design/{run_id}` | — |
 | `POST /flow/ux/kickoff` | — |
 | `GET /flow/ux/status/{run_id}` | — |
-| `WS /flow/runs/{run_id}/ws` | — |
 
 ### Ideation Flow (10 + WS)
 
@@ -130,13 +169,32 @@ tags:
 |----------|------|
 | `GET /integrations/status` | [[Integrations/GET integrations-status]] |
 
-### Slack (1 endpoint — OAuth only)
+### Company (6 endpoints)
 
 | Endpoint | Page |
 |----------|------|
+| `GET /company/org-chart` | — |
+| `GET /company/agents` | — |
+| `GET /company/agents/{agent_id}` | — |
+| `GET /company/budget` | — |
+| `PATCH /company/agents/{agent_id}/budget` | — |
+| `GET /company/activity` | — |
+
+### User Profile (2 endpoints)
+
+| Endpoint | Page |
+|----------|------|
+| `GET /user/profile` | — |
+| `PATCH /user/profile` | — |
+
+### Slack OAuth (2 endpoints)
+
+| Endpoint | Page |
+|----------|------|
+| `GET /slack/oauth/install` | — |
 | `GET /slack/oauth/callback` | [[Slack/GET slack-oauth-callback]] |
 
-> **Note**: Slack idea interaction endpoints (kickoff, events, interactions) were removed in v5.1.0. Slack OAuth is retained for future notification delivery.
+> **Note**: Slack idea interaction endpoints (kickoff, events, interactions) were removed in v0.79.0. OAuth is retained for workspace install + future notifications.
 
 ### SSO (18 endpoints)
 
@@ -168,6 +226,39 @@ See [[SSO API]] for detailed request/response schemas.
 | Endpoint | Page |
 |----------|------|
 | `POST /sso/webhooks/events` | [[SSO Webhooks/POST sso-webhooks-events]] |
+
+### Agentic Team Webhooks (1 endpoint)
+
+| Endpoint | Page |
+|----------|------|
+| `POST /webhooks/agentic-team` | Receives task/epic completion events; HMAC-SHA256 verified |
+
+### Knowledge (9 endpoints)
+
+| Endpoint | Page |
+|----------|------|
+| `POST /projects/{id}/knowledge/upload` | Upload a knowledge document (PDF/TXT/MD/CSV) |
+| `POST /projects/{id}/knowledge/url` | Ingest a knowledge document from URL |
+| `GET /projects/{id}/knowledge` | List all knowledge documents for project |
+| `GET /projects/{id}/knowledge/summary` | Get aggregated knowledge summary |
+| `POST /projects/{id}/knowledge/summary/regenerate` | Regenerate aggregated summary |
+| `GET /projects/{id}/knowledge/{doc_id}` | Get knowledge document detail |
+| `PATCH /projects/{id}/knowledge/{doc_id}` | Toggle document included status |
+| `DELETE /projects/{id}/knowledge/{doc_id}` | Delete document (GCS + metadata) |
+| `POST /projects/{id}/knowledge/{doc_id}/review` | Re-trigger Content Reviewer agent |
+
+### Code Repos (8 endpoints)
+
+| Endpoint | Page |
+|----------|------|
+| `POST /projects/{id}/github/connect` | Start GitHub OAuth flow |
+| `GET /auth/github/callback` | GitHub OAuth callback |
+| `DELETE /projects/{id}/github` | Disconnect GitHub from project |
+| `POST /projects/{id}/repos` | Register a repo for analysis |
+| `GET /projects/{id}/repos` | List registered repos |
+| `GET /projects/{id}/repos/{repo_id}` | Get repo detail with analysis |
+| `POST /projects/{id}/repos/{repo_id}/analyze` | Trigger Coding Agent analysis |
+| `DELETE /projects/{id}/repos/{repo_id}` | Remove a registered repo |
 
 ---
 
@@ -237,16 +328,25 @@ All routers are registered in `apis/__init__.py`:
 | Router | Prefix | Auth Dependency | Details |
 |--------|--------|----------------|---------|
 | health_router | — | None | [[Health/]] |
+| admin_router | `/admin` | `require_sso_user` + `require_role(SYS_ADMIN)` | Enterprise admin |
+| dashboard_router | `/dashboard` | `require_sso_user` | Dashboard stats |
 | prd_router | — | `require_sso_user` | [[PRD Flow/]] |
+| prd_ws_router | — | JWT query param | PRD WebSocket |
 | projects_router | `/projects` | `require_sso_user` | [[Projects/]] |
 | ideas_router | `/ideas` | `require_sso_user` | [[Ideas/]] |
 | publishing_router | `/publishing` | `require_sso_user` | [[Publishing/]] |
 | integrations_router | `/integrations` | `require_sso_user` | [[Integrations/]] |
-| slack_router | — | `verify_slack_request` | [[Slack/]] |
-| slack_events_router | — | `verify_slack_request` | [[Slack/]] |
-| slack_interactions_router | — | `verify_slack_request` | [[Slack/]] |
-| slack_oauth_router | — | None | [[Slack/]] |
+| slack_oauth_router | — | SSO (install) / None (callback) | [[Slack/]] |
+| sso_auth_router | `/auth/sso` | None / Bearer | [[SSO API]] |
 | sso_webhooks_router | `/sso/webhooks` | `verify_sso_webhook` | [[SSO Webhooks/]] |
+| user_profile_router | `/user` | `require_sso_user` | User profile |
+| ideation_router | `/flow/ideation` | `require_sso_user` | Ideation Flow |
+| ideation_ws_router | — | JWT query param | Ideation WebSocket |
+| company_router | `/company` | `require_sso_user` | Company/Agents |
+| approvals_router | `/approvals` | `require_sso_user` | Pending approvals |
+| agentic_team_router | `/webhooks` | HMAC-SHA256 (`x-c9s-signature`) | Agentic Team webhooks |
+| knowledge_router | `/projects/{project_id}/knowledge` | `require_sso_user` | Knowledge documents |
+| code_repos_router | — | `require_sso_user` | GitHub repos + OAuth |
 
 ---
 

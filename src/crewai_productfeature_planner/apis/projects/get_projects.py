@@ -81,10 +81,26 @@ async def list_projects(
     ).skip(skip).limit(page_size)
     docs = await cursor.to_list(length=page_size)
 
+    # ── Compute per-project idea stats ────────────────────────
+    from crewai_productfeature_planner.apis.projects._stats import (
+        compute_project_stats_batch,
+    )
+
+    project_ids = [d.get("project_id", "") for d in docs if d.get("project_id")]
+    stats = await compute_project_stats_batch(project_ids, t_filter)
+
     total_pages = max(1, ceil(total / page_size))
 
+    items: list[ProjectItem] = []
+    for d in docs:
+        pid = d.get("project_id", "")
+        in_prog, completed = stats.get(pid, (0, 0))
+        items.append(ProjectItem(**project_fields(
+            d, ideas_in_progress=in_prog, features_completed=completed,
+        )))
+
     result = ProjectListResponse(
-        items=[ProjectItem(**project_fields(d)) for d in docs],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,

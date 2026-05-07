@@ -1,0 +1,1 @@
+{"post":{"tags":["Ideation Flow"],"summary":"Start an ideation session","description":"Creates a new interactive ideation session with structured Q&A.","responses":{"201":{"description":"Session created"}}}}

@@ -1,0 +1,1 @@
+{"get":{"tags":["Approvals"],"summary":"List pending approvals","description":"Cross-project pending approvals queue.","responses":{"200":{"description":"Pending approvals list"}}}}

@@ -1,0 +1,1 @@
+{"get":{"tags":["Dashboard"],"summary":"Dashboard aggregate statistics","description":"Returns aggregate idea counts for the dashboard.","responses":{"200":{"description":"Dashboard stats"}}}}

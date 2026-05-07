@@ -154,3 +154,62 @@ class TestSSOEnabled:
             result = await _validate_ws_token("another-token")
             assert result == expected
             mock_decode.assert_called_once_with("another-token")
+
+    @pytest.mark.asyncio
+    async def test_key_refresh_fallback(self, monkeypatch):
+        """Falls back to key refresh + retry when both paths fail initially."""
+        monkeypatch.setenv("SSO_ENABLED", "true")
+
+        expected = {
+            "user_id": "u789",
+            "roles": ["USER"],
+            "enterprise_id": "e3",
+            "organization_id": "o3",
+        }
+
+        # First local decode returns None, after key refresh it succeeds
+        decode_calls = [None, expected]
+
+        with patch(
+            "crewai_productfeature_planner.apis.sso_auth._introspect_remotely",
+            new_callable=AsyncMock,
+            return_value=None,
+        ), patch(
+            "crewai_productfeature_planner.apis.sso_auth._decode_jwt_locally",
+            side_effect=decode_calls,
+        ), patch(
+            "crewai_productfeature_planner.apis.sso_auth._fetch_and_save_public_key",
+            new_callable=AsyncMock,
+            return_value="-----BEGIN PUBLIC KEY-----\nNEW_KEY\n-----END PUBLIC KEY-----",
+        ) as mock_fetch:
+            from crewai_productfeature_planner.apis.ideation._route_websocket import (
+                _validate_ws_token,
+            )
+
+            result = await _validate_ws_token("rotated-key-token")
+            assert result == expected
+            mock_fetch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_all_validation_fails_returns_none(self, monkeypatch):
+        """Returns None when introspection, local decode, and key refresh all fail."""
+        monkeypatch.setenv("SSO_ENABLED", "true")
+
+        with patch(
+            "crewai_productfeature_planner.apis.sso_auth._introspect_remotely",
+            new_callable=AsyncMock,
+            return_value=None,
+        ), patch(
+            "crewai_productfeature_planner.apis.sso_auth._decode_jwt_locally",
+            return_value=None,
+        ), patch(
+            "crewai_productfeature_planner.apis.sso_auth._fetch_and_save_public_key",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            from crewai_productfeature_planner.apis.ideation._route_websocket import (
+                _validate_ws_token,
+            )
+
+            result = await _validate_ws_token("expired-token")
+            assert result is None

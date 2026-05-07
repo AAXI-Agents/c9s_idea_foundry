@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Type
+from typing import Any, Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -254,13 +254,16 @@ class JiraCreateIssueTool(BaseTool):
                     from crewai_productfeature_planner.mongodb.product_requirements import (
                         append_jira_ticket,
                     )
-                    append_jira_ticket(run_id, {
+                    ticket_doc: dict[str, Any] = {
                         "key": created_key,
                         "type": issue_type,
                         "summary": summary,
                         "url": result.get("url", ""),
                         "reused": result.get("reused", False),
-                    })
+                    }
+                    if effective_parent:
+                        ticket_doc["parent_key"] = effective_parent
+                    append_jira_ticket(run_id, ticket_doc)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "[Jira] Failed to persist ticket %s to MongoDB: %s",

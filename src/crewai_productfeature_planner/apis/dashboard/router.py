@@ -84,8 +84,18 @@ async def get_dashboard_stats(
         t_filter = tenant_filter(tenant)
 
         # Single aggregation pipeline for all counts.
+        # Exclude terminal/hidden statuses: 'archived' (internal restart
+        # state), 'deleted' (user soft-delete), 'failed' (processing error).
+        # Also require a valid project_id so orphaned ideas don't inflate
+        # the counts — keeps dashboard consistent with /projects/ stats.
         pipeline = [
-            {"$match": {"status": {"$ne": "archived"}, **t_filter}},
+            {
+                "$match": {
+                    "status": {"$nin": ["archived", "deleted", "failed"]},
+                    "project_id": {"$exists": True, "$nin": [None, ""]},
+                    **t_filter,
+                }
+            },
             {
                 "$group": {
                     "_id": None,

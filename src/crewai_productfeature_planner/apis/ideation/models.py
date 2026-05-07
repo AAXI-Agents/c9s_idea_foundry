@@ -158,6 +158,10 @@ class MessageMetadata(BaseModel):
     choices: list[dict[str, Any]] | None = None
     can_iterate: bool | None = None
     can_advance: bool | None = None
+    structured: dict[str, Any] | None = None
+    response_type: str | None = None
+    answers: list[dict[str, Any]] | None = None
+    error: bool | None = None
 
 
 class IdeationMessageItem(BaseModel):

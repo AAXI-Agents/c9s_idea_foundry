@@ -1,0 +1,1 @@
+{"get":{"tags":["Admin"],"summary":"Preview document counts before tenant reassignment","parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Cascade preview"}}}}

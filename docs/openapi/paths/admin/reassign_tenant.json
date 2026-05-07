@@ -1,0 +1,1 @@
+{"patch":{"tags":["Admin"],"summary":"Reassign project to another organization","parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Reassignment result"}}}}

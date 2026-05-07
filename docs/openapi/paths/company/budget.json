@@ -1,0 +1,1 @@
+{"get":{"tags":["Company"],"summary":"Get company budget summary","responses":{"200":{"description":"Budget summary"}}}}

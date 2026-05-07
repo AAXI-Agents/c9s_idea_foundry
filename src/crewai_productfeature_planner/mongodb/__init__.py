@@ -127,6 +127,20 @@ from crewai_productfeature_planner.mongodb.ideation_sessions import (
     save_step_data as ideation_save_step_data,
     update_session_status as ideation_update_session_status,
 )
+from crewai_productfeature_planner.mongodb.ideas import (
+    IDEAS_COLLECTION,
+    count_ideas as ideas_count,
+    create_idea as ideas_create,
+    delete_idea as ideas_delete,
+    get_idea as ideas_get,
+    list_ideas as ideas_list,
+    save_design_url as ideas_save_design_url,
+    set_active_run as ideas_set_active_run,
+    update_features as ideas_update_features,
+    update_idea as ideas_update,
+    update_idea_status as ideas_update_status,
+    update_overall_completion as ideas_update_completion,
+)
 from crewai_productfeature_planner.mongodb.user_suggestions import (
     USER_SUGGESTIONS_COLLECTION,
     find_suggestions_by_project,
@@ -225,4 +239,16 @@ __all__ = [
     "ideation_rollback_step",
     "ideation_save_step_data",
     "ideation_update_session_status",
+    "IDEAS_COLLECTION",
+    "ideas_count",
+    "ideas_create",
+    "ideas_delete",
+    "ideas_get",
+    "ideas_list",
+    "ideas_save_design_url",
+    "ideas_set_active_run",
+    "ideas_update",
+    "ideas_update_completion",
+    "ideas_update_features",
+    "ideas_update_status",
 ]

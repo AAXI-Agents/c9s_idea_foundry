@@ -123,3 +123,19 @@ class TestDashboardStats:
             "ideas_in_progress", "uxd_completed",
         }
         assert set(body.keys()) == expected_keys
+
+    def test_pipeline_excludes_deleted_failed_and_orphans(self, client):
+        """Pipeline $match excludes deleted, failed, and orphaned ideas."""
+        db = _mock_aggregate([])
+        with patch(_PATCH_GET_DB, return_value=db):
+            client.get("/dashboard/stats")
+
+        coll = db["workingIdeas"]
+        assert coll.aggregate.called
+        pipeline = coll.aggregate.call_args[0][0]
+        match_stage = pipeline[0]["$match"]
+
+        # Must exclude archived, deleted, and failed
+        assert match_stage["status"] == {"$nin": ["archived", "deleted", "failed"]}
+        # Must require a valid project_id
+        assert match_stage["project_id"] == {"$exists": True, "$nin": [None, ""]}

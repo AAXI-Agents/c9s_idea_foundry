@@ -7,9 +7,10 @@ Database: Queries ``projectConfig`` collection via ``get_project()``.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from crewai_productfeature_planner.apis.projects._stats import compute_single_project_stats
 from crewai_productfeature_planner.apis.projects.models import ProjectItem, project_fields
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
-from crewai_productfeature_planner.mongodb._tenant import TenantContext
+from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -36,4 +37,8 @@ async def get_project(project_id: str, user: dict = Depends(require_sso_user)) -
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Project not found: {project_id}",
         )
-    return ProjectItem(**project_fields(doc))
+    t_filter = tenant_filter(tenant)
+    in_prog, completed = await compute_single_project_stats(project_id, t_filter)
+    return ProjectItem(**project_fields(
+        doc, ideas_in_progress=in_prog, features_completed=completed,
+    ))

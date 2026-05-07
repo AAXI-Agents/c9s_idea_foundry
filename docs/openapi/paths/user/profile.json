@@ -1,0 +1,1 @@
+{"get":{"tags":["User Profile"],"summary":"Get user profile","description":"Returns the merged user profile: SSO identity + local preferences.","responses":{"200":{"description":"User profile"}}},"patch":{"tags":["User Profile"],"summary":"Update user profile preferences","description":"Updates local user preferences.","responses":{"200":{"description":"Updated profile"}}}}

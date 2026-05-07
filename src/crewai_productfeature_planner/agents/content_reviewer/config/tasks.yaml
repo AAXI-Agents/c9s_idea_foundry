@@ -1,0 +1,50 @@
+review_document_task:
+  description: >
+    Analyze the following document content and produce a structured review.
+
+    Document title: {title}
+    Source: {source}
+
+    Content:
+    ---
+    {content}
+    ---
+
+    Produce a JSON response with exactly these fields:
+    - summary: A 2-3 sentence summary of the document's main purpose and content.
+    - key_bullets: An array of 3-7 key bullet points capturing the most important facts.
+    - topics: An array of 2-5 topic tags (short, lowercase, no spaces — use hyphens).
+    - confidence: A float from 0.0 to 1.0 indicating how relevant and reliable this
+      document is for product development context (1.0 = highly relevant and reliable).
+
+    Return ONLY valid JSON, no markdown fencing, no explanation.
+  expected_output: >
+    A valid JSON object with keys: summary (string), key_bullets (array of strings),
+    topics (array of strings), confidence (float 0.0-1.0).
+  agent: content_reviewer
+
+aggregate_knowledge_task:
+  description: >
+    Merge the following individual document reviews into a unified knowledge summary.
+    Identify contradictions between sources.
+
+    Document reviews:
+    ---
+    {reviews_json}
+    ---
+
+    Produce a JSON response with exactly these fields:
+    - unified_summary: A 3-5 sentence summary synthesizing all documents.
+    - unified_bullets: An array of 5-10 key bullet points from across all sources.
+    - contradictions: An array of objects, each with:
+      - claim_a: The first contradicting claim.
+      - source_a: Which document makes claim_a (use title).
+      - claim_b: The opposing claim.
+      - source_b: Which document makes claim_b (use title).
+      - severity: One of "low", "medium", "high".
+
+    Return ONLY valid JSON, no markdown fencing, no explanation.
+  expected_output: >
+    A valid JSON object with keys: unified_summary (string),
+    unified_bullets (array of strings), contradictions (array of objects).
+  agent: content_reviewer

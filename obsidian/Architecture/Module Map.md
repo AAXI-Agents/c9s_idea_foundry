@@ -75,8 +75,25 @@ tags:
 | `projects/get_backlog.py` | GET /projects/{project_id}/backlog — kanban-style backlog with blocked_by |
 | `approvals/__init__.py` | Approvals module init + router re-export |
 | `approvals/router.py` | GET /approvals/pending — cross-project pending approvals queue |
-| `approvals/models.py` | ApprovalItem, ApprovalAction, ApprovalListResponse |
-| `prd/router.py` | `/flow/prd/*` — kickoff, approve, pause, resume, runs, jobs |
+| `approvals/models.py` | ApprovalItem, ApprovalAction, ApprovalListResponse || admin/__init__.py | Admin module init |
+| admin/router.py | 5 enterprise admin endpoints (orgs, projects, cascade-preview, reassign, audit-log) |
+| admin/models.py | Admin Pydantic models (OrganizationListResponse, CascadePreviewResponse, etc.) |
+| admin_deps.py | require_role() dependency factory for flexible per-endpoint RBAC |
+| company/__init__.py | Company module init + router re-export |
+| company/router.py | Assembles company route modules (org-chart, agents, budget, activity) |
+| company/get_org_chart.py | GET /company/org-chart — agent org chart |
+| company/get_agents.py | GET /company/agents — list all agents |
+| company/get_agent.py | GET /company/agents/{agent_id} — agent detail |
+| company/get_budget.py | GET /company/budget — company budget summary |
+| company/patch_agent_budget.py | PATCH /company/agents/{agent_id}/budget — update agent budget |
+| company/get_activity.py | GET /company/activity — company activity events |
+| company/models.py | Company Pydantic models (OrgChartResponse, AgentDetail, BudgetSummaryResponse, etc.) |
+| user_profile/__init__.py | User profile module init |
+| user_profile/router.py | GET/PATCH /user/profile — merged SSO identity + local preferences |
+| user_profile/models.py | UserProfileResponse, UserProfileUpdate |
+| dashboard/__init__.py | Dashboard module init |
+| dashboard/router.py | GET /dashboard/stats — aggregate idea counts |
+| dashboard/models.py | DashboardStats Pydantic model || `prd/router.py` | `/flow/prd/*` — kickoff, approve, pause, resume, runs, jobs |
 | `prd/models.py` | Pydantic request/response schemas |
 | `prd/service.py` | Flow execution helpers (run, resume, restore state) |
 | `prd/_route_timeline.py` | `GET /flow/runs/{run_id}/timeline` — unified PRD journey timeline |
@@ -87,6 +104,11 @@ tags:
 | `ideation/models.py` | Pydantic request/response models (frontend-compatible shapes) |
 | `ideation/service.py` | Business logic: start, respond, iterate, advance, rollback |
 | `ideation/_route_websocket.py` | `WS /ws/ideation/{session_id}` — real-time streaming with JWT auth |
+| `project_ideas/__init__.py` | Re-exports: router |
+| `project_ideas/router.py` | Assembles sub-routers under `/projects/{project_id}/ideas` |
+| `project_ideas/models.py` | Pydantic models for idea CRUD requests/responses |
+| `project_ideas/_route_crud.py` | POST, GET list, GET detail, PATCH metadata, PATCH status, DELETE |
+| `project_ideas/_route_features.py` | PATCH features endpoint |
 | `publishing/` | Publishing automation (router, service, watcher, scheduler) |
 | `slack/` | OAuth-only Slack integration (see [[Slack Integration]]) |
 | `slack/oauth_router.py` | OAuth v2 callback |
@@ -94,9 +116,13 @@ tags:
 | `dashboard/` | Dashboard aggregate statistics (`GET /dashboard/stats`) |
 | `integrations/` | Integration status endpoint (Confluence/Jira connection check) |
 | `sso/` | SSO auth router — 18 endpoints (login, register, 2FA, logout, etc.) |
-| `sso_auth.py` | SSO JWT validation + require_sso_user dependency |
-| `sso_webhooks/router.py` | Assembles SSO webhook route modules |
+| `sso_auth.py` | SSO JWT validation + require_sso_user dependency || rbac.py | Role enum (SYS_ADMIN/ENT_ADMIN/USER), resolve_role() from JWT claims || `sso_webhooks/router.py` | Assembles SSO webhook route modules |
 | `sso_webhooks/post_events.py` | POST /sso/webhooks/events — lifecycle events |
+| `agentic_team/__init__.py` | Package init + re-export `agentic_team_router` |
+| `agentic_team/_config.py` | Env var config: AGENTIC_TEAM_ENABLED, BASE_URL, WEBHOOK_SECRET |
+| `agentic_team/_webhook.py` | POST /webhooks/agentic-team — inbound task/epic completion webhook |
+| `agentic_team/_service.py` | Outbound API client (features, task status, pipeline dashboard, kickoff) |
+| `agentic_team/router.py` | Router composition — includes webhook_router |
 
 ## Flows (`flows/`)
 
@@ -136,6 +162,7 @@ tags:
 | `async_client.py` | `get_async_db()`, Motor async client for API endpoints |
 | `_tenant.py` | `TenantContext`, `tenant_filter()`, `tenant_fields()` — multi-tenancy query scoping |
 | `crew_jobs/` | Async job tracking (create, update, fail, reactivate) |
+| `ideas/` | Idea entities CRUD (create, get, list, update, status, features, completion, design_url, delete) |
 | `working_ideas/` | In-progress PRD persistence (4 sub-modules) |
 | `product_requirements/` | Completed PRD + delivery records |
 | `agent_interactions/` | Slack interaction logging (fine-tuning data) |
@@ -146,6 +173,17 @@ tags:
 | `user_suggestions/` | Ambiguous intent tracking for self-learning |
 | `users/` | Application user accounts (SSO + Slack provisioned) |
 | `ideation_sessions/` | Interactive ideation session CRUD (step_to_name, count, paginate, metadata) |
+| `knowledge_documents/` | Knowledge document metadata CRUD (uploads + URL ingestions, review results) |
+| `knowledge_summaries/` | Aggregated knowledge summaries per project (unified bullets, topics, contradictions) |
+| `code_repos/` | Registered GitHub repos per project (OAuth tokens, analysis results) |
+
+## Services (`services/`)
+
+| File | Purpose |
+|------|---------||
+| `knowledge_storage.py` | GCS upload/download/delete for knowledge document files |
+| `knowledge_aggregator.py` | Orchestrates Content Reviewer agent + summary aggregation |
+| `github_service.py` | GitHub OAuth flow, shallow clone, Coding Agent orchestration |
 
 ## Tools (`tools/`)
 
@@ -176,6 +214,13 @@ tags:
 | `slack_config.py` | Slack manifest validation |
 | `memory_loader.py` | Project memory resolution |
 | `confluence_xhtml.py` | Markdown → Confluence XHTML converter |
+
+## Agents (new modules)
+
+| Folder | Purpose |
+|--------|---------||
+| `agents/content_reviewer/` | CrewAI agent — reviews documents (summary, key_bullets, topics, confidence) |
+| `agents/coding_agent/` | CrewAI agent — analyzes repos (architecture, tech_stack, apis, schemas, dependencies) |
 | `knowledge_sources.py` | Knowledge file loading, caching, and builder factories (8 knowledge files: user_preference, project_architecture, prd_guidelines, idea_refinement, review_criteria, engineering_standards, ux_design_standards, agent_roles_and_workflow) |
 | `project_knowledge.py` | Obsidian-style project knowledge base builder (project pages, completed idea pages, agent context) |
 | `migrate_output_dirs.py` | One-time script: migrate output files to project-based directories (delete after use) |

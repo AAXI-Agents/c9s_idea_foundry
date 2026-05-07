@@ -489,6 +489,29 @@ class PRDFlow(Flow[PRDState]):
         # Resolve project_id for memory enrichment across all agents
         project_id = resolve_project_id(self.state.run_id)
 
+        # ── Inject project knowledge context (if not already set) ──
+        if not self.state.knowledge_context and project_id:
+            from crewai_productfeature_planner.services.knowledge_context import (
+                build_knowledge_context,
+            )
+            self.state.knowledge_context = build_knowledge_context(
+                project_id, tenant=self._tenant,
+            )
+            if self.state.knowledge_context:
+                # Prepend knowledge context to the idea so all downstream
+                # agents (exec summary, section drafting) benefit from it.
+                self.state.idea = (
+                    self.state.knowledge_context
+                    + "\n\n---\n\n## Idea\n\n"
+                    + self.state.idea
+                )
+                logger.info(
+                    "[KnowledgeContext] Injected %d chars of project "
+                    "knowledge into idea for run_id=%s",
+                    len(self.state.knowledge_context),
+                    self.state.run_id,
+                )
+
         agents = self._get_available_agents(project_id=project_id)
         task_configs = get_task_configs()
 

@@ -1,0 +1,32 @@
+analyze_repository_task:
+  description: >
+    Analyze the following repository structure and source code excerpts
+    to produce a comprehensive technical analysis.
+
+    Repository: {repo_name} ({repo_url})
+    Owner: {repo_owner}
+
+    File tree:
+    ---
+    {file_tree}
+    ---
+
+    Key file contents:
+    ---
+    {key_files}
+    ---
+
+    Produce a JSON response with exactly these fields:
+    - architecture: A 3-5 sentence description of the overall architecture.
+    - tech_stack: An array of technology names used (languages, frameworks, DBs).
+    - apis: An array of objects with: method, path, description (for REST endpoints found).
+    - schemas: An array of objects with: name, type (e.g. "table", "collection", "model"), fields (array of field names).
+    - dependencies: An array of key external dependencies with: name, version (if found), purpose.
+    - summary: A 2-3 sentence executive summary suitable for product managers.
+
+    Return ONLY valid JSON, no markdown fencing, no explanation.
+  expected_output: >
+    A valid JSON object with keys: architecture (string), tech_stack (array),
+    apis (array of objects), schemas (array of objects), dependencies (array),
+    summary (string).
+  agent: coding_agent

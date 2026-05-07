@@ -1,0 +1,1 @@
+{"get":{"tags":["UX Design"],"summary":"Get UX design status","description":"Returns the current UX design generation status for a run.","parameters":[{"name":"run_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"UX design status"}}}}

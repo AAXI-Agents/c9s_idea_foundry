@@ -520,9 +520,12 @@ def start_api():
         from crewai_productfeature_planner.scripts.slack_config import update_slack_app_urls
         update_slack_app_urls(public_url)
 
+    from crewai_productfeature_planner.scripts.logging_config import get_uvicorn_log_config
+
     uvicorn.run(
         "crewai_productfeature_planner.apis:app",
         host=args.host,
         port=args.port,
         reload=args.reload,
+        log_config=get_uvicorn_log_config(),
     )

@@ -1,0 +1,1 @@
+{"get":{"tags":["Flow Runs"],"summary":"Get PRD version history","description":"Returns the git-style version history for a PRD run.","parameters":[{"name":"run_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Version history"}}}}

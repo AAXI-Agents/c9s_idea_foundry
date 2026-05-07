@@ -127,16 +127,16 @@ class TestBuildPostCompletionPipeline:
         orch = build_post_completion_pipeline(flow)
         assert isinstance(orch, AgentOrchestrator)
 
-    def test_has_two_stages(self):
+    def test_has_three_stages(self):
         flow = PRDFlow()
         orch = build_post_completion_pipeline(flow)
-        assert len(orch.stages) == 2
+        assert len(orch.stages) == 3
 
     def test_stage_order(self):
         flow = PRDFlow()
         orch = build_post_completion_pipeline(flow)
         names = [s.name for s in orch.stages]
-        assert names == ["confluence_publish", "jira_ticketing"]
+        assert names == ["confluence_publish", "jira_ticketing", "agentic_team_trigger"]
 
     def test_skips_all_without_credentials(self, monkeypatch):
         """Without Atlassian credentials, all stages skip."""

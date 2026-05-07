@@ -1,0 +1,1 @@
+{"get":{"tags":["Ideation Flow"],"summary":"Get session messages","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Message list"}}}}

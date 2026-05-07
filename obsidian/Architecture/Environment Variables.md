@@ -20,6 +20,9 @@ tags:
 | `SSO_ISSUER` | Expected JWT issuer claim (default `c9s-sso`) |
 | `SSO_EXPECTED_APP_ID` | When set, only accept tokens with this `app_id` (Idea Foundry) |
 | `SSO_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying SSO webhook payloads |
+| `AGENTIC_TEAM_ENABLED` | Enable bidirectional integration with Agentic Team platform (`true`/`false`, default `false`) |
+| `AGENTIC_TEAM_BASE_URL` | Base URL of the Agentic Team API for outbound queries/kickoff |
+| `AGENTIC_TEAM_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying inbound Agentic Team webhooks |
 | `DEV_USER_ROLE` | Role assumed by the SSO dev bypass when `SSO_ENABLED=false` (one of `USER` / `ENT_ADMIN` / `SYS_ADMIN`, default `USER`). Tests force `SYS_ADMIN`. Defaulting to `USER` keeps tenant filtering active in dev. |
 | `DEV_ENTERPRISE_ID` | Enterprise ID injected into the dev-bypass user claims (default `dev-enterprise`) |
 | `DEV_ORGANIZATION_ID` | Organization ID injected into the dev-bypass user claims (default `dev-org`) |
@@ -111,6 +114,19 @@ tags:
 | `TOKEN_REFRESH_INTERVAL_SECONDS` | Token refresh check interval (default: `1800` = 30 min) |
 | `TOKEN_REFRESH_BUFFER_SECONDS` | Refresh when remaining lifetime < this (default: `3600` = 1 h) |
 | `TOKEN_REFRESH_SCHEDULER_ENABLED` | Set to `0` / `false` to disable token refresh scheduler |
+
+## Knowledge Module & Code Repos
+
+| Variable | Purpose |
+|----------|---------||
+| `GCS_PROJECT_ID` | GCP project ID for knowledge storage bucket |
+| `GCS_BUCKET_NAME` | GCS bucket name override (default: `c9s-knowledge-{env}`) |
+| `KNOWLEDGE_ENV` | Environment suffix for bucket (dev/staging/prod, default: `dev`) |
+| `GEMINI_CONTENT_REVIEWER_MODEL` | Override LLM for Content Reviewer agent (default: `gemini-2.0-flash`) |
+| `GEMINI_CODING_AGENT_MODEL` | Override LLM for Coding Agent (default: `gemini-2.0-flash`) |
+| `GITHUB_CLIENT_ID` | GitHub OAuth App client ID |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret |
+| `GITHUB_REDIRECT_URI` | GitHub OAuth callback URL |
 
 ---
 

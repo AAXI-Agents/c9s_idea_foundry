@@ -201,6 +201,13 @@ class PRDState(BaseModel):
             "'selected'."
         ),
     )
+    knowledge_context: str = Field(
+        default="",
+        description=(
+            "Aggregated knowledge context (unified summary + repo blurbs) "
+            "injected from the project's knowledge base before agents run."
+        ),
+    )
     requirements_breakdown: str = Field(
         default="",
         description="Structured product requirements produced by the Requirements Breakdown agent.",

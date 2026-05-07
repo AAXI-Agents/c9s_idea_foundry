@@ -124,6 +124,8 @@ def append_message(
     content: str,
     step: str,
     metadata: dict | None = None,
+    agent_name: str | None = None,
+    content_type: str | None = None,
     tenant: TenantContext | None = None,
 ) -> str | None:
     """Append a message to the session's message array.
@@ -133,6 +135,8 @@ def append_message(
         content: Markdown text content.
         step: Which flow step ('a'-'e') this message belongs to.
         metadata: Optional structured data (e.g. render_type, questions).
+        agent_name: Agent identifier (e.g. 'product_ideation_specialist').
+        content_type: Content format: 'text', 'markdown', or 'cards'.
 
     Returns:
         The message ``id`` on success, or ``None`` on failure.
@@ -147,6 +151,10 @@ def append_message(
         "step": step,
         "timestamp": now,
     }
+    if agent_name:
+        message["agent_name"] = agent_name
+    if content_type:
+        message["content_type"] = content_type
     if metadata:
         message["metadata"] = metadata
 

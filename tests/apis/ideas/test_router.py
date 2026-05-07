@@ -110,10 +110,10 @@ class TestListIdeas:
             mock_db.return_value.__getitem__ = MagicMock(return_value=coll)
             resp = client.get("/ideas?project_id=proj1")
         assert resp.status_code == 200
-        # Default behaviour: terminal-state ideas (including completed/PRD-generated)
-        # are excluded unless explicitly requested via ?status= or ?include_archived=true.
+        # Project detail view: show all ideas including completed/failed
+        # but still hide deleted (user soft-delete) and archived (internal).
         coll.count_documents.assert_awaited_once_with(
-            {"project_id": "proj1", "status": {"$nin": ["deleted", "archived", "failed", "completed"]}}
+            {"project_id": "proj1", "status": {"$nin": ["deleted", "archived"]}}
         )
 
     def test_filter_by_status(self, client):

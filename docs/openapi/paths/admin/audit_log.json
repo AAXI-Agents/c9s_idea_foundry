@@ -1,0 +1,1 @@
+{"get":{"tags":["Admin"],"summary":"Get admin audit log","description":"Returns paginated audit log entries.","responses":{"200":{"description":"Audit log entries"}}}}

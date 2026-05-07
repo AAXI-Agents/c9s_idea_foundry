@@ -53,6 +53,8 @@ class ProjectItem(BaseModel):
     jira_project_key: str = ""
     confluence_parent_id: str = ""
     reference_urls: list[str] = Field(default_factory=list)
+    ideas_in_progress: int = 0
+    features_completed: int = 0
     created_at: str = ""
     updated_at: str = ""
 
@@ -68,7 +70,12 @@ class ProjectListResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────
 
 
-def project_fields(doc: dict[str, Any]) -> dict[str, Any]:
+def project_fields(
+    doc: dict[str, Any],
+    *,
+    ideas_in_progress: int = 0,
+    features_completed: int = 0,
+) -> dict[str, Any]:
     """Extract ProjectItem-compatible fields from a MongoDB document."""
     return {
         "project_id": doc.get("project_id", ""),
@@ -78,6 +85,8 @@ def project_fields(doc: dict[str, Any]) -> dict[str, Any]:
         "jira_project_key": doc.get("jira_project_key", ""),
         "confluence_parent_id": doc.get("confluence_parent_id", ""),
         "reference_urls": doc.get("reference_urls", []),
+        "ideas_in_progress": ideas_in_progress,
+        "features_completed": features_completed,
         "created_at": doc.get("created_at", ""),
         "updated_at": doc.get("updated_at", ""),
     }

@@ -3931,6 +3931,162 @@ _CODEX: list[CodexEntry] = [
             "rejection semantics. Full suite: 2226 passed."
         ),
     ),
+    CodexEntry(
+        version="0.82.1",
+        date=date(2026, 5, 3),
+        summary=(
+            "Documentation compliance audit: brought OpenAPI spec from v0.73.0 to "
+            "v0.82.0, added 6 missing tag metadata entries (Company, Ideation Flow, "
+            "Dashboard, User Profile, UX Design, Integrations), removed 4 stale Slack "
+            "OpenAPI paths deleted in v0.79.0, created 30+ new OpenAPI path stubs, "
+            "updated API Overview (89 endpoints / 17 routers), updated Module Map "
+            "with admin/company/dashboard/user_profile/rbac modules, created Obsidian "
+            "API pages for Admin (5), Company (6), Dashboard (1), User Profile (2), "
+            "Ideation Flow (index), and Slack OAuth install."
+        ),
+    ),
+    CodexEntry(
+        version="0.82.2",
+        date=date(2026, 5, 3),
+        summary=(
+            "Add ideas_in_progress and features_completed stats to GET /projects/ "
+            "and GET /projects/{project_id} responses. Uses aggregation pipeline on "
+            "workingIdeas collection (statuses: inprogress/paused → in_progress, "
+            "completed → features_completed). New _stats.py helper module with batch "
+            "and single-project lookups. Existing compound index covers the query. "
+            "32 project tests pass (10 new stats tests added)."
+        ),
+    ),
+    CodexEntry(
+        version="0.82.3",
+        date=date(2026, 5, 4),
+        summary=(
+            "Fix P0: ideation structured payload not reaching frontend. "
+            "MessageMetadata Pydantic model was silently stripping the 'structured' "
+            "field (Pydantic v2 extra=ignore). Added structured/response_type/answers/"
+            "error fields to MessageMetadata. Fixed _broadcast_message and "
+            "_broadcast_typing to use correct {event, data} WS envelope (was "
+            "using flat {type} format). Added agent_name/content_type params to "
+            "append_message repository. Set can_iterate/can_advance in structured "
+            "metadata. Removed duplicate WS broadcast from _route_websocket. "
+            "14 new regression tests, 2258 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.83.0",
+        date="2026-05-04",
+        summary=(
+            "Phase 1 — Idea Workflow: new ideas MongoDB collection with full "
+            "CRUD repository (create, get, list, count, update, status, "
+            "features, completion, design_url, soft-delete). REST API under "
+            "/projects/{project_id}/ideas with 7 endpoints (POST, GET list, "
+            "GET detail, PATCH metadata, PATCH status, PATCH features, DELETE). "
+            "Auto-create idea hook in ideation service on session completion. "
+            "Tenant isolation on all operations. 49 new tests, 2307 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.84.0",
+        date="2026-05-05",
+        summary=(
+            "Phases 2–4 — Idea Workflow: flow integration (start/progress/resume "
+            "PRD flow per idea), Jira webhook for completion tracking, WebSocket "
+            "real-time idea updates, deliverables aggregation endpoint. "
+            "48 new tests across flow routes, webhook, and deliverables. "
+            "2370 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.85.0",
+        date="2026-05-05",
+        summary=(
+            "Agentic Team integration — bidirectional webhook + outbound API client. "
+            "Inbound POST /webhooks/agentic-team receives task/epic completion events, "
+            "maps Jira labels to idea features, recalculates completion percentages, "
+            "broadcasts via WebSocket. Outbound service client queries pipeline status "
+            "and triggers kickoff via SSO client_credentials auth. "
+            "29 new tests (14 webhook + 15 service). Feature-flagged via "
+            "AGENTIC_TEAM_ENABLED."
+        ),
+    ),
+    CodexEntry(
+        version="0.86.0",
+        date="2026-05-05",
+        summary=(
+            "Agentic Team P4+P5 — auto-trigger pipeline + status endpoints. "
+            "P5: New orchestrator stage auto-triggers batch pipeline kickoff "
+            "(POST /pipeline/batch-kickoff) after Jira ticket creation completes. "
+            "Filters to actionable Sub-tasks/Stories, labels with idea/run IDs. "
+            "P4: Three new status endpoints — GET /api/agentic-team/status/{idea_id}, "
+            "GET /api/agentic-team/dashboard, GET /api/agentic-team/task/{issue_key}. "
+            "New batch_kickoff_pipeline() and get_idea_agent_status() service functions. "
+            "45 new tests (24 service + 8 status endpoint + 13 trigger stage). "
+            "2388 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.87.0",
+        date=date(2026, 5, 5),
+        summary=(
+            "Knowledge Module + Code Repos Backend (Phases 2 & 4). "
+            "3 new MongoDB repos (knowledge_documents, knowledge_summaries, code_repos). "
+            "2 new CrewAI agents (Content Reviewer, Coding Agent). "
+            "3 new services (knowledge_storage GCS, knowledge_aggregator, github_service). "
+            "17 new REST API endpoints across 2 routers (Knowledge, Code Repos). "
+            "New env vars: GCS_PROJECT_ID, GCS_BUCKET_NAME, KNOWLEDGE_ENV, "
+            "GEMINI_CONTENT_REVIEWER_MODEL, GEMINI_CODING_AGENT_MODEL, GITHUB_CLIENT_ID, "
+            "GITHUB_CLIENT_SECRET, GITHUB_REDIRECT_URI. "
+            "google-cloud-storage>=2.14 moved to required dependency. "
+            "40 new tests. 2463 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.88.0",
+        date=date(2026, 5, 6),
+        summary=(
+            "Agentic Team full integration — envelope format, idempotency, delivery audit. "
+            "Webhook receiver now supports spec v1.0 envelope format (nested data field) "
+            "with backwards-compatible flat payload fallback. Idempotency via delivery_id "
+            "deduplication (Idempotency-Key header + envelope delivery_id). New "
+            "webhookDeliveries MongoDB collection with CRUD repository for audit trail. "
+            "New GET /api/agentic-team/deliveries + /deliveries/{id} REST endpoints. "
+            "Outbound kickoff/batch-kickoff now include callback_url (self-referencing) "
+            "and Idempotency-Key headers per spec. Schema version validation. "
+            "New env vars: IDEA_FOUNDRY_BASE_URL, WEBHOOK_DELIVERY_LOG_ENABLED. "
+            "3 new files, 5 modified. 36 new tests. 2463 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.88.1",
+        date=date(2026, 5, 6),
+        summary=(
+            "Agentic Team receiver-side integration fixes — feature label resolution, "
+            "non-terminal status filtering, tenant isolation for deliveries. "
+            "Kickoff payload now includes feature:<id> labels resolved via epic→feature "
+            "map (parent_key stored in Jira ticket docs). Webhook receiver skips "
+            "non-terminal pipeline_status values (dev_done, in_progress, etc.). "
+            "Delivery list endpoint enforces tenant isolation via SSO user context. "
+            "New _build_epic_feature_map helper, _resolve_tenant_from_idea helper. "
+            "13 new tests. 2525 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.89.0",
+        date=date(2026, 5, 7),
+        summary=(
+            "Frontend integration gaps — 4 implementations from design docs. "
+            "Gap 1: PRD Flow Knowledge Integration — build_knowledge_context service "
+            "injects project knowledge summaries + code repo blurbs into PRD generation. "
+            "Gap 2: New Agent Task Configs — 5 new tasks (tech_plan_refine, "
+            "iteration_refine for eng_manager; ticket_breakdown, ticket_creation, "
+            "feature_identify for orchestrator). "
+            "Gap 3: Jira Reconciliation Background Task — periodic poll for missed "
+            "webhooks, recalculates feature completion %, feature-flagged. "
+            "Gap 4: KB Repo Commit — analyze_repo now commits Obsidian-format files "
+            "to c9s_agentic_knowledgebase via GitHub Contents API. "
+            "51 new tests. 2576 tests pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -3951,7 +4107,7 @@ def get_codex() -> list[dict]:
     return [
         {
             "version": entry.version,
-            "date": entry.date.isoformat(),
+            "date": entry.date.isoformat() if hasattr(entry.date, "isoformat") else str(entry.date),
             "summary": entry.summary,
         }
         for entry in _CODEX
@@ -3961,8 +4117,9 @@ def get_codex() -> list[dict]:
 def get_latest_codex_entry() -> dict:
     """Return only the most recent codex entry as a dict."""
     entry = _CODEX[-1]
+    d = entry.date
     return {
         "version": entry.version,
-        "date": entry.date.isoformat(),
+        "date": d.isoformat() if hasattr(d, "isoformat") else str(d),
         "summary": entry.summary,
     }

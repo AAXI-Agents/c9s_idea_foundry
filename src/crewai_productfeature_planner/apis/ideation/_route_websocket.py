@@ -80,11 +80,20 @@ def broadcast_sync(session_id: str, event: dict[str, Any]) -> None:
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.ensure_future(broadcast(session_id, event))
+            future = asyncio.ensure_future(broadcast(session_id, event))
+            # Add error callback so exceptions are logged, not silently lost
+            future.add_done_callback(_log_broadcast_error)
         else:
             loop.run_until_complete(broadcast(session_id, event))
     except RuntimeError:
-        pass
+        logger.debug("[IdeationWS] broadcast_sync: no event loop available session=%s", session_id)
+
+
+def _log_broadcast_error(future: asyncio.Future) -> None:
+    """Callback for broadcast futures — log any exception."""
+    exc = future.exception()
+    if exc:
+        logger.warning("[IdeationWS] broadcast future failed: %s", exc)
 
 
 def _build_session_snapshot(
@@ -115,6 +124,8 @@ async def _validate_ws_token(token: str | None) -> dict[str, Any] | None:
     """Validate a JWT token for WebSocket auth.
 
     Returns user claims dict on success, None on failure.
+    Mirrors the same validation logic as ``require_sso_user`` including
+    the public-key refresh fallback.
     """
     import os
 
@@ -133,6 +144,7 @@ async def _validate_ws_token(token: str | None) -> dict[str, Any] | None:
     # Use the same decode logic as the REST auth
     from crewai_productfeature_planner.apis.sso_auth import (
         _decode_jwt_locally,
+        _fetch_and_save_public_key,
         _introspect_remotely,
     )
 
@@ -140,6 +152,14 @@ async def _validate_ws_token(token: str | None) -> dict[str, Any] | None:
     claims = await _introspect_remotely(token)
     if claims is None:
         claims = _decode_jwt_locally(token)
+
+    # Fallback: refresh the public key and retry local decode
+    # (matches require_sso_user behaviour for key rotation recovery)
+    if claims is None:
+        new_key = await _fetch_and_save_public_key()
+        if new_key:
+            claims = _decode_jwt_locally(token)
+
     return claims
 
 
@@ -152,18 +172,37 @@ async def ideation_websocket(
     """WebSocket endpoint for real-time ideation session updates.
 
     Authenticates via ?token= query param (JWT access token).
+    Accepts the connection first so the client receives structured
+    error messages (e.g. token_expired) it can act on.
     """
-    # Validate token before accepting the connection
+    await websocket.accept()
+
+    # Validate token after accepting so the client gets a structured
+    # error message it can use to decide whether to refresh & retry.
     user = await _validate_ws_token(token)
     if not user:
+        error_code = "TOKEN_MISSING" if not token else "TOKEN_EXPIRED"
+        await websocket.send_text(json.dumps({
+            "event": "auth_error",
+            "data": {
+                "code": error_code,
+                "message": (
+                    "Authentication failed — your token is expired or invalid. "
+                    "Please refresh your access token and reconnect."
+                ),
+                "recoverable": True,
+            },
+        }))
         await websocket.close(code=4001)
-        logger.warning("[IdeationWS] Rejected — invalid/missing token session=%s", session_id)
+        logger.warning(
+            "[IdeationWS] Rejected — %s session=%s",
+            error_code.lower(),
+            session_id,
+        )
         return
 
     # Resolve tenant context from JWT claims (same as REST endpoints).
     tenant = TenantContext.from_user(user)
-
-    await websocket.accept()
 
     # Verify session exists AND is visible to this tenant. Passing
     # tenant=tenant means cross-tenant session_ids return None and the
@@ -228,33 +267,89 @@ async def ideation_websocket(
                     handle_user_response,
                 )
 
-                result = await handle_user_response(
-                    session_id=session_id,
-                    content=content,
-                    tenant=tenant,
-                )
-                if result:
-                    await broadcast(session_id, {
-                        "event": "new_message",
+                try:
+                    result = await handle_user_response(
+                        session_id=session_id,
+                        content=content,
+                        tenant=tenant,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "[IdeationWS] handle_user_response crashed session=%s: %s",
+                        session_id, exc, exc_info=True,
+                    )
+                    await websocket.send_text(json.dumps({
+                        "event": "error",
                         "data": {
-                            "id": result.get("id"),
-                            "role": "agent",
-                            "agent_name": "ideation_agent",
-                            "content": result.get("content", ""),
-                            "content_type": "markdown",
-                            "metadata": None,
-                            "flow_step": step_to_name(result.get("step", "a")),
-                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "code": "AGENT_ERROR",
+                            "message": "Failed to process your message. Please try again.",
+                            "recoverable": True,
                         },
-                    })
+                    }))
+                    continue
+
+                if result:
+                    # Service already broadcasts the agent message via
+                    # _broadcast_message() — no duplicate broadcast needed.
+                    pass
+                else:
+                    # handle_user_response returned None — session not found or inactive
+                    logger.warning(
+                        "[IdeationWS] handle_user_response returned None session=%s",
+                        session_id,
+                    )
+                    # Re-fetch session to give specific error
+                    fresh_session = get_session(session_id=session_id, tenant=tenant)
+                    if not fresh_session:
+                        error_msg = "Session not found. It may have been deleted."
+                        error_code = "SESSION_NOT_FOUND"
+                    elif fresh_session["status"] != "active":
+                        error_msg = f"Session is {fresh_session['status']} and cannot accept responses."
+                        error_code = "SESSION_INACTIVE"
+                    else:
+                        error_msg = "Unable to process your message. Please try again."
+                        error_code = "PROCESSING_FAILED"
+                    await websocket.send_text(json.dumps({
+                        "event": "error",
+                        "data": {
+                            "code": error_code,
+                            "message": error_msg,
+                            "recoverable": error_code != "SESSION_NOT_FOUND",
+                        },
+                    }))
 
             elif msg_type == "advance":
                 from crewai_productfeature_planner.apis.ideation.service import (
                     handle_advance,
                 )
 
-                result = await handle_advance(session_id=session_id, tenant=tenant)
-                if result.get("completed"):
+                try:
+                    result = await handle_advance(session_id=session_id, tenant=tenant)
+                except Exception as exc:
+                    logger.error(
+                        "[IdeationWS] handle_advance crashed session=%s: %s",
+                        session_id, exc, exc_info=True,
+                    )
+                    await websocket.send_text(json.dumps({
+                        "event": "error",
+                        "data": {
+                            "code": "ADVANCE_ERROR",
+                            "message": "Failed to advance step. Please try again.",
+                            "recoverable": True,
+                        },
+                    }))
+                    continue
+
+                if result.get("error"):
+                    await websocket.send_text(json.dumps({
+                        "event": "error",
+                        "data": {
+                            "code": "ADVANCE_FAILED",
+                            "message": result["error"],
+                            "recoverable": True,
+                        },
+                    }))
+                elif result.get("completed"):
                     await broadcast(session_id, {
                         "event": "session_completed",
                         "data": {
@@ -276,7 +371,23 @@ async def ideation_websocket(
                     handle_rollback,
                 )
 
-                result = await handle_rollback(session_id=session_id, tenant=tenant)
+                try:
+                    result = await handle_rollback(session_id=session_id, tenant=tenant)
+                except Exception as exc:
+                    logger.error(
+                        "[IdeationWS] handle_rollback crashed session=%s: %s",
+                        session_id, exc, exc_info=True,
+                    )
+                    await websocket.send_text(json.dumps({
+                        "event": "error",
+                        "data": {
+                            "code": "ROLLBACK_ERROR",
+                            "message": "Failed to roll back. Please try again.",
+                            "recoverable": True,
+                        },
+                    }))
+                    continue
+
                 if "error" not in result:
                     await broadcast(session_id, {
                         "event": "step_advanced",
@@ -314,5 +425,17 @@ async def ideation_websocket(
             exc,
             exc_info=True,
         )
+        # Attempt to send error event before connection drops
+        try:
+            await websocket.send_text(json.dumps({
+                "event": "error",
+                "data": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred. Please reconnect.",
+                    "recoverable": True,
+                },
+            }))
+        except Exception:  # noqa: BLE001
+            pass  # Connection already broken
     finally:
         await _unregister(session_id, websocket)
