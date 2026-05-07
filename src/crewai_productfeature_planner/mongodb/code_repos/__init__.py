@@ -7,6 +7,7 @@ analysis status and summary from the Coding Agent.
 from crewai_productfeature_planner.mongodb.code_repos.repository import (
     CODE_REPOS_COLLECTION,
     create_code_repo,
+    find_repos_by_github_identity,
     get_code_repo,
     list_code_repos,
     update_code_repo,
@@ -17,6 +18,7 @@ from crewai_productfeature_planner.mongodb.code_repos.repository import (
 __all__ = [
     "CODE_REPOS_COLLECTION",
     "create_code_repo",
+    "find_repos_by_github_identity",
     "get_code_repo",
     "list_code_repos",
     "update_code_repo",

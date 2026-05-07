@@ -177,6 +177,33 @@ def delete_code_repo(
         return False
 
 
+def find_repos_by_github_identity(
+    *,
+    owner: str,
+    name: str,
+) -> list[dict]:
+    """Find all registered repos matching a GitHub owner/name pair.
+
+    Used by the GitHub push webhook to locate which projects need
+    re-analysis when a push event is received.
+
+    Returns list of repo documents (may span multiple projects/tenants).
+    """
+    try:
+        cursor = _col().find({"owner": owner, "name": name})
+        docs = []
+        for doc in cursor:
+            doc.pop("_id", None)
+            docs.append(doc)
+        return docs
+    except PyMongoError as exc:
+        logger.error(
+            "[CodeRepos] Failed to find repos owner=%s name=%s: %s",
+            owner, name, exc, exc_info=True,
+        )
+        return []
+
+
 def set_analysis_result(
     *,
     repo_id: str,
