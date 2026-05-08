@@ -180,7 +180,8 @@ tags:
 ## Services (`services/`)
 
 | File | Purpose |
-|------|---------||
+|------|---------|
+| `gcs_paths.py` | Unified GCS bucket name resolution (`{SERVER_ENV}-idea-foundry`) and multi-tenant path builders |
 | `knowledge_storage.py` | GCS upload/download/delete for knowledge document files |
 | `knowledge_aggregator.py` | Orchestrates Content Reviewer agent + summary aggregation |
 | `github_service.py` | GitHub OAuth flow, shallow clone, Coding Agent orchestration |

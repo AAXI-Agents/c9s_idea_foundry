@@ -24,6 +24,7 @@ from crewai_productfeature_planner.mongodb import save_iteration
 from crewai_productfeature_planner.scripts.logging_config import get_logger, is_verbose
 from crewai_productfeature_planner.scripts.memory_loader import resolve_project_id
 from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
+from crewai_productfeature_planner.services.gcs_paths import build_idea_key
 
 if TYPE_CHECKING:
     from crewai_productfeature_planner.flows.prd_flow import PRDFlow
@@ -60,6 +61,8 @@ def _write_design_file(
     output_dir: str,
     filename: str,
     content: str,
+    *,
+    gcs_key: str = "",
 ) -> str:
     """Write a design markdown file, overwriting any existing file.
 
@@ -74,20 +77,15 @@ def _write_design_file(
     file_path.write_text(text, encoding="utf-8")
     logger.info("[UX Design] Wrote file: %s", file_path)
 
-    # Also upload to GCS when configured
-    try:
-        from crewai_productfeature_planner.tools.output_storage import (
-            _gcs_bucket_name,
-            _write_to_gcs,
-        )
-        bucket = _gcs_bucket_name()
-        if bucket:
-            rel_dir = output_dir
-            if rel_dir.startswith("output/"):
-                rel_dir = rel_dir[len("output/"):]
-            _write_to_gcs(bucket, f"{rel_dir}/{filename}", text)
-    except Exception:  # noqa: BLE001
-        pass  # GCS is best-effort
+    # Also upload to GCS when a key is provided
+    if gcs_key:
+        try:
+            from crewai_productfeature_planner.tools.output_storage import (
+                _write_to_gcs,
+            )
+            _write_to_gcs(gcs_key, text)
+        except Exception:  # noqa: BLE001
+            pass  # GCS is best-effort
 
     return str(file_path)
 
@@ -230,7 +228,14 @@ def run_ux_design_draft(flow: PRDFlow) -> str:
 
     # Write draft file (overwrite any existing).
     output_dir = _resolve_output_dir(project_id)
-    _write_design_file(output_dir, DRAFT_FILENAME, raw_output)
+    gcs_key = ""
+    tenant = flow._tenant
+    if tenant and project_id:
+        gcs_key = build_idea_key(
+            tenant.enterprise_id, tenant.organization_id,
+            project_id, flow.state.run_id, DRAFT_FILENAME,
+        )
+    _write_design_file(output_dir, DRAFT_FILENAME, raw_output, gcs_key=gcs_key)
 
     flow.state.update_date = datetime.now(timezone.utc).isoformat()
     flow._notify_progress("ux_design_draft_complete", {
@@ -328,7 +333,14 @@ def run_ux_design_review(flow: PRDFlow, initial_draft: str) -> str:
 
     # Write final file.
     output_dir = _resolve_output_dir(project_id)
-    _write_design_file(output_dir, FINAL_FILENAME, final_output)
+    gcs_key = ""
+    tenant = flow._tenant
+    if tenant and project_id:
+        gcs_key = build_idea_key(
+            tenant.enterprise_id, tenant.organization_id,
+            project_id, flow.state.run_id, FINAL_FILENAME,
+        )
+    _write_design_file(output_dir, FINAL_FILENAME, final_output, gcs_key=gcs_key)
 
     # ── UX Design review gate ────────────────────────────────────
     # Let the user review the final design before it is appended to

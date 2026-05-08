@@ -44,9 +44,15 @@ ideation_task:
     - Questions MUST be specific to THIS idea — never generic templates
     - NEVER give vague "it depends" answers — commit to concrete options
     - Recommendations must show honest trade-offs, not just positives
+    - For EACH question, evaluate your 3 recommendations and select
+      your preferred one.  Set recommended_index to the 0-based index
+      (0, 1, or 2) of the best option, and recommended_reason to a
+      1-2 sentence explanation of why it best serves the product.
+      If you genuinely have no preference, leave both null.
   expected_output: >
     Valid JSON matching the StructuredIdeationResponse schema with
-    acknowledgment, 3-5 questions (each with 3 recommendations),
+    acknowledgment, 3-5 questions (each with 3 recommendations plus
+    recommended_index and recommended_reason),
     an agent_insight, and optionally a summary_draft.
 
 persona_task:
@@ -91,10 +97,16 @@ persona_task:
     - Questions MUST be specific to THIS product — never generic
     - Think in terms of jobs-to-be-done and behavioural archetypes
     - Consider power users, sceptics, and adjacent audiences
+    - For EACH question, evaluate your 3 recommendations and select
+      your preferred one.  Set recommended_index to the 0-based index
+      (0, 1, or 2) of the best option, and recommended_reason to a
+      1-2 sentence explanation of why it best serves the product.
+      If you genuinely have no preference, leave both null.
   expected_output: >
     Valid JSON matching the StructuredIdeationResponse schema with
     acknowledgment, 3-5 questions about user personas (each with
-    3 recommendations), an agent_insight, and optionally a summary_draft.
+    3 recommendations plus recommended_index and recommended_reason),
+    an agent_insight, and optionally a summary_draft.
 
 solution_task:
   description: >
@@ -140,10 +152,16 @@ solution_task:
       error, edge case)
     - Consider distribution strategy and time-to-market
     - Never give vague "it depends" — commit to concrete options
+    - For EACH question, evaluate your 3 recommendations and select
+      your preferred one.  Set recommended_index to the 0-based index
+      (0, 1, or 2) of the best option, and recommended_reason to a
+      1-2 sentence explanation of why it best serves the product.
+      If you genuinely have no preference, leave both null.
   expected_output: >
     Valid JSON matching the StructuredIdeationResponse schema with
     acknowledgment, 3-5 questions about solution form factor (each with
-    3 recommendations), an agent_insight, and optionally a summary_draft.
+    3 recommendations plus recommended_index and recommended_reason),
+    an agent_insight, and optionally a summary_draft.
 
 goal_task:
   description: >
@@ -186,10 +204,16 @@ goal_task:
     - Challenge vague goals into specific, measurable targets
     - Tie every feature to a persona and an outcome
     - Use RICE scoring thinking — reach, impact, confidence, effort
+    - For EACH question, evaluate your 3 recommendations and select
+      your preferred one.  Set recommended_index to the 0-based index
+      (0, 1, or 2) of the best option, and recommended_reason to a
+      1-2 sentence explanation of why it best serves the product.
+      If you genuinely have no preference, leave both null.
   expected_output: >
     Valid JSON matching the StructuredIdeationResponse schema with
     acknowledgment, 3-5 questions about feature goals (each with
-    3 recommendations), an agent_insight, and optionally a summary_draft.
+    3 recommendations plus recommended_index and recommended_reason),
+    an agent_insight, and optionally a summary_draft.
 
 tech_stack_task:
   description: >
@@ -235,7 +259,13 @@ tech_stack_task:
     - Consider team size, timeline, and budget constraints
     - Assess build vs buy and cloud vendor lock-in honestly
     - Never recommend hype-driven tech without production evidence
+    - For EACH question, evaluate your 3 recommendations and select
+      your preferred one.  Set recommended_index to the 0-based index
+      (0, 1, or 2) of the best option, and recommended_reason to a
+      1-2 sentence explanation of why it best serves the product.
+      If you genuinely have no preference, leave both null.
   expected_output: >
     Valid JSON matching the StructuredIdeationResponse schema with
     acknowledgment, 3-5 questions about technology choices (each with
-    3 recommendations), an agent_insight, and optionally a summary_draft.
+    3 recommendations plus recommended_index and recommended_reason),
+    an agent_insight, and optionally a summary_draft.

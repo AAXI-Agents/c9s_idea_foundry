@@ -117,11 +117,12 @@ tags:
 
 ## Knowledge Module & Code Repos
 
+> **GCS bucket**: Auto-derived as `{SERVER_ENV}-idea-foundry` (e.g. `dev-idea-foundry`).
+> No bucket env vars are needed — `SERVER_ENV` controls everything.
+> Paths use multi-tenant isolation: `{enterprise_id}/{organization_id}/projects/{project_id}/...`
+
 | Variable | Purpose |
-|----------|---------||
-| `GCS_PROJECT_ID` | GCP project ID for knowledge storage bucket |
-| `GCS_BUCKET_NAME` | GCS bucket name override (default: `c9s-knowledge-{env}`) |
-| `KNOWLEDGE_ENV` | Environment suffix for bucket (dev/staging/prod, default: `dev`) |
+|----------|--------|
 | `GEMINI_CONTENT_REVIEWER_MODEL` | Override LLM for Content Reviewer agent (default: `gemini-2.0-flash`) |
 | `GEMINI_CODING_AGENT_MODEL` | Override LLM for Coding Agent (default: `gemini-2.0-flash`) |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App client ID |

@@ -18,6 +18,7 @@ from crewai_productfeature_planner.agents.content_reviewer import (
 )
 from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.knowledge_documents import (
+    count_knowledge_documents,
     get_knowledge_document,
     list_knowledge_documents,
     set_review_result,
@@ -34,17 +35,42 @@ logger = get_logger(__name__)
 def _parse_json_output(raw: str) -> dict | None:
     """Attempt to parse JSON from agent output, stripping markdown fencing."""
     text = raw.strip()
-    if text.startswith("```"):
+
+    # Strip markdown fencing (```json ... ``` or ``` ... ```)
+    if "```" in text:
+        # Find the content between the first ``` and last ```
         lines = text.split("\n")
-        lines = lines[1:]  # remove opening fence
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines)
+        start_idx = None
+        end_idx = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("```") and start_idx is None:
+                start_idx = i
+            elif line.strip() == "```" and start_idx is not None:
+                end_idx = i
+        if start_idx is not None:
+            inner_lines = lines[start_idx + 1 : end_idx if end_idx else len(lines)]
+            text = "\n".join(inner_lines).strip()
+
+    # Try direct parse first
     try:
         return json.loads(text)
-    except (json.JSONDecodeError, ValueError) as exc:
-        logger.warning("[KnowledgeAggregator] Failed to parse JSON output: %s", exc)
-        return None
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try to find a JSON object in the response (LLM may add preamble/postamble)
+    brace_start = text.find("{")
+    if brace_start != -1:
+        # Find matching closing brace by scanning from the end
+        brace_end = text.rfind("}")
+        if brace_end > brace_start:
+            candidate = text[brace_start : brace_end + 1]
+            try:
+                return json.loads(candidate)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    logger.warning("[KnowledgeAggregator] Failed to parse JSON output: %.200s", text)
+    return None
 
 
 def review_document(
@@ -108,6 +134,10 @@ def review_document(
             doc_id=doc_id, project_id=project_id, review=parsed, tenant=tenant
         )
         logger.info("[KnowledgeAggregator] Review complete doc=%s", doc_id)
+
+        # Auto-trigger aggregation after successful review
+        aggregate_knowledge_async(project_id=project_id, tenant=tenant)
+
         return parsed
 
     except Exception as exc:
@@ -170,12 +200,13 @@ def aggregate_knowledge(
 
     if not included_docs:
         logger.info("[KnowledgeAggregator] No included reviewed docs for project=%s", project_id)
+        total_count = count_knowledge_documents(project_id=project_id, tenant=tenant)
         return upsert_knowledge_summary(
             project_id=project_id,
             unified_summary="No knowledge documents available.",
             unified_bullets=[],
             contradictions=[],
-            doc_count=0,
+            doc_count=total_count,
             tenant=tenant,
         )
 

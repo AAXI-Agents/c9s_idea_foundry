@@ -41,6 +41,7 @@ class PRDFileWriteTool(BaseTool):
     )
     args_schema: Type[BaseModel] = PRDFileWriteInput
     output_dir: str = "output/prds"
+    gcs_key_prefix: str = ""
 
     def _run(self, content: str, filename: str = "", version: int = 1) -> str:
         now = datetime.now()
@@ -60,17 +61,15 @@ class PRDFileWriteTool(BaseTool):
         logger.info("PRD saved to %s (%d bytes)", filepath, len(content))
         logger.debug("PRD file details — version=%d, dir=%s", version, self.output_dir)
 
-        # Also upload to GCS when configured
-        try:
-            from crewai_productfeature_planner.tools.output_storage import (
-                _gcs_bucket_name,
-                _write_to_gcs,
-            )
-            bucket = _gcs_bucket_name()
-            if bucket:
-                relative_path = f"prds/{sub_dir}/{filename}"
-                _write_to_gcs(bucket, relative_path, content)
-        except Exception:  # noqa: BLE001
-            pass  # GCS is best-effort; local write already succeeded
+        # Also upload to GCS when a key prefix is set
+        if self.gcs_key_prefix:
+            try:
+                from crewai_productfeature_planner.tools.output_storage import (
+                    _write_to_gcs,
+                )
+                gcs_key = f"{self.gcs_key_prefix}{filename}"
+                _write_to_gcs(gcs_key, content)
+            except Exception:  # noqa: BLE001
+                pass  # GCS is best-effort; local write already succeeded
 
         return f"PRD saved to {filepath}"

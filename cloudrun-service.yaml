@@ -71,9 +71,9 @@ spec:
                   key: latest
                   name: slack-signing-secret
 
-            # ── GCS Output Storage ──
-            - name: GCS_OUTPUT_BUCKET
-              value: ""  # Set to your bucket name, e.g. "my-project-prds"
+            # ── GCS Storage ──
+            # Bucket name derived from SERVER_ENV: {env}-idea-foundry
+            # No explicit bucket env vars needed.
 
             # ── Logging ──
             - name: LOG_TARGET

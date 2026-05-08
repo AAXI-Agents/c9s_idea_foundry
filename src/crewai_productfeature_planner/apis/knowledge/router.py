@@ -20,8 +20,11 @@ from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
 from crewai_productfeature_planner.mongodb.knowledge_documents import (
+    count_knowledge_documents,
     create_knowledge_document,
     delete_knowledge_document,
+    find_duplicate_document,
+    find_duplicate_url,
     get_knowledge_document,
     list_knowledge_documents,
     toggle_included,
@@ -37,7 +40,9 @@ from crewai_productfeature_planner.mongodb.knowledge_summaries import (
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.services import knowledge_storage
+from crewai_productfeature_planner.services.content_extractor import extract_text
 from crewai_productfeature_planner.services.knowledge_aggregator import (
+    aggregate_knowledge,
     aggregate_knowledge_async,
     review_document_async,
 )
@@ -125,6 +130,20 @@ async def upload_knowledge_document(
     filename = file.filename or "untitled"
     content_type = file.content_type or "application/octet-stream"
 
+    # Duplicate check: same project + filename + file_size
+    existing = find_duplicate_document(
+        project_id=project_id,
+        filename=filename,
+        file_size=len(contents),
+        tenant=tenant,
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Duplicate file already exists.",
+            headers={"X-Existing-Doc-Id": existing["doc_id"]},
+        )
+
     # Create record
     doc = create_knowledge_document(
         project_id=project_id,
@@ -143,9 +162,14 @@ async def upload_knowledge_document(
     # Upload to GCS
     import io
 
-    gcs_path = knowledge_storage.build_object_key(project_id, doc_id, filename)
+    gcs_path = knowledge_storage.build_object_key(
+        tenant.enterprise_id, tenant.organization_id,
+        project_id, doc_id, filename,
+    )
     try:
         knowledge_storage.upload_file(
+            enterprise_id=tenant.enterprise_id,
+            organization_id=tenant.organization_id,
             project_id=project_id,
             doc_id=doc_id,
             filename=filename,
@@ -169,15 +193,30 @@ async def upload_knowledge_document(
         raise HTTPException(status_code=500, detail="File upload failed.")
 
     # Trigger review asynchronously
-    text_content = contents.decode("utf-8", errors="ignore")
-    review_document_async(
-        doc_id=doc_id,
-        project_id=project_id,
-        content=text_content,
-        title=filename,
-        source=filename,
-        tenant=tenant,
+    text_content = extract_text(
+        contents, filename=filename, content_type=content_type
     )
+    if not text_content or not text_content.strip():
+        logger.warning(
+            "[KnowledgeAPI] Cannot extract text from file=%s content_type=%s",
+            filename,
+            content_type,
+        )
+        update_knowledge_document(
+            doc_id=doc_id,
+            project_id=project_id,
+            updates={"status": "review_failed"},
+            tenant=tenant,
+        )
+    else:
+        review_document_async(
+            doc_id=doc_id,
+            project_id=project_id,
+            content=text_content,
+            title=filename,
+            source=filename,
+            tenant=tenant,
+        )
 
     logger.info("[KnowledgeAPI] Upload doc=%s project=%s user=%s", doc_id, project_id, user_id)
     return KnowledgeDocCreated(doc_id=doc_id, status="uploading")
@@ -203,6 +242,19 @@ async def ingest_url(
     tenant = resolve_tenant_context(user, organization_id)
     user_id = user.get("user_id", "")
     url = body.url
+
+    # Duplicate URL check
+    existing = find_duplicate_url(
+        project_id=project_id,
+        url=url,
+        tenant=tenant,
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="URL already ingested.",
+            headers={"X-Existing-Doc-Id": existing["doc_id"]},
+        )
 
     # Create record first
     doc = create_knowledge_document(
@@ -307,8 +359,11 @@ async def get_summary(
 ):
     tenant = resolve_tenant_context(user, organization_id)
     summary = get_knowledge_summary(project_id=project_id, tenant=tenant)
+    doc_count = count_knowledge_documents(project_id=project_id, tenant=tenant)
     if not summary:
-        return KnowledgeSummaryResponse(project_id=project_id)
+        return KnowledgeSummaryResponse(project_id=project_id, doc_count=doc_count)
+    # Always reflect live doc_count
+    summary["doc_count"] = doc_count
     return summary
 
 
@@ -324,10 +379,12 @@ async def regenerate_summary(
     organization_id: str | None = Query(default=None),
 ):
     tenant = resolve_tenant_context(user, organization_id)
-    aggregate_knowledge_async(project_id=project_id, tenant=tenant)
+    aggregate_knowledge(project_id=project_id, tenant=tenant)
     summary = get_knowledge_summary(project_id=project_id, tenant=tenant)
+    doc_count = count_knowledge_documents(project_id=project_id, tenant=tenant)
     if not summary:
-        return KnowledgeSummaryResponse(project_id=project_id)
+        return KnowledgeSummaryResponse(project_id=project_id, doc_count=doc_count)
+    summary["doc_count"] = doc_count
     return summary
 
 
@@ -408,7 +465,10 @@ async def delete_document(
     summary="Re-trigger Content Reviewer",
     description="Re-run the Content Reviewer agent on this document.",
     response_model=KnowledgeDocCreated,
-    responses={404: {"description": "Document not found."}},
+    responses={
+        404: {"description": "Document not found."},
+        409: {"description": "Document status does not allow review."},
+    },
 )
 async def retrigger_review(
     project_id: str,
@@ -422,10 +482,24 @@ async def retrigger_review(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
 
+    # Status guard: only allow review for docs that have content available
+    REVIEWABLE_STATUSES = {"reviewed", "review_failed"}
+    doc_status = doc.get("status", "")
+    if doc_status not in REVIEWABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Document status '{doc_status}' does not allow review. "
+            f"Allowed: {', '.join(sorted(REVIEWABLE_STATUSES))}.",
+        )
+
     # Get content from GCS or use URL
     content = ""
     if doc.get("gcs_path"):
-        content = knowledge_storage.download_as_text(gcs_path=doc["gcs_path"]) or ""
+        raw_bytes = knowledge_storage.download_as_bytes(gcs_path=doc["gcs_path"])
+        if raw_bytes:
+            filename = doc.get("filename") or ""
+            ct = doc.get("content_type") or "application/octet-stream"
+            content = extract_text(raw_bytes, filename=filename, content_type=ct) or ""
     elif doc.get("url"):
         # Re-fetch URL
         try:

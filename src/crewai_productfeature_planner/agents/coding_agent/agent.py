@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 CONFIG_DIR = Path(__file__).parent / "config"
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def _load_yaml(filename: str) -> dict:

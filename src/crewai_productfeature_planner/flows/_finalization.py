@@ -23,12 +23,31 @@ from crewai_productfeature_planner.scripts.retry import (
     ModelBusyError,
     ShutdownError,
 )
+from crewai_productfeature_planner.services.gcs_paths import build_idea_prefix
 from crewai_productfeature_planner.tools.file_write_tool import PRDFileWriteTool
 
 if TYPE_CHECKING:
     from crewai_productfeature_planner.flows.prd_flow import PRDFlow
 
 logger = get_logger(__name__)
+
+
+def _resolve_gcs_prefix(flow: PRDFlow) -> str:
+    """Build the GCS key prefix for this flow's idea artifacts.
+
+    Returns an empty string when tenant or project context is unavailable
+    (GCS mirroring will be skipped in that case).
+    """
+    tenant = flow._tenant
+    project_id = resolve_project_id(flow.state.run_id)
+    if not tenant or not project_id:
+        return ""
+    return build_idea_prefix(
+        enterprise_id=tenant.enterprise_id,
+        organization_id=tenant.organization_id,
+        project_id=project_id,
+        idea_id=flow.state.run_id,
+    )
 
 
 def save_progress(flow: PRDFlow) -> str:
@@ -88,7 +107,11 @@ def save_progress(flow: PRDFlow) -> str:
     else:
         drafts_dir = "output/prds/_drafts"
 
-    writer = PRDFileWriteTool(output_dir=drafts_dir)
+    gcs_prefix = _resolve_gcs_prefix(flow)
+    writer = PRDFileWriteTool(
+        output_dir=drafts_dir,
+        gcs_key_prefix=gcs_prefix,
+    )
     save_result = writer._run(
         content=content,
         filename="",
@@ -168,7 +191,11 @@ def finalize(flow: PRDFlow) -> str:
         prd_dir = f"output/{project_id}/product requirement documents"
     else:
         prd_dir = "output/prds"
-    writer = PRDFileWriteTool(output_dir=prd_dir)
+    gcs_prefix = _resolve_gcs_prefix(flow)
+    writer = PRDFileWriteTool(
+        output_dir=prd_dir,
+        gcs_key_prefix=gcs_prefix,
+    )
     save_result = writer._run(
         content=flow.state.final_prd,
         filename="",

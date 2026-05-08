@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "obsidian/User Feedback/GAP-knowledge-and-repos-backend.md",
+                "file": "obsidian/User Feedback/GAP-gcs-storage-audit.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "GAP-knowledge-and-repos-backend"
+              "title": "GAP-gcs-storage-audit"
             }
           }
         ]
@@ -182,6 +182,12 @@
   },
   "active": "335ad2fe72970858",
   "lastOpenFiles": [
+    "src/crewai_productfeature_planner/services/__pycache__/gcs_paths.cpython-312.pyc",
+    "src/crewai_productfeature_planner/services/gcs_paths.py",
+    "obsidian/User Feedback/GAP-gcs-storage-audit.md",
+    "_keys/gcs-signer-key.json",
+    "_keys",
+    "obsidian/User Feedback/GAP-knowledge-and-repos-backend.md",
     "tests/apis/__pycache__/test_github_webhook.cpython-312-pytest-9.0.2.pyc",
     "src/crewai_productfeature_planner/apis/code_repos/__pycache__/_route_github_webhook.cpython-312.pyc",
     "tests/apis/test_github_webhook.py",
@@ -189,12 +195,7 @@
     "src/crewai_productfeature_planner/services/__pycache__/jira_reconciliation.cpython-312.pyc",
     "tests/__pycache__/test_jira_reconciliation.cpython-312-pytest-9.0.2.pyc",
     "tests/test_jira_reconciliation.py",
-    "src/crewai_productfeature_planner/services/jira_reconciliation.py",
-    "tests/__pycache__/test_github_kb_commit.cpython-312-pytest-9.0.2.pyc",
-    "tests/test_github_kb_commit.py",
-    "tests/orchestrator/__pycache__/test_knowledge_injection.cpython-312-pytest-9.0.2.pyc",
     "obsidian/User Feedback Archive/GAP-agentic-team-integration-gaps.md",
-    "obsidian/User Feedback/GAP-knowledge-and-repos-backend.md",
     "obsidian/User Feedback Archive/GAP-knowledge-and-repos-backend.md",
     "obsidian/User Feedback/GAP-agentic-team-integration-gaps.md",
     "obsidian/User Feedback/GAP-integrations-agentic-team-jira-sso.md",
@@ -216,7 +217,6 @@
     "obsidian/APIs/Dashboard/GET dashboard-stats.md",
     "obsidian/APIs/Company/GET company-activity.md",
     "obsidian/APIs/Company/PATCH company-agents-budget.md",
-    "obsidian/APIs/Company/GET company-budget.md",
-    "obsidian/APIs/Company/GET company-agents-{agent_id}.md"
+    "obsidian/APIs/Company/GET company-budget.md"
   ]
 }

@@ -37,6 +37,14 @@ class ClarifyingQuestion(BaseModel):
         max_length=3,
         description="Exactly 3 recommendation options.",
     )
+    recommended_index: int | None = Field(
+        default=None,
+        description="0-based index (0, 1, or 2) of the agent's preferred recommendation.",
+    )
+    recommended_reason: str | None = Field(
+        default=None,
+        description="1-2 sentence explanation of why this option is best.",
+    )
 
 
 class StructuredIdeationResponse(BaseModel):

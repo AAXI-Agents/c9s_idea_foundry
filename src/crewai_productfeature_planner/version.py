@@ -4100,6 +4100,33 @@ _CODEX: list[CodexEntry] = [
             "11 new tests. 2587 tests pass."
         ),
     ),
+    CodexEntry(
+        version="0.90.0",
+        date=date(2026, 5, 7),
+        summary=(
+            "Unified multi-tenant GCS storage. New services/gcs_paths.py centralises "
+            "bucket name resolution ({SERVER_ENV}-idea-foundry) and path builders. "
+            "Removed GCS_OUTPUT_BUCKET, GCS_OUTPUT_PREFIX, GCP_KNOWLEDGE_BUCKET, "
+            "GCS_PROJECT_ID, GCS_BUCKET_NAME, KNOWLEDGE_ENV env vars — bucket is "
+            "now auto-derived from SERVER_ENV. Paths: "
+            "{enterprise_id}/{organization_id}/projects/{project_id}/knowledge/... "
+            "and .../ideas/{idea_id}/.... Refactored output_storage.py, "
+            "knowledge_storage.py, file_write_tool.py, _finalization.py, "
+            "_ux_design.py, knowledge/router.py. 11 new tests. 2598 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.91.0",
+        date=date(2026, 5, 7),
+        summary=(
+            "Add CEO recommendation fields to ideation structured response. "
+            "ClarifyingQuestion model now includes optional recommended_index "
+            "(0-based) and recommended_reason fields. All 5 ideation agent task "
+            "prompts updated to instruct agents to select their preferred "
+            "recommendation per question. Frontend renders 'CEO Pick' badge. "
+            "Backward-compatible — fields default to null. 2640 tests pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

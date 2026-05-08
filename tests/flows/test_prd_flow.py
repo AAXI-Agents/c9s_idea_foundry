@@ -348,7 +348,7 @@ def test_save_progress_with_idea_and_requirements(_mock_proj, mock_writer_cls, m
     result = flow.save_progress()
 
     # Writer should use the _drafts subdirectory
-    mock_writer_cls.assert_called_once_with(output_dir="output/prds/_drafts")
+    mock_writer_cls.assert_called_once_with(output_dir="output/prds/_drafts", gcs_key_prefix="")
     mock_writer._run.assert_called_once()
     call_args = mock_writer._run.call_args
     content = call_args.kwargs.get("content") or call_args[1].get("content")
@@ -610,6 +610,7 @@ def test_finalize_uses_project_dir_when_project_id_available(
 
     mock_writer_cls.assert_called_once_with(
         output_dir="output/proj-abc/product requirement documents",
+        gcs_key_prefix="",
     )
 
 
@@ -634,6 +635,7 @@ def test_save_progress_uses_project_dir_when_project_id_available(
 
     mock_writer_cls.assert_called_once_with(
         output_dir="output/proj-xyz/product requirement documents/_drafts",
+        gcs_key_prefix="",
     )
 
 

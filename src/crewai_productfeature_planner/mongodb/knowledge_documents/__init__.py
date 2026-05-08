@@ -8,6 +8,9 @@ and inclusion flags used by the aggregator.
 from crewai_productfeature_planner.mongodb.knowledge_documents.repository import (
     KNOWLEDGE_DOCUMENTS_COLLECTION,
     create_knowledge_document,
+    count_knowledge_documents,
+    find_duplicate_document,
+    find_duplicate_url,
     get_knowledge_document,
     list_knowledge_documents,
     update_knowledge_document,
@@ -19,6 +22,9 @@ from crewai_productfeature_planner.mongodb.knowledge_documents.repository import
 __all__ = [
     "KNOWLEDGE_DOCUMENTS_COLLECTION",
     "create_knowledge_document",
+    "count_knowledge_documents",
+    "find_duplicate_document",
+    "find_duplicate_url",
     "get_knowledge_document",
     "list_knowledge_documents",
     "update_knowledge_document",

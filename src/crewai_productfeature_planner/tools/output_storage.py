@@ -1,17 +1,12 @@
 """Pluggable output storage backend.
 
 Writes output files (PRDs, UX designs) to local disk by default, and
-optionally to a Google Cloud Storage bucket when ``GCS_OUTPUT_BUCKET``
-is set.  This allows the application to run statelessly on Cloud Run
-while still producing the same file paths for consumers.
+mirrors them to Google Cloud Storage using the unified bucket derived
+from ``SERVER_ENV`` (e.g. ``dev-idea-foundry``).
 
-Environment variables:
-
-* ``GCS_OUTPUT_BUCKET`` — GCS bucket name (e.g. ``my-project-prds``).
-  When set, all writes go to GCS **and** local disk (local acts as
-  a cache).  When unset, writes go to local disk only (default).
-* ``GCS_OUTPUT_PREFIX`` — optional prefix/folder inside the bucket
-  (default: ``"output"``).
+GCS object keys follow the multi-tenant layout defined in
+``services.gcs_paths``.  Callers pass a pre-built ``gcs_key`` so that
+enterprise / organisation / project / idea scoping is handled upstream.
 
 Usage::
 
@@ -20,6 +15,7 @@ Usage::
     local_path = write_output(
         relative_path="prds/2026/04/prd_v1.md",
         content="# My PRD ...",
+        gcs_key="ent123/org456/projects/proj789/ideas/idea1/prd_v1.md",
     )
 """
 
@@ -36,23 +32,20 @@ logger = get_logger(__name__)
 _OUTPUT_ROOT = Path(__file__).resolve().parents[2] / "output"
 
 
-def _gcs_bucket_name() -> str:
-    """Return the GCS bucket name from env, or empty string if unset."""
-    return os.environ.get("GCS_OUTPUT_BUCKET", "").strip()
-
-
-def _gcs_prefix() -> str:
-    """Return the GCS object key prefix."""
-    return os.environ.get("GCS_OUTPUT_PREFIX", "output").strip().strip("/")
-
-
-def write_output(relative_path: str, content: str) -> str:
+def write_output(
+    relative_path: str,
+    content: str,
+    *,
+    gcs_key: str = "",
+) -> str:
     """Write content to the output storage backend.
 
     Args:
         relative_path: Path relative to ``output/``, e.g.
             ``prds/2026/04/prd_v1.md``.
         content: UTF-8 text content to write.
+        gcs_key: Pre-built GCS object key.  When provided, the content
+            is uploaded to the environment bucket (best-effort).
 
     Returns:
         The absolute local file path (even when GCS is used, a local
@@ -63,39 +56,36 @@ def write_output(relative_path: str, content: str) -> str:
     local_path.parent.mkdir(parents=True, exist_ok=True)
     local_path.write_text(content, encoding="utf-8")
 
-    bucket = _gcs_bucket_name()
-    if bucket:
-        _write_to_gcs(bucket, relative_path, content)
+    if gcs_key:
+        _write_to_gcs(gcs_key, content)
 
     return str(local_path)
 
 
-def read_output(relative_path: str) -> str | None:
+def read_output(relative_path: str, *, gcs_key: str = "") -> str | None:
     """Read content from the output storage backend.
 
-    Tries local disk first, then GCS if configured.  Returns ``None``
-    if the file doesn't exist in either location.
+    Tries local disk first, then GCS if *gcs_key* is provided.
+    Returns ``None`` if the file doesn't exist in either location.
     """
     local_path = _OUTPUT_ROOT / relative_path
     if local_path.exists():
         return local_path.read_text(encoding="utf-8")
 
-    bucket = _gcs_bucket_name()
-    if bucket:
-        return _read_from_gcs(bucket, relative_path)
+    if gcs_key:
+        return _read_from_gcs(gcs_key)
 
     return None
 
 
-def exists_output(relative_path: str) -> bool:
+def exists_output(relative_path: str, *, gcs_key: str = "") -> bool:
     """Check if an output file exists (local or GCS)."""
     local_path = _OUTPUT_ROOT / relative_path
     if local_path.exists():
         return True
 
-    bucket = _gcs_bucket_name()
-    if bucket:
-        return _exists_in_gcs(bucket, relative_path)
+    if gcs_key:
+        return _exists_in_gcs(gcs_key)
 
     return False
 
@@ -103,25 +93,27 @@ def exists_output(relative_path: str) -> bool:
 # ── GCS helpers ───────────────────────────────────────────────────────
 
 
-def _write_to_gcs(bucket_name: str, relative_path: str, content: str) -> None:
-    """Upload content to GCS."""
+def _write_to_gcs(gcs_key: str, content: str) -> None:
+    """Upload content to the environment GCS bucket."""
     try:
-        from google.cloud import storage
+        from crewai_productfeature_planner.services.gcs_paths import (
+            get_bucket_name,
+            get_gcs_client,
+        )
 
-        client = storage.Client()
+        bucket_name = get_bucket_name()
+        client = get_gcs_client()
         bucket = client.bucket(bucket_name)
-        prefix = _gcs_prefix()
-        blob_name = f"{prefix}/{relative_path}" if prefix else relative_path
-        blob = bucket.blob(blob_name)
+        blob = bucket.blob(gcs_key)
         blob.upload_from_string(content, content_type="text/markdown")
         logger.info(
             "[OutputStorage] Uploaded to gs://%s/%s (%d bytes)",
-            bucket_name, blob_name, len(content),
+            bucket_name, gcs_key, len(content),
         )
     except ImportError:
         logger.warning(
             "[OutputStorage] google-cloud-storage not installed — "
-            "GCS_OUTPUT_BUCKET is set but GCS writes are disabled. "
+            "GCS writes are disabled. "
             "Install with: pip install google-cloud-storage"
         )
     except Exception as exc:
@@ -131,22 +123,24 @@ def _write_to_gcs(bucket_name: str, relative_path: str, content: str) -> None:
         )
 
 
-def _read_from_gcs(bucket_name: str, relative_path: str) -> str | None:
-    """Download content from GCS."""
+def _read_from_gcs(gcs_key: str) -> str | None:
+    """Download content from the environment GCS bucket."""
     try:
-        from google.cloud import storage
+        from crewai_productfeature_planner.services.gcs_paths import (
+            get_bucket_name,
+            get_gcs_client,
+        )
 
-        client = storage.Client()
+        bucket_name = get_bucket_name()
+        client = get_gcs_client()
         bucket = client.bucket(bucket_name)
-        prefix = _gcs_prefix()
-        blob_name = f"{prefix}/{relative_path}" if prefix else relative_path
-        blob = bucket.blob(blob_name)
+        blob = bucket.blob(gcs_key)
         if not blob.exists():
             return None
         content = blob.download_as_text(encoding="utf-8")
         logger.debug(
             "[OutputStorage] Downloaded from gs://%s/%s",
-            bucket_name, blob_name,
+            bucket_name, gcs_key,
         )
         return content
     except ImportError:
@@ -158,16 +152,18 @@ def _read_from_gcs(bucket_name: str, relative_path: str) -> str | None:
         return None
 
 
-def _exists_in_gcs(bucket_name: str, relative_path: str) -> bool:
-    """Check if a blob exists in GCS."""
+def _exists_in_gcs(gcs_key: str) -> bool:
+    """Check if a blob exists in the environment GCS bucket."""
     try:
-        from google.cloud import storage
+        from crewai_productfeature_planner.services.gcs_paths import (
+            get_bucket_name,
+            get_gcs_client,
+        )
 
-        client = storage.Client()
+        bucket_name = get_bucket_name()
+        client = get_gcs_client()
         bucket = client.bucket(bucket_name)
-        prefix = _gcs_prefix()
-        blob_name = f"{prefix}/{relative_path}" if prefix else relative_path
-        return bucket.blob(blob_name).exists()
+        return bucket.blob(gcs_key).exists()
     except ImportError:
         return False
     except Exception:

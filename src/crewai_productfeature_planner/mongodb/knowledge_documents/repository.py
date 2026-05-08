@@ -227,3 +227,90 @@ def set_review_result(
         updates={"review": review, "status": "reviewed"},
         tenant=tenant,
     )
+
+
+def count_knowledge_documents(
+    *,
+    project_id: str,
+    tenant: TenantContext | None = None,
+) -> int:
+    """Count all knowledge documents for a project."""
+    try:
+        return _col().count_documents(
+            {"project_id": project_id, **tenant_filter(tenant)}
+        )
+    except PyMongoError as exc:
+        logger.error(
+            "[Knowledge] Failed to count docs project=%s: %s",
+            project_id,
+            exc,
+            exc_info=True,
+        )
+        return 0
+
+
+def find_duplicate_document(
+    *,
+    project_id: str,
+    filename: str,
+    file_size: int,
+    tenant: TenantContext | None = None,
+) -> dict | None:
+    """Check for an existing document with the same filename and file_size.
+
+    Returns the existing document dict if found, else None.
+    """
+    try:
+        doc = _col().find_one(
+            {
+                "project_id": project_id,
+                "filename": filename,
+                "file_size": file_size,
+                **tenant_filter(tenant),
+            }
+        )
+        if doc:
+            doc.pop("_id", None)
+        return doc
+    except PyMongoError as exc:
+        logger.error(
+            "[Knowledge] Duplicate check failed project=%s filename=%s: %s",
+            project_id,
+            filename,
+            exc,
+            exc_info=True,
+        )
+        return None
+
+
+def find_duplicate_url(
+    *,
+    project_id: str,
+    url: str,
+    tenant: TenantContext | None = None,
+) -> dict | None:
+    """Check for an existing document with the same URL in the project.
+
+    Returns the existing document dict if found, else None.
+    """
+    try:
+        doc = _col().find_one(
+            {
+                "project_id": project_id,
+                "source_type": "url",
+                "url": url,
+                **tenant_filter(tenant),
+            }
+        )
+        if doc:
+            doc.pop("_id", None)
+        return doc
+    except PyMongoError as exc:
+        logger.error(
+            "[Knowledge] URL duplicate check failed project=%s url=%s: %s",
+            project_id,
+            url,
+            exc,
+            exc_info=True,
+        )
+        return None
