@@ -127,6 +127,38 @@ def _validate_slack_token() -> bool:
         return True
 
 
+# Secrets that MUST be set in UAT/PROD (review item #1). Missing any of
+# these silently disabled HMAC verification, allowing anyone with the
+# webhook URL to forge events. Refuse to boot instead.
+_REQUIRED_SECRETS_IN_PROD: tuple[str, ...] = (
+    "AGENTIC_TEAM_WEBHOOK_SECRET",
+)
+
+
+def _validate_required_secrets() -> None:
+    """Refuse to boot in UAT/PROD when a required webhook secret is missing.
+
+    DEV is permissive so local development doesn't need the secret.
+    """
+    import os
+
+    env = os.environ.get("SERVER_ENV", "DEV").strip().upper()
+    if env not in ("UAT", "PROD"):
+        return
+    missing = [
+        name for name in _REQUIRED_SECRETS_IN_PROD
+        if not os.environ.get(name, "").strip()
+    ]
+    if missing:
+        msg = (
+            f"Refusing to boot in SERVER_ENV={env} — required webhook "
+            f"signing secret(s) missing: {', '.join(missing)}. "
+            "Set them via Secret Manager or fix the deployment env."
+        )
+        _logger.critical("[Boot] %s", msg)
+        raise RuntimeError(msg)
+
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     """Startup / shutdown lifecycle hook.
@@ -139,6 +171,11 @@ async def _lifespan(application: FastAPI):
     3. Generate missing markdown outputs for completed ideas.
     4. Publish unpublished PRDs to Confluence (when credentials are set).
     """
+    # Pre-startup: refuse to boot in UAT/PROD if a webhook signing secret
+    # is missing — better to fail the deploy than silently accept unsigned
+    # webhooks (review item #1).
+    _validate_required_secrets()
+
     # 0. Ensure MongoDB collections and indexes exist
     try:
         ensure_collections()

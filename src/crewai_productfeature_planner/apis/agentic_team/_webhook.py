@@ -49,9 +49,31 @@ _DONE_STATUSES = frozenset({"done", "donedone", "closed", "resolved", "complete"
 
 
 def _verify_signature(payload: bytes, signature: str | None) -> bool:
-    """Verify HMAC-SHA256 signature from x-c9s-signature header."""
+    """Verify HMAC-SHA256 signature from x-c9s-signature header.
+
+    In UAT/PROD a missing ``AGENTIC_TEAM_WEBHOOK_SECRET`` is treated as
+    a hard rejection — the request is denied — instead of the previous
+    behaviour of silently accepting unsigned webhooks. The boot-time
+    validator in ``apis/__init__.py`` already refuses to start in those
+    environments without the secret, so this branch only fires if the
+    env was somehow mutated post-boot.
+
+    In DEV (or when ``SERVER_ENV`` is unset) the legacy permissive
+    behaviour is preserved so local testing without a secret still
+    works. Closes review item #1.
+    """
+    import os
+
+    server_env = os.environ.get("SERVER_ENV", "DEV").strip().upper()
     if not AGENTIC_TEAM_WEBHOOK_SECRET:
-        # No secret configured — skip verification (dev mode only)
+        if server_env in ("UAT", "PROD"):
+            logger.error(
+                "[AgenticTeam Webhook] AGENTIC_TEAM_WEBHOOK_SECRET unset in "
+                "SERVER_ENV=%s — rejecting unsigned webhook",
+                server_env,
+            )
+            return False
+        # DEV: skip verification (legacy local-dev behaviour)
         return True
     if not signature:
         return False
