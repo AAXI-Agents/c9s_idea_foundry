@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from crewai_productfeature_planner.apis.ideation.models import (
+    ProcessingPhase,
     QuestionAnswer,
     StructuredIdeationResponse,
 )
@@ -15,6 +17,7 @@ from crewai_productfeature_planner.mongodb.ideation_sessions.repository import (
     STEP_ORDER,
     advance_step,
     append_message,
+    clear_step_output,
     complete_session,
     create_session,
     get_messages,
@@ -32,6 +35,10 @@ logger = get_logger(__name__)
 
 # Thread pool for running synchronous CrewAI agent calls
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ideation-agent")
+
+# Strong references to background tasks to prevent garbage collection.
+# Tasks are removed via a done-callback once they finish.
+_background_tasks: dict[str, asyncio.Task] = {}
 
 # Step → agent role label (maps to CrewAI agent configs)
 STEP_AGENTS: dict[str, str] = {
@@ -272,6 +279,83 @@ async def handle_iterate(
     }
 
 
+async def handle_trigger_step(
+    *,
+    session_id: str,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
+    """Trigger agent for the current step if it has no cards output yet.
+
+    This is a recovery mechanism for when the auto-trigger on advance
+    fails silently.  The frontend detects a step with no agent cards
+    and calls this endpoint to re-trigger.
+
+    Returns:
+        The agent's response dict, or None on failure.
+    """
+    session = get_session(session_id=session_id, tenant=tenant)
+    if not session:
+        return None
+
+    if session["status"] != "active":
+        logger.warning(
+            "[IdeationService] Cannot trigger agent on inactive session=%s",
+            session_id,
+        )
+        return None
+
+    current_step = session["current_step"]
+
+    # Check if this step already has cards output
+    steps_data = session.get("steps_data", {})
+    step_data = steps_data.get(current_step, {})
+
+    if step_data.get("output") and isinstance(step_data["output"], dict):
+        # Already has structured output — skip
+        logger.info(
+            "[IdeationService] Step already has output session=%s step=%s",
+            session_id,
+            current_step,
+        )
+        return {
+            "status": "already_generated",
+            "step": current_step,
+        }
+
+    # If there's a previous error string output, clear it before retrying
+    # so the step gets a clean slate.
+    if step_data.get("output") and isinstance(step_data["output"], str):
+        logger.info(
+            "[IdeationService] Clearing previous error output session=%s step=%s",
+            session_id,
+            current_step,
+        )
+        clear_step_output(
+            session_id=session_id,
+            step=current_step,
+            tenant=tenant,
+        )
+
+    logger.info(
+        "[IdeationService] Manual trigger for session=%s step=%s",
+        session_id,
+        current_step,
+    )
+
+    # Trigger the agent for this step
+    result = await _run_agent_for_step(
+        session_id=session_id,
+        step=current_step,
+        user_input=(
+            "Analyze the context from previous steps and generate "
+            "your initial set of structured questions for this step."
+        ),
+        session_context=session,
+        tenant=tenant,
+    )
+
+    return result
+
 async def handle_advance(
     *,
     session_id: str,
@@ -328,6 +412,71 @@ async def handle_advance(
         content=STEP_PROMPTS[new_step],
         step=new_step,
         tenant=tenant,
+    )
+
+    # Auto-trigger the agent for the new step so structured questions
+    # are generated immediately (background task with strong reference).
+    # Re-read the session to pick up the approved previous step output.
+    updated_session = get_session(session_id=session_id, tenant=tenant)
+
+    async def _auto_trigger_agent() -> None:
+        try:
+            logger.info(
+                "[IdeationService] Auto-trigger starting session=%s step=%s",
+                session_id,
+                new_step,
+            )
+            await _run_agent_for_step(
+                session_id=session_id,
+                step=new_step,
+                user_input=(
+                    "Analyze the context from previous steps and generate "
+                    "your initial set of structured questions for this step."
+                ),
+                session_context=updated_session,
+                tenant=tenant,
+            )
+            logger.info(
+                "[IdeationService] Auto-trigger completed session=%s step=%s",
+                session_id,
+                new_step,
+            )
+        except Exception as exc:
+            logger.error(
+                "[IdeationService] Auto-trigger failed session=%s step=%s: %s",
+                session_id,
+                new_step,
+                exc,
+                exc_info=True,
+            )
+
+    task_key = f"{session_id}:{new_step}"
+
+    def _on_task_done(t: asyncio.Task) -> None:
+        _background_tasks.pop(task_key, None)
+        if t.cancelled():
+            logger.warning(
+                "[IdeationService] Auto-trigger cancelled session=%s step=%s",
+                session_id, new_step,
+            )
+        elif t.exception():
+            logger.error(
+                "[IdeationService] Auto-trigger exception session=%s step=%s: %s",
+                session_id, new_step, t.exception(),
+                exc_info=True,
+            )
+
+    task = asyncio.create_task(
+        _auto_trigger_agent(),
+        name=f"ideation-auto-{session_id[:8]}-{new_step}",
+    )
+    task.add_done_callback(_on_task_done)
+    _background_tasks[task_key] = task
+
+    logger.info(
+        "[IdeationService] Auto-triggered agent for session=%s step=%s",
+        session_id,
+        new_step,
     )
 
     return {
@@ -389,6 +538,9 @@ async def _run_agent_for_step(
     can render decision cards.
     """
     from crewai_productfeature_planner.agents.ideation import run_ideation_step
+    from crewai_productfeature_planner.apis.ideation._streaming import (
+        streaming_session,
+    )
 
     # Build context from previous steps
     context = _build_step_context(session_context, step) if session_context else {}
@@ -399,18 +551,38 @@ async def _run_agent_for_step(
     # Broadcast typing indicator via WebSocket
     _broadcast_typing(session_id, step)
 
-    # Run the agent in a thread pool (CrewAI is synchronous)
+    # Phase 1: analyzing responses (context + history built above)
+    _broadcast_processing_status(
+        session_id, ProcessingPhase.ANALYZING_RESPONSES, step, 0.1,
+    )
+
+    # Phase 2: agent reviewing — start progress ticker during LLM call
+    _broadcast_processing_status(
+        session_id, ProcessingPhase.AGENT_REVIEWING, step, 0.2,
+    )
+
+    ticker = _ProgressTicker(session_id, step)
+    ticker.start()
+
+    # Run the agent in a thread pool (CrewAI is synchronous).
+    # The streaming_session context manager sets thread-local state so the
+    # global LLMStreamChunkEvent handler can route tokens to this session's WS.
     loop = asyncio.get_event_loop()
     agent_errored = False
-    try:
-        agent_output = await loop.run_in_executor(
-            _executor,
-            lambda: run_ideation_step(
+
+    def _run_agent_in_thread() -> str | StructuredIdeationResponse:
+        with streaming_session(session_id, step):
+            return run_ideation_step(
                 step=step,
                 user_input=user_input,
                 context=context,
                 conversation_history=conversation_history,
-            ),
+            )
+
+    try:
+        agent_output = await loop.run_in_executor(
+            _executor,
+            _run_agent_in_thread,
         )
     except Exception as exc:
         logger.error(
@@ -425,6 +597,13 @@ async def _run_agent_for_step(
             "Could you try rephrasing or providing more detail?"
         )
         agent_errored = True
+    finally:
+        ticker.stop()
+
+    # Phase 3: preparing questions (post-processing)
+    _broadcast_processing_status(
+        session_id, ProcessingPhase.PREPARING_QUESTIONS, step, 0.9,
+    )
 
     # Determine content text and metadata based on output type
     is_structured = isinstance(agent_output, StructuredIdeationResponse)
@@ -469,6 +648,8 @@ async def _run_agent_for_step(
     )
 
     # Broadcast the agent message via WebSocket
+    # First, send a final agent_token event to signal end of streaming
+    _broadcast_agent_token_final(session_id, step)
     _broadcast_message(session_id, msg_id, content_text, step, msg_metadata,
                        agent_name=agent_name, content_type=content_type)
 
@@ -507,7 +688,12 @@ async def _run_agent_for_step(
 
 
 def _build_step_context(session: dict[str, Any], current_step: str) -> dict[str, Any]:
-    """Build context from completed previous steps."""
+    """Build context from completed previous steps.
+
+    Extracts readable text from step outputs, handling both plain-string
+    and structured-dict (``StructuredIdeationResponse.model_dump()``)
+    formats so the LLM receives clean prose instead of raw dicts.
+    """
     context: dict[str, Any] = {}
     steps_data = session.get("steps_data", {})
 
@@ -516,9 +702,55 @@ def _build_step_context(session: dict[str, Any], current_step: str) -> dict[str,
             break
         step_data = steps_data.get(step, {})
         if step_data.get("approved") and step_data.get("output"):
-            context[step] = step_data["output"]
+            context[step] = _extract_readable_output(step_data["output"])
 
     return context
+
+
+def _extract_readable_output(output: Any) -> str:
+    """Convert a step output (dict or str) into readable text for context.
+
+    When the output is a ``StructuredIdeationResponse.model_dump()`` dict,
+    extracts the acknowledgment, user decisions from questions, and any
+    summary draft into a coherent text block.
+    """
+    if isinstance(output, str):
+        return output
+
+    if not isinstance(output, dict):
+        return str(output)
+
+    parts: list[str] = []
+
+    # Extract acknowledgment / summary
+    if output.get("acknowledgment"):
+        parts.append(output["acknowledgment"])
+    if output.get("summary_draft"):
+        parts.append(f"Summary: {output['summary_draft']}")
+    if output.get("agent_insight"):
+        parts.append(f"Insight: {output['agent_insight']}")
+
+    # Extract questions and selected recommendations
+    questions = output.get("questions", [])
+    for q in questions:
+        q_text = q.get("question", "")
+        recs = q.get("recommendations", [])
+        rec_idx = q.get("recommended_index")
+        # Show recommended option if available
+        if rec_idx is not None and 0 <= rec_idx < len(recs):
+            rec = recs[rec_idx]
+            parts.append(
+                f"- {q_text}: Recommended \"{rec.get('label', '')}\" — "
+                f"Pro: {rec.get('pro', '')}; Con: {rec.get('con', '')}"
+            )
+        elif recs:
+            # Show all options briefly
+            opts = ", ".join(r.get("label", "") for r in recs)
+            parts.append(f"- {q_text}: Options — {opts}")
+        else:
+            parts.append(f"- {q_text}")
+
+    return "\n".join(parts) if parts else str(output)
 
 
 def _build_conversation_history(
@@ -574,6 +806,110 @@ def _broadcast_typing(session_id: str, step: str) -> None:
             "[IdeationService] Failed to broadcast typing session=%s: %s",
             session_id, exc,
         )
+
+
+def _broadcast_agent_token_final(session_id: str, step: str) -> None:
+    """Broadcast a final ``agent_token`` event to signal end of streaming."""
+    try:
+        from crewai_productfeature_planner.apis.ideation._route_websocket import (
+            broadcast_sync,
+        )
+
+        broadcast_sync(session_id, {
+            "event": "agent_token",
+            "data": {
+                "message_id": f"streaming-{session_id[:8]}",
+                "token": "",
+                "is_final": True,
+                "step": step_to_name(step),
+            },
+        })
+    except Exception as exc:
+        logger.warning(
+            "[IdeationService] Failed to broadcast final token session=%s: %s",
+            session_id, exc,
+        )
+
+
+def _broadcast_processing_status(
+    session_id: str,
+    phase: ProcessingPhase,
+    step: str,
+    progress: float,
+) -> None:
+    """Broadcast a ``processing_status`` event via WebSocket."""
+    try:
+        from crewai_productfeature_planner.apis.ideation._route_websocket import (
+            broadcast_sync,
+        )
+
+        label_map = {
+            ProcessingPhase.ANALYZING_RESPONSES: "Analyzing your responses…",
+            ProcessingPhase.AGENT_REVIEWING: "Agent is reviewing…",
+            ProcessingPhase.PREPARING_QUESTIONS: "Preparing next questions…",
+        }
+        broadcast_sync(session_id, {
+            "event": "processing_status",
+            "data": {
+                "phase": phase.value,
+                "step": step_to_name(step),
+                "progress": round(min(progress, 1.0), 2),
+                "label": label_map.get(phase, phase.value),
+            },
+        })
+    except Exception as exc:
+        logger.warning(
+            "[IdeationService] Failed to broadcast processing_status session=%s: %s",
+            session_id, exc,
+        )
+
+
+class _ProgressTicker:
+    """Emits incremental ``processing_status`` events while the LLM runs.
+
+    Start with :meth:`start` before the executor call, stop with
+    :meth:`stop` after it returns.  The ticker emits
+    ``agent_reviewing`` events with increasing progress (0.25 → 0.8)
+    every *interval* seconds from a background thread.
+    """
+
+    def __init__(
+        self,
+        session_id: str,
+        step: str,
+        interval: float = 3.0,
+    ) -> None:
+        self._session_id = session_id
+        self._step = step
+        self._interval = interval
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            daemon=True,
+            name=f"progress-{self._session_id[:8]}",
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+
+    def _run(self) -> None:
+        progress = 0.25
+        while not self._stop_event.wait(self._interval):
+            progress = min(progress + 0.05, 0.8)
+            _broadcast_processing_status(
+                self._session_id,
+                ProcessingPhase.AGENT_REVIEWING,
+                self._step,
+                progress,
+            )
 
 
 def _broadcast_message(

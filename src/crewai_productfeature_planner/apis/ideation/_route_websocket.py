@@ -254,13 +254,9 @@ async def ideation_websocket(
                     continue
 
                 # Send typing indicator
-                await broadcast(session_id, {
-                    "event": "agent_typing",
-                    "data": {
-                        "agent_name": "ideation_agent",
-                        "step": step_to_name(session.get("current_step", "a")),
-                    },
-                })
+                # NOTE: The service layer broadcasts agent_typing +
+                # processing_status events internally, so we skip the
+                # duplicate broadcast here to avoid double-fire.
 
                 # Process via service (imported lazily to avoid circular)
                 from crewai_productfeature_planner.apis.ideation.service import (

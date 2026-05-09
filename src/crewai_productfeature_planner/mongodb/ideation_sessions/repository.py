@@ -237,6 +237,42 @@ def save_step_data(
         return False
 
 
+def clear_step_output(
+    *,
+    session_id: str,
+    step: str,
+    tenant: TenantContext | None = None,
+) -> bool:
+    """Remove the output field from a step so it can be re-generated.
+
+    Used by the trigger endpoint to clear stale error output before
+    retrying agent execution.
+    """
+    try:
+        result = _col().update_one(
+            {"session_id": session_id, **tenant_filter(tenant)},
+            {
+                "$unset": {f"steps_data.{step}.output": ""},
+                "$set": {"updated_at": _now_iso()},
+            },
+        )
+        if result.modified_count:
+            logger.info(
+                "[IdeationSession] Cleared step output session=%s step=%s",
+                session_id,
+                step,
+            )
+        return result.modified_count > 0
+    except PyMongoError as exc:
+        logger.error(
+            "[IdeationSession] Failed to clear step output session=%s: %s",
+            session_id,
+            exc,
+            exc_info=True,
+        )
+        return False
+
+
 def advance_step(
     *,
     session_id: str,

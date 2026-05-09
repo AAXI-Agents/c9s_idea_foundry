@@ -4127,6 +4127,31 @@ _CODEX: list[CodexEntry] = [
             "Backward-compatible — fields default to null. 2640 tests pass."
         ),
     ),
+    CodexEntry(
+        version="0.92.0",
+        date=date(2026, 5, 8),
+        summary=(
+            "Add processing_status WebSocket events for ideation respond flow. "
+            "New ProcessingPhase enum (analyzing_responses, agent_reviewing, "
+            "preparing_questions). Service emits processing_status at each phase "
+            "boundary with progress 0.0-1.0. _ProgressTicker background thread "
+            "sends incremental progress during LLM call. Fixed agent_typing "
+            "double-fire in WebSocket handler. 14 new tests. 2656 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.93.0",
+        date=date(2026, 5, 9),
+        summary=(
+            "Add real-time LLM token streaming for ideation agents via "
+            "agent_token WebSocket events. New _streaming.py module hooks "
+            "into CrewAI LLMStreamChunkEvent event bus with thread-local "
+            "session context. Ideation LLM now uses stream=True. Service "
+            "emits agent_token events per chunk during LLM call and a final "
+            "is_final=True event before new_message. Frontend already wired. "
+            "12 new tests. 2668 tests pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

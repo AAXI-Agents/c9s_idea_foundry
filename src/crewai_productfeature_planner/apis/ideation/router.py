@@ -49,6 +49,7 @@ from crewai_productfeature_planner.apis.ideation.service import (
     handle_advance,
     handle_iterate,
     handle_rollback,
+    handle_trigger_step,
     handle_user_response,
     start_ideation_session,
 )
@@ -107,11 +108,11 @@ def _serialize_session_detail(doc: dict[str, Any]) -> IdeationSessionResponse:
     """Convert a MongoDB session document to the frontend detail shape."""
     outputs: dict[str, StepOutput] = {}
     steps_data = doc.get("steps_data", {})
+    current_step = doc.get("current_step", "a")
 
     for step_letter in STEP_ORDER:
         step_name = step_to_name(step_letter)
         sd = steps_data.get(step_letter, {})
-        current_step = doc.get("current_step", "a")
 
         # Determine step status
         if sd.get("approved"):
@@ -128,11 +129,20 @@ def _serialize_session_detail(doc: dict[str, Any]) -> IdeationSessionResponse:
             completed_at=sd.get("completed_at"),
         )
 
+    # Detect if the current step needs agent triggering (no cards output).
+    # This happens when the auto-trigger on advance fails silently —
+    # the frontend should call POST /trigger to recover.
+    needs_trigger = False
+    if doc.get("status") == "active" and current_step != "a":
+        current_sd = steps_data.get(current_step, {})
+        if not current_sd.get("output"):
+            needs_trigger = True
+
     return IdeationSessionResponse(
         id=doc.get("session_id", ""),
         title=doc.get("title", "Untitled Idea"),
         status=doc.get("status", "active"),
-        current_step=step_to_name(doc.get("current_step", "a")),
+        current_step=step_to_name(current_step),
         iteration=_session_iteration(doc),
         created_at=doc.get("created_at", ""),
         updated_at=doc.get("updated_at", ""),
@@ -140,6 +150,7 @@ def _serialize_session_detail(doc: dict[str, Any]) -> IdeationSessionResponse:
         project_id=doc.get("project_id"),
         prd_run_id=doc.get("prd_run_id"),
         outputs=outputs,
+        needs_trigger=needs_trigger,
     )
 
 
@@ -473,6 +484,62 @@ async def advance_ideation(
         previous_step=previous_step,
         current_step=new_step,
         message=f"Advanced to {new_step} step.",
+    )
+
+
+@router.post(
+    "/flow/ideation/sessions/{session_id}/trigger",
+    response_model=IdeationRespondResponse,
+    summary="Trigger agent for current step",
+    description=(
+        "Recovery endpoint: triggers the agent to generate structured "
+        "questions for the current step when the auto-trigger on advance "
+        "failed silently. Returns the agent's response via WebSocket and REST."
+    ),
+    responses=_ERROR_RESPONSES,
+)
+async def trigger_ideation_step(
+    session_id: str,
+    user: dict = Depends(require_sso_user),
+):
+    """Trigger agent for current step (recovery for failed auto-trigger)."""
+    tenant = TenantContext.from_user(user)
+
+    session = get_session(session_id=session_id, tenant=tenant)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if session["status"] != "active":
+        raise HTTPException(status_code=409, detail="Session is not active.")
+
+    result = await handle_trigger_step(session_id=session_id, tenant=tenant)
+
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to trigger agent.")
+
+    # If already generated, return a success response
+    if result.get("status") == "already_generated":
+        return IdeationRespondResponse(
+            message_id="",
+            status="completed",
+            content="Decision cards already generated for this step.",
+            step=step_to_name(result.get("step", "")),
+            role="agent",
+            message="Agent output already exists.",
+        )
+
+    metadata = result.get("metadata")
+    errored = isinstance(metadata, dict) and metadata.get("error")
+
+    return IdeationRespondResponse(
+        message_id=result.get("id", ""),
+        status="error" if errored else "completed",
+        content=result.get("content", ""),
+        step=step_to_name(result.get("step", "")),
+        role=result.get("role", "agent"),
+        message="Agent encountered an error — retry with /trigger."
+        if errored
+        else "Agent response ready.",
+        metadata=metadata,
     )
 
 

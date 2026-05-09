@@ -514,3 +514,131 @@ class TestAppendMessageFields:
         pushed_msg = call_args[0][1]["$push"]["messages"]
         assert "agent_name" not in pushed_msg
         assert "content_type" not in pushed_msg
+
+
+# ── handle_advance auto-trigger regression test ───────────────
+
+
+class TestHandleAdvanceAutoTrigger:
+    """Regression: handle_advance must auto-trigger the agent for the new step."""
+
+    @pytest.mark.asyncio
+    async def test_advance_triggers_agent_for_new_step(self):
+        """After advancing from step a→b, the persona agent must run."""
+        import asyncio
+
+        session_doc = {
+            "session_id": "sess-adv",
+            "status": "active",
+            "current_step": "a",
+            "steps_data": {
+                "a": {"approved": False, "output": "Step A summary"},
+            },
+        }
+
+        updated_session_doc = {
+            **session_doc,
+            "current_step": "b",
+            "steps_data": {
+                "a": {"approved": True, "output": "Step A summary"},
+            },
+        }
+
+        agent_run_calls: list[dict] = []
+
+        async def _fake_run_agent(*, session_id, step, user_input,
+                                  session_context=None, tenant=None):
+            agent_run_calls.append({
+                "session_id": session_id,
+                "step": step,
+                "user_input": user_input,
+            })
+            return {
+                "id": "msg-auto",
+                "role": "agent",
+                "content": "Persona questions",
+                "step": step,
+                "metadata": None,
+            }
+
+        get_session_calls = [0]
+
+        def _fake_get_session(*, session_id, tenant=None):
+            get_session_calls[0] += 1
+            # First call returns original, second returns updated
+            if get_session_calls[0] <= 1:
+                return session_doc
+            return updated_session_doc
+
+        with patch(
+            "crewai_productfeature_planner.apis.ideation.service.get_session",
+            side_effect=_fake_get_session,
+        ), patch(
+            "crewai_productfeature_planner.apis.ideation.service.advance_step",
+            return_value="b",
+        ), patch(
+            "crewai_productfeature_planner.apis.ideation.service.append_message",
+            return_value="msg-prompt",
+        ), patch(
+            "crewai_productfeature_planner.apis.ideation.service._run_agent_for_step",
+            side_effect=_fake_run_agent,
+        ):
+            from crewai_productfeature_planner.apis.ideation.service import (
+                handle_advance,
+            )
+
+            result = await handle_advance(session_id="sess-adv")
+
+            assert result["previous_step"] == "a"
+            assert result["new_step"] == "b"
+            assert result["completed"] is False
+
+            # Let the fire-and-forget task run
+            await asyncio.sleep(0.05)
+
+            # The agent MUST have been invoked for step "b"
+            assert len(agent_run_calls) == 1, (
+                "handle_advance must auto-trigger the agent for the new step"
+            )
+            assert agent_run_calls[0]["step"] == "b"
+            assert agent_run_calls[0]["session_id"] == "sess-adv"
+
+    @pytest.mark.asyncio
+    async def test_advance_does_not_trigger_on_completion(self):
+        """When all steps are done, no agent auto-trigger should fire."""
+        session_doc = {
+            "session_id": "sess-done",
+            "status": "active",
+            "current_step": "e",
+            "steps_data": {
+                "a": {"approved": True, "output": "A"},
+                "b": {"approved": True, "output": "B"},
+                "c": {"approved": True, "output": "C"},
+                "d": {"approved": True, "output": "D"},
+                "e": {"approved": False, "output": "E"},
+            },
+        }
+
+        with patch(
+            "crewai_productfeature_planner.apis.ideation.service.get_session",
+            return_value=session_doc,
+        ), patch(
+            "crewai_productfeature_planner.apis.ideation.service.advance_step",
+            return_value=None,
+        ), patch(
+            "crewai_productfeature_planner.apis.ideation.service._auto_create_idea_from_session",
+            return_value={"idea_id": "idea-1"},
+        ), patch(
+            "crewai_productfeature_planner.apis.ideation.service.trigger_prd_from_ideation",
+            return_value="run-1",
+        ), patch(
+            "crewai_productfeature_planner.apis.ideation.service._run_agent_for_step",
+        ) as mock_agent:
+            from crewai_productfeature_planner.apis.ideation.service import (
+                handle_advance,
+            )
+
+            result = await handle_advance(session_id="sess-done")
+
+            assert result["completed"] is True
+            mock_agent.assert_not_called()

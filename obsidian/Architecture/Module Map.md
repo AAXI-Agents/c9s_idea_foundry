@@ -101,8 +101,9 @@ tags:
 | `prd/_route_websocket.py` | `WS /flow/runs/{run_id}/ws` — real-time WebSocket for agent activity |
 | `ideation/__init__.py` | Re-exports: broadcast, broadcast_sync, ideation_ws_router, ideation_router |
 | `ideation/router.py` | 10 REST endpoints for interactive ideation flow |
-| `ideation/models.py` | Pydantic request/response models (frontend-compatible shapes) |
-| `ideation/service.py` | Business logic: start, respond, iterate, advance, rollback |
+| `ideation/models.py` | Pydantic models: ProcessingPhase enum, StructuredIdeationResponse, request/response shapes |
+| `ideation/service.py` | Business logic: start, respond, iterate, advance, rollback + processing_status events |
+| `ideation/_streaming.py` | LLM token streaming — CrewAI event bus hook, thread-local session context, `agent_token` WS events |
 | `ideation/_route_websocket.py` | `WS /ws/ideation/{session_id}` — real-time streaming with JWT auth |
 | `project_ideas/__init__.py` | Re-exports: router |
 | `project_ideas/router.py` | Assembles sub-routers under `/projects/{project_id}/ideas` |

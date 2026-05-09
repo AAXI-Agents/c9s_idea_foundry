@@ -25,7 +25,10 @@ from crewai_productfeature_planner.apis.ideation.models import (
     StructuredIdeationResponse,
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger
-from crewai_productfeature_planner.scripts.retry import crew_kickoff_with_retry
+from crewai_productfeature_planner.scripts.retry import (
+    LLMError,
+    crew_kickoff_with_retry,
+)
 
 logger = get_logger(__name__)
 
@@ -82,6 +85,7 @@ def _build_ideation_llm() -> LLM:
         model=f"gemini/{model_name}",
         timeout=120,
         max_retries=3,
+        stream=True,
     )
 
 
@@ -169,7 +173,27 @@ def run_ideation_step(
         STEP_AGENT_KEYS[step],
     )
 
-    result = crew_kickoff_with_retry(crew, max_retries=2)
+    try:
+        result = crew_kickoff_with_retry(crew, max_retries=2)
+    except LLMError as exc:
+        # CrewAI's strict output_pydantic validation can fail on
+        # well-formed but slightly malformed JSON (trailing chars,
+        # concatenated objects).  Try to salvage the raw LLM output
+        # via the task's internal state before giving up.
+        raw_output = getattr(task, "output", None)
+        raw_text = getattr(raw_output, "raw", None) if raw_output else None
+        if raw_text:
+            salvaged = _parse_structured_from_text(raw_text)
+            if salvaged is not None:
+                logger.info(
+                    "[IdeationAgent] Salvaged structured output from "
+                    "failed validation step=%s questions=%d",
+                    step,
+                    len(salvaged.questions),
+                )
+                return salvaged
+        # Couldn't salvage — re-raise so the caller can handle
+        raise
 
     # Try to extract the Pydantic model from the result
     parsed = _extract_structured_response(result)
@@ -199,24 +223,51 @@ def _extract_structured_response(
     Attempts multiple strategies:
     1. Direct pydantic attribute (``result.pydantic``)
     2. JSON parse from raw text
+    3. Tolerant JSON parse (handles trailing characters)
     """
     # Strategy 1: CrewAI output_pydantic sets .pydantic on the result
     pydantic_obj = getattr(result, "pydantic", None)
     if isinstance(pydantic_obj, StructuredIdeationResponse):
         return pydantic_obj
 
-    # Strategy 2: Parse JSON from raw text
+    # Strategy 2+3: Parse JSON from raw text
     raw = getattr(result, "raw", None) or str(result)
+    return _parse_structured_from_text(raw)
+
+
+def _parse_structured_from_text(
+    raw: str,
+) -> StructuredIdeationResponse | None:
+    """Parse a StructuredIdeationResponse from raw text.
+
+    Handles:
+    - Clean JSON
+    - JSON wrapped in markdown code fences
+    - JSON with trailing characters (common LLM artefact)
+    """
+    text = raw.strip()
+
+    # Strip markdown code fences if present
+    if text.startswith("```"):
+        first_nl = text.index("\n")
+        text = text[first_nl + 1:]
+    if text.endswith("```"):
+        text = text[:-3]
+
+    text = text.strip()
+
+    # Strategy 2: Direct JSON parse
     try:
-        # Strip markdown code fences if present
-        text = raw.strip()
-        if text.startswith("```"):
-            # Remove opening fence (```json or ```)
-            first_nl = text.index("\n")
-            text = text[first_nl + 1:]
-        if text.endswith("```"):
-            text = text[:-3]
-        data = json.loads(text.strip())
+        data = json.loads(text)
+        return StructuredIdeationResponse.model_validate(data)
+    except (json.JSONDecodeError, ValueError, KeyError):
+        pass
+
+    # Strategy 3: Tolerant parse — extract first complete JSON object
+    # (handles trailing characters after the closing brace)
+    decoder = json.JSONDecoder()
+    try:
+        data, _ = decoder.raw_decode(text)
         return StructuredIdeationResponse.model_validate(data)
     except (json.JSONDecodeError, ValueError, KeyError):
         pass
@@ -225,7 +276,11 @@ def _extract_structured_response(
 
 
 def _format_context(context: dict[str, Any]) -> str:
-    """Format previous step outputs into a readable context string."""
+    """Format previous step outputs into a readable context string.
+
+    Handles both string outputs and structured dict outputs (from
+    ``StructuredIdeationResponse.model_dump()``).
+    """
     if not context:
         return "No previous context — this is the first step."
 
@@ -240,9 +295,38 @@ def _format_context(context: dict[str, Any]) -> str:
     parts: list[str] = []
     for step_key, output in context.items():
         label = labels.get(step_key, step_key)
-        parts.append(f"### {label}\n{output}")
+        text = _readable_output(output)
+        parts.append(f"### {label}\n{text}")
 
     return "\n\n".join(parts)
+
+
+def _readable_output(output: Any) -> str:
+    """Convert step output to readable text, handling dict or str."""
+    if isinstance(output, str):
+        return output
+    if isinstance(output, dict):
+        parts: list[str] = []
+        if output.get("acknowledgment"):
+            parts.append(output["acknowledgment"])
+        if output.get("summary_draft"):
+            parts.append(output["summary_draft"])
+        if output.get("agent_insight"):
+            parts.append(output["agent_insight"])
+        for q in output.get("questions", []):
+            q_text = q.get("question", "")
+            recs = q.get("recommendations", [])
+            rec_idx = q.get("recommended_index")
+            if rec_idx is not None and 0 <= rec_idx < len(recs):
+                rec = recs[rec_idx]
+                parts.append(f"- {q_text}: Recommended \"{rec.get('label', '')}\"")
+            elif recs:
+                opts = ", ".join(r.get("label", "") for r in recs)
+                parts.append(f"- {q_text}: Options — {opts}")
+            else:
+                parts.append(f"- {q_text}")
+        return "\n".join(parts) if parts else str(output)
+    return str(output)
 
 
 def _format_conversation_history(messages: list[dict[str, str]]) -> str:

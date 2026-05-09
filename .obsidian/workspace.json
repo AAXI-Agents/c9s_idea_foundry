@@ -11,14 +11,10 @@
             "id": "335ad2fe72970858",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "obsidian/User Feedback/GAP-gcs-storage-audit.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "GAP-gcs-storage-audit"
+              "title": "New tab"
             }
           }
         ]
@@ -180,21 +176,29 @@
       "bases:Create new base": false
     }
   },
-  "active": "335ad2fe72970858",
+  "active": "10cc98f4bf5212eb",
   "lastOpenFiles": [
+    "obsidian/User Feedback Archive/frontend-multitenancy-integration.md",
+    "obsidian/User Feedback Archive/frontend-ideation-trigger-recovery.md",
+    "obsidian/User Feedback Archive/frontend-ideation-integration.md",
+    "obsidian/User Feedback/frontend-multitenancy-integration.md",
+    "obsidian/User Feedback/frontend-ideation-trigger-recovery.md",
+    "obsidian/User Feedback/frontend-ideation-integration.md",
+    "docs/frontend-ideation-trigger-recovery.md",
+    "obsidian/User Feedback/QUESTIONS-backend-streaming-progress-ideation.md",
+    "obsidian/User Feedback Archive/QUESTIONS-backend-streaming-progress-ideation.md",
+    "tests/apis/ideation/__pycache__/test_ideation_streaming.cpython-312-pytest-9.0.2.pyc",
+    "tests/apis/ideation/test_ideation_streaming.py",
+    "src/crewai_productfeature_planner/apis/ideation/__pycache__/_streaming.cpython-312.pyc",
+    "src/crewai_productfeature_planner/apis/ideation/_streaming.py",
+    "logs/crewai.log.2026-05-08",
+    "tests/apis/ideation/__pycache__/test_processing_status.cpython-312-pytest-9.0.2.pyc",
+    "tests/apis/ideation/test_processing_status.py",
     "src/crewai_productfeature_planner/services/__pycache__/gcs_paths.cpython-312.pyc",
     "src/crewai_productfeature_planner/services/gcs_paths.py",
     "obsidian/User Feedback/GAP-gcs-storage-audit.md",
     "_keys/gcs-signer-key.json",
-    "_keys",
     "obsidian/User Feedback/GAP-knowledge-and-repos-backend.md",
-    "tests/apis/__pycache__/test_github_webhook.cpython-312-pytest-9.0.2.pyc",
-    "src/crewai_productfeature_planner/apis/code_repos/__pycache__/_route_github_webhook.cpython-312.pyc",
-    "tests/apis/test_github_webhook.py",
-    "src/crewai_productfeature_planner/apis/code_repos/_route_github_webhook.py",
-    "src/crewai_productfeature_planner/services/__pycache__/jira_reconciliation.cpython-312.pyc",
-    "tests/__pycache__/test_jira_reconciliation.cpython-312-pytest-9.0.2.pyc",
-    "tests/test_jira_reconciliation.py",
     "obsidian/User Feedback Archive/GAP-agentic-team-integration-gaps.md",
     "obsidian/User Feedback Archive/GAP-knowledge-and-repos-backend.md",
     "obsidian/User Feedback/GAP-agentic-team-integration-gaps.md",
@@ -209,14 +213,6 @@
     "src/projects/pascal-fms-amlc/pascal-fms-amlc.md",
     "src/projects/pascasl-fms-2/pascasl-fms-2.md",
     "obsidian/Database/ideas Schema.md",
-    "obsidian/User Feedback/PLAN-ideation-structured-payload-missing.md",
-    "src/projects/avatars-vn/avatars-vn.md",
-    "obsidian/APIs/Slack/GET slack-oauth-install.md",
-    "obsidian/APIs/Ideation Flow/Ideation Flow API.md",
-    "obsidian/APIs/User Profile/GET-PATCH user-profile.md",
-    "obsidian/APIs/Dashboard/GET dashboard-stats.md",
-    "obsidian/APIs/Company/GET company-activity.md",
-    "obsidian/APIs/Company/PATCH company-agents-budget.md",
-    "obsidian/APIs/Company/GET company-budget.md"
+    "obsidian/User Feedback/PLAN-ideation-structured-payload-missing.md"
   ]
 }

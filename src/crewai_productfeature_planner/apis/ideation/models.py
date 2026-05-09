@@ -6,9 +6,21 @@ Response shapes are aligned with the frontend contract
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+# ── Processing progress models ────────────────────────────────
+
+
+class ProcessingPhase(str, Enum):
+    """Phases emitted via ``processing_status`` WebSocket events."""
+
+    ANALYZING_RESPONSES = "analyzing_responses"
+    AGENT_REVIEWING = "agent_reviewing"
+    PREPARING_QUESTIONS = "preparing_questions"
 
 
 # ── Structured ideation output models ─────────────────────────
@@ -222,6 +234,7 @@ class IdeationSessionResponse(BaseModel):
     project_id: str | None = None
     prd_run_id: str | None = None
     outputs: dict[str, StepOutput] = {}
+    needs_trigger: bool = False
 
 
 class IdeationSessionSummary(BaseModel):

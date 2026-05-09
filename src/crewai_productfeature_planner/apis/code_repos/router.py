@@ -8,7 +8,6 @@ Endpoints for:
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 
@@ -48,23 +47,29 @@ class GithubConnectResponse(BaseModel):
 
 
 class CodeRepoResponse(BaseModel):
+    """Repo response matching frontend Repo type."""
+
     repo_id: str
     project_id: str
     url: str
     name: str
-    owner: str
     status: str
-    analysis: dict | None = None
-    kb_path: str | None = None
-    last_analyzed_at: str | None = None
-    created_by: str
+    last_analyzed: str | None = None
+    architecture_summary: str | None = None
+    primary_language: str | None = None
+    frameworks: list[str] = Field(default_factory=list)
+    dependencies_count: int | None = None
+    api_surface_count: int | None = None
+    schema_entities_count: int | None = None
+    kb_hub_link: str | None = None
     created_at: str
-    updated_at: str
 
 
-class CodeRepoCreated(BaseModel):
-    repo_id: str
-    status: str
+class CodeRepoListResponse(BaseModel):
+    """Paginated list matching frontend RepoList type."""
+
+    items: list[CodeRepoResponse]
+    total: int
 
 
 class RegisterRepoRequest(BaseModel):
@@ -74,6 +79,31 @@ class RegisterRepoRequest(BaseModel):
 class GithubCallbackResponse(BaseModel):
     project_id: str
     connected: bool
+
+
+def _doc_to_response(doc: dict) -> CodeRepoResponse:
+    """Map MongoDB code_repo document to the frontend response shape.
+
+    Flattens the nested `analysis` dict and renames fields to match
+    the frontend Repo type contract.
+    """
+    analysis = doc.get("analysis") or {}
+    return CodeRepoResponse(
+        repo_id=doc["repo_id"],
+        project_id=doc["project_id"],
+        url=doc["url"],
+        name=doc["name"],
+        status=doc.get("status", "pending"),
+        last_analyzed=doc.get("last_analyzed_at"),
+        architecture_summary=analysis.get("architecture_summary"),
+        primary_language=analysis.get("primary_language"),
+        frameworks=analysis.get("frameworks") or [],
+        dependencies_count=analysis.get("dependencies_count"),
+        api_surface_count=analysis.get("api_surface_count"),
+        schema_entities_count=analysis.get("schema_entities_count"),
+        kb_hub_link=doc.get("kb_path"),
+        created_at=doc.get("created_at", ""),
+    )
 
 
 # ── GitHub OAuth Endpoints ───────────────────────────────────────
@@ -197,7 +227,7 @@ def _slugify(text: str) -> str:
     "/projects/{project_id}/repos",
     summary="Register a repository",
     description="Register a GitHub repo and kick off Coding Agent analysis.",
-    response_model=CodeRepoCreated,
+    response_model=CodeRepoResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
         201: {"description": "Repo registered, analysis started."},
@@ -264,14 +294,14 @@ async def register_repo(
     )
 
     logger.info("[CodeRepos] Registered repo=%s project=%s url=%s", repo_id, project_id, body.url)
-    return CodeRepoCreated(repo_id=repo_id, status="pending")
+    return _doc_to_response(doc)
 
 
 @router.get(
     "/projects/{project_id}/repos",
     summary="List code repos",
     description="List all registered code repos for a project.",
-    response_model=list[CodeRepoResponse],
+    response_model=CodeRepoListResponse,
 )
 async def list_repos(
     project_id: str,
@@ -280,7 +310,8 @@ async def list_repos(
 ):
     tenant = resolve_tenant_context(user, organization_id)
     repos = list_code_repos(project_id=project_id, tenant=tenant)
-    return repos
+    items = [_doc_to_response(r) for r in repos]
+    return CodeRepoListResponse(items=items, total=len(items))
 
 
 @router.get(
@@ -300,14 +331,14 @@ async def get_repo(
     repo = get_code_repo(repo_id=repo_id, project_id=project_id, tenant=tenant)
     if not repo:
         raise HTTPException(status_code=404, detail="Repo not found.")
-    return repo
+    return _doc_to_response(repo)
 
 
 @router.post(
     "/projects/{project_id}/repos/{repo_id}/analyze",
     summary="Re-run Coding Agent analysis",
     description="Re-analyze the repository with the Coding Agent.",
-    response_model=CodeRepoCreated,
+    response_model=CodeRepoResponse,
     responses={404: {"description": "Repo not found."}},
 )
 async def reanalyze_repo(
@@ -342,8 +373,10 @@ async def reanalyze_repo(
         tenant=tenant,
     )
 
+    # Return updated repo with analyzing status
+    repo["status"] = "analyzing"
     logger.info("[CodeRepos] Re-analysis triggered repo=%s", repo_id)
-    return CodeRepoCreated(repo_id=repo_id, status="analyzing")
+    return _doc_to_response(repo)
 
 
 @router.delete(

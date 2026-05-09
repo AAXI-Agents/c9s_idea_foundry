@@ -38,7 +38,43 @@ class TestListCodeRepos:
             
         )
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert data == {"items": [], "total": 0}
+
+    @patch("crewai_productfeature_planner.apis.code_repos.router.list_code_repos")
+    def test_list_with_repos(self, mock_list, client):
+        mock_list.return_value = [
+            {
+                "repo_id": "r1",
+                "project_id": "p1",
+                "url": "https://github.com/org/repo",
+                "name": "repo",
+                "owner": "org",
+                "status": "ready",
+                "analysis": {
+                    "architecture_summary": "Monorepo",
+                    "primary_language": "Python",
+                    "frameworks": ["FastAPI"],
+                    "dependencies_count": 42,
+                    "api_surface_count": 10,
+                    "schema_entities_count": 5,
+                },
+                "kb_path": "/hub/repo",
+                "last_analyzed_at": "2026-05-01T00:00:00Z",
+                "created_at": "2026-04-01T00:00:00Z",
+            }
+        ]
+        resp = client.get("/projects/p1/repos")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        item = data["items"][0]
+        assert item["repo_id"] == "r1"
+        assert item["architecture_summary"] == "Monorepo"
+        assert item["primary_language"] == "Python"
+        assert item["frameworks"] == ["FastAPI"]
+        assert item["kb_hub_link"] == "/hub/repo"
+        assert item["last_analyzed"] == "2026-05-01T00:00:00Z"
 
 
 class TestGetCodeRepo:
@@ -58,14 +94,29 @@ class TestRegisterRepo:
     @patch("crewai_productfeature_planner.apis.code_repos.router.get_project")
     def test_register_success(self, mock_proj, mock_create, mock_analyze, client):
         mock_proj.return_value = {"project_id": "p1", "name": "My Project"}
-        mock_create.return_value = {"repo_id": "r1", "status": "pending"}
+        mock_create.return_value = {
+            "repo_id": "r1",
+            "project_id": "p1",
+            "url": "https://github.com/org/repo",
+            "name": "repo",
+            "owner": "org",
+            "status": "pending",
+            "analysis": None,
+            "kb_path": None,
+            "last_analyzed_at": None,
+            "created_at": "2026-05-01T00:00:00Z",
+        }
         resp = client.post(
             "/projects/p1/repos",
             json={"url": "https://github.com/org/repo"},
             
         )
         assert resp.status_code == 201
-        assert resp.json()["repo_id"] == "r1"
+        data = resp.json()
+        assert data["repo_id"] == "r1"
+        assert data["status"] == "pending"
+        assert data["name"] == "repo"
+        assert data["frameworks"] == []
         mock_analyze.assert_called_once()
 
     @patch("crewai_productfeature_planner.apis.code_repos.router.get_project")
@@ -130,8 +181,16 @@ class TestReanalyzeRepo:
     @patch("crewai_productfeature_planner.apis.code_repos.router.get_code_repo")
     def test_reanalyze(self, mock_repo, mock_proj, mock_analyze, client):
         mock_repo.return_value = {
-            "repo_id": "r1", "url": "https://github.com/org/repo",
-            "name": "repo", "owner": "org",
+            "repo_id": "r1",
+            "project_id": "p1",
+            "url": "https://github.com/org/repo",
+            "name": "repo",
+            "owner": "org",
+            "status": "ready",
+            "analysis": None,
+            "kb_path": None,
+            "last_analyzed_at": None,
+            "created_at": "2026-05-01T00:00:00Z",
         }
         mock_proj.return_value = {"project_id": "p1", "name": "Test"}
         resp = client.post(
@@ -139,5 +198,8 @@ class TestReanalyzeRepo:
             
         )
         assert resp.status_code == 200
-        assert resp.json()["status"] == "analyzing"
+        data = resp.json()
+        assert data["status"] == "analyzing"
+        assert data["repo_id"] == "r1"
+        assert data["name"] == "repo"
         mock_analyze.assert_called_once()
