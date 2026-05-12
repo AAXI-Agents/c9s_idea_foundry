@@ -1,0 +1,45 @@
+{
+  "get": {
+    "tags": [
+      "Agentic Team"
+    ],
+    "summary": "Get a single webhook delivery record",
+    "description": "Returns the full record of a received webhook delivery, including the original payload and processing result.",
+    "operationId": "get_webhook_delivery_api_agentic_team_deliveries__delivery_id__get",
+    "parameters": [
+      {
+        "name": "delivery_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Delivery Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response Get Webhook Delivery Api Agentic Team Deliveries  Delivery Id  Get"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "get": {
+    "tags": [
+      "Publishing"
+    ],
+    "summary": "Get delivery status for a run",
+    "description": "Returns the full delivery record for the given ``run_id`` from the ``productRequirements`` MongoDB collection, including Confluence publication state, Jira ticket list, and any errors.",
+    "operationId": "get_status_endpoint_publishing_status__run_id__get",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DeliveryStatusResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "No delivery record found for the run_id.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

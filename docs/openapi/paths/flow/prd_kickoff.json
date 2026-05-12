@@ -28,7 +28,7 @@
         }
       },
       "409": {
-        "description": "A job is already active. Only one job can run at a time."
+        "description": "A job is already active, or a duplicate idea was recently submitted to the same project (24 h cooldown)."
       },
       "422": {
         "description": "Validation error."
@@ -44,7 +44,7 @@
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
+        "description": "LLM / OpenAI / Gemini service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {

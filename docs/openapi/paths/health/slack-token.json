@@ -1,0 +1,59 @@
+{
+  "get": {
+    "tags": [
+      "Health"
+    ],
+    "summary": "Slack token rotation status",
+    "description": "Returns the current Slack token rotation state including token type, whether rotation is configured, time until expiry, last refresh timestamp, and the path to the persisted token store.\n\n**No secrets are exposed** \u2014 only metadata about token health.\n\nUseful for monitoring dashboards to detect token expiry before Slack API calls start failing.",
+    "operationId": "slack_token_status_health_slack_token_get",
+    "parameters": [
+      {
+        "name": "team_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Team Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Token rotation diagnostics.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response Slack Token Status Health Slack Token Get"
+            },
+            "example": {
+              "token_type": "rotating",
+              "rotation_configured": true,
+              "expires_in_seconds": 39600,
+              "last_refresh": "2026-02-25T10:00:00Z",
+              "store_path": ".slack_tokens.json"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "get": {
+    "tags": [
+      "Flow Runs"
+    ],
+    "summary": "Get flow run status",
+    "description": "Returns the current status, iteration, section progress, and draft content for a flow run. Includes per-section approval status, current step number, and agent participation details.\n\nThe flow uses a **two-phase architecture**:\n- **Phase 1** -- Executive Summary: iterative refinement.\n- **Phase 2** -- 9 remaining sections: each auto-iterates between PRD_SECTION_MIN_ITERATIONS and PRD_SECTION_MAX_ITERATIONS cycles.\n\nUse this endpoint to poll for state changes after kickoff, approval, pause, or resume actions.",
+    "operationId": "get_run_status_flow_runs__run_id__get",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Run details returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PRDRunStatusResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found."
+      },
+      "500": {
+        "description": "Internal server error. The `error_code` field will be `INTERNAL_ERROR`. Check the `message` and `detail` fields for diagnostics.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI / Gemini service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

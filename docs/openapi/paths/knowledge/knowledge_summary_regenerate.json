@@ -1,0 +1,59 @@
+{
+  "post": {
+    "tags": [
+      "Knowledge"
+    ],
+    "summary": "Regenerate aggregated summary",
+    "description": "Re-run the aggregation across all included, reviewed documents.",
+    "operationId": "regenerate_summary_projects__project_id__knowledge_summary_regenerate_post",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/KnowledgeSummaryResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

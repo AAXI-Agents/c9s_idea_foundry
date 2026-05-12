@@ -4,7 +4,7 @@
       "Flow Runs"
     ],
     "summary": "List resumable (unfinalized) runs",
-    "description": "Returns a list of working ideas from MongoDB that have not been finalized. These are runs that were paused, abandoned, or interrupted (including runs that were automatically paused due to errors) and can be resumed via POST /flow/prd/resume.\n\nEach entry includes the section keys that already have draft content and the last iteration number.\n\nEquivalent to the CLI startup prompt that checks for unfinalized runs.",
+    "description": "Returns a list of working ideas from MongoDB that have not been finalized. These are runs that were paused, abandoned, or interrupted and can be resumed via POST /flow/prd/resume.",
     "operationId": "list_resumable_runs_flow_prd_resumable_get",
     "responses": {
       "200": {
@@ -28,7 +28,7 @@
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
+        "description": "LLM / OpenAI / Gemini service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {

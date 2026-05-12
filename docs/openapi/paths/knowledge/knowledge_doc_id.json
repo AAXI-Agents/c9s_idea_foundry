@@ -1,0 +1,210 @@
+{
+  "get": {
+    "tags": [
+      "Knowledge"
+    ],
+    "summary": "Get knowledge document detail",
+    "description": "Get a single knowledge document with its reviewer summary.",
+    "operationId": "get_document_projects__project_id__knowledge__doc_id__get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "doc_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Doc Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/KnowledgeDocResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Document not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "patch": {
+    "tags": [
+      "Knowledge"
+    ],
+    "summary": "Toggle document inclusion",
+    "description": "Toggle whether a document is included in the aggregated summary.",
+    "operationId": "patch_document_projects__project_id__knowledge__doc_id__patch",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "doc_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Doc Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/ToggleIncludedRequest"
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "404": {
+        "description": "Document not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "delete": {
+    "tags": [
+      "Knowledge"
+    ],
+    "summary": "Delete a knowledge document",
+    "description": "Remove document record and GCS object.",
+    "operationId": "delete_document_projects__project_id__knowledge__doc_id__delete",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "doc_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Doc Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "204": {
+        "description": "Successful Response"
+      },
+      "404": {
+        "description": "Document not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

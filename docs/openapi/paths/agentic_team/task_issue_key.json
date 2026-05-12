@@ -1,0 +1,45 @@
+{
+  "get": {
+    "tags": [
+      "Agentic Team"
+    ],
+    "summary": "Get pipeline status for a single Jira task",
+    "description": "Returns the Agentic Team pipeline status for a single Jira issue, including current stage, progress, and any errors.",
+    "operationId": "get_task_pipeline_status_api_agentic_team_task__issue_key__get",
+    "parameters": [
+      {
+        "name": "issue_key",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Issue Key"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response Get Task Pipeline Status Api Agentic Team Task  Issue Key  Get"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

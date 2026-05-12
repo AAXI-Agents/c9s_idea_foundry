@@ -1,0 +1,20 @@
+{
+  "get": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Get current SSO user profile",
+    "description": "Return the SSO user profile from the Bearer token.\n\nRequires ``Authorization: Bearer <sso_access_token>`` header.",
+    "operationId": "sso_userinfo_auth_sso_userinfo_get",
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      }
+    }
+  }
+}

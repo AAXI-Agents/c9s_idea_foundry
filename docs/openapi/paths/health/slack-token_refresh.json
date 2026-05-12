@@ -1,0 +1,61 @@
+{
+  "post": {
+    "tags": [
+      "Health"
+    ],
+    "summary": "Force-refresh the Slack access token",
+    "description": "Invalidates the cached Slack access token and immediately acquires a fresh one using the stored refresh token.\n\nUse this after rotating credentials or when Slack API calls return ``token_revoked`` / ``invalid_auth`` errors.\n\nRequires ``SLACK_CLIENT_ID``, ``SLACK_CLIENT_SECRET``, and a valid ``SLACK_REFRESH_TOKEN`` (obtained via the exchange endpoint or OAuth v2 callback).",
+    "operationId": "slack_token_refresh_health_slack_token_refresh_post",
+    "parameters": [
+      {
+        "name": "team_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Team Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Token refreshed successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response Slack Token Refresh Health Slack Token Refresh Post"
+            },
+            "example": {
+              "message": "Token refreshed successfully",
+              "token_type": "rotating",
+              "rotation_configured": true,
+              "expires_in_seconds": 43200
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Refresh failed \u2014 check credentials and refresh token."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

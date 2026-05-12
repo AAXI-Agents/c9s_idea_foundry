@@ -41,6 +41,16 @@ ws_router = APIRouter()
 _connections: dict[str, set[WebSocket]] = {}
 _lock = asyncio.Lock()
 
+# Stash the main event loop so worker threads (ThreadPoolExecutor) can
+# schedule coroutines on it via ``asyncio.run_coroutine_threadsafe``.
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Called once during app startup to capture the main event loop."""
+    global _main_loop  # noqa: PLW0603
+    _main_loop = loop
+
 
 async def _register(session_id: str, ws: WebSocket) -> None:
     async with _lock:
@@ -76,17 +86,33 @@ async def broadcast(session_id: str, event: dict[str, Any]) -> None:
 
 
 def broadcast_sync(session_id: str, event: dict[str, Any]) -> None:
-    """Thread-safe broadcast — callable from synchronous CrewAI agent tasks."""
+    """Thread-safe broadcast — callable from synchronous CrewAI agent tasks.
+
+    Works correctly from both the main async thread (where the event loop
+    is already running) and from ``ThreadPoolExecutor`` worker threads
+    (where no event loop exists).  In the latter case we use
+    ``asyncio.run_coroutine_threadsafe`` to schedule the coroutine on the
+    main loop, which is stashed in ``_main_loop`` at import time.
+    """
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            future = asyncio.ensure_future(broadcast(session_id, event))
-            # Add error callback so exceptions are logged, not silently lost
-            future.add_done_callback(_log_broadcast_error)
-        else:
-            loop.run_until_complete(broadcast(session_id, event))
+        loop = asyncio.get_running_loop()
+        # We're inside an async context — schedule directly.
+        future = asyncio.ensure_future(broadcast(session_id, event), loop=loop)
+        future.add_done_callback(_log_broadcast_error)
+        return
     except RuntimeError:
-        logger.debug("[IdeationWS] broadcast_sync: no event loop available session=%s", session_id)
+        pass  # No running loop in this thread — fall through
+
+    # We're in a worker thread (ThreadPoolExecutor).  Use the stashed
+    # main event loop to schedule the broadcast.
+    loop = _main_loop
+    if loop is not None and loop.is_running():
+        asyncio.run_coroutine_threadsafe(broadcast(session_id, event), loop)
+    else:
+        logger.warning(
+            "[IdeationWS] broadcast_sync: no usable event loop session=%s",
+            session_id,
+        )
 
 
 def _log_broadcast_error(future: asyncio.Future) -> None:

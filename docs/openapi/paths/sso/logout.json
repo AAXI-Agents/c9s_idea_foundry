@@ -1,0 +1,26 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Logout (revoke current token)",
+    "description": "Proxy logout to the SSO server.\n\nRevokes the current access token.  Requires ``Authorization: Bearer``.",
+    "operationId": "sso_logout_auth_sso_logout_post",
+    "responses": {
+      "200": {
+        "description": "Token revoked \u2014 user logged out",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "401": {
+        "description": "Missing or invalid Bearer token"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

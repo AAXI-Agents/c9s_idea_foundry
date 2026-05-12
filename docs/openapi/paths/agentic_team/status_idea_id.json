@@ -1,0 +1,45 @@
+{
+  "get": {
+    "tags": [
+      "Agentic Team"
+    ],
+    "summary": "Get Agentic Team pipeline status for an idea",
+    "description": "Queries the Agentic Team service for pipeline status of all tasks related to the given idea. Returns per-task progress and overall completion percentage.",
+    "operationId": "get_agent_status_api_agentic_team_status__idea_id__get",
+    "parameters": [
+      {
+        "name": "idea_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Idea Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response Get Agent Status Api Agentic Team Status  Idea Id  Get"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

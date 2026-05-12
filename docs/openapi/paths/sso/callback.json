@@ -1,0 +1,82 @@
+{
+  "get": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "SSO OAuth2 callback",
+    "description": "Handle the SSO redirect after user authentication.\n\nExchanges the authorization code for access and refresh tokens.",
+    "operationId": "sso_callback_auth_sso_callback_get",
+    "parameters": [
+      {
+        "name": "code",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "description": "Authorization code from SSO",
+          "default": "",
+          "title": "Code"
+        },
+        "description": "Authorization code from SSO"
+      },
+      {
+        "name": "state",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "description": "CSRF state parameter",
+          "default": "",
+          "title": "State"
+        },
+        "description": "CSRF state parameter"
+      },
+      {
+        "name": "error",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "description": "Error code if sign-in failed",
+          "default": "",
+          "title": "Error"
+        },
+        "description": "Error code if sign-in failed"
+      },
+      {
+        "name": "error_description",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "description": "Error details",
+          "default": "",
+          "title": "Error Description"
+        },
+        "description": "Error details"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "text/html": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

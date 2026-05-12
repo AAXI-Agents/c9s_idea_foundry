@@ -1,1 +1,22 @@
-{"get":{"tags":["Admin"],"summary":"List organizations in the enterprise","responses":{"200":{"description":"Organization list"}}}}
+{
+  "get": {
+    "tags": [
+      "Admin"
+    ],
+    "summary": "List organizations in the enterprise",
+    "description": "Return all organizations within the authenticated admin's enterprise.\n\nDerives the organization list by aggregating distinct organization_id\nvalues from projectConfig documents scoped to the enterprise.",
+    "operationId": "list_organizations_admin_organizations_get",
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OrganizationListResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

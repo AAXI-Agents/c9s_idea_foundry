@@ -4,7 +4,7 @@
       "Jobs"
     ],
     "summary": "List all persistent job records",
-    "description": "Returns job records from the ``crewJobs`` MongoDB collection. Each job tracks the full lifecycle of a flow run including queue time, running time, and terminal status.\n\nOptional query parameters ``status`` and ``flow_name`` can be used to filter results.",
+    "description": "Returns job records from the ``crewJobs`` MongoDB collection.",
     "operationId": "list_all_jobs_flow_jobs_get",
     "parameters": [
       {
@@ -45,9 +45,29 @@
         "required": false,
         "schema": {
           "type": "integer",
+          "maximum": 500,
+          "minimum": 1,
           "default": 50,
           "title": "Limit"
         }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by organization (enterprise admins only)",
+          "title": "Organization Id"
+        },
+        "description": "Filter by organization (enterprise admins only)"
       }
     ],
     "responses": {
@@ -72,7 +92,7 @@
         }
       },
       "503": {
-        "description": "LLM / OpenAI service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
+        "description": "LLM / OpenAI / Gemini service unavailable. The `error_code` field will be `LLM_ERROR` (retries exhausted) or `BILLING_ERROR` (billing / quota issue). The affected flow run is automatically paused \u2014 resume it after resolving the issue.",
         "content": {
           "application/json": {
             "schema": {

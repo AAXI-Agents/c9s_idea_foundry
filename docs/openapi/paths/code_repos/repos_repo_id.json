@@ -1,0 +1,133 @@
+{
+  "get": {
+    "tags": [
+      "Code Repos"
+    ],
+    "summary": "Get code repo detail",
+    "description": "Get a single repo with its analysis summary and KB hub link.",
+    "operationId": "get_repo_projects__project_id__repos__repo_id__get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "repo_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Repo Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CodeRepoResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Repo not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "delete": {
+    "tags": [
+      "Code Repos"
+    ],
+    "summary": "Delete a code repo",
+    "description": "Remove a registered repo and its analysis record.",
+    "operationId": "delete_repo_projects__project_id__repos__repo_id__delete",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "repo_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Repo Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "204": {
+        "description": "Successful Response"
+      },
+      "404": {
+        "description": "Repo not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

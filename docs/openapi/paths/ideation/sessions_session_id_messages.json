@@ -1,0 +1,123 @@
+{
+  "get": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "Get session chat messages",
+    "description": "Returns all messages in the session, optionally filtered by step.",
+    "operationId": "get_ideation_messages_flow_ideation_sessions__session_id__messages_get",
+    "parameters": [
+      {
+        "name": "session_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Session Id"
+        }
+      },
+      {
+        "name": "step",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by step name",
+          "title": "Step"
+        },
+        "description": "Filter by step name"
+      },
+      {
+        "name": "after",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Messages after this timestamp",
+          "title": "After"
+        },
+        "description": "Messages after this timestamp"
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 500,
+          "minimum": 1,
+          "description": "Max messages",
+          "default": 100,
+          "title": "Limit"
+        },
+        "description": "Max messages"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationMessagesResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

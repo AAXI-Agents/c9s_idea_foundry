@@ -1,1 +1,68 @@
-{"post":{"tags":["UX Design"],"summary":"Trigger UX design generation (web-app format)","description":"Web-app variant of UX design kickoff.","responses":{"202":{"description":"UX design job started"}}}}
+{
+  "post": {
+    "tags": [
+      "UX Design"
+    ],
+    "summary": "Trigger UX design generation (web-app format)",
+    "description": "Web-app-compatible endpoint for triggering UX design generation. Accepts ``run_id`` in the request body instead of the URL path. Delegates to the same background logic as ``POST /flow/ux-design/{run_id}``.",
+    "operationId": "kickoff_ux_design_web_flow_ux_kickoff_post",
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/UXDesignKickoffRequest"
+          }
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "202": {
+        "description": "UX design generation started.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UXDesignKickoffResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "PRD run not found."
+      },
+      "409": {
+        "description": "PRD not completed or UX design already in progress."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI / Gemini service unavailable. The UX design flow will fail and status will reset to empty.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

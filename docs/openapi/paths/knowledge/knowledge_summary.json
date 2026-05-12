@@ -1,0 +1,59 @@
+{
+  "get": {
+    "tags": [
+      "Knowledge"
+    ],
+    "summary": "Get aggregated knowledge summary",
+    "description": "Returns the unified summary, bullets, and contradictions across all included docs.",
+    "operationId": "get_summary_projects__project_id__knowledge_summary_get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/KnowledgeSummaryResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

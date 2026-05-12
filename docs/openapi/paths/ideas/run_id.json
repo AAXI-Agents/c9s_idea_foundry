@@ -1,0 +1,95 @@
+{
+  "get": {
+    "tags": [
+      "Ideas"
+    ],
+    "summary": "Get a single idea by run_id",
+    "operationId": "get_idea_ideas__run_id__get",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeaItem"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "delete": {
+    "tags": [
+      "Ideas"
+    ],
+    "summary": "Soft-delete an idea with cascade",
+    "description": "Soft-delete an idea and cascade to all derived records.",
+    "operationId": "delete_idea_ideas__run_id__delete",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      },
+      {
+        "name": "purge_remote",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "boolean",
+          "description": "Also delete linked Jira/Confluence remotely",
+          "default": false,
+          "title": "Purge Remote"
+        },
+        "description": "Also delete linked Jira/Confluence remotely"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DeleteIdeaResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

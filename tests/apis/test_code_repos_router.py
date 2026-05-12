@@ -30,9 +30,11 @@ def client():
 
 
 class TestListCodeRepos:
+    @patch("crewai_productfeature_planner.apis.code_repos.router.count_code_repos")
     @patch("crewai_productfeature_planner.apis.code_repos.router.list_code_repos")
-    def test_list_empty(self, mock_list, client):
+    def test_list_empty(self, mock_list, mock_count, client):
         mock_list.return_value = []
+        mock_count.return_value = 0
         resp = client.get(
             "/projects/p1/repos",
             
@@ -41,8 +43,9 @@ class TestListCodeRepos:
         data = resp.json()
         assert data == {"items": [], "total": 0}
 
+    @patch("crewai_productfeature_planner.apis.code_repos.router.count_code_repos")
     @patch("crewai_productfeature_planner.apis.code_repos.router.list_code_repos")
-    def test_list_with_repos(self, mock_list, client):
+    def test_list_with_repos(self, mock_list, mock_count, client):
         mock_list.return_value = [
             {
                 "repo_id": "r1",
@@ -50,7 +53,7 @@ class TestListCodeRepos:
                 "url": "https://github.com/org/repo",
                 "name": "repo",
                 "owner": "org",
-                "status": "ready",
+                "status": "analyzed",
                 "analysis": {
                     "architecture_summary": "Monorepo",
                     "primary_language": "Python",
@@ -64,17 +67,31 @@ class TestListCodeRepos:
                 "created_at": "2026-04-01T00:00:00Z",
             }
         ]
+        mock_count.return_value = 1
         resp = client.get("/projects/p1/repos")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
         item = data["items"][0]
         assert item["repo_id"] == "r1"
+        assert item["status"] == "ready"  # mapped from "analyzed"
         assert item["architecture_summary"] == "Monorepo"
         assert item["primary_language"] == "Python"
         assert item["frameworks"] == ["FastAPI"]
         assert item["kb_hub_link"] == "/hub/repo"
         assert item["last_analyzed"] == "2026-05-01T00:00:00Z"
+
+    @patch("crewai_productfeature_planner.apis.code_repos.router.count_code_repos")
+    @patch("crewai_productfeature_planner.apis.code_repos.router.list_code_repos")
+    def test_list_passes_pagination_params(self, mock_list, mock_count, client):
+        mock_list.return_value = []
+        mock_count.return_value = 0
+        resp = client.get("/projects/p1/repos?skip=10&limit=5")
+        assert resp.status_code == 200
+        mock_list.assert_called_once()
+        call_kwargs = mock_list.call_args
+        assert call_kwargs.kwargs["skip"] == 10
+        assert call_kwargs.kwargs["limit"] == 5
 
 
 class TestGetCodeRepo:
@@ -203,3 +220,76 @@ class TestReanalyzeRepo:
         assert data["repo_id"] == "r1"
         assert data["name"] == "repo"
         mock_analyze.assert_called_once()
+
+
+class TestStatusMapping:
+    """Verify _doc_to_response maps internal statuses to frontend values."""
+
+    def test_analyzed_maps_to_ready(self):
+        from crewai_productfeature_planner.apis.code_repos.router import _doc_to_response
+
+        doc = {
+            "repo_id": "r1", "project_id": "p1", "url": "https://github.com/o/r",
+            "name": "r", "status": "analyzed", "analysis": None,
+            "kb_path": None, "last_analyzed_at": None, "created_at": "2026-01-01",
+        }
+        assert _doc_to_response(doc).status == "ready"
+
+    def test_clone_failed_maps_to_failed(self):
+        from crewai_productfeature_planner.apis.code_repos.router import _doc_to_response
+
+        doc = {
+            "repo_id": "r1", "project_id": "p1", "url": "https://github.com/o/r",
+            "name": "r", "status": "clone_failed", "analysis": None,
+            "kb_path": None, "last_analyzed_at": None, "created_at": "2026-01-01",
+        }
+        assert _doc_to_response(doc).status == "failed"
+
+    def test_analysis_failed_maps_to_failed(self):
+        from crewai_productfeature_planner.apis.code_repos.router import _doc_to_response
+
+        doc = {
+            "repo_id": "r1", "project_id": "p1", "url": "https://github.com/o/r",
+            "name": "r", "status": "analysis_failed", "analysis": None,
+            "kb_path": None, "last_analyzed_at": None, "created_at": "2026-01-01",
+        }
+        assert _doc_to_response(doc).status == "failed"
+
+    def test_pending_passes_through(self):
+        from crewai_productfeature_planner.apis.code_repos.router import _doc_to_response
+
+        doc = {
+            "repo_id": "r1", "project_id": "p1", "url": "https://github.com/o/r",
+            "name": "r", "status": "pending", "analysis": None,
+            "kb_path": None, "last_analyzed_at": None, "created_at": "2026-01-01",
+        }
+        assert _doc_to_response(doc).status == "pending"
+
+    def test_analyzing_passes_through(self):
+        from crewai_productfeature_planner.apis.code_repos.router import _doc_to_response
+
+        doc = {
+            "repo_id": "r1", "project_id": "p1", "url": "https://github.com/o/r",
+            "name": "r", "status": "analyzing", "analysis": None,
+            "kb_path": None, "last_analyzed_at": None, "created_at": "2026-01-01",
+        }
+        assert _doc_to_response(doc).status == "analyzing"
+
+
+class TestGithubCallbackEncryption:
+    """Verify GitHub token is encrypted before storage."""
+
+    @patch("crewai_productfeature_planner.mongodb.project_config.update_project")
+    @patch("crewai_productfeature_planner.apis.code_repos.router.encrypt_value")
+    @patch("crewai_productfeature_planner.apis.code_repos.router.exchange_code_for_token")
+    def test_callback_encrypts_token(self, mock_exchange, mock_encrypt, mock_update, client):
+        mock_exchange.return_value = {"access_token": "ghp_secret123"}
+        mock_encrypt.return_value = "encrypted_blob"
+
+        resp = client.get("/auth/github/callback?code=abc&state=p1")
+
+        assert resp.status_code == 200
+        mock_encrypt.assert_called_once_with("ghp_secret123")
+        mock_update.assert_called_once()
+        updates = mock_update.call_args.kwargs["updates"]
+        assert updates["github_token"] == "encrypted_blob"

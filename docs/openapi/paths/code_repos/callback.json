@@ -1,0 +1,56 @@
+{
+  "get": {
+    "tags": [
+      "Code Repos"
+    ],
+    "summary": "GitHub OAuth callback",
+    "description": "Handles the OAuth callback from GitHub. Exchanges code for token.",
+    "operationId": "github_callback_auth_github_callback_get",
+    "parameters": [
+      {
+        "name": "code",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "description": "Authorization code from GitHub",
+          "title": "Code"
+        },
+        "description": "Authorization code from GitHub"
+      },
+      {
+        "name": "state",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "description": "Project ID passed as state",
+          "title": "State"
+        },
+        "description": "Project ID passed as state"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/GithubCallbackResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

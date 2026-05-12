@@ -1,0 +1,64 @@
+{
+  "post": {
+    "tags": [
+      "Webhooks"
+    ],
+    "summary": "GitHub push webhook receiver",
+    "description": "Receives GitHub push events. Looks up registered repos by owner/name and triggers Coding Agent re-analysis with debouncing.",
+    "operationId": "handle_github_webhook_webhooks_github_post",
+    "parameters": [
+      {
+        "name": "x-hub-signature-256",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "X-Hub-Signature-256"
+        }
+      },
+      {
+        "name": "x-github-event",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "X-Github-Event"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

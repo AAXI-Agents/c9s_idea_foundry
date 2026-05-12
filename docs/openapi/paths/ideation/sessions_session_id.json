@@ -1,0 +1,225 @@
+{
+  "get": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "Get ideation session detail",
+    "description": "Returns full session state including steps data.",
+    "operationId": "get_ideation_session_flow_ideation_sessions__session_id__get",
+    "parameters": [
+      {
+        "name": "session_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Session Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationSessionResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "delete": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "Archive/delete a session",
+    "description": "Soft-deletes (archives) an ideation session.",
+    "operationId": "delete_ideation_session_flow_ideation_sessions__session_id__delete",
+    "parameters": [
+      {
+        "name": "session_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Session Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationDeleteResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "patch": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "Update session metadata",
+    "description": "Update session title or project association.",
+    "operationId": "update_ideation_session_flow_ideation_sessions__session_id__patch",
+    "parameters": [
+      {
+        "name": "session_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Session Id"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/IdeationUpdateRequest"
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationSessionResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -23,6 +23,8 @@ tags:
 | `AGENTIC_TEAM_ENABLED` | Enable bidirectional integration with Agentic Team platform (`true`/`false`, default `false`) |
 | `AGENTIC_TEAM_BASE_URL` | Base URL of the Agentic Team API for outbound queries/kickoff |
 | `AGENTIC_TEAM_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying inbound Agentic Team webhooks |
+| `AGENT_WORKER_ENABLED` | Enable `/aw/*` Agent Worker proxy routes (`true`/`false`, default `false`) |
+| `AGENT_WORKER_BASE_URL` | Base URL of the Agent Worker API for outbound proxy calls |
 | `DEV_USER_ROLE` | Role assumed by the SSO dev bypass when `SSO_ENABLED=false` (one of `USER` / `ENT_ADMIN` / `SYS_ADMIN`, default `USER`). Tests force `SYS_ADMIN`. Defaulting to `USER` keeps tenant filtering active in dev. |
 | `DEV_ENTERPRISE_ID` | Enterprise ID injected into the dev-bypass user claims (default `dev-enterprise`) |
 | `DEV_ORGANIZATION_ID` | Organization ID injected into the dev-bypass user claims (default `dev-org`) |

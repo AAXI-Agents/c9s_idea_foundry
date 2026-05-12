@@ -1,40 +1,163 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Idea Foundry API",
-    "description": "REST API for the Idea Foundry platform — an AI-powered Product Requirements Document (PRD) generator.\n\n## Overview\n\nIdea Foundry transforms raw product ideas into implementation-ready PRDs using multi-agent AI orchestration (CrewAI + Gemini). The API powers the web application frontend with full multi-tenancy isolation (enterprise/organization scoping).\n\n## Web App Integration Guide\n\n### Authentication\nAll endpoints (except Health probes) require an SSO Bearer token:\n```\nAuthorization: Bearer <jwt_token>\n```\nWhen `SSO_ENABLED=false` (development mode), authentication is bypassed and an anonymous user context is returned.\n\n### Multi-Tenancy\nAll data is scoped to the authenticated user's enterprise and organization. Cross-tenant access returns 404 (not 403) to prevent existence leaks. WebSocket endpoints require a `?token=` query parameter for JWT auth.\n\n### Core Workflows\n\n**1. Project Management** — Create and manage projects that group related PRD ideas:\n- `GET/POST /projects` — List/create projects\n- `GET/PATCH/DELETE /projects/{project_id}` — Project CRUD\n- `GET /projects/{project_id}/backlog` — Kanban-style backlog\n\n**2. Idea Lifecycle** — Track ideas from inception to completion:\n- `GET /ideas` — List ideas with filters (project_id, status)\n- `GET /ideas/{run_id}` — Get idea details\n- `PATCH /ideas/{run_id}/status` — Archive or pause an idea\n- `DELETE /ideas/{run_id}` — Soft-delete an idea\n\n**3. Ideation Flow** — Interactive structured Q&A to refine raw ideas:\n- `POST /flow/ideation/kickoff` — Start a guided ideation session\n- `POST /flow/ideation/sessions/{id}/respond` — Answer agent questions\n- `POST /flow/ideation/sessions/{id}/advance` — Move to next step\n- `WS /ws/ideation/{session_id}?token=` — Real-time streaming\n\n**4. PRD Generation Flow** — AI-driven PRD creation:\n- `POST /flow/prd/kickoff` — Start a new PRD flow (202 Accepted)\n- `GET /flow/runs/{run_id}` — Poll for progress\n- `POST /flow/prd/approve` — Approve or provide feedback\n- `WS /flow/runs/{run_id}/ws?token=` — Real-time agent activity\n\n**5. Publishing & Delivery** — Publish completed PRDs:\n- `POST /publishing/confluence/{run_id}` — Publish to Confluence\n- `POST /publishing/jira/{run_id}` — Create Jira tickets\n\n**6. Company & Agents** — AI agent management:\n- `GET /company/org-chart` — Agent org chart\n- `GET /company/agents` — List/inspect agents\n- `PATCH /company/agents/{agent_id}/budget` — Manage token budgets\n\n### Pagination\nList endpoints support cursor-based pagination:\n- `page` (1-based), `page_size` (10, 25, or 50)\n- Responses include `total`, `page`, `page_size`, `total_pages`\n\n### Error Handling\nAll errors return a structured `ErrorResponse` with `error_code`, `message`, and optional `detail`.\n\n### Idea Status Lifecycle\n```\ninprogress → completed → (published)\ninprogress → paused → (resume) → inprogress\ninprogress → failed → (resume) → inprogress\n* → deleted (user action via DELETE)\n* → archived (internal restart only)\n```",
-    "version": "0.82.0",
-    "contact": {
-      "name": "Idea Foundry"
-    }
+    "title": "Idea Foundry \u2014 CrewAI Product Feature Planner API",
+    "description": "HTTP interface for triggering CrewAI flows.",
+    "version": "0.95.1"
   },
   "paths": {
-    "/health": {
-      "$ref": "./paths/health.json"
+    "/admin/audit-log": {
+      "$ref": "./paths/admin/audit-log.json"
     },
-    "/version": {
-      "$ref": "./paths/version.json"
+    "/admin/organizations": {
+      "$ref": "./paths/admin/organizations.json"
     },
-    "/health/slack-token": {
-      "$ref": "./paths/health/slack_token.json"
+    "/admin/projects": {
+      "$ref": "./paths/admin/projects.json"
     },
-    "/health/slack-token/exchange": {
-      "$ref": "./paths/health/slack_token_exchange.json"
+    "/admin/projects/{project_id}/cascade-preview": {
+      "$ref": "./paths/admin/projects_project_id_cascade-preview.json"
     },
-    "/health/slack-token/refresh": {
-      "$ref": "./paths/health/slack_token_refresh.json"
+    "/admin/projects/{project_id}/tenant": {
+      "$ref": "./paths/admin/projects_project_id_tenant.json"
     },
-    "/flow/runs/{run_id}": {
-      "$ref": "./paths/flow/runs_{run_id}.json"
+    "/api/agentic-team/dashboard": {
+      "$ref": "./paths/agentic_team/dashboard.json"
     },
-    "/flow/runs": {
-      "$ref": "./paths/flow/runs.json"
+    "/api/agentic-team/deliveries": {
+      "$ref": "./paths/agentic_team/deliveries.json"
     },
-    "/flow/prd/kickoff": {
-      "$ref": "./paths/flow/prd_kickoff.json"
+    "/api/agentic-team/deliveries/{delivery_id}": {
+      "$ref": "./paths/agentic_team/deliveries_delivery_id.json"
+    },
+    "/api/agentic-team/status/{idea_id}": {
+      "$ref": "./paths/agentic_team/status_idea_id.json"
+    },
+    "/api/agentic-team/task/{issue_key}": {
+      "$ref": "./paths/agentic_team/task_issue_key.json"
+    },
+    "/approvals/pending": {
+      "$ref": "./paths/approvals/pending.json"
+    },
+    "/auth/github/callback": {
+      "$ref": "./paths/code_repos/callback.json"
+    },
+    "/auth/sso/callback": {
+      "$ref": "./paths/sso/callback.json"
+    },
+    "/auth/sso/google": {
+      "$ref": "./paths/sso/google.json"
+    },
+    "/auth/sso/login": {
+      "$ref": "./paths/sso/login.json"
+    },
+    "/auth/sso/login/verify-2fa": {
+      "$ref": "./paths/sso/login_verify-2fa.json"
+    },
+    "/auth/sso/logout": {
+      "$ref": "./paths/sso/logout.json"
+    },
+    "/auth/sso/logout-all": {
+      "$ref": "./paths/sso/logout-all.json"
+    },
+    "/auth/sso/password-reset": {
+      "$ref": "./paths/sso/password-reset.json"
+    },
+    "/auth/sso/password-reset/confirm": {
+      "$ref": "./paths/sso/password-reset_confirm.json"
+    },
+    "/auth/sso/reauth": {
+      "$ref": "./paths/sso/reauth.json"
+    },
+    "/auth/sso/reauth/verify-2fa": {
+      "$ref": "./paths/sso/reauth_verify-2fa.json"
+    },
+    "/auth/sso/register": {
+      "$ref": "./paths/sso/register.json"
+    },
+    "/auth/sso/register/resend-2fa": {
+      "$ref": "./paths/sso/register_resend-2fa.json"
+    },
+    "/auth/sso/register/verify-2fa": {
+      "$ref": "./paths/sso/register_verify-2fa.json"
+    },
+    "/auth/sso/status": {
+      "$ref": "./paths/sso/status.json"
+    },
+    "/auth/sso/token/refresh": {
+      "$ref": "./paths/sso/token_refresh.json"
+    },
+    "/auth/sso/userinfo": {
+      "$ref": "./paths/sso/userinfo.json"
+    },
+    "/aw/atlassian/credentials": {
+      "$ref": "./paths/aw/atlassian_credentials.json"
+    },
+    "/aw/atlassian/credentials/{org_id}": {
+      "$ref": "./paths/aw/atlassian_credentials_org_id.json"
+    },
+    "/aw/atlassian/credentials/{org_id}/test": {
+      "$ref": "./paths/aw/atlassian_credentials_org_id_test.json"
+    },
+    "/company/activity": {
+      "$ref": "./paths/company/activity.json"
+    },
+    "/company/agents": {
+      "$ref": "./paths/company/agents.json"
+    },
+    "/company/agents/{agent_id}": {
+      "$ref": "./paths/company/agents_agent_id.json"
+    },
+    "/company/agents/{agent_id}/budget": {
+      "$ref": "./paths/company/agents_agent_id_budget.json"
+    },
+    "/company/budget": {
+      "$ref": "./paths/company/budget.json"
+    },
+    "/company/org-chart": {
+      "$ref": "./paths/company/org-chart.json"
+    },
+    "/dashboard/stats": {
+      "$ref": "./paths/dashboard/stats.json"
+    },
+    "/flow/ideation/kickoff": {
+      "$ref": "./paths/ideation/kickoff.json"
+    },
+    "/flow/ideation/sessions": {
+      "$ref": "./paths/ideation/sessions.json"
+    },
+    "/flow/ideation/sessions/{session_id}": {
+      "$ref": "./paths/ideation/sessions_session_id.json"
+    },
+    "/flow/ideation/sessions/{session_id}/advance": {
+      "$ref": "./paths/ideation/sessions_session_id_advance.json"
+    },
+    "/flow/ideation/sessions/{session_id}/iterate": {
+      "$ref": "./paths/ideation/sessions_session_id_iterate.json"
+    },
+    "/flow/ideation/sessions/{session_id}/messages": {
+      "$ref": "./paths/ideation/sessions_session_id_messages.json"
+    },
+    "/flow/ideation/sessions/{session_id}/respond": {
+      "$ref": "./paths/ideation/sessions_session_id_respond.json"
+    },
+    "/flow/ideation/sessions/{session_id}/rollback": {
+      "$ref": "./paths/ideation/sessions_session_id_rollback.json"
+    },
+    "/flow/ideation/sessions/{session_id}/trigger": {
+      "$ref": "./paths/ideation/sessions_session_id_trigger.json"
+    },
+    "/flow/jobs": {
+      "$ref": "./paths/flow/jobs.json"
+    },
+    "/flow/jobs/{job_id}": {
+      "$ref": "./paths/flow/jobs_job_id.json"
     },
     "/flow/prd/approve": {
       "$ref": "./paths/flow/prd_approve.json"
+    },
+    "/flow/prd/kickoff": {
+      "$ref": "./paths/flow/prd_kickoff.json"
     },
     "/flow/prd/pause": {
       "$ref": "./paths/flow/prd_pause.json"
@@ -45,159 +168,1685 @@
     "/flow/prd/resume": {
       "$ref": "./paths/flow/prd_resume.json"
     },
-    "/flow/jobs": {
-      "$ref": "./paths/flow/jobs.json"
+    "/flow/runs": {
+      "$ref": "./paths/flow_runs.json"
     },
-    "/flow/jobs/{job_id}": {
-      "$ref": "./paths/flow/jobs_{job_id}.json"
-    },
-    "/slack/oauth/install": {
-      "$ref": "./paths/slack/oauth_install.json"
-    },
-    "/slack/oauth/callback": {
-      "$ref": "./paths/slack/oauth_callback.json"
-    },
-    "/publishing/pending": {
-      "$ref": "./paths/publishing/pending.json"
-    },
-    "/publishing/confluence/all": {
-      "$ref": "./paths/publishing/confluence_all.json"
-    },
-    "/publishing/confluence/{run_id}": {
-      "$ref": "./paths/publishing/confluence_{run_id}.json"
-    },
-    "/publishing/jira/all": {
-      "$ref": "./paths/publishing/jira_all.json"
-    },
-    "/publishing/jira/{run_id}": {
-      "$ref": "./paths/publishing/jira_{run_id}.json"
-    },
-    "/publishing/all": {
-      "$ref": "./paths/publishing/all.json"
-    },
-    "/publishing/all/{run_id}": {
-      "$ref": "./paths/publishing/all_{run_id}.json"
-    },
-    "/publishing/status/{run_id}": {
-      "$ref": "./paths/publishing/status_{run_id}.json"
-    },
-    "/publishing/automation/status": {
-      "$ref": "./paths/publishing/automation_status.json"
-    },
-    "/projects": {
-      "$ref": "./paths/projects/list.json"
-    },
-    "/projects/{project_id}": {
-      "$ref": "./paths/projects/{project_id}.json"
-    },
-    "/ideas": {
-      "$ref": "./paths/ideas/list.json"
-    },
-    "/ideas/{run_id}": {
-      "$ref": "./paths/ideas/{run_id}.json"
-    },
-    "/ideas/{run_id}/status": {
-      "$ref": "./paths/ideas/{run_id}_status.json"
-    },
-    "/sso/webhooks/events": {
-      "$ref": "./paths/sso/webhooks_events.json"
-    },
-    "/ideas/{run_id}/delete": {
-      "$ref": "./paths/ideas/delete_{run_id}.json"
-    },
-    "/flow/runs/{run_id}/timeline": {
-      "$ref": "./paths/flow/runs_{run_id}_timeline.json"
-    },
-    "/flow/runs/{run_id}/versions": {
-      "$ref": "./paths/flow/runs_{run_id}_versions.json"
+    "/flow/runs/{run_id}": {
+      "$ref": "./paths/flow/runs_run_id.json"
     },
     "/flow/runs/{run_id}/activity": {
-      "$ref": "./paths/flow/runs_{run_id}_activity.json"
+      "$ref": "./paths/flow/runs_run_id_activity.json"
+    },
+    "/flow/runs/{run_id}/timeline": {
+      "$ref": "./paths/flow/runs_run_id_timeline.json"
+    },
+    "/flow/runs/{run_id}/versions": {
+      "$ref": "./paths/flow/runs_run_id_versions.json"
     },
     "/flow/ux-design/{run_id}": {
-      "$ref": "./paths/flow/ux_design_{run_id}.json"
+      "$ref": "./paths/flow/ux_design_run_id.json"
     },
     "/flow/ux/kickoff": {
       "$ref": "./paths/flow/ux_kickoff.json"
     },
     "/flow/ux/status/{run_id}": {
-      "$ref": "./paths/flow/ux_status_{run_id}.json"
+      "$ref": "./paths/flow/ux_status_run_id.json"
     },
-    "/flow/ideation/kickoff": {
-      "$ref": "./paths/ideation/kickoff.json"
+    "/health": {
+      "$ref": "./paths/health.json"
     },
-    "/flow/ideation/sessions": {
-      "$ref": "./paths/ideation/sessions.json"
+    "/health/slack-token": {
+      "$ref": "./paths/health/slack-token.json"
     },
-    "/flow/ideation/sessions/{id}": {
-      "$ref": "./paths/ideation/sessions_{id}.json"
+    "/health/slack-token/exchange": {
+      "$ref": "./paths/health/slack-token_exchange.json"
     },
-    "/flow/ideation/sessions/{id}/messages": {
-      "$ref": "./paths/ideation/sessions_{id}_messages.json"
+    "/health/slack-token/refresh": {
+      "$ref": "./paths/health/slack-token_refresh.json"
     },
-    "/flow/ideation/sessions/{id}/respond": {
-      "$ref": "./paths/ideation/sessions_{id}_respond.json"
+    "/ideas/": {
+      "$ref": "./paths/ideas.json"
     },
-    "/flow/ideation/sessions/{id}/iterate": {
-      "$ref": "./paths/ideation/sessions_{id}_iterate.json"
+    "/ideas/{run_id}": {
+      "$ref": "./paths/ideas/run_id.json"
     },
-    "/flow/ideation/sessions/{id}/advance": {
-      "$ref": "./paths/ideation/sessions_{id}_advance.json"
+    "/ideas/{run_id}/status": {
+      "$ref": "./paths/ideas/run_id_status.json"
     },
-    "/flow/ideation/sessions/{id}/rollback": {
-      "$ref": "./paths/ideation/sessions_{id}_rollback.json"
+    "/integrations/status": {
+      "$ref": "./paths/integrations/status.json"
     },
-    "/approvals/pending": {
-      "$ref": "./paths/approvals/pending.json"
+    "/projects/": {
+      "$ref": "./paths/projects.json"
+    },
+    "/projects/{project_id}": {
+      "$ref": "./paths/projects/project_id.json"
     },
     "/projects/{project_id}/backlog": {
-      "$ref": "./paths/projects/{project_id}_backlog.json"
+      "$ref": "./paths/projects/project_id_backlog.json"
     },
-    "/admin/organizations": {
-      "$ref": "./paths/admin/organizations.json"
+    "/projects/{project_id}/github": {
+      "$ref": "./paths/code_repos/github.json"
     },
-    "/admin/projects": {
-      "$ref": "./paths/admin/projects.json"
+    "/projects/{project_id}/github/connect": {
+      "$ref": "./paths/code_repos/github_connect.json"
     },
-    "/admin/projects/{project_id}/cascade-preview": {
-      "$ref": "./paths/admin/cascade_preview.json"
+    "/projects/{project_id}/ideas/": {
+      "$ref": "./paths/projects/project_id_ideas.json"
     },
-    "/admin/projects/{project_id}/tenant": {
-      "$ref": "./paths/admin/reassign_tenant.json"
+    "/projects/{project_id}/ideas/{idea_id}": {
+      "$ref": "./paths/project_ideas/ideas_idea_id.json"
     },
-    "/admin/audit-log": {
-      "$ref": "./paths/admin/audit_log.json"
+    "/projects/{project_id}/ideas/{idea_id}/deliverables": {
+      "$ref": "./paths/project_ideas/ideas_idea_id_deliverables.json"
     },
-    "/company/org-chart": {
-      "$ref": "./paths/company/org_chart.json"
+    "/projects/{project_id}/ideas/{idea_id}/features": {
+      "$ref": "./paths/project_ideas/ideas_idea_id_features.json"
     },
-    "/company/agents": {
-      "$ref": "./paths/company/agents.json"
+    "/projects/{project_id}/ideas/{idea_id}/progress": {
+      "$ref": "./paths/project_ideas/ideas_idea_id_progress.json"
     },
-    "/company/agents/{agent_id}": {
-      "$ref": "./paths/company/agents_{agent_id}.json"
+    "/projects/{project_id}/ideas/{idea_id}/resume": {
+      "$ref": "./paths/project_ideas/ideas_idea_id_resume.json"
     },
-    "/company/budget": {
-      "$ref": "./paths/company/budget.json"
+    "/projects/{project_id}/ideas/{idea_id}/start": {
+      "$ref": "./paths/project_ideas/ideas_idea_id_start.json"
     },
-    "/company/agents/{agent_id}/budget": {
-      "$ref": "./paths/company/agents_{agent_id}_budget.json"
+    "/projects/{project_id}/ideas/{idea_id}/status": {
+      "$ref": "./paths/project_ideas/ideas_idea_id_status.json"
     },
-    "/company/activity": {
-      "$ref": "./paths/company/activity.json"
+    "/projects/{project_id}/knowledge": {
+      "$ref": "./paths/projects/project_id_knowledge.json"
     },
-    "/dashboard/stats": {
-      "$ref": "./paths/dashboard/stats.json"
+    "/projects/{project_id}/knowledge/summary": {
+      "$ref": "./paths/knowledge/knowledge_summary.json"
+    },
+    "/projects/{project_id}/knowledge/summary/regenerate": {
+      "$ref": "./paths/knowledge/knowledge_summary_regenerate.json"
+    },
+    "/projects/{project_id}/knowledge/upload": {
+      "$ref": "./paths/knowledge/knowledge_upload.json"
+    },
+    "/projects/{project_id}/knowledge/url": {
+      "$ref": "./paths/knowledge/knowledge_url.json"
+    },
+    "/projects/{project_id}/knowledge/{doc_id}": {
+      "$ref": "./paths/knowledge/knowledge_doc_id.json"
+    },
+    "/projects/{project_id}/knowledge/{doc_id}/review": {
+      "$ref": "./paths/knowledge/knowledge_doc_id_review.json"
+    },
+    "/projects/{project_id}/repos": {
+      "$ref": "./paths/code_repos/repos.json"
+    },
+    "/projects/{project_id}/repos/{repo_id}": {
+      "$ref": "./paths/code_repos/repos_repo_id.json"
+    },
+    "/projects/{project_id}/repos/{repo_id}/analyze": {
+      "$ref": "./paths/code_repos/repos_repo_id_analyze.json"
+    },
+    "/publishing/all": {
+      "$ref": "./paths/publishing/all.json"
+    },
+    "/publishing/all/{run_id}": {
+      "$ref": "./paths/publishing/all_run_id.json"
+    },
+    "/publishing/automation/status": {
+      "$ref": "./paths/publishing/automation_status.json"
+    },
+    "/publishing/confluence/all": {
+      "$ref": "./paths/publishing/confluence_all.json"
+    },
+    "/publishing/confluence/{run_id}": {
+      "$ref": "./paths/publishing/confluence_run_id.json"
+    },
+    "/publishing/confluence/{run_id}/preview": {
+      "$ref": "./paths/publishing/confluence_run_id_preview.json"
+    },
+    "/publishing/jira/all": {
+      "$ref": "./paths/publishing/jira_all.json"
+    },
+    "/publishing/jira/{run_id}": {
+      "$ref": "./paths/publishing/jira_run_id.json"
+    },
+    "/publishing/pending": {
+      "$ref": "./paths/publishing/pending.json"
+    },
+    "/publishing/status/{run_id}": {
+      "$ref": "./paths/publishing/status_run_id.json"
+    },
+    "/slack/oauth/callback": {
+      "$ref": "./paths/slack/oauth_callback.json"
+    },
+    "/slack/oauth/install": {
+      "$ref": "./paths/slack/oauth_install.json"
+    },
+    "/sso/webhooks/events": {
+      "$ref": "./paths/sso/webhooks_events.json"
     },
     "/user/profile": {
       "$ref": "./paths/user/profile.json"
     },
-    "/integrations/status": {
-      "$ref": "./paths/integrations/status.json"
+    "/version": {
+      "$ref": "./paths/version.json"
+    },
+    "/webhooks/agentic-team": {
+      "$ref": "./paths/webhooks/agentic-team.json"
+    },
+    "/webhooks/github": {
+      "$ref": "./paths/webhooks/github.json"
+    },
+    "/webhooks/jira": {
+      "$ref": "./paths/webhooks/jira.json"
     }
   },
   "components": {
     "schemas": {
+      "ActivityListResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/crewai_productfeature_planner__apis__company__models__ActivityEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "total"
+        ],
+        "title": "ActivityListResponse"
+      },
+      "ActivityLogResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The run this activity belongs to."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of activity events returned.",
+            "default": 0
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/crewai_productfeature_planner__apis__prd___responses__ActivityEvent"
+            },
+            "type": "array",
+            "title": "Events",
+            "description": "Activity events, newest first."
+          },
+          "cost_tracking_available": {
+            "type": "boolean",
+            "title": "Cost Tracking Available",
+            "description": "Whether per-event cost/token tracking is available. When False, tokens_delta and cost_usd_delta are always 0.",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "ActivityLogResponse",
+        "description": "Response for GET /flow/runs/{run_id}/activity."
+      },
+      "AdminProjectItem": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "organization_id": {
+            "type": "string",
+            "title": "Organization Id",
+            "default": ""
+          },
+          "organization_name": {
+            "type": "string",
+            "title": "Organization Name",
+            "default": ""
+          },
+          "enterprise_id": {
+            "type": "string",
+            "title": "Enterprise Id",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "title": "AdminProjectItem",
+        "description": "Project item for admin cross-org listing."
+      },
+      "AdminProjectListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminProjectItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "title": "AdminProjectListResponse",
+        "description": "Response for GET /admin/projects."
+      },
+      "AgentBudget": {
+        "properties": {
+          "monthly_token_limit": {
+            "type": "integer",
+            "title": "Monthly Token Limit",
+            "default": 0
+          },
+          "monthly_cost_limit_usd": {
+            "type": "number",
+            "title": "Monthly Cost Limit Usd",
+            "default": 0.0
+          },
+          "warning_threshold_pct": {
+            "type": "integer",
+            "title": "Warning Threshold Pct",
+            "default": 80
+          },
+          "hard_stop": {
+            "type": "boolean",
+            "title": "Hard Stop",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentBudget"
+      },
+      "AgentDetail": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "default": ""
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "reports_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports To"
+          },
+          "avatar": {
+            "type": "string",
+            "title": "Avatar",
+            "default": ""
+          },
+          "llm_tier": {
+            "type": "string",
+            "title": "Llm Tier",
+            "default": ""
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/AgentBudget"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "idle"
+          },
+          "current_task": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Task"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active At"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/AgentStats"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "display_name",
+          "department"
+        ],
+        "title": "AgentDetail"
+      },
+      "AgentListResponse": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentDetail"
+            },
+            "type": "array",
+            "title": "Agents"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agents",
+          "total"
+        ],
+        "title": "AgentListResponse"
+      },
+      "AgentRosterItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Agent registry ID (e.g. 'product_manager')."
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable display name.",
+            "default": ""
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Org chart role.",
+            "default": ""
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Job title.",
+            "default": ""
+          },
+          "reports_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports To",
+            "description": "Agent ID of supervisor, or null for top."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Agent status within this run: idle, active, waiting_approval, error, done.",
+            "default": "idle"
+          },
+          "current_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step",
+            "description": "1-based step the agent is on, null if idle/done."
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At",
+            "description": "ISO-8601 timestamp of last activity in this run."
+          },
+          "tokens_used": {
+            "type": "integer",
+            "title": "Tokens Used",
+            "description": "Cumulative tokens consumed for this run.",
+            "default": 0
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "description": "Cumulative cost in USD for this run.",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AgentRosterItem",
+        "description": "One agent participating in a flow run."
+      },
+      "AgentStats": {
+        "properties": {
+          "total_runs": {
+            "type": "integer",
+            "title": "Total Runs",
+            "default": 0
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "default": 0
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd",
+            "default": 0.0
+          },
+          "month_tokens": {
+            "type": "integer",
+            "title": "Month Tokens",
+            "default": 0
+          },
+          "month_cost_usd": {
+            "type": "number",
+            "title": "Month Cost Usd",
+            "default": 0.0
+          },
+          "month_reset_at": {
+            "type": "string",
+            "title": "Month Reset At",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "AgentStats"
+      },
+      "ApprovalAction": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Button label (e.g. 'Approve')."
+          },
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint",
+            "description": "REST endpoint to call."
+          },
+          "payload_hint": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload Hint",
+            "description": "Example payload for the action."
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "endpoint"
+        ],
+        "title": "ApprovalAction",
+        "description": "Hint for frontend about which endpoint to call."
+      },
+      "ApprovalItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Synthetic approval ID."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Approval type: prd_section_approval, publish_confluence, publish_jira, resume_paused."
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Associated flow run ID."
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "description": "Associated project ID.",
+            "default": ""
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Human-readable title."
+          },
+          "section_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Key",
+            "description": "Section key for prd_section_approval kind."
+          },
+          "waiting_since": {
+            "type": "string",
+            "title": "Waiting Since",
+            "description": "ISO-8601 timestamp when this started waiting.",
+            "default": ""
+          },
+          "owner_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Agent Id",
+            "description": "Agent responsible for this item."
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalAction"
+            },
+            "type": "array",
+            "title": "Actions",
+            "description": "Available actions."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "run_id",
+          "title"
+        ],
+        "title": "ApprovalItem",
+        "description": "A single item awaiting user action."
+      },
+      "ApprovalListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of pending approval items.",
+            "default": 0
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Pending approval items."
+          }
+        },
+        "type": "object",
+        "title": "ApprovalListResponse",
+        "description": "Response for GET /approvals/pending."
+      },
+      "AtlassianCredentialRequest": {
+        "properties": {
+          "jira_base_url": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Jira Base Url",
+            "description": "Base URL, e.g. https://mysite.atlassian.net"
+          },
+          "jira_email": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Jira Email",
+            "description": "Atlassian account email."
+          },
+          "jira_api_token": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Jira Api Token",
+            "description": "Atlassian API token."
+          },
+          "confluence_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confluence Base Url",
+            "description": "Optional separate Confluence base URL. Defaults to jira_base_url."
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id",
+            "description": "Organization ID for multi-tenant scoping."
+          }
+        },
+        "type": "object",
+        "required": [
+          "jira_base_url",
+          "jira_email",
+          "jira_api_token"
+        ],
+        "title": "AtlassianCredentialRequest",
+        "description": "Frontend sends this to upsert Atlassian credentials.\n\nField names match the frontend convention (``jira_`` prefix).\nThe proxy normalises to Agent Worker names before forwarding."
+      },
+      "AtlassianCredentialStatusResponse": {
+        "properties": {
+          "saved": {
+            "type": "boolean",
+            "title": "Saved",
+            "description": "Credentials saved locally."
+          },
+          "synced_to_agent_worker": {
+            "type": "boolean",
+            "title": "Synced To Agent Worker",
+            "description": "Credentials forwarded to Agent Worker."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable status.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "saved",
+          "synced_to_agent_worker"
+        ],
+        "title": "AtlassianCredentialStatusResponse",
+        "description": "Response after upserting credentials."
+      },
+      "AtlassianCredentialTestResult": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Overall test passed."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable result.",
+            "default": ""
+          },
+          "jira_valid": {
+            "type": "boolean",
+            "title": "Jira Valid",
+            "description": "Jira auth valid.",
+            "default": false
+          },
+          "confluence_valid": {
+            "type": "boolean",
+            "title": "Confluence Valid",
+            "description": "Confluence auth valid.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "AtlassianCredentialTestResult",
+        "description": "Response from testing Atlassian credentials."
+      },
+      "AuditLogEntry": {
+        "properties": {
+          "audit_id": {
+            "type": "string",
+            "title": "Audit Id",
+            "default": ""
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "default": ""
+          },
+          "actor_id": {
+            "type": "string",
+            "title": "Actor Id",
+            "default": ""
+          },
+          "actor_email": {
+            "type": "string",
+            "title": "Actor Email",
+            "default": ""
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name",
+            "default": ""
+          },
+          "from_organization_id": {
+            "type": "string",
+            "title": "From Organization Id",
+            "default": ""
+          },
+          "from_organization_name": {
+            "type": "string",
+            "title": "From Organization Name",
+            "default": ""
+          },
+          "to_organization_id": {
+            "type": "string",
+            "title": "To Organization Id",
+            "default": ""
+          },
+          "to_organization_name": {
+            "type": "string",
+            "title": "To Organization Name",
+            "default": ""
+          },
+          "cascaded_documents": {
+            "type": "integer",
+            "title": "Cascaded Documents",
+            "default": 0
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "AuditLogEntry",
+        "description": "A single audit log entry."
+      },
+      "AuditLogResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditLogEntry"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "title": "AuditLogResponse",
+        "description": "Response for GET /admin/audit-log."
+      },
+      "BacklogItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Synthetic ID (e.g. 'idea:{run_id}')."
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Item type: idea, prd_section, publish_confluence, publish_jira."
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Associated flow run ID."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Human-readable title."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Item-level status.",
+            "default": ""
+          },
+          "section_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Key",
+            "description": "Section key for prd_section items."
+          },
+          "blocked_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked By",
+            "description": "IDs of items that block this item."
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO-8601 timestamp.",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "description": "ISO-8601 timestamp.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "run_id",
+          "title"
+        ],
+        "title": "BacklogItem",
+        "description": "A single backlog card."
+      },
+      "BacklogResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "description": "Project ID."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Total backlog items.",
+            "default": 0
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BacklogItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Backlog items."
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "title": "BacklogResponse",
+        "description": "Response for GET /projects/{project_id}/backlog."
+      },
+      "Body_upload_knowledge_document_projects__project_id__knowledge_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_knowledge_document_projects__project_id__knowledge_upload_post"
+      },
+      "BudgetSummaryResponse": {
+        "properties": {
+          "by_department": {
+            "items": {
+              "$ref": "#/components/schemas/DepartmentBudget"
+            },
+            "type": "array",
+            "title": "By Department"
+          },
+          "top_agents": {
+            "items": {
+              "$ref": "#/components/schemas/TopAgentCost"
+            },
+            "type": "array",
+            "title": "Top Agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "by_department",
+          "top_agents"
+        ],
+        "title": "BudgetSummaryResponse"
+      },
+      "BudgetUpdateRequest": {
+        "properties": {
+          "monthly_token_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Token Limit"
+          },
+          "monthly_cost_limit_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Cost Limit Usd"
+          },
+          "warning_threshold_pct": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning Threshold Pct"
+          },
+          "hard_stop": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hard Stop"
+          }
+        },
+        "type": "object",
+        "title": "BudgetUpdateRequest"
+      },
+      "CascadePreviewResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name",
+            "default": ""
+          },
+          "current_organization_id": {
+            "type": "string",
+            "title": "Current Organization Id",
+            "default": ""
+          },
+          "current_organization_name": {
+            "type": "string",
+            "title": "Current Organization Name",
+            "default": ""
+          },
+          "working_ideas_count": {
+            "type": "integer",
+            "title": "Working Ideas Count",
+            "description": "Working ideas linked to this project",
+            "default": 0
+          },
+          "crew_jobs_count": {
+            "type": "integer",
+            "title": "Crew Jobs Count",
+            "description": "Crew jobs linked to this project",
+            "default": 0
+          },
+          "product_requirements_count": {
+            "type": "integer",
+            "title": "Product Requirements Count",
+            "description": "Product requirements docs",
+            "default": 0
+          },
+          "total_documents": {
+            "type": "integer",
+            "title": "Total Documents",
+            "description": "Total documents that would be cascaded",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "title": "CascadePreviewResponse",
+        "description": "Response for GET /admin/projects/{id}/cascade-preview."
+      },
+      "CascadeResult": {
+        "properties": {
+          "ideation_session_id": {
+            "type": "string",
+            "title": "Ideation Session Id",
+            "default": ""
+          },
+          "prd_run_id": {
+            "type": "string",
+            "title": "Prd Run Id",
+            "default": ""
+          },
+          "sections_count": {
+            "type": "integer",
+            "title": "Sections Count",
+            "default": 0
+          },
+          "jira_links_cleared": {
+            "type": "integer",
+            "title": "Jira Links Cleared",
+            "default": 0
+          },
+          "confluence_links_cleared": {
+            "type": "integer",
+            "title": "Confluence Links Cleared",
+            "default": 0
+          },
+          "ux_runs_cleared": {
+            "type": "integer",
+            "title": "Ux Runs Cleared",
+            "default": 0
+          },
+          "remote_purge": {
+            "$ref": "#/components/schemas/RemotePurgeResult"
+          }
+        },
+        "type": "object",
+        "title": "CascadeResult",
+        "description": "Summary of cascaded deletions."
+      },
+      "CodeRepoListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CodeRepoResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "CodeRepoListResponse",
+        "description": "Paginated list matching frontend RepoList type."
+      },
+      "CodeRepoResponse": {
+        "properties": {
+          "repo_id": {
+            "type": "string",
+            "title": "Repo Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "last_analyzed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Analyzed"
+          },
+          "architecture_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture Summary"
+          },
+          "primary_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Language"
+          },
+          "frameworks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Frameworks"
+          },
+          "dependencies_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dependencies Count"
+          },
+          "api_surface_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Surface Count"
+          },
+          "schema_entities_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Entities Count"
+          },
+          "kb_hub_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kb Hub Link"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "repo_id",
+          "project_id",
+          "url",
+          "name",
+          "status",
+          "created_at"
+        ],
+        "title": "CodeRepoResponse",
+        "description": "Repo response matching frontend Repo type."
+      },
+      "CombinedPublishResult": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Run identifier (single-run) or empty (batch).",
+            "default": ""
+          },
+          "confluence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Confluence",
+            "description": "Confluence publish result."
+          },
+          "jira": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Jira",
+            "description": "Jira creation result."
+          }
+        },
+        "type": "object",
+        "title": "CombinedPublishResult",
+        "description": "Combined Confluence publish + Jira creation result."
+      },
+      "ConfluenceBatchResult": {
+        "properties": {
+          "published": {
+            "type": "integer",
+            "title": "Published",
+            "description": "Number successfully published.",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "description": "Number that failed.",
+            "default": 0
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ConfluencePublishResult"
+            },
+            "type": "array",
+            "title": "Results",
+            "description": "Per-item results."
+          },
+          "errors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Per-item errors."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Optional summary message.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ConfluenceBatchResult",
+        "description": "Summary of a batch Confluence publish operation."
+      },
+      "ConfluencePreviewResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Run identifier."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Page title."
+          },
+          "markdown": {
+            "type": "string",
+            "title": "Markdown",
+            "description": "Raw markdown content.",
+            "default": ""
+          },
+          "xhtml": {
+            "type": "string",
+            "title": "Xhtml",
+            "description": "Confluence storage-format XHTML.",
+            "default": ""
+          },
+          "sections_changed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sections Changed",
+            "description": "Section keys that changed since last publish."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "title"
+        ],
+        "title": "ConfluencePreviewResponse",
+        "description": "Preview of Confluence-formatted content before publishing."
+      },
+      "ConfluencePublishResult": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Run identifier."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Page title.",
+            "default": ""
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Confluence page URL.",
+            "default": ""
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id",
+            "description": "Confluence page ID.",
+            "default": ""
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "'created' or 'updated'.",
+            "default": "created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "ConfluencePublishResult",
+        "description": "Result from a single Confluence publish operation."
+      },
+      "CreateIdeaRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title",
+            "description": "Idea title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000,
+            "title": "Description",
+            "description": "Idea description",
+            "default": ""
+          },
+          "ideation_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ideation Session Id",
+            "description": "Link to ideation session that spawned this idea"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "CreateIdeaRequest"
+      },
+      "DashboardStats": {
+        "properties": {
+          "total_ideas": {
+            "type": "integer",
+            "title": "Total Ideas",
+            "description": "Total number of ideas (excluding archived).",
+            "default": 0
+          },
+          "in_development": {
+            "type": "integer",
+            "title": "In Development",
+            "description": "Ideas currently in development (paused + inprogress).",
+            "default": 0
+          },
+          "prd_completed": {
+            "type": "integer",
+            "title": "Prd Completed",
+            "description": "Ideas with completed PRDs.",
+            "default": 0
+          },
+          "ideas_in_progress": {
+            "type": "integer",
+            "title": "Ideas In Progress",
+            "description": "Ideas currently being processed (inprogress).",
+            "default": 0
+          },
+          "uxd_completed": {
+            "type": "integer",
+            "title": "Uxd Completed",
+            "description": "Ideas with completed UX design.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DashboardStats",
+        "description": "Aggregate idea counts returned by ``GET /dashboard/stats``."
+      },
+      "DeleteIdeaResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "deleted"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "cascaded": {
+            "$ref": "#/components/schemas/CascadeResult"
+          }
+        },
+        "type": "object",
+        "title": "DeleteIdeaResponse",
+        "description": "Response for DELETE /ideas/{run_id}."
+      },
+      "DeliveryStatusResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Run identifier."
+          },
+          "confluence_published": {
+            "type": "boolean",
+            "title": "Confluence Published",
+            "description": "Confluence page exists.",
+            "default": false
+          },
+          "confluence_url": {
+            "type": "string",
+            "title": "Confluence Url",
+            "description": "Confluence page URL.",
+            "default": ""
+          },
+          "confluence_page_id": {
+            "type": "string",
+            "title": "Confluence Page Id",
+            "description": "Confluence page ID.",
+            "default": ""
+          },
+          "jira_completed": {
+            "type": "boolean",
+            "title": "Jira Completed",
+            "description": "Jira tickets created.",
+            "default": false
+          },
+          "jira_tickets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Jira Tickets",
+            "description": "Created Jira tickets."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "new | inprogress | completed.",
+            "default": "new"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Last error if any."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "DeliveryStatusResponse",
+        "description": "Full delivery status for a run_id from the productRequirements collection."
+      },
+      "DepartmentBudget": {
+        "properties": {
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "default": 0.0
+          },
+          "tokens": {
+            "type": "integer",
+            "title": "Tokens",
+            "default": 0
+          },
+          "agent_count": {
+            "type": "integer",
+            "title": "Agent Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "department"
+        ],
+        "title": "DepartmentBudget"
+      },
       "ErrorResponse": {
         "properties": {
           "error_code": {
@@ -309,6 +1958,38 @@
         "title": "ExecutiveSummaryIteration",
         "description": "A single iteration record for the executive summary phase."
       },
+      "GithubCallbackResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "connected"
+        ],
+        "title": "GithubCallbackResponse"
+      },
+      "GithubConnectResponse": {
+        "properties": {
+          "auth_url": {
+            "type": "string",
+            "title": "Auth Url",
+            "description": "GitHub OAuth authorization URL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "auth_url"
+        ],
+        "title": "GithubConnectResponse"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -321,6 +2002,996 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IdeaFeatureItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "jira_epic_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jira Epic Key"
+          },
+          "completion_pct": {
+            "type": "number",
+            "title": "Completion Pct",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "IdeaFeatureItem"
+      },
+      "IdeaItem": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "idea": {
+            "type": "string",
+            "title": "Idea",
+            "default": ""
+          },
+          "finalized_idea": {
+            "type": "string",
+            "title": "Finalized Idea",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": ""
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "completed_at": {
+            "type": "string",
+            "title": "Completed At",
+            "default": ""
+          },
+          "sections_done": {
+            "type": "integer",
+            "title": "Sections Done",
+            "default": 0
+          },
+          "total_sections": {
+            "type": "integer",
+            "title": "Total Sections",
+            "default": 0
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "default": 0
+          },
+          "confluence_url": {
+            "type": "string",
+            "title": "Confluence Url",
+            "default": ""
+          },
+          "jira_phase": {
+            "type": "string",
+            "title": "Jira Phase",
+            "default": ""
+          },
+          "ux_design_status": {
+            "type": "string",
+            "title": "Ux Design Status",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "IdeaItem"
+      },
+      "IdeaListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IdeaItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "IdeaListResponse"
+      },
+      "IdeaStatusUpdate": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "archived",
+              "paused"
+            ],
+            "title": "Status",
+            "description": "New status. Only 'archived' and 'paused' transitions are supported."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "IdeaStatusUpdate"
+      },
+      "IdeationAdvanceRequest": {
+        "properties": {
+          "approved_output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Output",
+            "description": "Explicit output to save (if user edited agent's output)."
+          }
+        },
+        "type": "object",
+        "title": "IdeationAdvanceRequest",
+        "description": "Approve current step output and advance to the next."
+      },
+      "IdeationAdvanceResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "previous_step": {
+            "type": "string",
+            "title": "Previous Step"
+          },
+          "current_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "prd_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prd Run Id"
+          },
+          "prd_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prd Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "previous_step",
+          "message"
+        ],
+        "title": "IdeationAdvanceResponse",
+        "description": "Response when advancing to the next step."
+      },
+      "IdeationDeleteResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "archived"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Session archived"
+          }
+        },
+        "type": "object",
+        "title": "IdeationDeleteResponse",
+        "description": "Response when archiving/deleting a session."
+      },
+      "IdeationErrorResponse": {
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "title": "Error Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "IdeationErrorResponse",
+        "description": "Standard error response for ideation endpoints."
+      },
+      "IdeationIterateRequest": {
+        "properties": {
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback",
+            "description": "Optional feedback to guide the re-iteration."
+          }
+        },
+        "type": "object",
+        "title": "IdeationIterateRequest",
+        "description": "Request re-iteration of the current step with optional feedback."
+      },
+      "IdeationIterateResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "iterating"
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "iteration",
+          "message"
+        ],
+        "title": "IdeationIterateResponse",
+        "description": "Response after requesting re-iteration."
+      },
+      "IdeationKickoffRequest": {
+        "properties": {
+          "idea": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idea",
+            "description": "Initial idea text to seed the session."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Optional title for the session. Auto-generated if omitted."
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Link this session to an existing project."
+          }
+        },
+        "type": "object",
+        "title": "IdeationKickoffRequest",
+        "description": "Start a new ideation session."
+      },
+      "IdeationKickoffResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "active"
+          },
+          "current_step": {
+            "type": "string",
+            "title": "Current Step",
+            "default": "ideation"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Ideation session started. The Ideation Agent is analyzing your idea."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "title": "IdeationKickoffResponse",
+        "description": "Response when a new session is created."
+      },
+      "IdeationMessageItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "default": "text"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flow_step": {
+            "type": "string",
+            "title": "Flow Step"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "flow_step",
+          "created_at"
+        ],
+        "title": "IdeationMessageItem",
+        "description": "A single chat message (frontend-compatible shape)."
+      },
+      "IdeationMessagesResponse": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/IdeationMessageItem"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages",
+          "total"
+        ],
+        "title": "IdeationMessagesResponse",
+        "description": "Paginated messages response."
+      },
+      "IdeationRespondRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content",
+            "description": "The user's response text."
+          },
+          "response_type": {
+            "type": "string",
+            "title": "Response Type",
+            "description": "Response type: text, choice, selection.",
+            "default": "text"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "Structured answers for choice/card interactions."
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "IdeationRespondRequest",
+        "description": "User responds to an agent question/prompt."
+      },
+      "IdeationRespondResponse": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "completed"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "default": ""
+          },
+          "step": {
+            "type": "string",
+            "title": "Step",
+            "default": ""
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "default": "agent"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Agent response ready."
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "Structured data when render_type is 'structured_questions'."
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id"
+        ],
+        "title": "IdeationRespondResponse",
+        "description": "Response after submitting a user message."
+      },
+      "IdeationRollbackRequest": {
+        "properties": {
+          "target_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Step",
+            "description": "Step name to roll back to (e.g. 'ideation'). If omitted, goes to previous."
+          }
+        },
+        "type": "object",
+        "title": "IdeationRollbackRequest",
+        "description": "Request rollback to a specific or previous step."
+      },
+      "IdeationRollbackResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "rolled_back"
+          },
+          "current_step": {
+            "type": "string",
+            "title": "Current Step"
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "default": 1
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_step",
+          "message"
+        ],
+        "title": "IdeationRollbackResponse",
+        "description": "Response when rolling back to a previous step."
+      },
+      "IdeationSessionListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IdeationSessionSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "IdeationSessionListResponse",
+        "description": "Paginated session list response."
+      },
+      "IdeationSessionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "current_step": {
+            "type": "string",
+            "title": "Current Step"
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "default": 1
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "prd_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prd Run Id"
+          },
+          "outputs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StepOutput"
+            },
+            "type": "object",
+            "title": "Outputs",
+            "default": {}
+          },
+          "needs_trigger": {
+            "type": "boolean",
+            "title": "Needs Trigger",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "current_step",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "IdeationSessionResponse",
+        "description": "Full session detail (frontend-compatible shape)."
+      },
+      "IdeationSessionSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "current_step": {
+            "type": "string",
+            "title": "Current Step"
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "default": 1
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "prd_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prd Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "current_step",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "IdeationSessionSummary",
+        "description": "Session list item."
+      },
+      "IdeationUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "New session title."
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Assign to a project."
+          }
+        },
+        "type": "object",
+        "title": "IdeationUpdateRequest",
+        "description": "Update session metadata (title, project_id)."
+      },
+      "IntegrationDetail": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured",
+            "description": "Whether all required credentials are set."
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "description": "The base URL of the service (masked).",
+            "default": ""
+          },
+          "project_key": {
+            "type": "string",
+            "title": "Project Key",
+            "description": "Project key (Jira only).",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "title": "IntegrationDetail",
+        "description": "Status of a single integration."
+      },
+      "IntegrationStatusResponse": {
+        "properties": {
+          "confluence": {
+            "$ref": "#/components/schemas/IntegrationDetail",
+            "description": "Confluence integration status."
+          },
+          "jira": {
+            "$ref": "#/components/schemas/IntegrationDetail",
+            "description": "Jira integration status."
+          }
+        },
+        "type": "object",
+        "required": [
+          "confluence",
+          "jira"
+        ],
+        "title": "IntegrationStatusResponse",
+        "description": "Response for GET /integrations/status."
+      },
+      "JiraBatchResult": {
+        "properties": {
+          "completed": {
+            "type": "integer",
+            "title": "Completed",
+            "description": "Number successfully completed.",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "description": "Number that failed.",
+            "default": 0
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/JiraCreateResult"
+            },
+            "type": "array",
+            "title": "Results",
+            "description": "Per-item results."
+          },
+          "errors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Per-item errors."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Optional summary message.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "JiraBatchResult",
+        "description": "Summary of a batch Jira ticket creation."
+      },
+      "JiraCreateResult": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Run identifier."
+          },
+          "jira_completed": {
+            "type": "boolean",
+            "title": "Jira Completed",
+            "description": "Whether Jira creation succeeded.",
+            "default": true
+          },
+          "ticket_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ticket Keys",
+            "description": "Created Jira issue keys."
+          },
+          "progress": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Progress",
+            "description": "Progress messages from the crew."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "JiraCreateResult",
+        "description": "Result from Jira ticket creation for a single run."
       },
       "JobDetail": {
         "properties": {
@@ -510,6 +3181,450 @@
         "title": "JobListResponse",
         "description": "Response for GET /flow/jobs."
       },
+      "KnowledgeDocCreated": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "status"
+        ],
+        "title": "KnowledgeDocCreated"
+      },
+      "KnowledgeDocResponse": {
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "file_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "included": {
+            "type": "boolean",
+            "title": "Included"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "doc_id",
+          "project_id",
+          "source_type",
+          "status",
+          "included",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "KnowledgeDocResponse"
+      },
+      "KnowledgeSummaryResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "unified_summary": {
+            "type": "string",
+            "title": "Unified Summary",
+            "default": ""
+          },
+          "unified_bullets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unified Bullets"
+          },
+          "contradictions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Contradictions"
+          },
+          "doc_count": {
+            "type": "integer",
+            "title": "Doc Count",
+            "default": 0
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "title": "KnowledgeSummaryResponse"
+      },
+      "MessageMetadata": {
+        "properties": {
+          "render_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Render Type"
+          },
+          "questions": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Questions"
+          },
+          "choices": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Choices"
+          },
+          "can_iterate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Iterate"
+          },
+          "can_advance": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Advance"
+          },
+          "structured": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured"
+          },
+          "response_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Type"
+          },
+          "answers": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answers"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "MessageMetadata",
+        "description": "Metadata attached to agent messages for UI rendering."
+      },
+      "NotificationPreferences": {
+        "properties": {
+          "web": {
+            "type": "boolean",
+            "title": "Web",
+            "description": "Receive web (in-app) notifications.",
+            "default": false
+          },
+          "slack": {
+            "type": "boolean",
+            "title": "Slack",
+            "description": "Receive Slack notifications.",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "NotificationPreferences",
+        "description": "User notification channel preferences."
+      },
+      "OrgChartNode": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "default": ""
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "reports_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reports To"
+          },
+          "avatar": {
+            "type": "string",
+            "title": "Avatar",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "idle"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "display_name",
+          "department"
+        ],
+        "title": "OrgChartNode"
+      },
+      "OrgChartResponse": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/OrgChartNode"
+            },
+            "type": "array",
+            "title": "Agents"
+          },
+          "departments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Departments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agents",
+          "departments"
+        ],
+        "title": "OrgChartResponse"
+      },
+      "OrganizationItem": {
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "title": "Organization Id",
+            "description": "Organization ID"
+          },
+          "organization_name": {
+            "type": "string",
+            "title": "Organization Name",
+            "description": "Organization display name",
+            "default": ""
+          },
+          "project_count": {
+            "type": "integer",
+            "title": "Project Count",
+            "description": "Number of projects in this org",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "organization_id"
+        ],
+        "title": "OrganizationItem",
+        "description": "An organization within the enterprise."
+      },
+      "OrganizationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "OrganizationListResponse",
+        "description": "Response for GET /admin/organizations."
+      },
       "PRDActionResponse": {
         "properties": {
           "run_id": {
@@ -584,7 +3699,7 @@
             },
             "type": "array",
             "title": "Dropped Agents",
-            "description": "Agent identifiers that were removed from the flow after failing during parallel drafting."
+            "description": "Provider identifiers that were removed from the flow after failing during parallel drafting."
           },
           "agent_errors": {
             "additionalProperties": {
@@ -592,7 +3707,7 @@
             },
             "type": "object",
             "title": "Agent Errors",
-            "description": "Map of dropped agent name to its error message."
+            "description": "Map of dropped provider name to its error message."
           },
           "message": {
             "type": "string",
@@ -630,7 +3745,8 @@
           "feedback": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 10000
               },
               {
                 "type": "null"
@@ -691,11 +3807,32 @@
         "properties": {
           "idea": {
             "type": "string",
+            "maxLength": 50000,
             "minLength": 1,
             "title": "Idea",
             "description": "The product feature idea to build a PRD for.",
             "examples": [
               "Add dark mode to the dashboard"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Title",
+            "description": "Short display title for the idea. Used in dashboards and project views. When empty, the first line of the idea text is used as a fallback.",
+            "default": "",
+            "examples": [
+              "Smart onboarding flow with personalization"
+            ]
+          },
+          "project_id": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Project Id",
+            "description": "Associate this PRD run with an existing project. Links the idea to the project so it inherits Confluence/Jira config. When empty, the idea is created without a project.",
+            "default": "",
+            "examples": [
+              "proj-abc123"
             ]
           },
           "auto_approve": {
@@ -1052,7 +4189,7 @@
             },
             "type": "array",
             "title": "Dropped Agents",
-            "description": "Agent identifiers that were removed after failing during parallel drafting."
+            "description": "Provider identifiers that were removed after failing during parallel drafting."
           },
           "agent_errors": {
             "additionalProperties": {
@@ -1108,9 +4245,35 @@
             "description": "Path to the generated PRD markdown file on disk. Empty until the flow finalizes.",
             "default": ""
           },
+          "ux_design_status": {
+            "type": "string",
+            "title": "Ux Design Status",
+            "description": "UX design generation status: '' (not started), 'generating', or 'completed'.",
+            "default": ""
+          },
+          "ux_design_content": {
+            "type": "string",
+            "title": "Ux Design Content",
+            "description": "UX design markdown content. Empty until UX design generation completes.",
+            "default": ""
+          },
           "current_draft": {
             "$ref": "#/components/schemas/PRDDraftDetail",
             "description": "Full structured draft with per-section state."
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRosterItem"
+            },
+            "type": "array",
+            "title": "Agents",
+            "description": "Agents that have participated in this flow run, with per-run token/cost data and current status."
+          },
+          "cost_tracking_available": {
+            "type": "boolean",
+            "title": "Cost Tracking Available",
+            "description": "Whether per-agent cost/token tracking is available. When False, tokens_used and cost_usd are always 0.",
+            "default": true
           }
         },
         "type": "object",
@@ -1194,6 +4357,1198 @@
         "title": "PRDSectionDetail",
         "description": "A section's state as returned in run-status responses."
       },
+      "PendingListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Total number of pending items."
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingPRDItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Pending PRD items."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "PendingListResponse",
+        "description": "List of PRDs pending Confluence / Jira delivery."
+      },
+      "PendingPRDItem": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Unique flow run identifier."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Page title (e.g. 'Fitness App Feature')."
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "Discovery source: 'mongodb' or 'disk'.",
+            "default": "mongodb"
+          },
+          "output_file": {
+            "type": "string",
+            "title": "Output File",
+            "description": "Absolute path to the output markdown file.",
+            "default": ""
+          },
+          "confluence_published": {
+            "type": "boolean",
+            "title": "Confluence Published",
+            "description": "Whether Confluence page exists.",
+            "default": false
+          },
+          "confluence_url": {
+            "type": "string",
+            "title": "Confluence Url",
+            "description": "URL of the Confluence page (empty if unpublished).",
+            "default": ""
+          },
+          "jira_completed": {
+            "type": "boolean",
+            "title": "Jira Completed",
+            "description": "Whether Jira tickets have been created.",
+            "default": false
+          },
+          "jira_tickets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Jira Tickets",
+            "description": "List of Jira ticket dicts."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Delivery status: new | inprogress | completed.",
+            "default": "new"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "title"
+        ],
+        "title": "PendingPRDItem",
+        "description": "A single PRD pending publishing or Jira ticketing."
+      },
+      "ProjectCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "confluence_space_key": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Confluence Space Key",
+            "default": ""
+          },
+          "jira_project_key": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Jira Project Key",
+            "default": ""
+          },
+          "confluence_parent_id": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Confluence Parent Id",
+            "default": ""
+          },
+          "reference_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Reference Urls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ProjectCreate"
+      },
+      "ProjectIdeaItem": {
+        "properties": {
+          "idea_id": {
+            "type": "string",
+            "title": "Idea Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "draft"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/IdeaFeatureItem"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "overall_completion": {
+            "type": "number",
+            "title": "Overall Completion",
+            "default": 0.0
+          },
+          "active_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Run Id"
+          },
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Run Ids"
+          },
+          "ideation_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ideation Session Id"
+          },
+          "design_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Design Url"
+          },
+          "design_url_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Design Url Type"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "completed_at": {
+            "type": "string",
+            "title": "Completed At",
+            "default": ""
+          },
+          "confluence_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confluence Url"
+          },
+          "jira_epic_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jira Epic Key"
+          },
+          "prd_summary": {
+            "type": "string",
+            "title": "Prd Summary",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "idea_id"
+        ],
+        "title": "ProjectIdeaItem"
+      },
+      "ProjectIdeaListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectIdeaItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "ProjectIdeaListResponse"
+      },
+      "ProjectItem": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "confluence_space_key": {
+            "type": "string",
+            "title": "Confluence Space Key",
+            "default": ""
+          },
+          "jira_project_key": {
+            "type": "string",
+            "title": "Jira Project Key",
+            "default": ""
+          },
+          "confluence_parent_id": {
+            "type": "string",
+            "title": "Confluence Parent Id",
+            "default": ""
+          },
+          "reference_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Urls"
+          },
+          "ideas_in_progress": {
+            "type": "integer",
+            "title": "Ideas In Progress",
+            "default": 0
+          },
+          "features_completed": {
+            "type": "integer",
+            "title": "Features Completed",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "name"
+        ],
+        "title": "ProjectItem"
+      },
+      "ProjectListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "ProjectListResponse"
+      },
+      "ProjectUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "confluence_space_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confluence Space Key"
+          },
+          "jira_project_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jira Project Key"
+          },
+          "confluence_parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confluence Parent Id"
+          }
+        },
+        "type": "object",
+        "title": "ProjectUpdate"
+      },
+      "PublishingErrorResponse": {
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "title": "Error Code",
+            "description": "Machine-readable error code."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable error message."
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "Additional details.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "PublishingErrorResponse",
+        "description": "Standard error envelope for publishing endpoints."
+      },
+      "RegisterRepoRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Full GitHub repository URL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "RegisterRepoRequest"
+      },
+      "RemotePurgeResult": {
+        "properties": {
+          "attempted": {
+            "type": "boolean",
+            "title": "Attempted",
+            "default": false
+          },
+          "jira_deleted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Jira Deleted"
+          },
+          "confluence_deleted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Confluence Deleted"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "title": "RemotePurgeResult",
+        "description": "Result of remote Jira/Confluence deletion attempt."
+      },
+      "StepOutput": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "pending"
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "default": 1
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "executive_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executive Summary"
+          },
+          "mission_statement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mission Statement"
+          },
+          "personas": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personas"
+          },
+          "solution_type": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution Type"
+          },
+          "primary_goals": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Goals"
+          },
+          "tech_stack": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tech Stack"
+          }
+        },
+        "type": "object",
+        "title": "StepOutput",
+        "description": "Output state for a single flow step."
+      },
+      "TenantReassignRequest": {
+        "properties": {
+          "to_organization_id": {
+            "type": "string",
+            "title": "To Organization Id",
+            "description": "Target organization ID"
+          },
+          "to_organization_name": {
+            "type": "string",
+            "title": "To Organization Name",
+            "description": "Target organization name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "to_organization_id"
+        ],
+        "title": "TenantReassignRequest",
+        "description": "Request body for PATCH /admin/projects/{id}/tenant."
+      },
+      "TenantReassignResponse": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name",
+            "default": ""
+          },
+          "from_organization_id": {
+            "type": "string",
+            "title": "From Organization Id",
+            "default": ""
+          },
+          "from_organization_name": {
+            "type": "string",
+            "title": "From Organization Name",
+            "default": ""
+          },
+          "to_organization_id": {
+            "type": "string",
+            "title": "To Organization Id",
+            "default": ""
+          },
+          "to_organization_name": {
+            "type": "string",
+            "title": "To Organization Name",
+            "default": ""
+          },
+          "cascaded_documents": {
+            "type": "integer",
+            "title": "Cascaded Documents",
+            "default": 0
+          },
+          "audit_id": {
+            "type": "string",
+            "title": "Audit Id",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "title": "TenantReassignResponse",
+        "description": "Response for PATCH /admin/projects/{id}/tenant."
+      },
+      "TimelineEvent": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO-8601 timestamp."
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type",
+            "description": "Event category: 'idea_submitted', 'idea_refined', 'exec_summary_iteration', 'section_drafted', 'section_approved', 'agent_interaction', 'job_status', 'confluence_published', 'jira_created'."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Short human-readable title."
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "Longer description or content excerpt.",
+            "default": ""
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "Agent name involved (if any).",
+            "default": ""
+          },
+          "section_key": {
+            "type": "string",
+            "title": "Section Key",
+            "description": "PRD section key (if applicable).",
+            "default": ""
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "description": "Iteration number (if applicable).",
+            "default": 0
+          },
+          "score": {
+            "type": "string",
+            "title": "Score",
+            "description": "Quality score (if applicable).",
+            "default": ""
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Extra context."
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "event_type",
+          "title"
+        ],
+        "title": "TimelineEvent",
+        "description": "A single event in the PRD journey timeline."
+      },
+      "TimelineResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Flow run identifier."
+          },
+          "total_events": {
+            "type": "integer",
+            "title": "Total Events",
+            "description": "Total number of timeline events."
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEvent"
+            },
+            "type": "array",
+            "title": "Events",
+            "description": "Chronological list of events (oldest first)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "total_events"
+        ],
+        "title": "TimelineResponse",
+        "description": "Full PRD journey timeline."
+      },
+      "ToggleIncludedRequest": {
+        "properties": {
+          "included": {
+            "type": "boolean",
+            "title": "Included",
+            "description": "Whether to include in aggregation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "included"
+        ],
+        "title": "ToggleIncludedRequest"
+      },
+      "TopAgentCost": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "default": 0.0
+          },
+          "tokens": {
+            "type": "integer",
+            "title": "Tokens",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "display_name",
+          "department"
+        ],
+        "title": "TopAgentCost"
+      },
+      "UXDesignKickoffRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The PRD run ID to generate UX design for."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "UXDesignKickoffRequest",
+        "description": "Request body for ``POST /flow/ux/kickoff``."
+      },
+      "UXDesignKickoffResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The PRD run ID being processed."
+          },
+          "ux_design_status": {
+            "type": "string",
+            "title": "Ux Design Status",
+            "description": "UX design status: 'generating', 'completed', or ''."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable status message."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "ux_design_status",
+          "message"
+        ],
+        "title": "UXDesignKickoffResponse",
+        "description": "Response for POST /flow/ux-design/{run_id}."
+      },
+      "UXDesignStatusResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "The PRD run ID."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "UX design status: '', 'generating', or 'completed'.",
+            "default": ""
+          },
+          "current_step": {
+            "type": "string",
+            "title": "Current Step",
+            "description": "Current UX design step label, if available.",
+            "default": ""
+          },
+          "design_md_ready": {
+            "type": "boolean",
+            "title": "Design Md Ready",
+            "description": "Whether the UX design markdown content is ready.",
+            "default": false
+          },
+          "stitch_completed": {
+            "type": "boolean",
+            "title": "Stitch Completed",
+            "description": "Whether the design sections have been stitched.",
+            "default": false
+          },
+          "figma_uploaded": {
+            "type": "boolean",
+            "title": "Figma Uploaded",
+            "description": "Whether the design was uploaded to Figma.",
+            "default": false
+          },
+          "figma_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Figma Url",
+            "description": "Figma file URL, if uploaded."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message if UX design generation failed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "UXDesignStatusResponse",
+        "description": "Response for ``GET /flow/ux/status/{run_id}``."
+      },
+      "UpdateFeaturesRequest": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/IdeaFeatureItem"
+            },
+            "type": "array",
+            "minItems": 0,
+            "title": "Features",
+            "description": "Replacement features array"
+          }
+        },
+        "type": "object",
+        "required": [
+          "features"
+        ],
+        "title": "UpdateFeaturesRequest"
+      },
+      "UpdateIdeaRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "UpdateIdeaRequest"
+      },
+      "UpdateIdeaStatusRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "in_progress",
+              "completed",
+              "archived"
+            ],
+            "title": "Status",
+            "description": "New status for the idea"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "UpdateIdeaStatusRequest"
+      },
+      "UrlIngestRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "HTTP(S) URL to fetch and ingest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "UrlIngestRequest"
+      },
+      "UserProfileResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "description": "SSO user ID (read-only)."
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "SSO-managed email (read-only).",
+            "default": ""
+          },
+          "sso_display_name": {
+            "type": "string",
+            "title": "Sso Display Name",
+            "description": "Display name from SSO (read-only).",
+            "default": ""
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name",
+            "description": "Local display name override."
+          },
+          "default_project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Project Id",
+            "description": "Default project for new ideas."
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone",
+            "description": "IANA timezone (e.g. 'Asia/Singapore')."
+          },
+          "notification_preferences": {
+            "$ref": "#/components/schemas/NotificationPreferences",
+            "description": "Notification channel preferences."
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "UserProfileResponse",
+        "description": "Merged user profile \u2014 SSO identity (read-only) + local prefs."
+      },
+      "UserProfileUpdateRequest": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name",
+            "description": "Local display name override."
+          },
+          "default_project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Project Id",
+            "description": "Default project for new ideas."
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone",
+            "description": "IANA timezone (e.g. 'Asia/Singapore')."
+          },
+          "notification_preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationPreferences"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Notification channel preferences."
+          }
+        },
+        "type": "object",
+        "title": "UserProfileUpdateRequest",
+        "description": "Fields that can be updated via PATCH."
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1234,274 +5589,300 @@
         ],
         "title": "ValidationError"
       },
-      "PendingPRDItem": {
-        "type": "object",
-        "required": ["run_id", "title"],
-        "title": "PendingPRDItem",
-        "description": "A PRD awaiting Confluence publish or Jira ticket creation.",
+      "VersionEntry": {
         "properties": {
-          "run_id": { "type": "string", "title": "Run Id", "description": "Unique flow run identifier." },
-          "title": { "type": "string", "title": "Title", "description": "PRD title." },
-          "source": { "type": "string", "title": "Source", "description": "'mongodb' or 'disk'.", "default": "mongodb" },
-          "output_file": { "type": "string", "title": "Output File", "description": "Absolute path to the output markdown.", "default": "" },
-          "confluence_published": { "type": "boolean", "title": "Confluence Published", "default": false },
-          "confluence_url": { "type": "string", "title": "Confluence Url", "default": "" },
-          "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": false },
-          "jira_tickets": { "type": "array", "items": { "type": "object" }, "title": "Jira Tickets", "default": [] },
-          "status": { "type": "string", "title": "Status", "description": "new | inprogress | completed.", "default": "new" }
-        }
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "Version number (1, 2, 3, ...)."
+          },
+          "changelog": {
+            "type": "string",
+            "title": "Changelog",
+            "description": "What changed in this version.",
+            "default": ""
+          },
+          "sections": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Sections",
+            "description": "Section key \u2192 content snapshot."
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO-8601 creation timestamp.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "VersionEntry",
+        "description": "A single PRD version snapshot."
       },
-      "PendingListResponse": {
-        "type": "object",
-        "required": ["count"],
-        "title": "PendingListResponse",
-        "description": "Response for GET /publishing/pending.",
+      "VersionHistoryResponse": {
         "properties": {
-          "count": { "type": "integer", "title": "Count", "description": "Total number of pending items." },
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/PendingPRDItem" }, "title": "Items", "default": [] }
-        }
-      },
-      "ConfluencePublishResult": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Flow run identifier."
+          },
+          "current_version": {
+            "type": "integer",
+            "title": "Current Version",
+            "description": "Latest version number.",
+            "default": 0
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/VersionEntry"
+            },
+            "type": "array",
+            "title": "Versions",
+            "description": "Version snapshots, oldest first."
+          }
+        },
         "type": "object",
-        "required": ["run_id"],
-        "title": "ConfluencePublishResult",
-        "description": "Result of publishing a single PRD to Confluence.",
-        "properties": {
-          "run_id": { "type": "string", "title": "Run Id" },
-          "title": { "type": "string", "title": "Title", "default": "" },
-          "url": { "type": "string", "title": "Url", "description": "Confluence page URL.", "default": "" },
-          "page_id": { "type": "string", "title": "Page Id", "description": "Confluence page ID.", "default": "" },
-          "action": { "type": "string", "title": "Action", "description": "'created' or 'updated'.", "default": "created" }
-        }
-      },
-      "ConfluenceBatchResult": {
-        "type": "object",
-        "title": "ConfluenceBatchResult",
-        "description": "Batch Confluence publish result.",
-        "properties": {
-          "published": { "type": "integer", "title": "Published", "default": 0 },
-          "failed": { "type": "integer", "title": "Failed", "default": 0 },
-          "results": { "type": "array", "items": { "$ref": "#/components/schemas/ConfluencePublishResult" }, "title": "Results", "default": [] },
-          "errors": { "type": "array", "items": { "type": "object" }, "title": "Errors", "default": [] },
-          "message": { "type": "string", "title": "Message", "default": "" }
-        }
-      },
-      "JiraCreateResult": {
-        "type": "object",
-        "required": ["run_id"],
-        "title": "JiraCreateResult",
-        "description": "Result of creating Jira tickets for a single run.",
-        "properties": {
-          "run_id": { "type": "string", "title": "Run Id" },
-          "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": true },
-          "ticket_keys": { "type": "array", "items": { "type": "string" }, "title": "Ticket Keys", "default": [] },
-          "progress": { "type": "array", "items": { "type": "string" }, "title": "Progress", "description": "Progress messages from the crew.", "default": [] }
-        }
-      },
-      "JiraBatchResult": {
-        "type": "object",
-        "title": "JiraBatchResult",
-        "description": "Batch Jira ticket creation result.",
-        "properties": {
-          "completed": { "type": "integer", "title": "Completed", "default": 0 },
-          "failed": { "type": "integer", "title": "Failed", "default": 0 },
-          "results": { "type": "array", "items": { "$ref": "#/components/schemas/JiraCreateResult" }, "title": "Results", "default": [] },
-          "errors": { "type": "array", "items": { "type": "object" }, "title": "Errors", "default": [] },
-          "message": { "type": "string", "title": "Message", "default": "" }
-        }
-      },
-      "CombinedPublishResult": {
-        "type": "object",
-        "title": "CombinedPublishResult",
-        "description": "Combined Confluence + Jira publish result.",
-        "properties": {
-          "run_id": { "type": "string", "title": "Run Id", "default": "" },
-          "confluence": { "type": "object", "title": "Confluence", "description": "Confluence publish result.", "default": {} },
-          "jira": { "type": "object", "title": "Jira", "description": "Jira creation result.", "default": {} }
-        }
-      },
-      "DeliveryStatusResponse": {
-        "type": "object",
-        "required": ["run_id"],
-        "title": "DeliveryStatusResponse",
-        "description": "Delivery status for a specific run.",
-        "properties": {
-          "run_id": { "type": "string", "title": "Run Id" },
-          "confluence_published": { "type": "boolean", "title": "Confluence Published", "default": false },
-          "confluence_url": { "type": "string", "title": "Confluence Url", "default": "" },
-          "confluence_page_id": { "type": "string", "title": "Confluence Page Id", "default": "" },
-          "jira_completed": { "type": "boolean", "title": "Jira Completed", "default": false },
-          "jira_tickets": { "type": "array", "items": { "type": "object" }, "title": "Jira Tickets", "default": [] },
-          "status": { "type": "string", "title": "Status", "description": "new | inprogress | completed.", "default": "new" },
-          "error": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Error" }
-        }
+        "required": [
+          "run_id"
+        ],
+        "title": "VersionHistoryResponse",
+        "description": "PRD version history."
       },
       "WatcherStatusResponse": {
+        "properties": {
+          "watcher_running": {
+            "type": "boolean",
+            "title": "Watcher Running",
+            "description": "Whether the file watcher is active.",
+            "default": false
+          },
+          "watcher_directory": {
+            "type": "string",
+            "title": "Watcher Directory",
+            "description": "Directory being watched.",
+            "default": ""
+          },
+          "scheduler_running": {
+            "type": "boolean",
+            "title": "Scheduler Running",
+            "description": "Whether the cron scheduler is active.",
+            "default": false
+          },
+          "scheduler_interval_seconds": {
+            "type": "integer",
+            "title": "Scheduler Interval Seconds",
+            "description": "Scan interval in seconds.",
+            "default": 0
+          }
+        },
         "type": "object",
         "title": "WatcherStatusResponse",
-        "description": "File watcher and cron scheduler status.",
-        "properties": {
-          "watcher_running": { "type": "boolean", "title": "Watcher Running", "default": false },
-          "watcher_directory": { "type": "string", "title": "Watcher Directory", "default": "" },
-          "scheduler_running": { "type": "boolean", "title": "Scheduler Running", "default": false },
-          "scheduler_interval_seconds": { "type": "integer", "title": "Scheduler Interval Seconds", "default": 0 }
-        }
+        "description": "Status of the file watcher and cron scheduler."
       },
-      "PublishingErrorResponse": {
+      "crewai_productfeature_planner__apis__company__models__ActivityEvent": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "department": {
+            "type": "string",
+            "title": "Department"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "tokens_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Used"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          }
+        },
         "type": "object",
-        "required": ["error_code", "message"],
-        "title": "PublishingErrorResponse",
-        "description": "Error envelope returned by publishing endpoints.",
-        "properties": {
-          "error_code": { "type": "string", "title": "Error Code", "description": "Machine-readable error code." },
-          "message": { "type": "string", "title": "Message", "description": "Human-readable error message." },
-          "detail": { "type": "string", "title": "Detail", "default": "" }
-        }
+        "required": [
+          "event_id",
+          "event_type",
+          "agent_id",
+          "department",
+          "description"
+        ],
+        "title": "ActivityEvent"
       },
-      "CodexEntry": {
+      "crewai_productfeature_planner__apis__prd___responses__ActivityEvent": {
+        "properties": {
+          "interaction_id": {
+            "type": "string",
+            "title": "Interaction Id",
+            "description": "Unique interaction identifier."
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "Origin: 'slack', 'cli', 'api'.",
+            "default": ""
+          },
+          "intent": {
+            "type": "string",
+            "title": "Intent",
+            "description": "Classified intent of the interaction.",
+            "default": ""
+          },
+          "agent_response": {
+            "type": "string",
+            "title": "Agent Response",
+            "description": "Agent response text.",
+            "default": ""
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id",
+            "description": "Associated flow run ID."
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "User who triggered the interaction."
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO-8601 timestamp.",
+            "default": ""
+          },
+          "predicted_next_step": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Next Step",
+            "description": "LLM-predicted next action."
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id",
+            "description": "Agent registry ID that produced this event (e.g. 'product_manager')."
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity",
+            "description": "Event severity: 'debug', 'info', 'warn', or 'error'.",
+            "default": "info"
+          },
+          "tokens_delta": {
+            "type": "integer",
+            "title": "Tokens Delta",
+            "description": "Tokens consumed by this event; 0 if unknown.",
+            "default": 0
+          },
+          "cost_usd_delta": {
+            "type": "number",
+            "title": "Cost Usd Delta",
+            "description": "Cost in USD for this event; 0.0 if unknown.",
+            "default": 0.0
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "One-line human summary of the event.",
+            "default": ""
+          }
+        },
         "type": "object",
-        "required": ["version", "date", "summary"],
-        "title": "CodexEntry",
-        "description": "A single changelog entry.",
-        "properties": {
-          "version": { "type": "string", "title": "Version", "description": "Semantic version string.", "examples": ["0.1.6"] },
-          "date": { "type": "string", "title": "Date", "description": "ISO-8601 date.", "examples": ["2026-02-28"] },
-          "summary": { "type": "string", "title": "Summary", "description": "Human-readable change summary." }
-        }
-      },
-      "ProjectCreate": {
-        "type": "object",
-        "required": ["name"],
-        "title": "ProjectCreate",
-        "description": "Request body for creating a new project.",
-        "properties": {
-          "name": { "type": "string", "title": "Name", "minLength": 1, "maxLength": 256, "description": "Project name." },
-          "confluence_space_key": { "type": "string", "title": "Confluence Space Key", "default": "", "maxLength": 50 },
-          "jira_project_key": { "type": "string", "title": "Jira Project Key", "default": "", "maxLength": 50 },
-          "confluence_parent_id": { "type": "string", "title": "Confluence Parent Page ID", "default": "", "maxLength": 50 },
-          "figma_api_key": { "type": "string", "title": "Figma API Key", "default": "", "maxLength": 256 },
-          "figma_team_id": { "type": "string", "title": "Figma Team ID", "default": "", "maxLength": 50 },
-          "reference_urls": { "type": "array", "items": { "type": "string" }, "title": "Reference URLs", "default": [], "maxItems": 20 }
-        }
-      },
-      "ProjectUpdate": {
-        "type": "object",
-        "title": "ProjectUpdate",
-        "description": "Partial update — only submitted fields are changed.",
-        "properties": {
-          "name": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 256 }, { "type": "null" }], "title": "Name" },
-          "confluence_space_key": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Confluence Space Key" },
-          "jira_project_key": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Jira Project Key" },
-          "confluence_parent_id": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Confluence Parent Page ID" },
-          "figma_api_key": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Figma API Key" },
-          "figma_team_id": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Figma Team ID" }
-        }
-      },
-      "ProjectItem": {
-        "type": "object",
-        "required": ["project_id", "name"],
-        "title": "ProjectItem",
-        "description": "A project with its configuration and metadata.",
-        "properties": {
-          "project_id": { "type": "string", "title": "Project ID", "description": "Unique project identifier." },
-          "name": { "type": "string", "title": "Name" },
-          "confluence_space_key": { "type": "string", "title": "Confluence Space Key", "default": "" },
-          "jira_project_key": { "type": "string", "title": "Jira Project Key", "default": "" },
-          "confluence_parent_id": { "type": "string", "title": "Confluence Parent Page ID", "default": "" },
-          "figma_api_key_set": { "type": "boolean", "title": "Figma API Key Set", "description": "True if a Figma API key is configured (key itself not exposed).", "default": false },
-          "figma_team_id": { "type": "string", "title": "Figma Team ID", "default": "" },
-          "reference_urls": { "type": "array", "items": { "type": "string" }, "title": "Reference URLs", "default": [] },
-          "created_at": { "type": "string", "title": "Created At", "description": "ISO-8601 timestamp.", "default": "" },
-          "updated_at": { "type": "string", "title": "Updated At", "description": "ISO-8601 timestamp.", "default": "" }
-        }
-      },
-      "ProjectListResponse": {
-        "type": "object",
-        "required": ["items", "total", "page", "page_size", "total_pages"],
-        "title": "ProjectListResponse",
-        "description": "Paginated list of projects.",
-        "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectItem" }, "title": "Items" },
-          "total": { "type": "integer", "title": "Total", "description": "Total number of projects." },
-          "page": { "type": "integer", "title": "Page", "description": "Current page number." },
-          "page_size": { "type": "integer", "title": "Page Size" },
-          "total_pages": { "type": "integer", "title": "Total Pages" }
-        }
-      },
-      "IdeaItem": {
-        "type": "object",
-        "required": ["run_id"],
-        "title": "IdeaItem",
-        "description": "An idea (working PRD) with progress tracking and delivery status.",
-        "properties": {
-          "run_id": { "type": "string", "title": "Run ID", "description": "Unique flow run identifier." },
-          "idea": { "type": "string", "title": "Idea", "description": "Original idea text.", "default": "" },
-          "finalized_idea": { "type": "string", "title": "Finalized Idea", "description": "AI-refined idea text.", "default": "" },
-          "status": { "type": "string", "title": "Status", "description": "inprogress | completed | paused | failed | archived.", "default": "" },
-          "project_id": { "type": "string", "title": "Project ID", "description": "Associated project.", "default": "" },
-          "created_at": { "type": "string", "title": "Created At", "description": "ISO-8601 timestamp.", "default": "" },
-          "completed_at": { "type": "string", "title": "Completed At", "description": "ISO-8601 timestamp.", "default": "" },
-          "sections_done": { "type": "integer", "title": "Sections Done", "description": "Number of PRD sections completed.", "default": 0 },
-          "total_sections": { "type": "integer", "title": "Total Sections", "description": "Total number of sections (12).", "default": 0 },
-          "iteration": { "type": "integer", "title": "Iteration", "description": "Current refinement iteration.", "default": 0 },
-          "confluence_url": { "type": "string", "title": "Confluence URL", "description": "Published Confluence page URL.", "default": "" },
-          "jira_phase": { "type": "string", "title": "Jira Phase", "description": "Jira delivery phase.", "default": "" },
-          "figma_design_url": { "type": "string", "title": "Figma Design URL", "description": "Generated UX design URL.", "default": "" },
-          "figma_design_status": { "type": "string", "title": "Figma Design Status", "description": "UX design generation status.", "default": "" }
-        }
-      },
-      "IdeaListResponse": {
-        "type": "object",
-        "required": ["items", "total", "page", "page_size", "total_pages"],
-        "title": "IdeaListResponse",
-        "description": "Paginated list of ideas.",
-        "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/IdeaItem" }, "title": "Items" },
-          "total": { "type": "integer", "title": "Total" },
-          "page": { "type": "integer", "title": "Page" },
-          "page_size": { "type": "integer", "title": "Page Size" },
-          "total_pages": { "type": "integer", "title": "Total Pages" }
-        }
-      },
-      "IdeaStatusUpdate": {
-        "type": "object",
-        "required": ["status"],
-        "title": "IdeaStatusUpdate",
-        "description": "Update idea status. Only 'archived' and 'paused' transitions are supported.",
-        "properties": {
-          "status": { "type": "string", "enum": ["archived", "paused"], "title": "Status", "description": "New status." }
-        }
-      }
-    },
-    "securitySchemes": {
-      "ssoAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "SSO RS256 JWT token. Obtain from the SSO service login endpoint. Validated locally via public key or remotely via `/sso/oauth/introspect`. Bypassed when `SSO_ENABLED=false`."
-      },
-      "slackVerification": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Slack-Signature",
-        "description": "Slack request signing (HMAC-SHA256). Used for /slack/* endpoints."
-      },
-      "ssoWebhook": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Webhook-Signature",
-        "description": "SSO webhook HMAC-SHA256 signature for /sso/webhooks/* endpoints."
+        "required": [
+          "interaction_id"
+        ],
+        "title": "ActivityEvent",
+        "description": "A single agent activity event."
       }
     }
-  },
-  "tags": [
-    { "name": "Health", "description": "Liveness probes, version info, and token diagnostics." },
-    { "name": "Projects", "description": "Project CRUD — create, list, update, delete projects with Confluence/Jira/Figma configuration." },
-    { "name": "Ideas", "description": "Idea lifecycle — list, get, delete, archive, pause ideas with progress tracking." },
-    { "name": "Flow Runs", "description": "PRD generation flow management — kickoff, approve, pause, resume, and monitor." },
-    { "name": "Jobs", "description": "Persistent job records for flow execution tracking." },
-    { "name": "Publishing", "description": "Confluence page publishing and Jira ticket creation for completed PRDs." },
-    { "name": "Slack", "description": "Slack bot integration — Events API, Block Kit interactions, OAuth v2." },
-    { "name": "SSO Webhooks", "description": "Single sign-on user lifecycle event receiver." }
-  ]
+  }
 }

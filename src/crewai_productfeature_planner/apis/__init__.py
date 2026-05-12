@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 
 from crewai_productfeature_planner.apis.admin.router import router as admin_router
 from crewai_productfeature_planner.apis.agentic_team import agentic_team_router
+from crewai_productfeature_planner.apis.agent_worker import aw_credentials_router, aw_proxy_router
 from crewai_productfeature_planner.apis.approvals.router import router as approvals_router
 from crewai_productfeature_planner.apis.code_repos._route_github_webhook import router as github_webhook_router
 from crewai_productfeature_planner.apis.code_repos.router import router as code_repos_router
@@ -324,6 +325,17 @@ async def _lifespan(application: FastAPI):
 
     threading.excepthook = _thread_excepthook
 
+    # 10. Capture the main event loop so WebSocket broadcasts from
+    #     ThreadPoolExecutor threads can schedule coroutines correctly.
+    try:
+        from crewai_productfeature_planner.apis.ideation._route_websocket import (
+            set_main_loop,
+        )
+        set_main_loop(asyncio.get_running_loop())
+        _logger.info("Ideation WS: main event loop captured for thread-safe broadcasts")
+    except Exception as exc:
+        _logger.warning("Ideation WS: failed to capture main loop: %s", exc)
+
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────
@@ -527,6 +539,14 @@ app = FastAPI(
                 "codebase summaries committed to the knowledge base."
             ),
         },
+        {
+            "name": "Agent Worker",
+            "description": (
+                "Proxy endpoints for Agent Worker integration. "
+                "Manage Atlassian credentials (store-and-forward) and "
+                "forward requests to the Agent Worker service."
+            ),
+        },
     ],
 )
 
@@ -551,6 +571,8 @@ app.include_router(ideation_ws_router)
 app.include_router(company_router)
 app.include_router(approvals_router)
 app.include_router(agentic_team_router)
+app.include_router(aw_credentials_router)
+app.include_router(aw_proxy_router)
 app.include_router(knowledge_router)
 app.include_router(code_repos_router)
 app.include_router(github_webhook_router)

@@ -1,1 +1,22 @@
-{"get":{"tags":["Integrations"],"summary":"Get integration status","description":"Verify connectivity to external services (Confluence, Jira).","responses":{"200":{"description":"Integration status"}}}}
+{
+  "get": {
+    "tags": [
+      "Integrations"
+    ],
+    "summary": "Check integration connection status",
+    "description": "Returns the configuration status of Confluence and Jira integrations.  Reads from per-tenant MongoDB storage first, falls back to environment variables.",
+    "operationId": "get_integration_status_integrations_status_get",
+    "responses": {
+      "200": {
+        "description": "Integration status returned.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IntegrationStatusResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

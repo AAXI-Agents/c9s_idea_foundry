@@ -1,0 +1,26 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Logout all sessions (revoke all tokens)",
+    "description": "Proxy logout-all to the SSO server.\n\nRevokes all access and refresh tokens.  Requires ``Authorization: Bearer``.",
+    "operationId": "sso_logout_all_auth_sso_logout_all_post",
+    "responses": {
+      "200": {
+        "description": "All tokens revoked \u2014 all sessions ended",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "401": {
+        "description": "Missing or invalid Bearer token"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

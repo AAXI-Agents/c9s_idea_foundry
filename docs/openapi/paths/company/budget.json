@@ -1,1 +1,22 @@
-{"get":{"tags":["Company"],"summary":"Get company budget summary","responses":{"200":{"description":"Budget summary"}}}}
+{
+  "get": {
+    "tags": [
+      "Company"
+    ],
+    "summary": "Get company budget summary",
+    "description": "Return aggregated budget and cost data by department.",
+    "operationId": "get_budget_endpoint_company_budget_get",
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BudgetSummaryResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

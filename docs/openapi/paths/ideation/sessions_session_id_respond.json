@@ -1,0 +1,83 @@
+{
+  "post": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "Send user response",
+    "description": "Submit a user response to the current agent prompt. The agent processes the input and returns a response via WebSocket.",
+    "operationId": "respond_to_ideation_flow_ideation_sessions__session_id__respond_post",
+    "parameters": [
+      {
+        "name": "session_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Session Id"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/IdeationRespondRequest"
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationRespondResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

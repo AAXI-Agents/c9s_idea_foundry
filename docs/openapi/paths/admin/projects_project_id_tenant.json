@@ -1,0 +1,53 @@
+{
+  "patch": {
+    "tags": [
+      "Admin"
+    ],
+    "summary": "Reassign project to another organization",
+    "description": "Reassign a project and its related documents to a new org.\n\nCascades the organization_id update to workingIdeas, crewJobs,\nand productRequirements. Creates an audit log entry.",
+    "operationId": "reassign_project_tenant_admin_projects__project_id__tenant_patch",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/TenantReassignRequest"
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TenantReassignResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

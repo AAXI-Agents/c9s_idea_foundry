@@ -1,0 +1,136 @@
+{
+  "get": {
+    "tags": [
+      "Agentic Team"
+    ],
+    "summary": "List received webhook deliveries",
+    "description": "Returns a paginated list of received webhook deliveries from Agentic Team, with optional filters by event type, idea, and status. Results are scoped to the caller's tenant.",
+    "operationId": "list_webhook_deliveries_api_agentic_team_deliveries_get",
+    "parameters": [
+      {
+        "name": "event",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by event type",
+          "title": "Event"
+        },
+        "description": "Filter by event type"
+      },
+      {
+        "name": "idea_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by idea_id",
+          "title": "Idea Id"
+        },
+        "description": "Filter by idea_id"
+      },
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by status",
+          "title": "Status"
+        },
+        "description": "Filter by status"
+      },
+      {
+        "name": "since",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter since datetime",
+          "title": "Since"
+        },
+        "description": "Filter since datetime"
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Page number",
+          "default": 1,
+          "title": "Page"
+        },
+        "description": "Page number"
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 200,
+          "minimum": 1,
+          "description": "Items per page",
+          "default": 50,
+          "title": "Page Size"
+        },
+        "description": "Items per page"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response List Webhook Deliveries Api Agentic Team Deliveries Get"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

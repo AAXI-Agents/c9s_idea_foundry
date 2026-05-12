@@ -1,1 +1,65 @@
-{"get":{"tags":["User Profile"],"summary":"Get user profile","description":"Returns the merged user profile: SSO identity + local preferences.","responses":{"200":{"description":"User profile"}}},"patch":{"tags":["User Profile"],"summary":"Update user profile preferences","description":"Updates local user preferences.","responses":{"200":{"description":"Updated profile"}}}}
+{
+  "get": {
+    "tags": [
+      "User Profile"
+    ],
+    "summary": "Get user profile",
+    "description": "Returns the merged user profile: SSO-managed identity fields (read-only) combined with user-editable local preferences.",
+    "operationId": "get_profile_user_profile_get",
+    "responses": {
+      "200": {
+        "description": "Profile returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UserProfileResponse"
+            }
+          }
+        }
+      }
+    }
+  },
+  "patch": {
+    "tags": [
+      "User Profile"
+    ],
+    "summary": "Update user profile preferences",
+    "description": "Updates local user preferences. Only the fields provided in the request body are updated \u2014 omitted fields are left unchanged. SSO-managed fields (email, name, avatar) are not affected.",
+    "operationId": "update_profile_user_profile_patch",
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/UserProfileUpdateRequest"
+          }
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "200": {
+        "description": "Profile updated successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UserProfileResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Failed to persist preferences."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

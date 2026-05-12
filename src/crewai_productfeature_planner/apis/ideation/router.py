@@ -366,7 +366,13 @@ async def respond_to_ideation(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     if session["status"] != "active":
-        raise HTTPException(status_code=409, detail="Session is not active.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Session is '{session['status']}' and cannot accept responses. "
+                "Start a new session or use an active one."
+            ),
+        )
 
     result = await handle_user_response(
         session_id=session_id,
@@ -410,7 +416,13 @@ async def iterate_ideation(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     if session["status"] != "active":
-        raise HTTPException(status_code=409, detail="Session is not active.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Session is '{session['status']}' and cannot accept iterations. "
+                "Start a new session or use an active one."
+            ),
+        )
 
     feedback = request.feedback if request else None
     result = await handle_iterate(
@@ -453,7 +465,13 @@ async def advance_ideation(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     if session["status"] != "active":
-        raise HTTPException(status_code=409, detail="Session is not active.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Session is '{session['status']}' and cannot be advanced. "
+                "Start a new session or use an active one."
+            ),
+        )
 
     approved_output = request.approved_output if request else None
     result = await handle_advance(
@@ -509,7 +527,13 @@ async def trigger_ideation_step(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     if session["status"] != "active":
-        raise HTTPException(status_code=409, detail="Session is not active.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Session is '{session['status']}' and cannot trigger agent. "
+                "Start a new session or use an active one."
+            ),
+        )
 
     result = await handle_trigger_step(session_id=session_id, tenant=tenant)
 
@@ -563,7 +587,13 @@ async def rollback_ideation(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     if session["status"] != "active":
-        raise HTTPException(status_code=409, detail="Session is not active.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Session is '{session['status']}' and cannot be rolled back. "
+                "Start a new session or use an active one."
+            ),
+        )
 
     result = await handle_rollback(session_id=session_id, tenant=tenant)
 

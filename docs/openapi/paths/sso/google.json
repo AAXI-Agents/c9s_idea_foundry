@@ -1,0 +1,29 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Google Sign-In (ID token \u2192 JWT tokens)",
+    "description": "Proxy Google Sign-In to the SSO server.\n\nExpects JSON body: ``{\"id_token\": \"eyJhbGci...\"}``",
+    "operationId": "sso_google_login_auth_sso_google_post",
+    "responses": {
+      "200": {
+        "description": "Login successful \u2014 JWT tokens returned",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing id_token"
+      },
+      "401": {
+        "description": "Invalid Google ID token"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "post": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "Re-iterate current step",
+    "description": "Request the agent to re-iterate the current step output with optional feedback.",
+    "operationId": "iterate_ideation_flow_ideation_sessions__session_id__iterate_post",
+    "parameters": [
+      {
+        "name": "session_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Session Id"
+        }
+      }
+    ],
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdeationIterateRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request"
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationIterateResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

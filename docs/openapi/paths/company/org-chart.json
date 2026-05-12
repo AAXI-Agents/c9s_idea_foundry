@@ -1,0 +1,22 @@
+{
+  "get": {
+    "tags": [
+      "Company"
+    ],
+    "summary": "Get agent org chart",
+    "description": "Return all agents structured as an org chart with departments.",
+    "operationId": "get_org_chart_endpoint_company_org_chart_get",
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OrgChartResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

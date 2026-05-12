@@ -124,6 +124,12 @@ tags:
 | `agentic_team/_webhook.py` | POST /webhooks/agentic-team — inbound task/epic completion webhook |
 | `agentic_team/_service.py` | Outbound API client (features, task status, pipeline dashboard, kickoff) |
 | `agentic_team/router.py` | Router composition — includes webhook_router |
+| `agent_worker/__init__.py` | Package init + re-export `aw_credentials_router`, `aw_proxy_router` |
+| `agent_worker/_config.py` | Env var config: AGENT_WORKER_ENABLED, AGENT_WORKER_BASE_URL |
+| `agent_worker/_client.py` | HTTP client with SSO service-token auth, 401 retry, user-token pass-through |
+| `agent_worker/_models.py` | Pydantic models for credential proxy endpoints (field normalization) |
+| `agent_worker/_route_credentials.py` | POST/DELETE /aw/atlassian/credentials — store-and-forward proxy |
+| `agent_worker/_route_proxy.py` | Catch-all /aw/{path} proxy — user-token forwarding, graceful GET degradation |
 
 ## Flows (`flows/`)
 
@@ -177,6 +183,7 @@ tags:
 | `knowledge_documents/` | Knowledge document metadata CRUD (uploads + URL ingestions, review results) |
 | `knowledge_summaries/` | Aggregated knowledge summaries per project (unified bullets, topics, contradictions) |
 | `code_repos/` | Registered GitHub repos per project (OAuth tokens, analysis results) |
+| `integration_credentials/` | Per-tenant integration credential storage with Fernet encryption |
 
 ## Services (`services/`)
 

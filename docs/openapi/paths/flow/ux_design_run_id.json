@@ -1,0 +1,69 @@
+{
+  "post": {
+    "tags": [
+      "Flow Runs"
+    ],
+    "summary": "Trigger UX design generation",
+    "description": "Triggers UX design generation for a completed PRD. The PRD must be in `completed` status. The UX design flow runs asynchronously \u2014 poll `GET /flow/runs/{run_id}` and check the `ux_design_status` field for progress.\n\nReturns 409 if UX design is already generating or completed.",
+    "operationId": "kickoff_ux_design_flow_ux_design__run_id__post",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "202": {
+        "description": "UX design generation started.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UXDesignKickoffResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "PRD run not found."
+      },
+      "409": {
+        "description": "PRD not completed or UX design already in progress."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI / Gemini service unavailable. The UX design flow will fail and status will reset to empty.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

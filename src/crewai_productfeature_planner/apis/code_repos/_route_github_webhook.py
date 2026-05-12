@@ -171,7 +171,10 @@ async def handle_github_webhook(
             project.get("enterprise_id", "")
             or project.get("organization_id", "default")
         )
-        github_token = project.get("github_token")
+        from crewai_productfeature_planner.services.field_encryption import decrypt_value
+
+        raw_token = project.get("github_token")
+        github_token = decrypt_value(raw_token) if raw_token else None
 
         # Trigger re-analysis
         analyze_repo_async(

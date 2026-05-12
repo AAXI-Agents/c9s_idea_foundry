@@ -1,1 +1,52 @@
-{"get":{"tags":["Dashboard"],"summary":"Dashboard aggregate statistics","description":"Returns aggregate idea counts for the dashboard.","responses":{"200":{"description":"Dashboard stats"}}}}
+{
+  "get": {
+    "tags": [
+      "Dashboard"
+    ],
+    "summary": "Dashboard aggregate statistics",
+    "description": "Returns aggregate idea counts for the dashboard. Counts exclude archived ideas.",
+    "operationId": "get_dashboard_stats_dashboard_stats_get",
+    "parameters": [
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by organization (enterprise admins only)",
+          "title": "Organization Id"
+        },
+        "description": "Filter by organization (enterprise admins only)"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Statistics returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DashboardStats"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

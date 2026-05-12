@@ -1,0 +1,50 @@
+{
+  "get": {
+    "tags": [
+      "Project Ideas"
+    ],
+    "summary": "Get idea flow progress",
+    "description": "Returns aggregated progress for the idea's active (or most recent) PRD flow run, including section completion, current phase, and status.",
+    "operationId": "get_idea_progress_projects__project_id__ideas__idea_id__progress_get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "idea_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Idea Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

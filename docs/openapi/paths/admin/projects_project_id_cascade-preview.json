@@ -1,0 +1,43 @@
+{
+  "get": {
+    "tags": [
+      "Admin"
+    ],
+    "summary": "Preview document counts before tenant reassignment",
+    "description": "Return counts of documents that would be affected by reassignment.",
+    "operationId": "cascade_preview_admin_projects__project_id__cascade_preview_get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CascadePreviewResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

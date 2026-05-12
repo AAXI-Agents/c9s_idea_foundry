@@ -28,8 +28,9 @@ Each page documents every field with type, constraints, descriptions, API refere
 | `userSession` | [[userSession Schema]] | User and channel session management | `session_id` |
 | `slackOAuth` | [[slackOAuth Schema]] | Slack workspace OAuth token persistence | `team_id` |
 | `userSuggestions` | [[userSuggestions Schema]] | Ambiguous intent tracking for self-learning | `suggestion_id` |
+| `integrationCredentials` | — | Per-tenant integration credentials (encrypted) | `(organization_id, provider)` |
 
-**Total**: 9 collections, created by `ensure_collections()` in `scripts/setup_mongodb.py` on startup.
+**Total**: 10 collections, created by `ensure_collections()` in `scripts/setup_mongodb.py` on startup.
 
 ---
 

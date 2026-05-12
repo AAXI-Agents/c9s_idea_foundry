@@ -1,0 +1,43 @@
+{
+  "get": {
+    "tags": [
+      "Company"
+    ],
+    "summary": "Get agent detail",
+    "description": "Return full details for a specific agent.",
+    "operationId": "get_agent_endpoint_company_agents__agent_id__get",
+    "parameters": [
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Agent Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AgentDetail"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

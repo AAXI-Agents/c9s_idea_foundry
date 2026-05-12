@@ -1,0 +1,20 @@
+{
+  "get": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "SSO authentication status",
+    "description": "Check whether the current request has a valid SSO token.\n\nIf a Bearer token is present it is validated; otherwise falls\nback to session tokens from the OAuth callback flow.",
+    "operationId": "sso_status_auth_sso_status_get",
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      }
+    }
+  }
+}

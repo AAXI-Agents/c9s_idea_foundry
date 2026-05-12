@@ -1,0 +1,50 @@
+{
+  "post": {
+    "tags": [
+      "Project Ideas"
+    ],
+    "summary": "Resume paused flow for this idea",
+    "description": "Resumes a paused PRD flow that is linked to this idea. The idea must have an `active_run_id` and the flow must be paused.",
+    "operationId": "resume_idea_flow_projects__project_id__ideas__idea_id__resume_post",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "idea_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Idea Id"
+        }
+      }
+    ],
+    "responses": {
+      "202": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

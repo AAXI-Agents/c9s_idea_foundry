@@ -1,0 +1,62 @@
+{
+  "post": {
+    "tags": [
+      "Code Repos"
+    ],
+    "summary": "Start GitHub OAuth flow",
+    "description": "Returns a GitHub OAuth authorization URL. Redirect the user to it.",
+    "operationId": "github_connect_projects__project_id__github_connect_post",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/GithubConnectResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "GitHub OAuth not configured."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Resend registration 2FA code",
+    "description": "Resend the registration 2FA code.\n\nExpects JSON body: ``{\"email\": \"...\"}``",
+    "operationId": "sso_register_resend_2fa_auth_sso_register_resend_2fa_post",
+    "responses": {
+      "200": {
+        "description": "2FA code resent to email",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing email"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

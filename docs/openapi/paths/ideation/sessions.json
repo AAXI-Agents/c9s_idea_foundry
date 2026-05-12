@@ -1,1 +1,145 @@
-{"get":{"tags":["Ideation Flow"],"summary":"List ideation sessions","description":"Returns paginated list of ideation sessions.","responses":{"200":{"description":"Session list"}}}}
+{
+  "get": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "List ideation sessions (paginated)",
+    "description": "Returns ideation sessions for the authenticated user, newest first.",
+    "operationId": "list_ideation_sessions_flow_ideation_sessions_get",
+    "parameters": [
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by status",
+          "title": "Status"
+        },
+        "description": "Filter by status"
+      },
+      {
+        "name": "project_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by project",
+          "title": "Project Id"
+        },
+        "description": "Filter by project"
+      },
+      {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Search by title",
+          "title": "Search"
+        },
+        "description": "Search by title"
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Page number",
+          "default": 1,
+          "title": "Page"
+        },
+        "description": "Page number"
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 200,
+          "minimum": 1,
+          "description": "Items per page",
+          "default": 50,
+          "title": "Page Size"
+        },
+        "description": "Items per page"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationSessionListResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

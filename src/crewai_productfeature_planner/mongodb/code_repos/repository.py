@@ -111,12 +111,19 @@ def list_code_repos(
     *,
     project_id: str,
     tenant: TenantContext | None = None,
+    skip: int = 0,
+    limit: int = 50,
 ) -> list[dict]:
-    """List all code repos for a project."""
+    """List code repos for a project with pagination."""
     try:
-        cursor = _col().find(
-            {"project_id": project_id, **tenant_filter(tenant)},
-            sort=[("created_at", -1)],
+        cursor = (
+            _col()
+            .find(
+                {"project_id": project_id, **tenant_filter(tenant)},
+                sort=[("created_at", -1)],
+            )
+            .skip(skip)
+            .limit(limit)
         )
         docs = []
         for doc in cursor:
@@ -131,6 +138,26 @@ def list_code_repos(
             exc_info=True,
         )
         return []
+
+
+def count_code_repos(
+    *,
+    project_id: str,
+    tenant: TenantContext | None = None,
+) -> int:
+    """Count all code repos for a project."""
+    try:
+        return _col().count_documents(
+            {"project_id": project_id, **tenant_filter(tenant)}
+        )
+    except PyMongoError as exc:
+        logger.error(
+            "[CodeRepos] Failed to count repos project=%s: %s",
+            project_id,
+            exc,
+            exc_info=True,
+        )
+        return 0
 
 
 def update_code_repo(

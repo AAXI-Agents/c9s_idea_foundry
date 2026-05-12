@@ -1,0 +1,29 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Re-authenticate \u2014 verify 2FA code",
+    "description": "Verify re-authentication 2FA code.\n\nRequires Bearer token.\nExpects JSON body: ``{\"reauth_token\": \"...\", \"code\": \"123456\"}``",
+    "operationId": "sso_reauth_verify_2fa_auth_sso_reauth_verify_2fa_post",
+    "responses": {
+      "200": {
+        "description": "Re-authentication confirmed",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing reauth_token or code"
+      },
+      "401": {
+        "description": "Invalid code or missing Bearer"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

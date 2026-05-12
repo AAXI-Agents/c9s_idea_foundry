@@ -1,0 +1,62 @@
+{
+  "post": {
+    "tags": [
+      "Health"
+    ],
+    "summary": "Exchange long-lived Slack token for rotating tokens",
+    "description": "One-time exchange of a long-lived ``xoxb-`` bot token for rotating tokens via Slack's ``tooling.tokens.rotate`` API.\n\n**Required environment variables:**\n\n| Variable | Description |\n|---|---|\n| ``SLACK_CLIENT_ID`` | Slack app client ID |\n| ``SLACK_CLIENT_SECRET`` | Slack app client secret |\n\nThe existing ``xoxb-`` token is read from the MongoDB ``slackOAuth`` collection for the given ``team_id``.\n\nAfter a successful exchange, the new rotating access token, refresh token, and expiry are persisted to the ``slackOAuth`` collection.  Subsequent refreshes happen automatically.\n\n**Note:** This is a one-time operation. Once exchanged, use ``POST /health/slack-token/refresh`` to force a manual refresh.",
+    "operationId": "slack_token_exchange_health_slack_token_exchange_post",
+    "parameters": [
+      {
+        "name": "team_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Team Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Token exchanged successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response Slack Token Exchange Health Slack Token Exchange Post"
+            },
+            "example": {
+              "token_type": "rotating",
+              "rotation_configured": true,
+              "expires_in": 43200,
+              "message": "Token exchanged successfully",
+              "scope": "chat:write,channels:read"
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Missing required env vars or exchange failed."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

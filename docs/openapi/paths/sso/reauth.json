@@ -1,0 +1,29 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Re-authenticate (Bearer + password \u2192 2FA challenge)",
+    "description": "Re-authenticate the current user for sensitive operations.\n\nRequires Bearer token AND password.\nExpects JSON body: ``{\"password\": \"...\"}``",
+    "operationId": "sso_reauth_auth_sso_reauth_post",
+    "responses": {
+      "200": {
+        "description": "2FA challenge issued",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing password"
+      },
+      "401": {
+        "description": "Invalid credentials or missing Bearer"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

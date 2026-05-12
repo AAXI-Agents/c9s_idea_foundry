@@ -1,0 +1,66 @@
+{
+  "get": {
+    "tags": [
+      "UX Design"
+    ],
+    "summary": "Get UX design status",
+    "description": "Returns the current UX design generation status for a run. The frontend polls this endpoint after triggering ``POST /flow/ux/kickoff``.",
+    "operationId": "get_ux_design_status_flow_ux_status__run_id__get",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "UX design status returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UXDesignStatusResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "PRD run not found."
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM / OpenAI / Gemini service unavailable. The UX design flow will fail and status will reset to empty.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

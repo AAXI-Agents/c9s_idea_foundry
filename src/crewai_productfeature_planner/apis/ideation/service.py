@@ -374,6 +374,25 @@ async def handle_advance(
 
     current_step = session["current_step"]
 
+    # Guard: require agent output before allowing advance.
+    # Without this, rapid-fire advance calls can skip steps entirely,
+    # completing the session before the agent has responded.
+    steps_data = session.get("steps_data", {})
+    step_data = steps_data.get(current_step, {})
+    if not step_data.get("output"):
+        logger.warning(
+            "[IdeationService] Advance blocked — step has no agent output "
+            "session=%s step=%s",
+            session_id,
+            current_step,
+        )
+        return {
+            "error": (
+                f"Step '{step_to_name(current_step)}' has no agent output yet. "
+                "Please wait for the agent to respond before advancing."
+            )
+        }
+
     # If feedback provided, record it
     if feedback:
         append_message(
@@ -395,6 +414,13 @@ async def handle_advance(
         prd_run_id = await trigger_prd_from_ideation(
             session_id=session_id, tenant=tenant
         )
+        # Persist prd_run_id on the session document so it survives page reloads.
+        if prd_run_id:
+            update_session_metadata(
+                session_id=session_id,
+                prd_run_id=prd_run_id,
+                tenant=tenant,
+            )
         result: dict[str, Any] = {
             "previous_step": current_step,
             "new_step": None,

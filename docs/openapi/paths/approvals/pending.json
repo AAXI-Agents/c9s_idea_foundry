@@ -1,1 +1,69 @@
-{"get":{"tags":["Approvals"],"summary":"List pending approvals","description":"Cross-project pending approvals queue.","responses":{"200":{"description":"Pending approvals list"}}}}
+{
+  "get": {
+    "tags": [
+      "Approvals"
+    ],
+    "summary": "List pending approvals",
+    "description": "Returns items the authenticated user can act on across all their accessible projects. Items include PRD sections awaiting approval, paused runs, and completed PRDs awaiting publishing.",
+    "operationId": "list_pending_approvals_approvals_pending_get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by project ID.",
+          "title": "Project Id"
+        },
+        "description": "Filter by project ID."
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 500,
+          "minimum": 1,
+          "description": "Max items to return.",
+          "default": 100,
+          "title": "Limit"
+        },
+        "description": "Max items to return."
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Approvals returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApprovalListResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

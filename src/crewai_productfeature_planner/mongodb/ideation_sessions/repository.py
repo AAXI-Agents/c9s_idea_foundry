@@ -624,9 +624,10 @@ def update_session_metadata(
     session_id: str,
     title: str | None = None,
     project_id: str | None = None,
+    prd_run_id: str | None = None,
     tenant: TenantContext | None = None,
 ) -> dict[str, Any] | None:
-    """Update session metadata (title and/or project_id).
+    """Update session metadata (title, project_id, and/or prd_run_id).
 
     Returns:
         The updated session document, or None on failure.
@@ -637,6 +638,8 @@ def update_session_metadata(
         update["title"] = title
     if project_id is not None:
         update["project_id"] = project_id
+    if prd_run_id is not None:
+        update["prd_run_id"] = prd_run_id
 
     if len(update) == 1:
         # Nothing to update besides updated_at

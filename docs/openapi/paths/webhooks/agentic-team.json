@@ -1,0 +1,69 @@
+{
+  "post": {
+    "tags": [
+      "Webhooks",
+      "Webhooks"
+    ],
+    "summary": "Agentic Team webhook receiver",
+    "description": "Receives task/epic completion events from the Agentic Team platform. Maps Jira labels to idea features and recalculates completion percentages. Verified via HMAC-SHA256. Supports idempotent delivery via delivery_id deduplication.",
+    "operationId": "handle_agentic_team_webhook_webhooks_agentic_team_post",
+    "parameters": [
+      {
+        "name": "x-c9s-signature",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "X-C9S-Signature"
+        }
+      },
+      {
+        "name": "idempotency-key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Idempotency-Key"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true,
+              "title": "Response Handle Agentic Team Webhook Webhooks Agentic Team Post"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

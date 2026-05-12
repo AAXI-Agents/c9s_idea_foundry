@@ -1,0 +1,74 @@
+{
+  "post": {
+    "tags": [
+      "Knowledge"
+    ],
+    "summary": "Re-trigger Content Reviewer",
+    "description": "Re-run the Content Reviewer agent on this document.",
+    "operationId": "retrigger_review_projects__project_id__knowledge__doc_id__review_post",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "doc_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Doc Id"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Organization Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/KnowledgeDocCreated"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Document not found."
+      },
+      "409": {
+        "description": "Document status does not allow review."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

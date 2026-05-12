@@ -1,0 +1,29 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "SSO login \u2014 verify 2FA code \u2192 tokens",
+    "description": "Complete login by verifying the 2FA code.\n\nExpects JSON body: ``{\"email\": \"...\", \"login_token\": \"...\", \"code\": \"123456\"}``",
+    "operationId": "sso_login_verify_2fa_auth_sso_login_verify_2fa_post",
+    "responses": {
+      "200": {
+        "description": "Login successful \u2014 JWT tokens returned",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing email, login_token, or code"
+      },
+      "401": {
+        "description": "Invalid or expired 2FA code"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

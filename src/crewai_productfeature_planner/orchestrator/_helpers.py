@@ -3,6 +3,9 @@
 Credential checks, status printing, and other utilities used across
 multiple stage factories.  Kept here to avoid circular imports and
 to provide a single, small file for AI agents to load.
+
+Credential checks now read from MongoDB (per-tenant) first, then fall
+back to environment variables.
 """
 
 from __future__ import annotations
@@ -40,6 +43,40 @@ def make_page_title(idea: str | None, *, fallback: str = "Product Requirements")
 # ── Credential checks ────────────────────────────────────────────────
 
 
+def _load_atlassian_from_db(organization_id: str) -> dict | None:
+    """Try to load Atlassian credentials from MongoDB for *organization_id*.
+
+    Returns a dict with ``base_url``, ``username``, ``api_token``,
+    ``confluence_base_url``, ``jira_project_key`` if found, else ``None``.
+
+    Uses system-level tenant context since orchestrator runs as a
+    background process.
+    """
+    try:
+        from crewai_productfeature_planner.mongodb._tenant import TenantContext
+        from crewai_productfeature_planner.mongodb.integration_credentials import (
+            get_credentials,
+        )
+
+        tenant = TenantContext.system()
+        doc = get_credentials(organization_id, "atlassian", tenant=tenant)
+        if doc and doc.get("credentials"):
+            creds = doc["credentials"]
+            return {
+                "base_url": creds.get("base_url", ""),
+                "username": creds.get("username", ""),
+                "api_token": creds.get("api_token", ""),
+                "confluence_base_url": doc.get("confluence_base_url", ""),
+                "jira_project_key": doc.get("jira_project_key", ""),
+            }
+    except Exception:
+        logger.debug(
+            "[Helpers] Failed to load Atlassian creds from DB for org_id=%s",
+            organization_id, exc_info=True,
+        )
+    return None
+
+
 def _has_gemini_credentials() -> bool:
     """Return True when at least one Gemini auth mechanism is configured."""
     return bool(
@@ -48,14 +85,23 @@ def _has_gemini_credentials() -> bool:
     )
 
 
-def _has_confluence_credentials() -> bool:
-    """Return True when all required Confluence env vars are set.
+def _has_confluence_credentials(
+    organization_id: str | None = None,
+) -> bool:
+    """Return True when Confluence credentials are available.
 
-    Checks ``ATLASSIAN_BASE_URL``, ``ATLASSIAN_USERNAME``, and
-    ``ATLASSIAN_API_TOKEN``.  Intentionally inlined (not imported from
-    ``confluence_tool``) to avoid triggering the heavy ``tools/__init__``
-    import chain (CrewAI framework) during server startup.
+    When *organization_id* is provided, checks MongoDB first (per-tenant
+    stored credentials).  Falls back to environment variables.
     """
+    if organization_id:
+        db_creds = _load_atlassian_from_db(organization_id)
+        if db_creds:
+            return bool(
+                db_creds["base_url"]
+                and db_creds["username"]
+                and db_creds["api_token"]
+            )
+
     return bool(
         os.environ.get("ATLASSIAN_BASE_URL")
         and os.environ.get("ATLASSIAN_USERNAME")
@@ -63,14 +109,24 @@ def _has_confluence_credentials() -> bool:
     )
 
 
-def _has_jira_credentials() -> bool:
-    """Return True when all required Jira env vars are set.
+def _has_jira_credentials(
+    organization_id: str | None = None,
+) -> bool:
+    """Return True when Jira credentials are available.
 
-    Checks ``ATLASSIAN_BASE_URL``, ``JIRA_PROJECT_KEY``,
-    ``ATLASSIAN_USERNAME``, and ``ATLASSIAN_API_TOKEN``.  Intentionally
-    inlined to avoid triggering the heavy ``tools/__init__`` import
-    chain during server startup.
+    When *organization_id* is provided, checks MongoDB first (per-tenant
+    stored credentials).  Falls back to environment variables.
     """
+    if organization_id:
+        db_creds = _load_atlassian_from_db(organization_id)
+        if db_creds:
+            return bool(
+                db_creds["base_url"]
+                and db_creds["username"]
+                and db_creds["api_token"]
+                and db_creds["jira_project_key"]
+            )
+
     return bool(
         os.environ.get("ATLASSIAN_BASE_URL")
         and os.environ.get("JIRA_PROJECT_KEY")

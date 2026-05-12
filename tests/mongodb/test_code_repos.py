@@ -9,6 +9,7 @@ import pytest
 from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.code_repos.repository import (
     CODE_REPOS_COLLECTION,
+    count_code_repos,
     create_code_repo,
     delete_code_repo,
     get_code_repo,
@@ -73,12 +74,36 @@ class TestGetCodeRepo:
 
 class TestListCodeRepos:
     def test_returns_list(self, mock_col, tenant):
-        mock_col.find.return_value = [
-            {"_id": "x1", "repo_id": "r1"},
-            {"_id": "x2", "repo_id": "r2"},
-        ]
+        mock_col.find.return_value = MagicMock(
+            skip=MagicMock(return_value=MagicMock(
+                limit=MagicMock(return_value=[
+                    {"_id": "x1", "repo_id": "r1"},
+                    {"_id": "x2", "repo_id": "r2"},
+                ])
+            ))
+        )
         result = list_code_repos(project_id="p1", tenant=tenant)
         assert len(result) == 2
+
+    def test_passes_skip_limit(self, mock_col, tenant):
+        chain = MagicMock()
+        chain.skip.return_value = chain
+        chain.limit.return_value = []
+        mock_col.find.return_value = chain
+        list_code_repos(project_id="p1", tenant=tenant, skip=10, limit=5)
+        chain.skip.assert_called_once_with(10)
+        chain.limit.assert_called_once_with(5)
+
+
+class TestCountCodeRepos:
+    def test_counts(self, mock_col, tenant):
+        mock_col.count_documents.return_value = 3
+        assert count_code_repos(project_id="p1", tenant=tenant) == 3
+
+    def test_returns_zero_on_error(self, mock_col, tenant):
+        from pymongo.errors import PyMongoError
+        mock_col.count_documents.side_effect = PyMongoError("fail")
+        assert count_code_repos(project_id="p1", tenant=tenant) == 0
 
 
 class TestDeleteCodeRepo:

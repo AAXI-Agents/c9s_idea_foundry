@@ -1,1 +1,75 @@
-{"get":{"tags":["Admin"],"summary":"List all projects across orgs (enterprise-scoped)","responses":{"200":{"description":"Admin project list"}}}}
+{
+  "get": {
+    "tags": [
+      "Admin"
+    ],
+    "summary": "List all projects across orgs (enterprise-scoped)",
+    "description": "Return paginated projects across all orgs in the enterprise.",
+    "operationId": "list_admin_projects_admin_projects_get",
+    "parameters": [
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "title": "Page"
+        }
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 100,
+          "minimum": 1,
+          "default": 20,
+          "title": "Page Size"
+        }
+      },
+      {
+        "name": "organization_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter to specific org",
+          "title": "Organization Id"
+        },
+        "description": "Filter to specific org"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminProjectListResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "get": {
+    "tags": [
+      "Projects"
+    ],
+    "summary": "Get project backlog",
+    "description": "Returns a kanban-style backlog for a project, composed from working ideas, PRD sections, and publishing state. Each item includes a ``blocked_by`` list for dependency rendering.",
+    "operationId": "get_project_backlog_projects__project_id__backlog_get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 1000,
+          "minimum": 1,
+          "description": "Max items.",
+          "default": 200,
+          "title": "Limit"
+        },
+        "description": "Max items."
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Backlog returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BacklogResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Project not found."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,1 +1,72 @@
-{"post":{"tags":["Ideation Flow"],"summary":"Start an ideation session","description":"Creates a new interactive ideation session with structured Q&A.","responses":{"201":{"description":"Session created"}}}}
+{
+  "post": {
+    "tags": [
+      "Ideation Flow"
+    ],
+    "summary": "Start a new ideation session",
+    "description": "Creates a new interactive ideation session. The session walks through 5 steps: Ideation \u2192 Persona \u2192 Solution \u2192 Goal \u2192 Tech Stack. Each step is powered by a specialist CrewAI agent.",
+    "operationId": "kickoff_ideation_flow_ideation_kickoff_post",
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/IdeationKickoffRequest"
+          }
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "201": {
+        "description": "Session created.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationKickoffResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Session not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "LLM service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/IdeationErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

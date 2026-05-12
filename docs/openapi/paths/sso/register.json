@@ -1,0 +1,66 @@
+{
+  "get": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Redirect to SSO registration",
+    "description": "Redirect the user to the SSO registration page.",
+    "operationId": "sso_register_redirect_auth_sso_register_get",
+    "parameters": [
+      {
+        "name": "redirect_after",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "description": "URL to redirect to after registration and login",
+          "default": "/",
+          "title": "Redirect After"
+        },
+        "description": "URL to redirect to after registration and login"
+      }
+    ],
+    "responses": {
+      "307": {
+        "description": "Successful Response"
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "SSO register \u2014 create account \u2192 2FA challenge",
+    "description": "Proxy user registration to the SSO server.\n\nExpects JSON body: ``{\"email\": \"...\", \"password\": \"...\"}``",
+    "operationId": "sso_register_user_auth_sso_register_post",
+    "responses": {
+      "201": {
+        "description": "Account created \u2014 2FA code sent to email",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing email or password"
+      },
+      "409": {
+        "description": "User already exists"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

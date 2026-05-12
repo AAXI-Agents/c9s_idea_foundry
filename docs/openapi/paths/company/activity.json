@@ -1,1 +1,115 @@
-{"get":{"tags":["Company"],"summary":"List company activity events","responses":{"200":{"description":"Activity event list"}}}}
+{
+  "get": {
+    "tags": [
+      "Company"
+    ],
+    "summary": "List company activity events",
+    "description": "Return paginated activity events for the company dashboard.",
+    "operationId": "list_activity_company_activity_get",
+    "parameters": [
+      {
+        "name": "event_type",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by event type",
+          "title": "Event Type"
+        },
+        "description": "Filter by event type"
+      },
+      {
+        "name": "agent_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by agent ID",
+          "title": "Agent Id"
+        },
+        "description": "Filter by agent ID"
+      },
+      {
+        "name": "department",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by department",
+          "title": "Department"
+        },
+        "description": "Filter by department"
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 200,
+          "minimum": 1,
+          "description": "Page size",
+          "default": 50,
+          "title": "Limit"
+        },
+        "description": "Page size"
+      },
+      {
+        "name": "skip",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset",
+          "default": 0,
+          "title": "Skip"
+        },
+        "description": "Offset"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ActivityListResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

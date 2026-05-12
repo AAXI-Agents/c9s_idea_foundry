@@ -18,6 +18,7 @@ from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.code_repos import (
+    count_code_repos,
     create_code_repo,
     delete_code_repo,
     get_code_repo,
@@ -25,6 +26,10 @@ from crewai_productfeature_planner.mongodb.code_repos import (
 )
 from crewai_productfeature_planner.mongodb.project_config import get_project
 from crewai_productfeature_planner.scripts.logging_config import get_logger
+from crewai_productfeature_planner.services.field_encryption import (
+    decrypt_value,
+    encrypt_value,
+)
 from crewai_productfeature_planner.services.github_service import (
     analyze_repo_async,
     build_oauth_url,
@@ -81,19 +86,30 @@ class GithubCallbackResponse(BaseModel):
     connected: bool
 
 
+# Map internal MongoDB statuses to the frontend contract values.
+# MongoDB keeps granular statuses (clone_failed, analysis_failed, analyzed)
+# for debugging; the API returns the simplified set the frontend expects.
+_STATUS_MAP: dict[str, str] = {
+    "analyzed": "ready",
+    "clone_failed": "failed",
+    "analysis_failed": "failed",
+}
+
+
 def _doc_to_response(doc: dict) -> CodeRepoResponse:
     """Map MongoDB code_repo document to the frontend response shape.
 
     Flattens the nested `analysis` dict and renames fields to match
     the frontend Repo type contract.
     """
+    raw_status = doc.get("status", "pending")
     analysis = doc.get("analysis") or {}
     return CodeRepoResponse(
         repo_id=doc["repo_id"],
         project_id=doc["project_id"],
         url=doc["url"],
         name=doc["name"],
-        status=doc.get("status", "pending"),
+        status=_STATUS_MAP.get(raw_status, raw_status),
         last_analyzed=doc.get("last_analyzed_at"),
         architecture_summary=analysis.get("architecture_summary"),
         primary_language=analysis.get("primary_language"),
@@ -159,13 +175,13 @@ async def github_callback(
     if not token_data:
         raise HTTPException(status_code=502, detail="GitHub token exchange failed.")
 
-    # Store token on project config (encrypted in production)
+    # Store token encrypted at rest
     from crewai_productfeature_planner.mongodb.project_config import update_project
 
     tenant = TenantContext.from_user(user)
     update_project(
         project_id=project_id,
-        updates={"github_token": token_data["access_token"]},
+        updates={"github_token": encrypt_value(token_data["access_token"])},
         tenant=tenant,
     )
 
@@ -277,8 +293,9 @@ async def register_repo(
         user.get("enterprise_id", "") or user.get("organization_id", "default")
     )
 
-    # Get GitHub token from project if available
-    github_token = project.get("github_token")
+    # Get GitHub token from project if available (decrypt from storage)
+    raw_token = project.get("github_token")
+    github_token = decrypt_value(raw_token) if raw_token else None
 
     # Kick off analysis
     analyze_repo_async(
@@ -300,18 +317,21 @@ async def register_repo(
 @router.get(
     "/projects/{project_id}/repos",
     summary="List code repos",
-    description="List all registered code repos for a project.",
+    description="List all registered code repos for a project with pagination.",
     response_model=CodeRepoListResponse,
 )
 async def list_repos(
     project_id: str,
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(50, ge=1, le=200, description="Max items to return"),
     user: dict[str, Any] = Depends(require_sso_user),
     organization_id: str | None = Query(default=None),
 ):
     tenant = resolve_tenant_context(user, organization_id)
-    repos = list_code_repos(project_id=project_id, tenant=tenant)
+    repos = list_code_repos(project_id=project_id, tenant=tenant, skip=skip, limit=limit)
+    total = count_code_repos(project_id=project_id, tenant=tenant)
     items = [_doc_to_response(r) for r in repos]
-    return CodeRepoListResponse(items=items, total=len(items))
+    return CodeRepoListResponse(items=items, total=total)
 
 
 @router.get(
@@ -359,7 +379,8 @@ async def reanalyze_repo(
     tenant_slug = _slugify(
         user.get("enterprise_id", "") or user.get("organization_id", "default")
     )
-    github_token = project.get("github_token") if project else None
+    raw_token = project.get("github_token") if project else None
+    github_token = decrypt_value(raw_token) if raw_token else None
 
     analyze_repo_async(
         repo_id=repo_id,

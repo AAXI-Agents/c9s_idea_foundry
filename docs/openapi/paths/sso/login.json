@@ -1,0 +1,66 @@
+{
+  "get": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "Start SSO sign-in (OAuth2 redirect)",
+    "description": "Redirect the user to the SSO authorization endpoint.\n\nAfter the user authenticates, they are redirected back to\n``/auth/sso/callback`` with an authorization code which is\nexchanged for access + refresh tokens.",
+    "operationId": "sso_login_auth_sso_login_get",
+    "parameters": [
+      {
+        "name": "redirect_after",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "description": "URL to redirect to after successful sign-in",
+          "default": "/",
+          "title": "Redirect After"
+        },
+        "description": "URL to redirect to after successful sign-in"
+      }
+    ],
+    "responses": {
+      "307": {
+        "description": "Successful Response"
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "SSO login \u2014 credentials \u2192 tokens or 2FA challenge",
+    "description": "Proxy login to the SSO server.\n\nExpects JSON body: ``{\"email\": \"...\", \"password\": \"...\"}``\n\nThe SSO server returns tokens directly (when 2FA is disabled)\nor a ``login_token`` for the 2FA challenge.",
+    "operationId": "sso_direct_login_auth_sso_login_post",
+    "responses": {
+      "200": {
+        "description": "**Dual response** depending on user's 2FA setting:\n\n- **2FA disabled** \u2192 tokens with `access_token`, `refresh_token`, `expires_in`\n- **2FA enabled** \u2192 `two_factor_required`, `login_token`, `email`, `expires_in` \u2014 follow up with `POST /auth/sso/login/verify-2fa`",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing email or password"
+      },
+      "401": {
+        "description": "Invalid credentials"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

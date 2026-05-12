@@ -1,0 +1,63 @@
+{
+  "get": {
+    "tags": [
+      "Publishing"
+    ],
+    "summary": "Preview Confluence-formatted PRD before publishing",
+    "description": "Renders the PRD as Confluence XHTML without actually publishing. Returns both the raw markdown and the formatted XHTML so the user can review before committing. Also identifies which sections changed since the last publish.",
+    "operationId": "preview_confluence_publishing_confluence__run_id__preview_get",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConfluencePreviewResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "No completed PRD found for the run_id.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

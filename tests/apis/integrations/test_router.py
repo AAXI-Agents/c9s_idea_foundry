@@ -1,6 +1,6 @@
 """Tests for GET /integrations/status endpoint."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -51,7 +51,11 @@ class TestIntegrationStatus:
         monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
         monkeypatch.delenv("JIRA_PROJECT_KEY", raising=False)
 
-        resp = client.get("/integrations/status")
+        with patch(
+            "crewai_productfeature_planner.apis.integrations.router.get_credentials",
+            return_value=None,
+        ):
+            resp = client.get("/integrations/status")
         assert resp.status_code == 200
         body = resp.json()
         assert body["confluence"]["configured"] is False
@@ -66,7 +70,11 @@ class TestIntegrationStatus:
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret-token")
         monkeypatch.delenv("JIRA_PROJECT_KEY", raising=False)
 
-        resp = client.get("/integrations/status")
+        with patch(
+            "crewai_productfeature_planner.apis.integrations.router.get_credentials",
+            return_value=None,
+        ):
+            resp = client.get("/integrations/status")
         assert resp.status_code == 200
         body = resp.json()
         assert body["confluence"]["configured"] is True
@@ -80,7 +88,11 @@ class TestIntegrationStatus:
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret-token")
         monkeypatch.setenv("JIRA_PROJECT_KEY", "MCR")
 
-        resp = client.get("/integrations/status")
+        with patch(
+            "crewai_productfeature_planner.apis.integrations.router.get_credentials",
+            return_value=None,
+        ):
+            resp = client.get("/integrations/status")
         assert resp.status_code == 200
         body = resp.json()
         assert body["confluence"]["configured"] is True
@@ -94,7 +106,41 @@ class TestIntegrationStatus:
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "secret-token")
         monkeypatch.delenv("JIRA_PROJECT_KEY", raising=False)
 
-        resp = client.get("/integrations/status")
+        with patch(
+            "crewai_productfeature_planner.apis.integrations.router.get_credentials",
+            return_value=None,
+        ):
+            resp = client.get("/integrations/status")
         body = resp.json()
         # Should not include /wiki path
         assert body["confluence"]["base_url"] == "https://myco.atlassian.net"
+
+    def test_reads_from_mongodb(self, client, monkeypatch):
+        """Should read credentials from MongoDB when available."""
+        monkeypatch.delenv("ATLASSIAN_BASE_URL", raising=False)
+        monkeypatch.delenv("ATLASSIAN_USERNAME", raising=False)
+        monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
+        monkeypatch.delenv("JIRA_PROJECT_KEY", raising=False)
+
+        db_doc = {
+            "organization_id": "dev-org",
+            "provider": "atlassian",
+            "credentials": {
+                "base_url": "https://db.atlassian.net",
+                "username": "db-user@x.com",
+                "api_token": "db-tok",
+            },
+            "confluence_base_url": "",
+            "jira_project_key": "DBP",
+        }
+        with patch(
+            "crewai_productfeature_planner.apis.integrations.router.get_credentials",
+            return_value=db_doc,
+        ):
+            resp = client.get("/integrations/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["confluence"]["configured"] is True
+        assert body["jira"]["configured"] is True
+        assert body["jira"]["project_key"] == "DBP"
+        assert "db.atlassian.net" in body["confluence"]["base_url"]

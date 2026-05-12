@@ -1,0 +1,50 @@
+{
+  "get": {
+    "tags": [
+      "Project Ideas"
+    ],
+    "summary": "Get idea deliverables",
+    "description": "Returns an aggregated view of all deliverables for this idea: PRD sections, executive summary, design URLs, Confluence page, and Jira tickets.",
+    "operationId": "get_idea_deliverables_projects__project_id__ideas__idea_id__deliverables_get",
+    "parameters": [
+      {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Project Id"
+        }
+      },
+      {
+        "name": "idea_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Idea Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

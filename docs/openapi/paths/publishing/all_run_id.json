@@ -1,0 +1,63 @@
+{
+  "post": {
+    "tags": [
+      "Publishing"
+    ],
+    "summary": "Publish Confluence + create Jira tickets for one run",
+    "description": "End-to-end delivery for a single ``run_id``: publishes the PRD to Confluence (if needed), then creates Jira tickets.",
+    "operationId": "publish_single_all_endpoint_publishing_all__run_id__post",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CombinedPublishResult"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "No deliverable content found for the run_id.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

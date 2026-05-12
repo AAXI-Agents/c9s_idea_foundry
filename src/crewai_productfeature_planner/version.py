@@ -4152,6 +4152,76 @@ _CODEX: list[CodexEntry] = [
             "12 new tests. 2668 tests pass."
         ),
     ),
+    CodexEntry(
+        version="0.93.1",
+        date=date(2026, 5, 9),
+        summary=(
+            "Fix Code Repos API response schema to match frontend contract. "
+            "List endpoint now returns {items, total} wrapper instead of plain "
+            "array. POST register/analyze return full CodeRepoResponse with "
+            "flat analysis fields. Rename last_analyzed_at→last_analyzed, "
+            "kb_path→kb_hub_link. Add _doc_to_response mapper. Remove unused "
+            "CodeRepoCreated model. 10 router tests updated. 2669 tests pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.94.0",
+        date=date(2026, 5, 10),
+        summary=(
+            "Code Repos post-resolution fixes (4 issues). "
+            "1) Fix status mismatch: _STATUS_MAP in _doc_to_response maps "
+            "analyzed→ready, clone_failed/analysis_failed→failed so frontend "
+            "RepoCard renders correctly. "
+            "2) Add codeRepos to setup_mongodb.py with 4 indexes (repo_id "
+            "unique, project+created, owner+name, tenant compound). "
+            "3) Encrypt GitHub OAuth token at rest via Fernet "
+            "(FIELD_ENCRYPTION_KEY env var); decrypt on read; graceful "
+            "fallback for legacy plaintext and missing key. "
+            "4) Add skip/limit pagination to GET /projects/{id}/repos with "
+            "count_code_repos for accurate total. "
+            "New: services/field_encryption.py. 15 new tests. 2684 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.95.0",
+        date=date(2026, 5, 10),
+        summary=(
+            "Agent Worker proxy + per-tenant credential storage. "
+            "Frontend talks to ONE API — Idea Foundry proxies Agent Worker "
+            "calls via /aw/ prefix. Phase 1: AgentWorkerClient with SSO "
+            "service-token auth and 401 retry. Phase 2: integrationCredentials "
+            "MongoDB collection with Fernet encryption, store-and-forward to "
+            "Agent Worker, orchestrator/integrations fallback to DB creds. "
+            "3 new endpoints (POST/DELETE /aw/atlassian/credentials, POST test). "
+            "6 new source files, 1 migration script. 33 new tests. 2713 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.95.1",
+        date=date(2026, 5, 11),
+        summary=(
+            "OpenAPI spec v0.95.1 — full regeneration from FastAPI introspection. "
+            "111 paths (was ~65), 123 component schemas. Added missing domains: "
+            "SSO (18 endpoints), Project Ideas (12), Knowledge (9), Code Repos (8), "
+            "Agentic Team (6), Webhooks (3). Split into per-path JSON files under "
+            "docs/openapi/paths/. Created QUESTIONS-api-middleware.md and "
+            "QUESTIONS-slack-web-credentials.md for pending design decisions. "
+            "2713 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.96.0",
+        date=date(2026, 5, 11),
+        summary=(
+            "Agent Worker generic proxy gateway + Slack web credentials. "
+            "New /aw/{path} catch-all proxy with user-token pass-through, "
+            "graceful GET degradation on 503, hard-fail for writes. "
+            "New POST /integrations/slack/connect (returns OAuth install URL) "
+            "and DELETE /integrations/slack (revoke + delete). "
+            "GET /integrations/status now includes Slack status. "
+            "14 new tests (7 AW proxy + 7 Slack integration). 2727 pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,48 @@
+{
+  "post": {
+    "tags": [
+      "Webhooks"
+    ],
+    "summary": "Jira webhook receiver",
+    "description": "Receives Jira issue status change webhooks. Maps Jira labels to idea features and recalculates completion percentages.",
+    "operationId": "handle_jira_webhook_webhooks_jira_post",
+    "parameters": [
+      {
+        "name": "x-hub-signature",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "X-Hub-Signature"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,1 +1,70 @@
-{"get":{"tags":["Company"],"summary":"List all agents","responses":{"200":{"description":"Agent list"}}}}
+{
+  "get": {
+    "tags": [
+      "Company"
+    ],
+    "summary": "List all agents",
+    "description": "Return all registered agents, optionally filtered.",
+    "operationId": "list_agents_endpoint_company_agents_get",
+    "parameters": [
+      {
+        "name": "department",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by department",
+          "title": "Department"
+        },
+        "description": "Filter by department"
+      },
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Filter by status",
+          "title": "Status"
+        },
+        "description": "Filter by status"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AgentListResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

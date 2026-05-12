@@ -1,35 +1,29 @@
 {
   "post": {
-    "tags": ["Publishing"],
+    "tags": [
+      "Publishing"
+    ],
     "summary": "Create Jira tickets for all pending deliveries",
-    "operationId": "publishing_jira_all",
-    "description": "Batch-creates Jira tickets for all completed PRDs that do not yet have tickets. Requirements from each PRD are decomposed into Epic, Story, and Sub-task issues.",
+    "description": "Iterates over every delivery where Confluence is published but Jira tickets are missing.  Launches a CrewAI delivery crew for each to create Epics, Stories, and Tasks. Returns a batch summary.",
+    "operationId": "create_jira_all_endpoint_publishing_jira_all_post",
     "responses": {
       "200": {
-        "description": "Batch Jira creation result.",
+        "description": "Successful Response",
         "content": {
           "application/json": {
-            "schema": { "$ref": "../../openapi.json#/components/schemas/JiraBatchResult" },
-            "example": {
-              "completed": 2,
-              "failed": 0,
-              "results": [
-                { "run_id": "abc123", "jira_completed": true, "ticket_keys": ["PRD-1", "PRD-2", "PRD-3"], "progress": [] }
-              ],
-              "errors": [],
-              "message": "Created Jira tickets for 2 PRDs."
+            "schema": {
+              "$ref": "#/components/schemas/JiraBatchResult"
             }
           }
         }
-      },
-      "503": {
-        "description": "Atlassian credentials not configured."
       },
       "500": {
         "description": "Internal server error.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "../../openapi.json#/components/schemas/PublishingErrorResponse" }
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
           }
         }
       }

@@ -1,0 +1,26 @@
+{
+  "post": {
+    "tags": [
+      "SSO"
+    ],
+    "summary": "SSO register \u2014 verify email 2FA code",
+    "description": "Verify the registration 2FA code to activate the account.\n\nExpects JSON body: ``{\"email\": \"...\", \"code\": \"123456\"}``",
+    "operationId": "sso_register_verify_2fa_auth_sso_register_verify_2fa_post",
+    "responses": {
+      "200": {
+        "description": "Account activated",
+        "content": {
+          "application/json": {
+            "schema": {}
+          }
+        }
+      },
+      "400": {
+        "description": "Missing email or code"
+      },
+      "502": {
+        "description": "SSO server unreachable"
+      }
+    }
+  }
+}

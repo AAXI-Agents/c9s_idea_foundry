@@ -1,0 +1,24 @@
+{
+  "get": {
+    "tags": [
+      "Agentic Team"
+    ],
+    "summary": "Get Agentic Team pipeline dashboard",
+    "description": "Returns an overview of all pipeline runs, including active, completed, and failed tasks.",
+    "operationId": "get_dashboard_api_agentic_team_dashboard_get",
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "additionalProperties": true,
+              "type": "object",
+              "title": "Response Get Dashboard Api Agentic Team Dashboard Get"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -28,15 +28,17 @@ tags:
 | **Publishing** | [[Publishing/]] | 9 | SSO |
 | **Company** | — | 6 | SSO |
 | **User Profile** | — | 2 | SSO |
-| **Integrations** | [[Integrations/]] | 1 | SSO |
+| **Integrations** | [[Integrations/]] | 3 | SSO |
 | **Slack OAuth** | [[Slack/]] | 2 | SSO (install) / None (callback) |
 | **SSO** | [[SSO API]] | 18 | None / Bearer |
 | **SSO Webhooks** | [[SSO Webhooks/]] | 1 | Webhook HMAC |
-| **Agentic Team** | — | 1 | Webhook HMAC |
+| **Agentic Team** | — | 6 | Webhook HMAC / SSO |
+| **Agent Worker** | — | 4 | SSO |
 | **Knowledge** | — | 9 | SSO |
-| **Code Repos** | — | 8 | SSO |
+| **Code Repos** | — | 9 | SSO / Webhook HMAC |
+| **Webhooks** | — | 3 | Webhook HMAC |
 
-**Total**: 114 endpoints across 21 routers
+**Total**: 114 REST paths across 25 routers (OpenAPI v0.96.0)
 
 ---
 
@@ -232,6 +234,16 @@ See [[SSO API]] for detailed request/response schemas.
 | Endpoint | Page |
 |----------|------|
 | `POST /webhooks/agentic-team` | Receives task/epic completion events; HMAC-SHA256 verified |
+
+### Agent Worker (3 endpoints)
+
+| Endpoint | Page |
+|----------|------|
+| `POST /aw/atlassian/credentials` | — |
+| `POST /aw/atlassian/credentials/{org_id}/test` | — |
+| `DELETE /aw/atlassian/credentials/{org_id}` | — |
+
+See [[Architecture/Agent Worker Proxy]] for proxy architecture and expansion checklist.
 
 ### Knowledge (9 endpoints)
 

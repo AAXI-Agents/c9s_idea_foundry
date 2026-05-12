@@ -1,0 +1,52 @@
+{
+  "get": {
+    "tags": [
+      "Flow Runs"
+    ],
+    "summary": "Get PRD version history",
+    "description": "Returns the git-style version history for a PRD run. Each version includes a full section content snapshot and a changelog entry describing what changed.",
+    "operationId": "get_run_versions_flow_runs__run_id__versions_get",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Version history returned successfully.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/VersionHistoryResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Run not found."
+      },
+      "500": {
+        "description": "Internal server error."
+      },
+      "503": {
+        "description": "Service unavailable."
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

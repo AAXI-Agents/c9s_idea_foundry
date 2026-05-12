@@ -1,0 +1,63 @@
+{
+  "post": {
+    "tags": [
+      "Publishing"
+    ],
+    "summary": "Publish a single PRD to Confluence",
+    "description": "Look up the completed PRD for the given ``run_id`` and publish it to Confluence. Persists the Confluence URL back to MongoDB. Returns 404 if no unpublished PRD is found for the run.",
+    "operationId": "publish_confluence_single_endpoint_publishing_confluence__run_id__post",
+    "parameters": [
+      {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "title": "Run Id"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful Response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConfluencePublishResult"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "No unpublished PRD found for the given run_id.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PublishingErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "Validation Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HTTPValidationError"
+            }
+          }
+        }
+      }
+    }
+  }
+}

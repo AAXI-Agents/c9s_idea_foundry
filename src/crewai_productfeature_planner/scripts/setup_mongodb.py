@@ -20,6 +20,9 @@ from crewai_productfeature_planner.mongodb.agent_interactions.repository import 
 from crewai_productfeature_planner.mongodb.agent_registry import (
     AGENT_REGISTRY_COLLECTION,
 )
+from crewai_productfeature_planner.mongodb.code_repos.repository import (
+    CODE_REPOS_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.client import get_db
 from crewai_productfeature_planner.mongodb.company_activity import (
     COMPANY_ACTIVITY_COLLECTION,
@@ -53,6 +56,9 @@ from crewai_productfeature_planner.mongodb.user_preferences import (
 )
 from crewai_productfeature_planner.mongodb.ideation_sessions import (
     IDEATION_SESSIONS_COLLECTION,
+)
+from crewai_productfeature_planner.mongodb.integration_credentials import (
+    INTEGRATION_CREDENTIALS_COLLECTION,
 )
 from crewai_productfeature_planner.mongodb.working_ideas._common import (
     WORKING_COLLECTION,
@@ -160,6 +166,19 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("user_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("organization_id", ASCENDING), ("user_id", ASCENDING)]),
         IndexModel([("project_id", ASCENDING)]),
+    ],
+    CODE_REPOS_COLLECTION: [
+        IndexModel([("repo_id", ASCENDING)], unique=True),
+        IndexModel([("project_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("owner", ASCENDING), ("name", ASCENDING)]),
+        IndexModel([("enterprise_id", ASCENDING), ("organization_id", ASCENDING)]),
+    ],
+    INTEGRATION_CREDENTIALS_COLLECTION: [
+        IndexModel(
+            [("organization_id", ASCENDING), ("provider", ASCENDING)],
+            unique=True,
+        ),
+        IndexModel([("enterprise_id", ASCENDING), ("organization_id", ASCENDING)]),
     ],
 }
 
