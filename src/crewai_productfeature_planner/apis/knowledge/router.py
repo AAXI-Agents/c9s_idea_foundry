@@ -17,6 +17,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import BaseModel, Field
 
 from crewai_productfeature_planner.apis.admin_deps import resolve_tenant_context
+from crewai_productfeature_planner.apis.knowledge._ws_knowledge import (
+    broadcast_knowledge_sync,
+)
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.mongodb._tenant import TenantContext, tenant_filter
 from crewai_productfeature_planner.mongodb.knowledge_documents import (
@@ -54,6 +57,27 @@ router = APIRouter(
     tags=["Knowledge"],
     dependencies=[Depends(require_sso_user)],
 )
+
+
+# ── WebSocket broadcast helpers ──────────────────────────────────
+
+
+def _emit_doc_updated(project_id: str, doc_id: str, tenant: TenantContext | None) -> None:
+    """Broadcast a ``knowledge.doc.updated`` event with the latest doc state."""
+    doc = get_knowledge_document(doc_id=doc_id, project_id=project_id, tenant=tenant)
+    if doc:
+        broadcast_knowledge_sync(project_id, {
+            "event": "knowledge.doc.updated",
+            "data": doc,
+        })
+
+
+def _emit_doc_deleted(project_id: str, doc_id: str) -> None:
+    """Broadcast a ``knowledge.doc.deleted`` event."""
+    broadcast_knowledge_sync(project_id, {
+        "event": "knowledge.doc.deleted",
+        "data": {"doc_id": doc_id},
+    })
 
 
 # ── Response Models ──────────────────────────────────────────────
@@ -147,7 +171,7 @@ async def upload_knowledge_document(
     # Create record
     doc = create_knowledge_document(
         project_id=project_id,
-        source_type="upload",
+        source_type="file",
         filename=filename,
         file_size=len(contents),
         content_type=content_type,
@@ -182,6 +206,7 @@ async def upload_knowledge_document(
             updates={"gcs_path": gcs_path, "status": "uploaded"},
             tenant=tenant,
         )
+        _emit_doc_updated(project_id, doc_id, tenant)
     except Exception as exc:
         logger.error("[KnowledgeAPI] GCS upload failed: %s", exc, exc_info=True)
         update_knowledge_document(
@@ -190,6 +215,7 @@ async def upload_knowledge_document(
             updates={"status": "upload_failed"},
             tenant=tenant,
         )
+        _emit_doc_updated(project_id, doc_id, tenant)
         raise HTTPException(status_code=500, detail="File upload failed.")
 
     # Trigger review asynchronously
@@ -208,6 +234,7 @@ async def upload_knowledge_document(
             updates={"status": "review_failed"},
             tenant=tenant,
         )
+        _emit_doc_updated(project_id, doc_id, tenant)
     else:
         review_document_async(
             doc_id=doc_id,
@@ -303,6 +330,7 @@ async def ingest_url(
                 },
                 tenant=tenant,
             )
+            _emit_doc_updated(project_id, doc_id, tenant)
 
     except HTTPException:
         raise
@@ -314,6 +342,7 @@ async def ingest_url(
             updates={"status": "fetch_failed"},
             tenant=tenant,
         )
+        _emit_doc_updated(project_id, doc_id, tenant)
         raise HTTPException(status_code=502, detail="Failed to fetch URL content.")
 
     # Trigger review
@@ -427,6 +456,7 @@ async def patch_document(
     )
     if not success:
         raise HTTPException(status_code=404, detail="Document not found.")
+    _emit_doc_updated(project_id, doc_id, tenant)
     return {"doc_id": doc_id, "included": body.included}
 
 
@@ -457,6 +487,7 @@ async def delete_document(
 
     # Delete record
     delete_knowledge_document(doc_id=doc_id, project_id=project_id, tenant=tenant)
+    _emit_doc_deleted(project_id, doc_id)
     logger.info("[KnowledgeAPI] Deleted doc=%s project=%s", doc_id, project_id)
 
 
@@ -483,7 +514,7 @@ async def retrigger_review(
         raise HTTPException(status_code=404, detail="Document not found.")
 
     # Status guard: only allow review for docs that have content available
-    REVIEWABLE_STATUSES = {"reviewed", "review_failed"}
+    REVIEWABLE_STATUSES = {"ready", "review_failed"}
     doc_status = doc.get("status", "")
     if doc_status not in REVIEWABLE_STATUSES:
         raise HTTPException(

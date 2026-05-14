@@ -44,13 +44,18 @@ router = APIRouter()
 def _enrich_completed_fields(items: list[dict[str, Any]], tenant) -> None:
     """Enrich completed ideas with PRD data from workingIdeas.
 
+    Uses a single batch query with projection to avoid N+1 round-trips.
     Mutates the idea dicts in place, adding ``completed_at``,
     ``confluence_url``, ``jira_epic_key``, and ``prd_summary`` fields
     sourced from the linked working idea run.
     """
     from crewai_productfeature_planner.mongodb.working_ideas import (
-        find_run_any_status,
+        find_runs_batch,
     )
+
+    # Collect run_ids for all completed ideas
+    run_id_map: dict[str, str] = {}  # run_id → (used for reverse lookup)
+    doc_by_run: dict[str, list[dict[str, Any]]] = {}  # run_id → list of docs needing enrichment
 
     for doc in items:
         if doc.get("status") != "completed":
@@ -61,34 +66,53 @@ def _enrich_completed_fields(items: list[dict[str, Any]], tenant) -> None:
             run_id = run_ids[-1] if run_ids else None
         if not run_id:
             continue
+        run_id_map[run_id] = run_id
+        doc_by_run.setdefault(run_id, []).append(doc)
 
-        wi = find_run_any_status(run_id, tenant=tenant)
+    if not run_id_map:
+        return
+
+    # Single batch query with minimal projection
+    wi_docs = find_runs_batch(
+        list(run_id_map.keys()),
+        tenant=tenant,
+        projection={
+            "completed_at": 1,
+            "confluence_url": 1,
+            "jira_output": 1,
+            "finalized_idea": 1,
+        },
+    )
+
+    # Enrich each completed idea from the batch results
+    for run_id, idea_docs in doc_by_run.items():
+        wi = wi_docs.get(run_id)
         if not wi:
             continue
 
-        doc["completed_at"] = wi.get("completed_at", "")
-        doc["confluence_url"] = wi.get("confluence_url") or None
+        for doc in idea_docs:
+            doc["completed_at"] = wi.get("completed_at", "")
+            doc["confluence_url"] = wi.get("confluence_url") or None
 
-        # Extract primary Jira epic key from jira_output
-        jira_output = wi.get("jira_output") or {}
-        epics = jira_output.get("epics") or []
-        if epics and isinstance(epics, list) and isinstance(epics[0], dict):
-            doc["jira_epic_key"] = epics[0].get("key") or None
-        elif isinstance(jira_output, dict) and jira_output.get("epic_key"):
-            doc["jira_epic_key"] = jira_output["epic_key"]
+            # Extract primary Jira epic key from jira_output
+            jira_output = wi.get("jira_output") or {}
+            epics = jira_output.get("epics") or []
+            if epics and isinstance(epics, list) and isinstance(epics[0], dict):
+                doc["jira_epic_key"] = epics[0].get("key") or None
+            elif isinstance(jira_output, dict) and jira_output.get("epic_key"):
+                doc["jira_epic_key"] = jira_output["epic_key"]
 
-        # Extract PRD summary from finalized_idea (first 200 chars)
-        finalized = wi.get("finalized_idea") or ""
-        if finalized:
-            # Strip markdown heading if present
-            lines = finalized.strip().splitlines()
-            summary_lines = [
-                ln for ln in lines if ln.strip() and not ln.strip().startswith("#")
-            ]
-            summary = " ".join(summary_lines)[:200].strip()
-            if len(summary) < len(" ".join(summary_lines)):
-                summary += "…"
-            doc["prd_summary"] = summary
+            # Extract PRD summary from finalized_idea (first 200 chars)
+            finalized = wi.get("finalized_idea") or ""
+            if finalized:
+                lines = finalized.strip().splitlines()
+                summary_lines = [
+                    ln for ln in lines if ln.strip() and not ln.strip().startswith("#")
+                ]
+                summary = " ".join(summary_lines)[:200].strip()
+                if len(summary) < len(" ".join(summary_lines)):
+                    summary += "…"
+                doc["prd_summary"] = summary
 
 
 @router.post(

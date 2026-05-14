@@ -56,12 +56,16 @@ def _make_message(**overrides):
 
 class TestKickoff:
     def test_successful_kickoff(self, client):
-        session = _make_session_doc()
-        with patch(f"{_SERVICE}.start_ideation_session", new_callable=AsyncMock) as mock_start:
+        session = _make_session_doc(project_id="proj1")
+        with (
+            patch(f"{_SERVICE}.get_project") as mock_proj,
+            patch(f"{_SERVICE}.start_ideation_session", new_callable=AsyncMock) as mock_start,
+        ):
+            mock_proj.return_value = {"project_id": "proj1"}
             mock_start.return_value = session
             resp = client.post(
                 "/flow/ideation/kickoff",
-                json={"title": "Test Idea"},
+                json={"title": "Test Idea", "project_id": "proj1"},
             )
         assert resp.status_code == 201
         body = resp.json()
@@ -70,12 +74,16 @@ class TestKickoff:
         assert body["current_step"] == "ideation"
 
     def test_kickoff_with_initial_idea(self, client):
-        session = _make_session_doc()
-        with patch(f"{_SERVICE}.start_ideation_session", new_callable=AsyncMock) as mock_start:
+        session = _make_session_doc(project_id="proj1")
+        with (
+            patch(f"{_SERVICE}.get_project") as mock_proj,
+            patch(f"{_SERVICE}.start_ideation_session", new_callable=AsyncMock) as mock_start,
+        ):
+            mock_proj.return_value = {"project_id": "proj1"}
             mock_start.return_value = session
             resp = client.post(
                 "/flow/ideation/kickoff",
-                json={"title": "My App", "idea": "A fitness app for seniors"},
+                json={"title": "My App", "idea": "A fitness app for seniors", "project_id": "proj1"},
             )
         assert resp.status_code == 201
         mock_start.assert_called_once()
@@ -83,13 +91,44 @@ class TestKickoff:
         assert call_kwargs["initial_idea"] == "A fitness app for seniors"
 
     def test_kickoff_failure(self, client):
-        with patch(f"{_SERVICE}.start_ideation_session", new_callable=AsyncMock) as mock_start:
+        with (
+            patch(f"{_SERVICE}.get_project") as mock_proj,
+            patch(f"{_SERVICE}.start_ideation_session", new_callable=AsyncMock) as mock_start,
+        ):
+            mock_proj.return_value = {"project_id": "proj1"}
             mock_start.return_value = None
             resp = client.post(
                 "/flow/ideation/kickoff",
-                json={"title": "Fail"},
+                json={"title": "Fail", "project_id": "proj1"},
             )
         assert resp.status_code == 500
+
+    def test_kickoff_missing_project_id_returns_422(self, client):
+        """project_id is required — omitting it returns 422."""
+        resp = client.post(
+            "/flow/ideation/kickoff",
+            json={"title": "No project"},
+        )
+        assert resp.status_code == 422
+
+    def test_kickoff_empty_project_id_returns_422(self, client):
+        """project_id must be non-empty."""
+        resp = client.post(
+            "/flow/ideation/kickoff",
+            json={"title": "Empty project", "project_id": ""},
+        )
+        assert resp.status_code == 422
+
+    def test_kickoff_nonexistent_project_returns_404(self, client):
+        """project_id referencing a non-existent project returns 404."""
+        with patch(f"{_SERVICE}.get_project") as mock_proj:
+            mock_proj.return_value = None
+            resp = client.post(
+                "/flow/ideation/kickoff",
+                json={"title": "Bad project", "project_id": "nonexistent"},
+            )
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"]
 
 
 # ── GET /flow/ideation/sessions ──────────────────────────────

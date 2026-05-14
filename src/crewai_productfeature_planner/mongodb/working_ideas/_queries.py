@@ -808,6 +808,54 @@ def find_run_any_status(
         return None
 
 
+def find_runs_batch(
+    run_ids: list[str],
+    *,
+    tenant: "TenantContext | None" = None,
+    projection: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Batch-fetch multiple working-idea documents by run_id.
+
+    Returns a dict mapping run_id → document for found documents.
+    Uses ``$in`` to avoid N+1 queries.  Callers can pass a projection
+    to limit the fields returned (critical for large documents).
+
+    Args:
+        run_ids: List of run identifiers to look up.
+        tenant: Optional tenant context for data isolation.
+        projection: Optional MongoDB projection dict.
+
+    Returns:
+        Dict mapping run_id to document (without ``_id``).
+    """
+    if not run_ids:
+        return {}
+
+    proj = projection or {}
+    # Always include run_id in projection for keying
+    if proj:
+        proj = {**proj, "run_id": 1, "_id": 0}
+    else:
+        proj = {"_id": 0}
+
+    try:
+        db = _common.get_db()
+        query: dict[str, Any] = {
+            "run_id": {"$in": run_ids},
+            "status": {"$ne": "archived"},
+            **tenant_filter(tenant),
+        }
+        cursor = db[WORKING_COLLECTION].find(query, proj)
+        return {doc["run_id"]: doc for doc in cursor}
+    except PyMongoError as exc:
+        logger.error(
+            "[MongoDB] Failed to batch-fetch %d run_ids: %s",
+            len(run_ids),
+            exc,
+        )
+        return {}
+
+
 def get_run_documents(
     run_id: str, *, tenant: "TenantContext | None" = None
 ) -> list[dict[str, Any]]:

@@ -52,7 +52,7 @@ def create_knowledge_document(
 
     Args:
         project_id: Owning project.
-        source_type: 'upload' or 'url'.
+        source_type: 'file' or 'url'.
         filename: Original filename (uploads).
         url: Source URL (url ingestion).
         file_size: Size in bytes.
@@ -74,7 +74,7 @@ def create_knowledge_document(
         "file_size": file_size,
         "content_type": content_type,
         "gcs_path": gcs_path,
-        "status": "uploading" if source_type == "upload" else "fetching",
+        "status": "uploading" if source_type == "file" else "fetching",
         "included": True,
         "review": None,
         "created_by": created_by,
@@ -224,7 +224,7 @@ def set_review_result(
     return update_knowledge_document(
         doc_id=doc_id,
         project_id=project_id,
-        updates={"review": review, "status": "reviewed"},
+        updates={"review": review, "status": "ready"},
         tenant=tenant,
     )
 

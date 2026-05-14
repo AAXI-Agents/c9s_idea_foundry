@@ -149,44 +149,11 @@ def _build_session_snapshot(
 async def _validate_ws_token(token: str | None) -> dict[str, Any] | None:
     """Validate a JWT token for WebSocket auth.
 
-    Returns user claims dict on success, None on failure.
-    Mirrors the same validation logic as ``require_sso_user`` including
-    the public-key refresh fallback.
+    Delegates to the shared ``_ws_auth`` helper.
     """
-    import os
+    from crewai_productfeature_planner.apis._ws_auth import validate_ws_token
 
-    # If SSO is disabled, allow all connections (dev mode)
-    if os.environ.get("SSO_ENABLED", "false").strip().lower() not in ("true", "1", "yes"):
-        return {
-            "user_id": "anonymous",
-            "roles": ["SYS_ADMIN"],
-            "enterprise_id": os.environ.get("DEV_ENTERPRISE_ID", "dev-enterprise"),
-            "organization_id": os.environ.get("DEV_ORGANIZATION_ID", "dev-org"),
-        }
-
-    if not token:
-        return None
-
-    # Use the same decode logic as the REST auth
-    from crewai_productfeature_planner.apis.sso_auth import (
-        _decode_jwt_locally,
-        _fetch_and_save_public_key,
-        _introspect_remotely,
-    )
-
-    # Try remote introspection first, then local decode
-    claims = await _introspect_remotely(token)
-    if claims is None:
-        claims = _decode_jwt_locally(token)
-
-    # Fallback: refresh the public key and retry local decode
-    # (matches require_sso_user behaviour for key rotation recovery)
-    if claims is None:
-        new_key = await _fetch_and_save_public_key()
-        if new_key:
-            claims = _decode_jwt_locally(token)
-
-    return claims
+    return await validate_ws_token(token)
 
 
 @ws_router.websocket("/ws/ideation/{session_id}")

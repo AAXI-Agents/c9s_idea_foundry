@@ -16,6 +16,9 @@ from crewai_productfeature_planner.agents.content_reviewer import (
     create_content_reviewer,
     get_task_configs,
 )
+from crewai_productfeature_planner.apis.knowledge._ws_knowledge import (
+    broadcast_knowledge_sync,
+)
 from crewai_productfeature_planner.mongodb._tenant import TenantContext
 from crewai_productfeature_planner.mongodb.knowledge_documents import (
     count_knowledge_documents,
@@ -128,12 +131,26 @@ def review_document(
                 updates={"status": "review_failed"},
                 tenant=tenant,
             )
+            doc = get_knowledge_document(doc_id=doc_id, project_id=project_id, tenant=tenant)
+            if doc:
+                broadcast_knowledge_sync(project_id, {
+                    "event": "knowledge.doc.updated",
+                    "data": doc,
+                })
             return None
 
         set_review_result(
             doc_id=doc_id, project_id=project_id, review=parsed, tenant=tenant
         )
         logger.info("[KnowledgeAggregator] Review complete doc=%s", doc_id)
+
+        # Broadcast doc update via WebSocket
+        doc = get_knowledge_document(doc_id=doc_id, project_id=project_id, tenant=tenant)
+        if doc:
+            broadcast_knowledge_sync(project_id, {
+                "event": "knowledge.doc.updated",
+                "data": doc,
+            })
 
         # Auto-trigger aggregation after successful review
         aggregate_knowledge_async(project_id=project_id, tenant=tenant)
@@ -153,6 +170,13 @@ def review_document(
             updates={"status": "review_failed"},
             tenant=tenant,
         )
+        # Broadcast failure via WebSocket
+        doc = get_knowledge_document(doc_id=doc_id, project_id=project_id, tenant=tenant)
+        if doc:
+            broadcast_knowledge_sync(project_id, {
+                "event": "knowledge.doc.updated",
+                "data": doc,
+            })
         return None
 
 
@@ -256,6 +280,14 @@ def aggregate_knowledge(
             project_id,
             len(included_docs),
         )
+
+        # Broadcast summary update via WebSocket
+        if summary_doc:
+            broadcast_knowledge_sync(project_id, {
+                "event": "knowledge.summary.updated",
+                "data": summary_doc,
+            })
+
         return summary_doc
 
     except Exception as exc:

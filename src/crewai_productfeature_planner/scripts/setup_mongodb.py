@@ -57,6 +57,9 @@ from crewai_productfeature_planner.mongodb.user_preferences import (
 from crewai_productfeature_planner.mongodb.ideation_sessions import (
     IDEATION_SESSIONS_COLLECTION,
 )
+from crewai_productfeature_planner.mongodb.ideas.repository import (
+    IDEAS_COLLECTION,
+)
 from crewai_productfeature_planner.mongodb.integration_credentials import (
     INTEGRATION_CREDENTIALS_COLLECTION,
 )
@@ -81,6 +84,13 @@ _COLLECTION_INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("intent", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("organization_id", ASCENDING), ("created_at", DESCENDING)]),
         IndexModel([("enterprise_id", ASCENDING), ("source", ASCENDING)]),
+    ],
+    IDEAS_COLLECTION: [
+        IndexModel([("idea_id", ASCENDING)], unique=True),
+        IndexModel([("project_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("project_id", ASCENDING), ("created_at", DESCENDING)]),
+        IndexModel([("organization_id", ASCENDING), ("project_id", ASCENDING)]),
+        IndexModel([("enterprise_id", ASCENDING), ("organization_id", ASCENDING)]),
     ],
     AGENT_REGISTRY_COLLECTION: [
         IndexModel([("agent_id", ASCENDING)], unique=True),

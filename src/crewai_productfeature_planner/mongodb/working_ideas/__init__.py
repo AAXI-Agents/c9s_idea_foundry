@@ -7,6 +7,7 @@ from crewai_productfeature_planner.mongodb.working_ideas.repository import (  # 
     find_ideas_by_project,
     find_recent_duplicate_idea,
     find_run_any_status,
+    find_runs_batch,
     find_unfinalized,
     mark_archived,
     save_project_ref,

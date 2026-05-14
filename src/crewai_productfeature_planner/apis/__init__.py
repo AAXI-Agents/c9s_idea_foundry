@@ -46,10 +46,17 @@ from crewai_productfeature_planner.apis.shared import FlowRun, FlowStatus  # noq
 from crewai_productfeature_planner.apis.slack.oauth_router import router as slack_oauth_router
 from crewai_productfeature_planner.apis.integrations.router import router as integrations_router
 from crewai_productfeature_planner.apis.ideation import ideation_router, ideation_ws_router
+from crewai_productfeature_planner.apis.knowledge import knowledge_ws_router, set_knowledge_ws_main_loop
 from crewai_productfeature_planner.apis.knowledge.router import router as knowledge_router
+from crewai_productfeature_planner.apis.settings import router as settings_router
 from crewai_productfeature_planner.apis.sso.router import router as sso_auth_router
 from crewai_productfeature_planner.apis.sso_webhooks import router as sso_webhooks_router
 from crewai_productfeature_planner.apis.user_profile.router import router as user_profile_router
+from crewai_productfeature_planner.apis.webhook_management import (
+    config_router as webhook_config_router,
+    events_router as webhook_events_router,
+    subscriptions_router as webhook_subscriptions_router,
+)
 from crewai_productfeature_planner.mongodb.crew_jobs import fail_incomplete_jobs_on_startup
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.scripts.setup_mongodb import ensure_collections
@@ -336,6 +343,12 @@ async def _lifespan(application: FastAPI):
     except Exception as exc:
         _logger.warning("Ideation WS: failed to capture main loop: %s", exc)
 
+    try:
+        set_knowledge_ws_main_loop(asyncio.get_running_loop())
+        _logger.info("Knowledge WS: main event loop captured for thread-safe broadcasts")
+    except Exception as exc:
+        _logger.warning("Knowledge WS: failed to capture main loop: %s", exc)
+
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────
@@ -547,6 +560,24 @@ app = FastAPI(
                 "forward requests to the Agent Worker service."
             ),
         },
+        {
+            "name": "Settings",
+            "description": (
+                "Enterprise-wide settings management. "
+                "View and update agent toggles, concurrency limits, "
+                "workspace name, and label mappings. PATCH requires "
+                "ENT_ADMIN or SYS_ADMIN role."
+            ),
+        },
+        {
+            "name": "Webhooks",
+            "description": (
+                "Webhook subscription management and event log. "
+                "Configure inbound webhook subscriptions for Jira and "
+                "GitHub, view delivery events, replay failed deliveries, "
+                "and manage webhook secrets. Requires ENT_ADMIN role."
+            ),
+        },
     ],
 )
 
@@ -574,8 +605,13 @@ app.include_router(agentic_team_router)
 app.include_router(aw_credentials_router)
 app.include_router(aw_proxy_router)
 app.include_router(knowledge_router)
+app.include_router(knowledge_ws_router)
 app.include_router(code_repos_router)
 app.include_router(github_webhook_router)
+app.include_router(settings_router)
+app.include_router(webhook_config_router)
+app.include_router(webhook_subscriptions_router)
+app.include_router(webhook_events_router)
 
 # ── CORS — required for web-based SSO login flows ────────────
 import os as _os

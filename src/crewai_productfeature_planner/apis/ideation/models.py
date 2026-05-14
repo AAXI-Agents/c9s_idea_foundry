@@ -107,9 +107,10 @@ class IdeationKickoffRequest(BaseModel):
         default=None,
         description="Optional title for the session. Auto-generated if omitted.",
     )
-    project_id: str | None = Field(
-        default=None,
-        description="Link this session to an existing project.",
+    project_id: str = Field(
+        ...,
+        min_length=1,
+        description="Project to associate with this ideation session.",
     )
 
     model_config = {"populate_by_name": True}
@@ -178,6 +179,8 @@ class MessageMetadata(BaseModel):
     choices: list[dict[str, Any]] | None = None
     can_iterate: bool | None = None
     can_advance: bool | None = None
+    iteration_count: int | None = None
+    max_iterations: int | None = None
     structured: dict[str, Any] | None = None
     response_type: str | None = None
     answers: list[dict[str, Any]] | None = None
@@ -327,3 +330,34 @@ class IdeationErrorResponse(BaseModel):
     error_code: str
     message: str
     detail: str | None = None
+
+
+# ── Iteration history models ──────────────────────────────────
+
+
+class IterationQuestionSummary(BaseModel):
+    """Summary of one question and its answer within an iteration round."""
+
+    id: int
+    question: str
+    selected_option: int | None = None
+    selected_label: str | None = None
+    custom_feedback: str | None = None
+
+
+class IterationRound(BaseModel):
+    """One complete Q&A round within a step."""
+
+    round: int
+    questions: list[IterationQuestionSummary]
+    agent_insight: str | None = None
+    completed_at: str | None = None
+
+
+class IterationHistoryResponse(BaseModel):
+    """Response for the iteration history endpoint."""
+
+    step: str
+    iteration_count: int
+    max_iterations: int
+    rounds: list[IterationRound]

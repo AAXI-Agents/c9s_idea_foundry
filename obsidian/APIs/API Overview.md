@@ -37,8 +37,10 @@ tags:
 | **Knowledge** | — | 9 | SSO |
 | **Code Repos** | — | 9 | SSO / Webhook HMAC |
 | **Webhooks** | — | 3 | Webhook HMAC |
+| **Settings** | — | 2 | SSO (read) / SSO Admin (write) |
+| **Webhook Management** | — | 14 | SSO Admin |
 
-**Total**: 114 REST paths across 25 routers (OpenAPI v0.96.0)
+**Total**: 130 REST paths across 27 routers (OpenAPI v0.97.0)
 
 ---
 
@@ -135,7 +137,7 @@ tags:
 | `POST /flow/ux/kickoff` | — |
 | `GET /flow/ux/status/{run_id}` | — |
 
-### Ideation Flow (10 + WS)
+### Ideation Flow (11 + WS)
 
 | Endpoint | Page |
 |----------|------|
@@ -143,6 +145,7 @@ tags:
 | `GET /flow/ideation/sessions` | — |
 | `GET /flow/ideation/sessions/{id}` | — |
 | `GET /flow/ideation/sessions/{id}/messages` | — |
+| `GET /flow/ideation/sessions/{id}/iterations` | — |
 | `POST /flow/ideation/sessions/{id}/respond` | — |
 | `POST /flow/ideation/sessions/{id}/iterate` | — |
 | `POST /flow/ideation/sessions/{id}/advance` | — |

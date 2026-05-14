@@ -4,6 +4,13 @@ ideation_task:
     Think like Brian Chesky — find the 10-star experience hiding
     inside every idea.
 
+    ## Project Knowledge
+    Use the following project context to ground your analysis in
+    existing constraints and domain knowledge. Refine the idea within
+    known project constraints and avoid contradicting established facts.
+
+    {knowledge_context}
+
     ## Previous Step Context
     {context}
 
@@ -50,15 +57,25 @@ ideation_task:
       1-2 sentence explanation of why it best serves the product.
       If you genuinely have no preference, leave both null.
   expected_output: >
-    Valid JSON matching the StructuredIdeationResponse schema with
-    acknowledgment, 3-5 questions (each with 3 recommendations plus
-    recommended_index and recommended_reason),
-    an agent_insight, and optionally a summary_draft.
+    ONLY valid JSON (no text before or after).  Use these EXACT field names:
+    {"acknowledgment": "...", "questions": [{"id": 1, "question": "...",
+    "context": "...", "recommendations": [{"label": "...", "pro": "...",
+    "con": "...", "complexity": "Low|Medium|High"}, ...3 total...],
+    "recommended_index": 0, "recommended_reason": "..."}], "agent_insight": "...",
+    "summary_draft": null}
+    CRITICAL: Use "acknowledgment" (no 'e' before 'ment'), "label" (not
+    'direction'/'description'/'option'), "id" (1-based int), "context" (string).
 
 persona_task:
   description: >
     You are a Product Manager & User Research Lead helping define
     user personas for a product idea.
+
+    ## Project Knowledge
+    Use the following project context to identify personas relevant
+    to the project's domain and existing user base.
+
+    {knowledge_context}
 
     ## Previous Step Context
     {context}
@@ -103,15 +120,25 @@ persona_task:
       1-2 sentence explanation of why it best serves the product.
       If you genuinely have no preference, leave both null.
   expected_output: >
-    Valid JSON matching the StructuredIdeationResponse schema with
-    acknowledgment, 3-5 questions about user personas (each with
-    3 recommendations plus recommended_index and recommended_reason),
-    an agent_insight, and optionally a summary_draft.
+    ONLY valid JSON (no text before or after).  Use these EXACT field names:
+    {"acknowledgment": "...", "questions": [{"id": 1, "question": "...",
+    "context": "...", "recommendations": [{"label": "...", "pro": "...",
+    "con": "...", "complexity": "Low|Medium|High"}, ...3 total...],
+    "recommended_index": 0, "recommended_reason": "..."}], "agent_insight": "...",
+    "summary_draft": null}
+    CRITICAL: Use "acknowledgment" (no 'e' before 'ment'), "label" (not
+    'direction'/'description'/'option'), "id" (1-based int), "context" (string).
 
 solution_task:
   description: >
     You are a Product Manager & UX Architect helping define the
     optimal solution form factor.
+
+    ## Project Knowledge
+    Use the following project context to consider existing architecture
+    and repos when proposing form factors and platforms.
+
+    {knowledge_context}
 
     ## Previous Step Context
     {context}
@@ -158,15 +185,25 @@ solution_task:
       1-2 sentence explanation of why it best serves the product.
       If you genuinely have no preference, leave both null.
   expected_output: >
-    Valid JSON matching the StructuredIdeationResponse schema with
-    acknowledgment, 3-5 questions about solution form factor (each with
-    3 recommendations plus recommended_index and recommended_reason),
-    an agent_insight, and optionally a summary_draft.
+    ONLY valid JSON (no text before or after).  Use these EXACT field names:
+    {"acknowledgment": "...", "questions": [{"id": 1, "question": "...",
+    "context": "...", "recommendations": [{"label": "...", "pro": "...",
+    "con": "...", "complexity": "Low|Medium|High"}, ...3 total...],
+    "recommended_index": 0, "recommended_reason": "..."}], "agent_insight": "...",
+    "summary_draft": null}
+    CRITICAL: Use "acknowledgment" (no 'e' before 'ment'), "label" (not
+    'direction'/'description'/'option'), "id" (1-based int), "context" (string).
 
 goal_task:
   description: >
     You are a CEO & Product Manager helping prioritise feature goals.
     Combine strategic vision with execution rigour.
+
+    ## Project Knowledge
+    Use the following project context to align goals with known project
+    objectives and strategic direction.
+
+    {knowledge_context}
 
     ## Previous Step Context
     {context}
@@ -210,15 +247,25 @@ goal_task:
       1-2 sentence explanation of why it best serves the product.
       If you genuinely have no preference, leave both null.
   expected_output: >
-    Valid JSON matching the StructuredIdeationResponse schema with
-    acknowledgment, 3-5 questions about feature goals (each with
-    3 recommendations plus recommended_index and recommended_reason),
-    an agent_insight, and optionally a summary_draft.
+    ONLY valid JSON (no text before or after).  Use these EXACT field names:
+    {"acknowledgment": "...", "questions": [{"id": 1, "question": "...",
+    "context": "...", "recommendations": [{"label": "...", "pro": "...",
+    "con": "...", "complexity": "Low|Medium|High"}, ...3 total...],
+    "recommended_index": 0, "recommended_reason": "..."}], "agent_insight": "...",
+    "summary_draft": null}
+    CRITICAL: Use "acknowledgment" (no 'e' before 'ment'), "label" (not
+    'direction'/'description'/'option'), "id" (1-based int), "context" (string).
 
 tech_stack_task:
   description: >
     You are a CTO & Staff Engineer recommending the technology stack.
     Combine strategic vision with production paranoia.
+
+    ## Project Knowledge
+    Use the following project context to factor in existing tech stack
+    from repo analysis when recommending technologies.
+
+    {knowledge_context}
 
     ## Previous Step Context
     {context}
@@ -265,7 +312,11 @@ tech_stack_task:
       1-2 sentence explanation of why it best serves the product.
       If you genuinely have no preference, leave both null.
   expected_output: >
-    Valid JSON matching the StructuredIdeationResponse schema with
-    acknowledgment, 3-5 questions about technology choices (each with
-    3 recommendations plus recommended_index and recommended_reason),
-    an agent_insight, and optionally a summary_draft.
+    ONLY valid JSON (no text before or after).  Use these EXACT field names:
+    {"acknowledgment": "...", "questions": [{"id": 1, "question": "...",
+    "context": "...", "recommendations": [{"label": "...", "pro": "...",
+    "con": "...", "complexity": "Low|Medium|High"}, ...3 total...],
+    "recommended_index": 0, "recommended_reason": "..."}], "agent_insight": "...",
+    "summary_draft": null}
+    CRITICAL: Use "acknowledgment" (no 'e' before 'ment'), "label" (not
+    'direction'/'description'/'option'), "id" (1-based int), "context" (string).

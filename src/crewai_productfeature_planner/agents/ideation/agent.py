@@ -26,7 +26,6 @@ from crewai_productfeature_planner.apis.ideation.models import (
 )
 from crewai_productfeature_planner.scripts.logging_config import get_logger
 from crewai_productfeature_planner.scripts.retry import (
-    LLMError,
     crew_kickoff_with_retry,
 )
 
@@ -120,6 +119,7 @@ def run_ideation_step(
     user_input: str,
     context: dict[str, Any] | None = None,
     conversation_history: list[dict[str, str]] | None = None,
+    knowledge_context: str = "",
 ) -> str | StructuredIdeationResponse:
     """Run a single ideation step and return the agent's response.
 
@@ -132,6 +132,8 @@ def run_ideation_step(
         context: Accumulated outputs from previous steps.
         conversation_history: Prior messages in the current step for
             multi-turn awareness.
+        knowledge_context: Pre-built project knowledge block from
+            ``build_knowledge_context()``.
 
     Returns:
         A ``StructuredIdeationResponse`` on success, or a plain string
@@ -149,15 +151,20 @@ def run_ideation_step(
     # Format conversation history for multi-turn awareness
     history_str = _format_conversation_history(conversation_history or [])
 
+    # NOTE: We intentionally do NOT set output_pydantic on the Task.
+    # CrewAI's strict pydantic validation fails on LLM outputs with
+    # trailing characters (concatenated JSON objects) and raises before
+    # storing the raw text — making salvage impossible.  Instead we
+    # parse the raw output ourselves with tolerant JSON handling.
     task = Task(
         description=task_config["description"].format(
             context=context_str,
             user_input=user_input,
             conversation_history=history_str,
+            knowledge_context=knowledge_context or "No project knowledge available.",
         ),
         expected_output=task_config["expected_output"],
         agent=agent,
-        output_pydantic=StructuredIdeationResponse,
     )
 
     crew = Crew(
@@ -173,27 +180,7 @@ def run_ideation_step(
         STEP_AGENT_KEYS[step],
     )
 
-    try:
-        result = crew_kickoff_with_retry(crew, max_retries=2)
-    except LLMError as exc:
-        # CrewAI's strict output_pydantic validation can fail on
-        # well-formed but slightly malformed JSON (trailing chars,
-        # concatenated objects).  Try to salvage the raw LLM output
-        # via the task's internal state before giving up.
-        raw_output = getattr(task, "output", None)
-        raw_text = getattr(raw_output, "raw", None) if raw_output else None
-        if raw_text:
-            salvaged = _parse_structured_from_text(raw_text)
-            if salvaged is not None:
-                logger.info(
-                    "[IdeationAgent] Salvaged structured output from "
-                    "failed validation step=%s questions=%d",
-                    step,
-                    len(salvaged.questions),
-                )
-                return salvaged
-        # Couldn't salvage — re-raise so the caller can handle
-        raise
+    result = crew_kickoff_with_retry(crew, max_retries=2)
 
     # Try to extract the Pydantic model from the result
     parsed = _extract_structured_response(result)
@@ -238,41 +225,256 @@ def _extract_structured_response(
 def _parse_structured_from_text(
     raw: str,
 ) -> StructuredIdeationResponse | None:
-    """Parse a StructuredIdeationResponse from raw text.
+    """Parse a StructuredIdeationResponse from raw LLM text.
 
-    Handles:
-    - Clean JSON
-    - JSON wrapped in markdown code fences
-    - JSON with trailing characters (common LLM artefact)
+    This is a **deterministic code parser** — it does NOT rely on
+    prompt engineering or LLM cooperation.  It aggressively extracts
+    and normalizes JSON from any LLM output format.
+    """
+    data = _extract_json_object(raw)
+    if data is None:
+        return None
+
+    normalized = _normalize_response_fields(data)
+    try:
+        return StructuredIdeationResponse.model_validate(normalized)
+    except (ValueError, KeyError):
+        return None
+
+
+# ── JSON extraction (deterministic, multi-strategy) ───────────
+
+
+def _extract_json_object(raw: str) -> dict | None:
+    """Extract a JSON object from raw LLM text using multiple strategies.
+
+    Order of attempts:
+    1. Direct parse (entire text is JSON)
+    2. Code-fence extraction (```json ... ``` or ``` ... ```)
+    3. First-to-last brace extraction (outermost { ... })
+    4. JSONDecoder.raw_decode (partial parse from first '{')
+
+    Returns the first successfully parsed dict, or None.
     """
     text = raw.strip()
 
-    # Strip markdown code fences if present
-    if text.startswith("```"):
-        first_nl = text.index("\n")
-        text = text[first_nl + 1:]
-    if text.endswith("```"):
-        text = text[:-3]
+    # Strategy 1: Entire text is clean JSON
+    result = _try_json_parse(text)
+    if result is not None:
+        return result
 
-    text = text.strip()
+    # Strategy 2: Extract from markdown code fences
+    fenced = _extract_from_code_fences(text)
+    if fenced is not None:
+        result = _try_json_parse(fenced)
+        if result is not None:
+            return result
 
-    # Strategy 2: Direct JSON parse
-    try:
-        data = json.loads(text)
-        return StructuredIdeationResponse.model_validate(data)
-    except (json.JSONDecodeError, ValueError, KeyError):
-        pass
+    # Strategy 3: Outermost braces (first '{' to last '}')
+    brace_start = raw.find("{")
+    if brace_start != -1:
+        brace_end = raw.rfind("}")
+        if brace_end > brace_start:
+            candidate = raw[brace_start : brace_end + 1]
+            result = _try_json_parse(candidate)
+            if result is not None:
+                return result
 
-    # Strategy 3: Tolerant parse — extract first complete JSON object
-    # (handles trailing characters after the closing brace)
-    decoder = json.JSONDecoder()
-    try:
-        data, _ = decoder.raw_decode(text)
-        return StructuredIdeationResponse.model_validate(data)
-    except (json.JSONDecodeError, ValueError, KeyError):
-        pass
+    # Strategy 4: JSONDecoder.raw_decode from first '{'
+    if brace_start != -1:
+        decoder = json.JSONDecoder()
+        try:
+            data, _ = decoder.raw_decode(raw[brace_start:])
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
 
     return None
+
+
+def _try_json_parse(text: str) -> dict | None:
+    """Try to parse text as JSON; return dict or None."""
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
+def _extract_from_code_fences(text: str) -> str | None:
+    """Extract content between the first ``` and last ``` markers.
+
+    Handles: ```json\\n...\\n```, ```\\n...\\n```, and fences with
+    arbitrary preamble/postamble text around them.
+    """
+    if "```" not in text:
+        return None
+
+    lines = text.split("\n")
+    start_idx = None
+    end_idx = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if start_idx is None:
+                start_idx = i
+            else:
+                end_idx = i
+
+    if start_idx is None:
+        return None
+
+    # Extract lines between the fences
+    inner_lines = lines[start_idx + 1 : end_idx if end_idx else len(lines)]
+    return "\n".join(inner_lines).strip()
+
+
+# ── Field normalization (handles ALL known LLM drift) ─────────
+
+# Top-level field aliases
+_ACKNOWLEDGMENT_ALIASES = frozenset({
+    "acknowledgement", "ack", "greeting", "intro", "introduction",
+    "opening", "response", "message",
+})
+
+# Recommendation 'label' field aliases
+_LABEL_ALIASES = frozenset({
+    "direction", "description", "option", "title", "name", "answer",
+    "suggestion", "approach", "strategy", "recommendation", "text",
+    "value", "choice", "summary",
+})
+
+# Question 'question' field aliases
+_QUESTION_ALIASES = frozenset({
+    "text", "prompt", "query", "ask",
+})
+
+# Question 'context' field aliases
+_CONTEXT_ALIASES = frozenset({
+    "reason", "rationale", "explanation", "why", "background",
+})
+
+
+def _normalize_response_fields(data: Any) -> Any:
+    """Normalize ALL known LLM field-name variations to match the Pydantic schema.
+
+    This is a deterministic code fix — it does NOT rely on prompt wording.
+    Handles every observed LLM drift pattern:
+
+    Top-level:
+    - acknowledgement/ack/greeting/intro → acknowledgment
+    - Ensures 'questions' is a list
+    - Ensures 'agent_insight' exists (defaults to empty string)
+
+    Per question:
+    - Auto-assigns 'id' (1-based) if missing
+    - Normalizes 'context' from aliases or derives from recommended_reason
+    - Normalizes 'question' field from aliases
+    - Ensures 'recommendations' exists and has exactly 3 entries
+    - Coerces 'recommended_index' to int or None
+
+    Per recommendation:
+    - direction/description/option/title/name/answer/... → label
+    - Coerces 'complexity' to 'Low'|'Medium'|'High'
+    - Ensures 'pro' and 'con' exist (defaults to empty string)
+    """
+    if not isinstance(data, dict):
+        return data
+
+    # ── Top-level normalization ──
+    if "acknowledgment" not in data:
+        for alias in _ACKNOWLEDGMENT_ALIASES:
+            if alias in data:
+                data["acknowledgment"] = data.pop(alias)
+                break
+        else:
+            # Last resort: use first string value that looks like an ack
+            data.setdefault("acknowledgment", "")
+
+    # Ensure agent_insight exists
+    data.setdefault("agent_insight", "")
+
+    # ── Questions normalization ──
+    questions = data.get("questions")
+    if not isinstance(questions, list):
+        return data
+
+    for idx, q in enumerate(questions):
+        if not isinstance(q, dict):
+            continue
+
+        # Auto-assign 'id' if missing (1-based)
+        if "id" not in q:
+            q["id"] = idx + 1
+        else:
+            # Coerce to int
+            try:
+                q["id"] = int(q["id"])
+            except (ValueError, TypeError):
+                q["id"] = idx + 1
+
+        # Normalize 'question' field from aliases
+        if "question" not in q:
+            for alias in _QUESTION_ALIASES:
+                if alias in q:
+                    q["question"] = q.pop(alias)
+                    break
+
+        # Normalize 'context' from aliases or derive from recommended_reason
+        if "context" not in q:
+            for alias in _CONTEXT_ALIASES:
+                if alias in q:
+                    q["context"] = q.pop(alias)
+                    break
+            else:
+                q["context"] = q.get("recommended_reason", "")
+
+        # Coerce recommended_index to int or None
+        ri = q.get("recommended_index")
+        if ri is not None:
+            try:
+                q["recommended_index"] = int(ri)
+            except (ValueError, TypeError):
+                q["recommended_index"] = None
+
+        # Normalize recommendations
+        recs = q.get("recommendations")
+        if isinstance(recs, list):
+            for rec in recs:
+                if not isinstance(rec, dict):
+                    continue
+                _normalize_recommendation(rec)
+
+    return data
+
+
+def _normalize_recommendation(rec: dict) -> None:
+    """Normalize a single recommendation dict in-place."""
+    # Normalize 'label' from aliases
+    if "label" not in rec:
+        for alias in _LABEL_ALIASES:
+            if alias in rec:
+                rec["label"] = rec.pop(alias)
+                break
+        else:
+            rec["label"] = ""
+
+    # Ensure 'pro' and 'con' exist
+    rec.setdefault("pro", "")
+    rec.setdefault("con", "")
+
+    # Normalize 'complexity' to exact Literal values
+    complexity = str(rec.get("complexity", "Medium")).strip().lower()
+    if complexity in ("low", "l", "simple", "easy"):
+        rec["complexity"] = "Low"
+    elif complexity in ("high", "h", "hard", "complex", "difficult", "very high"):
+        rec["complexity"] = "High"
+    else:
+        rec["complexity"] = "Medium"
 
 
 def _format_context(context: dict[str, Any]) -> str:

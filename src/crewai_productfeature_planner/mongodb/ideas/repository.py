@@ -377,6 +377,35 @@ def delete_idea(
 # ── queries ───────────────────────────────────────────────────
 
 
+def find_idea_by_session(
+    *,
+    session_id: str,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
+    """Find an existing idea linked to an ideation session.
+
+    Used as an idempotency guard to prevent duplicate idea creation
+    when session completion is triggered multiple times.
+
+    Returns:
+        The idea document (without ``_id``), or ``None``.
+    """
+    try:
+        doc = _col().find_one(
+            {"ideation_session_id": session_id, **tenant_filter(tenant)},
+            {"_id": 0},
+        )
+        return doc
+    except PyMongoError as exc:
+        logger.error(
+            "[Ideas] Failed to find idea by session=%s: %s",
+            session_id,
+            exc,
+            exc_info=True,
+        )
+        return None
+
+
 def get_idea(
     *,
     idea_id: str,
@@ -414,6 +443,7 @@ def list_ideas(
     """List ideas for a project, newest first.
 
     Excludes ``archived`` ideas unless filtered by status explicitly.
+    Deduplicates by ``idea_id`` defensively (keeps the most recent).
 
     Returns:
         List of idea documents (without ``_id``).
@@ -433,7 +463,25 @@ def list_ideas(
             .skip(offset)
             .limit(page_size)
         )
-        return list(cursor)
+        docs = list(cursor)
+        # Defensive dedup: keep first occurrence per idea_id (most recent
+        # due to descending sort). Guards against duplicate documents that
+        # may exist if the unique index was applied after data insertion.
+        seen: set[str] = set()
+        unique_docs: list[dict[str, Any]] = []
+        for doc in docs:
+            iid = doc.get("idea_id", "")
+            if iid and iid in seen:
+                logger.warning(
+                    "[Ideas] Duplicate idea_id=%s in project=%s — skipping",
+                    iid,
+                    project_id,
+                )
+                continue
+            if iid:
+                seen.add(iid)
+            unique_docs.append(doc)
+        return unique_docs
     except PyMongoError as exc:
         logger.error(
             "[Ideas] Failed to list ideas project=%s: %s",

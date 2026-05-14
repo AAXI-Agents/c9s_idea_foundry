@@ -173,6 +173,41 @@ class TestExtractStructuredResponse:
         parsed = self.extract(result)
         assert parsed is not None
 
+    def test_from_json_with_preamble_text(self):
+        """LLM outputs preamble text before a ```json code block."""
+        model = _make_structured_response()
+        raw = (
+            "Welcome! Great to reconnect. Your idea is exciting.\n\n"
+            "Let me ask some clarifying questions:\n\n"
+            f"```json\n{model.model_dump_json()}\n```"
+        )
+        result = _make_crew_result(raw=raw)
+        parsed = self.extract(result)
+        assert parsed is not None
+        assert parsed.acknowledgment == model.acknowledgment
+        assert len(parsed.questions) == 3
+
+    def test_from_json_with_preamble_and_postamble(self):
+        """LLM outputs text both before and after the JSON block."""
+        model = _make_structured_response()
+        raw = (
+            "Here are my questions:\n\n"
+            f"```json\n{model.model_dump_json()}\n```\n\n"
+            "Looking forward to your answers!"
+        )
+        result = _make_crew_result(raw=raw)
+        parsed = self.extract(result)
+        assert parsed is not None
+        assert len(parsed.questions) == 3
+
+    def test_from_json_without_code_fences_with_preamble(self):
+        """LLM outputs preamble text then bare JSON (no fences)."""
+        model = _make_structured_response()
+        raw = f"Here is the response:\n\n{model.model_dump_json()}"
+        result = _make_crew_result(raw=raw)
+        parsed = self.extract(result)
+        assert parsed is not None
+
     def test_fallback_on_invalid_json(self):
         result = _make_crew_result(raw="This is just text, not JSON.")
         parsed = self.extract(result)
@@ -182,6 +217,128 @@ class TestExtractStructuredResponse:
         result = _make_crew_result(raw='{"acknowledgment": "Hi"}')
         parsed = self.extract(result)
         assert parsed is None  # missing required fields
+
+    def test_normalizes_direction_to_label(self):
+        """LLM uses 'direction' instead of 'label' in recommendations."""
+        raw_json = json.dumps({
+            "acknowledgment": "Great idea!",
+            "questions": [
+                {
+                    "question": f"Question {i}?",
+                    "recommendations": [
+                        {
+                            "direction": f"Direction {j}",
+                            "pro": f"Pro {j}",
+                            "con": f"Con {j}",
+                            "complexity": ["Low", "Medium", "High"][j],
+                        }
+                        for j in range(3)
+                    ],
+                    "recommended_index": 0,
+                    "recommended_reason": "Best option.",
+                }
+                for i in range(3)
+            ],
+            "agent_insight": "Interesting idea.",
+        })
+        result = _make_crew_result(raw=raw_json)
+        parsed = self.extract(result)
+        assert parsed is not None
+        assert parsed.questions[0].recommendations[0].label == "Direction 0"
+        assert parsed.questions[0].id == 1  # auto-assigned
+
+    def test_normalizes_description_to_label(self):
+        """LLM uses 'description' instead of 'label' in recommendations."""
+        raw_json = json.dumps({
+            "acknowledgment": "Nice!",
+            "questions": [
+                {
+                    "question": f"Q{i}?",
+                    "recommendations": [
+                        {
+                            "description": f"Desc {j}",
+                            "pro": f"Pro {j}",
+                            "con": f"Con {j}",
+                            "complexity": ["Low", "Medium", "High"][j],
+                        }
+                        for j in range(3)
+                    ],
+                    "recommended_index": 1,
+                    "recommended_reason": "Why this is best.",
+                }
+                for i in range(3)
+            ],
+            "agent_insight": "Solid foundation.",
+        })
+        result = _make_crew_result(raw=raw_json)
+        parsed = self.extract(result)
+        assert parsed is not None
+        assert parsed.questions[0].recommendations[0].label == "Desc 0"
+
+    def test_normalizes_missing_id_and_context(self):
+        """LLM omits 'id' and 'context' from questions."""
+        raw_json = json.dumps({
+            "acknowledgment": "Great!",
+            "questions": [
+                {
+                    "question": f"Q{i}?",
+                    "recommendations": [
+                        {
+                            "label": f"Option {j}",
+                            "pro": f"Pro {j}",
+                            "con": f"Con {j}",
+                            "complexity": ["Low", "Medium", "High"][j],
+                        }
+                        for j in range(3)
+                    ],
+                    "recommended_index": 0,
+                    "recommended_reason": "Good reason.",
+                }
+                for i in range(3)
+            ],
+            "agent_insight": "Looks good.",
+        })
+        result = _make_crew_result(raw=raw_json)
+        parsed = self.extract(result)
+        assert parsed is not None
+        # id auto-assigned as 1-based index
+        assert parsed.questions[0].id == 1
+        assert parsed.questions[1].id == 2
+        assert parsed.questions[2].id == 3
+        # context derived from recommended_reason
+        assert parsed.questions[0].context == "Good reason."
+
+    def test_normalizes_acknowledgement_british_spelling(self):
+        """LLM uses British 'acknowledgement' instead of American 'acknowledgment'."""
+        raw_json = json.dumps({
+            "acknowledgement": "Excellent progress!",
+            "questions": [
+                {
+                    "question": f"Q{i}?",
+                    "recommendations": [
+                        {
+                            "option": f"Option {j}",
+                            "pro": f"Pro {j}",
+                            "con": f"Con {j}",
+                            "complexity": ["Low", "Medium", "High"][j],
+                        }
+                        for j in range(3)
+                    ],
+                    "recommended_index": 0,
+                    "recommended_reason": "Best option.",
+                }
+                for i in range(4)
+            ],
+            "agent_insight": "Strong potential.",
+        })
+        result = _make_crew_result(raw=raw_json)
+        parsed = self.extract(result)
+        assert parsed is not None
+        assert parsed.acknowledgment == "Excellent progress!"
+        assert len(parsed.questions) == 4
+        assert parsed.questions[0].recommendations[0].label == "Option 0"
+        assert parsed.questions[0].id == 1
+        assert parsed.questions[0].context == "Best option."
 
 
 # ── Agent config loading tests ────────────────────────────────
@@ -209,7 +366,7 @@ class TestAgentConfig:
         assert "persona_task" in tasks
         # Verify structured output instruction is present
         for key in ["ideation_task", "persona_task", "solution_task", "goal_task", "tech_stack_task"]:
-            assert "StructuredIdeationResponse" in tasks[key]["expected_output"]
+            assert "acknowledgment" in tasks[key]["expected_output"]
 
 
 # ── Service-level answer formatting tests ─────────────────────
@@ -547,7 +704,8 @@ class TestHandleAdvanceAutoTrigger:
         agent_run_calls: list[dict] = []
 
         async def _fake_run_agent(*, session_id, step, user_input,
-                                  session_context=None, tenant=None):
+                                  session_context=None, tenant=None,
+                                  iteration_count=0, max_iterations=2):
             agent_run_calls.append({
                 "session_id": session_id,
                 "step": step,

@@ -43,9 +43,11 @@ from crewai_productfeature_planner.apis.ideation.models import (
     IdeationSessionResponse,
     IdeationSessionSummary,
     IdeationUpdateRequest,
+    IterationHistoryResponse,
     StepOutput,
 )
 from crewai_productfeature_planner.apis.ideation.service import (
+    get_iteration_history,
     handle_advance,
     handle_iterate,
     handle_rollback,
@@ -55,6 +57,7 @@ from crewai_productfeature_planner.apis.ideation.service import (
 )
 from crewai_productfeature_planner.apis.sso_auth import require_sso_user
 from crewai_productfeature_planner.mongodb._tenant import TenantContext
+from crewai_productfeature_planner.mongodb.project_config import get_project
 from crewai_productfeature_planner.mongodb.ideation_sessions.repository import (
     STEP_ORDER,
     count_sessions,
@@ -206,6 +209,14 @@ async def kickoff_ideation(
         request.project_id,
     )
 
+    # Validate project exists
+    project = get_project(request.project_id, tenant=tenant)
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project '{request.project_id}' not found.",
+        )
+
     session = await start_ideation_session(
         user_id=user_id,
         title=request.title,
@@ -343,6 +354,36 @@ async def get_ideation_messages(
     )
 
 
+@router.get(
+    "/flow/ideation/sessions/{session_id}/iterations",
+    response_model=IterationHistoryResponse,
+    summary="Get iteration history for a step",
+    description=(
+        "Returns the Q&A history for a specific step, grouped by round. "
+        "Each round contains the agent's questions and the user's answers."
+    ),
+    responses=_ERROR_RESPONSES,
+)
+async def get_ideation_iterations(
+    session_id: str,
+    step: str | None = Query(default=None, description="Step name (e.g. 'ideation'). Defaults to current step."),
+    user: dict = Depends(require_sso_user),
+):
+    """Get iteration history for a session step."""
+    tenant = TenantContext.from_user(user)
+
+    result = await get_iteration_history(
+        session_id=session_id,
+        step=step,
+        tenant=tenant,
+    )
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    return IterationHistoryResponse(**result)
+
+
 @router.post(
     "/flow/ideation/sessions/{session_id}/respond",
     response_model=IdeationRespondResponse,
@@ -433,6 +474,13 @@ async def iterate_ideation(
 
     if not result:
         raise HTTPException(status_code=500, detail="Failed to iterate step.")
+
+    # Service returns {error: "iteration_limit_reached"} when max reached
+    if result.get("error") == "iteration_limit_reached":
+        raise HTTPException(
+            status_code=409,
+            detail="Maximum iterations reached for this step. Use advance to proceed.",
+        )
 
     step_name = step_to_name(result["step"])
     return IdeationIterateResponse(

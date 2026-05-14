@@ -100,7 +100,7 @@ tags:
 | `prd/_route_versions.py` | `GET /flow/runs/{run_id}/versions` — PRD version history |
 | `prd/_route_websocket.py` | `WS /flow/runs/{run_id}/ws` — real-time WebSocket for agent activity |
 | `ideation/__init__.py` | Re-exports: broadcast, broadcast_sync, ideation_ws_router, ideation_router |
-| `ideation/router.py` | 10 REST endpoints for interactive ideation flow |
+| `ideation/router.py` | 11 REST endpoints for interactive ideation flow (incl. iteration history) |
 | `ideation/models.py` | Pydantic models: ProcessingPhase enum, StructuredIdeationResponse, request/response shapes |
 | `ideation/service.py` | Business logic: start, respond, iterate, advance, rollback + processing_status events |
 | `ideation/_streaming.py` | LLM token streaming — CrewAI event bus hook, thread-local session context, `agent_token` WS events |
@@ -130,6 +130,12 @@ tags:
 | `agent_worker/_models.py` | Pydantic models for credential proxy endpoints (field normalization) |
 | `agent_worker/_route_credentials.py` | POST/DELETE /aw/atlassian/credentials — store-and-forward proxy |
 | `agent_worker/_route_proxy.py` | Catch-all /aw/{path} proxy — user-token forwarding, graceful GET degradation |
+| `settings/__init__.py` | Package init + re-export `settings_router` |
+| `settings/router.py` | GET/PATCH /settings — enterprise configuration (model tier, concurrency, agent labels) |
+| `webhook_management/__init__.py` | Package init + re-export all 3 sub-routers |
+| `webhook_management/_config.py` | GET /webhook-config — credential status per provider |
+| `webhook_management/_subscriptions.py` | 9 endpoints under /webhook-subscriptions (Jira/GitHub CRUD, secret management) |
+| `webhook_management/_events.py` | 4 endpoints under /webhook-events (list, detail, replay, backfill) |
 
 ## Flows (`flows/`)
 
@@ -184,6 +190,8 @@ tags:
 | `knowledge_summaries/` | Aggregated knowledge summaries per project (unified bullets, topics, contradictions) |
 | `code_repos/` | Registered GitHub repos per project (OAuth tokens, analysis results) |
 | `integration_credentials/` | Per-tenant integration credential storage with Fernet encryption |
+| `enterprise_settings/` | Per-enterprise settings (model tier, concurrency, log level, agent labels) |
+| `webhook_subscriptions/` | Webhook subscription CRUD (Jira/GitHub), secret hashing, repo management |
 
 ## Services (`services/`)
 

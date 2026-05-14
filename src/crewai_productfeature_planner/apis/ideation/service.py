@@ -13,8 +13,12 @@ from crewai_productfeature_planner.apis.ideation.models import (
     StructuredIdeationResponse,
 )
 from crewai_productfeature_planner.mongodb._tenant import TenantContext
+from crewai_productfeature_planner.mongodb.enterprise_settings.repository import (
+    get_enterprise_settings,
+)
 from crewai_productfeature_planner.mongodb.ideation_sessions.repository import (
     STEP_ORDER,
+    STEP_TO_NAME,
     advance_step,
     append_message,
     clear_step_output,
@@ -22,10 +26,12 @@ from crewai_productfeature_planner.mongodb.ideation_sessions.repository import (
     create_session,
     get_messages,
     get_session,
+    increment_step_iteration,
     list_sessions,
     rollback_step,
     save_step_data,
     step_to_name,
+    update_session_knowledge_context,
     update_session_metadata,
     update_session_status,
 )
@@ -79,6 +85,17 @@ STEP_PROMPTS: dict[str, str] = {
     ),
 }
 
+# Default max iterations when enterprise settings are unavailable.
+_DEFAULT_MAX_ITERATIONS = 2
+
+
+def _get_max_iterations(tenant: TenantContext | None) -> int:
+    """Read the enterprise ``agent_flow_iteration`` setting."""
+    if tenant and tenant.enterprise_id:
+        settings = get_enterprise_settings(tenant.enterprise_id)
+        return int(settings.get("agent_flow_iteration", _DEFAULT_MAX_ITERATIONS))
+    return _DEFAULT_MAX_ITERATIONS
+
 
 async def start_ideation_session(
     *,
@@ -103,6 +120,34 @@ async def start_ideation_session(
         return None
 
     session_id = session["session_id"]
+
+    # Fetch project knowledge context (best-effort)
+    knowledge_context = ""
+    if project_id:
+        try:
+            from crewai_productfeature_planner.services.knowledge_context import (
+                build_knowledge_context,
+            )
+
+            knowledge_context = build_knowledge_context(
+                project_id, tenant=tenant,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[IdeationService] Knowledge context fetch failed "
+                "project=%s: %s",
+                project_id,
+                exc,
+            )
+
+    if knowledge_context:
+        update_session_knowledge_context(
+            session_id=session_id,
+            knowledge_context=knowledge_context,
+            tenant=tenant,
+        )
+        # Update the in-memory session doc so the first agent call sees it
+        session["knowledge_context"] = knowledge_context
 
     # Add initial system message
     append_message(
@@ -138,11 +183,18 @@ async def start_ideation_session(
             tenant=tenant,
         )
         # Trigger agent processing for the initial idea
+        max_iterations = _get_max_iterations(tenant)
+        new_iteration = increment_step_iteration(
+            session_id=session_id, step="a", tenant=tenant,
+        )
         await _run_agent_for_step(
             session_id=session_id,
             step="a",
             user_input=initial_idea,
+            session_context=session,
             tenant=tenant,
+            iteration_count=new_iteration,
+            max_iterations=max_iterations,
         )
 
     return session
@@ -194,6 +246,7 @@ async def handle_user_response(
         role="user",
         content=content,
         step=current_step,
+        content_type=response_type if response_type != "text" else None,
         metadata=msg_metadata,
         tenant=tenant,
     )
@@ -206,6 +259,12 @@ async def handle_user_response(
         tenant=tenant,
     )
 
+    # Increment iteration count (each respond cycle = 1 iteration)
+    max_iterations = _get_max_iterations(tenant)
+    new_iteration = increment_step_iteration(
+        session_id=session_id, step=current_step, tenant=tenant,
+    )
+
     # Run agent
     agent_response = await _run_agent_for_step(
         session_id=session_id,
@@ -213,6 +272,8 @@ async def handle_user_response(
         user_input=user_input,
         session_context=session,
         tenant=tenant,
+        iteration_count=new_iteration,
+        max_iterations=max_iterations,
     )
 
     return agent_response
@@ -228,6 +289,7 @@ async def handle_iterate(
 
     Returns:
         Dict with {iteration, step} or None on failure.
+        Dict with {error, max_iterations} when limit is reached.
     """
     session = get_session(session_id=session_id, tenant=tenant)
     if not session:
@@ -240,9 +302,28 @@ async def handle_iterate(
     steps_data = session.get("steps_data", {})
     step_data = steps_data.get(current_step, {})
 
-    # Compute new iteration (count completed outputs + 1)
-    current_iteration = step_data.get("iteration", 1) if "iteration" in step_data else 1
-    new_iteration = current_iteration + 1
+    # Check iteration limit from enterprise settings
+    max_iterations = _get_max_iterations(tenant)
+    current_iteration = step_data.get("iteration", 0)
+
+    if current_iteration >= max_iterations:
+        logger.info(
+            "[IdeationService] Iteration limit reached session=%s step=%s "
+            "iteration=%d max=%d",
+            session_id,
+            current_step,
+            current_iteration,
+            max_iterations,
+        )
+        return {
+            "error": "iteration_limit_reached",
+            "max_iterations": max_iterations,
+        }
+
+    # Increment iteration count
+    new_iteration = increment_step_iteration(
+        session_id=session_id, step=current_step, tenant=tenant,
+    )
 
     # Record feedback as user message if provided
     if feedback:
@@ -271,6 +352,8 @@ async def handle_iterate(
         user_input=user_input,
         session_context=session,
         tenant=tenant,
+        iteration_count=new_iteration,
+        max_iterations=max_iterations,
     )
 
     return {
@@ -343,6 +426,8 @@ async def handle_trigger_step(
     )
 
     # Trigger the agent for this step
+    max_iterations = _get_max_iterations(tenant)
+    current_iter = step_data.get("iteration", 0)
     result = await _run_agent_for_step(
         session_id=session_id,
         step=current_step,
@@ -352,6 +437,8 @@ async def handle_trigger_step(
         ),
         session_context=session,
         tenant=tenant,
+        iteration_count=current_iter,
+        max_iterations=max_iterations,
     )
 
     return result
@@ -403,6 +490,37 @@ async def handle_advance(
             tenant=tenant,
         )
 
+    # If the user submitted Q&A answers with the advance request,
+    # persist them as a final user message so the next step's agent
+    # has full context of the user's last round of feedback.
+    if approved_output:
+        user_summary = approved_output.get("user_summary")
+        answers_raw = approved_output.get("answers")
+        if user_summary or answers_raw:
+            msg_metadata: dict[str, Any] = {
+                "response_type": "selection",
+                "flow_step": current_step,
+                "is_advance_submission": True,
+            }
+            if answers_raw:
+                msg_metadata["answers"] = answers_raw
+            append_message(
+                session_id=session_id,
+                role="user",
+                content=user_summary or "",
+                step=current_step,
+                content_type="selection",
+                metadata=msg_metadata,
+                tenant=tenant,
+            )
+            logger.info(
+                "[IdeationService] Persisted advance answers session=%s step=%s "
+                "answers_count=%d",
+                session_id,
+                current_step,
+                len(answers_raw) if answers_raw else 0,
+            )
+
     # Advance
     new_step = advance_step(session_id=session_id, tenant=tenant)
 
@@ -444,6 +562,7 @@ async def handle_advance(
     # are generated immediately (background task with strong reference).
     # Re-read the session to pick up the approved previous step output.
     updated_session = get_session(session_id=session_id, tenant=tenant)
+    max_iterations = _get_max_iterations(tenant)
 
     async def _auto_trigger_agent() -> None:
         try:
@@ -461,6 +580,8 @@ async def handle_advance(
                 ),
                 session_context=updated_session,
                 tenant=tenant,
+                iteration_count=0,
+                max_iterations=max_iterations,
             )
             logger.info(
                 "[IdeationService] Auto-trigger completed session=%s step=%s",
@@ -512,6 +633,95 @@ async def handle_advance(
     }
 
 
+async def get_iteration_history(
+    *,
+    session_id: str,
+    step: str | None = None,
+    tenant: TenantContext | None = None,
+) -> dict[str, Any] | None:
+    """Build the iteration history for a specific step.
+
+    Groups agent structured-question messages and their subsequent user
+    selection messages into chronological rounds.
+
+    Returns:
+        Dict matching ``IterationHistoryResponse`` shape, or None if
+        session not found.
+    """
+    from crewai_productfeature_planner.mongodb.ideation_sessions.repository import (
+        name_to_step,
+    )
+
+    session = get_session(session_id=session_id, tenant=tenant)
+    if not session:
+        return None
+
+    # Resolve step — use provided or current
+    internal_step = name_to_step(step) if step else session["current_step"]
+    steps_data = session.get("steps_data", {})
+    step_data = steps_data.get(internal_step, {})
+    iteration_count = step_data.get("iteration", 0)
+    max_iterations = _get_max_iterations(tenant)
+
+    # Get all messages for this step
+    messages = get_messages(session_id=session_id, step=internal_step, tenant=tenant)
+
+    # Build rounds by pairing agent structured_questions with user selections
+    rounds: list[dict[str, Any]] = []
+    current_round: dict[str, Any] | None = None
+    round_num = 0
+
+    for msg in messages:
+        meta = msg.get("metadata") or {}
+
+        # Agent structured-questions message starts a new round
+        if msg["role"] == "agent" and meta.get("render_type") == "structured_questions":
+            round_num += 1
+            structured = meta.get("structured", {})
+            questions_raw = structured.get("questions", [])
+
+            current_round = {
+                "round": round_num,
+                "questions": [
+                    {
+                        "id": q.get("id", i + 1),
+                        "question": q.get("question", ""),
+                    }
+                    for i, q in enumerate(questions_raw)
+                ],
+                "agent_insight": structured.get("agent_insight"),
+                "completed_at": None,
+            }
+            rounds.append(current_round)
+
+        # User selection message completes the current round
+        elif msg["role"] == "user" and current_round is not None:
+            user_meta = msg.get("metadata") or {}
+            answers = user_meta.get("answers", [])
+
+            # Merge user answers into round questions
+            answers_by_id: dict[int, dict] = {
+                a.get("question_id", 0): a for a in answers
+            }
+            for q in current_round["questions"]:
+                ans = answers_by_id.get(q["id"])
+                if ans:
+                    q["selected_option"] = ans.get("selected_option")
+                    # Resolve label from structured data if possible
+                    q["selected_label"] = None
+                    q["custom_feedback"] = ans.get("custom_feedback")
+
+            current_round["completed_at"] = msg.get("timestamp")
+            current_round = None
+
+    return {
+        "step": step_to_name(internal_step),
+        "iteration_count": iteration_count,
+        "max_iterations": max_iterations,
+        "rounds": rounds,
+    }
+
+
 async def handle_rollback(
     *,
     session_id: str,
@@ -554,6 +764,8 @@ async def _run_agent_for_step(
     user_input: str,
     session_context: dict[str, Any] | None = None,
     tenant: TenantContext | None = None,
+    iteration_count: int = 0,
+    max_iterations: int = _DEFAULT_MAX_ITERATIONS,
 ) -> dict[str, Any] | None:
     """Run the CrewAI agent for the given step and record the response.
 
@@ -570,6 +782,21 @@ async def _run_agent_for_step(
 
     # Build context from previous steps
     context = _build_step_context(session_context, step) if session_context else {}
+
+    # Extract knowledge context from session
+    knowledge_context = (session_context or {}).get("knowledge_context", "")
+
+    # Inject final-iteration instruction when this is the last allowed round
+    is_final_iteration = iteration_count >= max_iterations
+    if is_final_iteration:
+        knowledge_context = (
+            knowledge_context
+            + "\n\n[SYSTEM] This is the user's FINAL iteration for this step. "
+            "You MUST produce a comprehensive summary_draft field that "
+            "synthesizes all previous rounds of Q&A. The summary should "
+            "capture all decisions made so far and be ready for the user "
+            "to approve and advance to the next step."
+        )
 
     # Build conversation history for multi-turn awareness within this step
     conversation_history = _build_conversation_history(session_id, step, tenant)
@@ -603,6 +830,7 @@ async def _run_agent_for_step(
                 user_input=user_input,
                 context=context,
                 conversation_history=conversation_history,
+                knowledge_context=knowledge_context,
             )
 
     try:
@@ -635,10 +863,13 @@ async def _run_agent_for_step(
     is_structured = isinstance(agent_output, StructuredIdeationResponse)
     if is_structured:
         content_text = agent_output.acknowledgment
+        can_iterate = iteration_count < max_iterations
         msg_metadata = {
             "render_type": "structured_questions",
-            "can_iterate": True,
-            "can_advance": False,
+            "can_iterate": can_iterate,
+            "can_advance": True,
+            "iteration_count": iteration_count,
+            "max_iterations": max_iterations,
             "structured": agent_output.model_dump(),
         }
         output_data = agent_output.model_dump()
@@ -1137,12 +1368,26 @@ def _auto_create_idea_from_session(
     Extracts title, project_id, and description from the session and
     creates a new Idea in ``draft`` status linked to the session.
 
+    Idempotent: returns the existing idea if one is already linked to
+    this session (guards against double-submit / retry).
+
     Returns:
         The created idea document, or ``None`` on failure.
     """
     from crewai_productfeature_planner.mongodb.ideas.repository import (
         create_idea as ideas_create,
+        find_idea_by_session,
     )
+
+    # Idempotency guard: check if an idea already exists for this session
+    existing = find_idea_by_session(session_id=session_id, tenant=tenant)
+    if existing:
+        logger.info(
+            "[IdeationService] Idea already exists for session=%s idea=%s — skipping creation",
+            session_id,
+            existing.get("idea_id"),
+        )
+        return existing
 
     session = get_session(session_id=session_id, tenant=tenant)
     if not session:

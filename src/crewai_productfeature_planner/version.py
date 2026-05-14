@@ -4222,6 +4222,86 @@ _CODEX: list[CodexEntry] = [
             "14 new tests (7 AW proxy + 7 Slack integration). 2727 pass."
         ),
     ),
+    CodexEntry(
+        version="0.97.0",
+        date=date(2026, 5, 12),
+        summary=(
+            "Enterprise Settings + Webhook Management APIs. "
+            "New enterpriseSettings collection (get/patch per enterprise). "
+            "New webhookSubscriptions collection (CRUD, secret hashing, repo management). "
+            "GET/PATCH /settings — enterprise configuration (model tier, concurrency, agent labels). "
+            "GET /webhook-config — credential status per provider. "
+            "9 endpoints under /webhook-subscriptions (Jira toggle, GitHub CRUD, secret reveal/regenerate). "
+            "4 endpoints under /webhook-events (list, detail, replay, backfill). "
+            "29 new tests (9 settings + 20 webhook). 2756 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.98.0",
+        date=date(2026, 5, 13),
+        summary=(
+            "Ideation knowledge injection. "
+            "project_id now required on POST /flow/ideation/kickoff (422 if missing, 404 if not found). "
+            "Ideation session start fetches project knowledge context (unified summary + repo blurbs) "
+            "via build_knowledge_context() and stores it on the session document. "
+            "All 5 ideation agents (a-e) receive {knowledge_context} in their task templates. "
+            "Graceful degradation if no knowledge exists or fetch fails. "
+            "New knowledge_context field on ideationSessions collection. "
+            "9 new tests (3 repo, 3 service, 3 agent). 2768 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.98.1",
+        date=date(2026, 5, 14),
+        summary=(
+            "Fix duplicate idea_id in project ideas list response. "
+            "Added defensive dedup by idea_id in ideas.list_ideas() repository function. "
+            "Added dedup by run_id in GET /ideas async endpoint. "
+            "Added idempotency guard in _auto_create_idea_from_session() — skips creation "
+            "if an idea already linked to the session exists (prevents double-submit duplication). "
+            "New find_idea_by_session() repository function. "
+            "4 new tests (dedup, find_idea_by_session). 2799 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.98.2",
+        date=date(2026, 5, 14),
+        summary=(
+            "Ideation iteration-limit enforcement. "
+            "New increment_step_iteration() repo function with $inc atomic update. "
+            "Service enforces enterprise agent_flow_iteration setting per step — "
+            "returns error dict on limit, router maps to 409. "
+            "Metadata now carries iteration_count, max_iterations, can_iterate, can_advance. "
+            "Final-iteration prompt injection warns agent. "
+            "New GET /flow/ideation/sessions/{id}/iterations history endpoint. "
+            "Enterprise default changed to 2 (range 1-3). "
+            "20 new tests (repo, service, router, metadata, history, backward compat). "
+            "2819 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.98.3",
+        date=date(2026, 5, 14),
+        summary=(
+            "Advance endpoint persists user Q&A answers before step transition. "
+            "When approved_output contains user_summary/answers, a user message "
+            "is saved with is_advance_submission metadata — ensures next step's "
+            "agent has full context. Fully backward compatible. "
+            "6 new tests. 2825 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.99.0",
+        date=date(2026, 5, 14),
+        summary=(
+            "Knowledge WebSocket endpoint — WS /ws/projects/{pid}/knowledge for "
+            "real-time document status, review completion, and summary updates. "
+            "Shared WS auth extracted to _ws_auth.py. Renamed source_type "
+            "'upload'→'file' and status 'reviewed'→'ready' to align with frontend. "
+            "Broadcasts integrated into knowledge router and aggregator service. "
+            "15 new WS tests. 2840 pass."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

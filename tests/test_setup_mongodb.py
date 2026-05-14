@@ -35,6 +35,7 @@ class TestAllCollections:
         "codeRepos",
         "companyActivity",
         "crewJobs",
+        "ideas",
         "ideationSessions",
         "integrationCredentials",
         "leases",

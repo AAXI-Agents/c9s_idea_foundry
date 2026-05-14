@@ -38,7 +38,7 @@ class TestCreateKnowledgeDocument:
         mock_col.insert_one.return_value = MagicMock()
         result = create_knowledge_document(
             project_id="proj1",
-            source_type="upload",
+            source_type="file",
             filename="design.pdf",
             file_size=1024,
             content_type="application/pdf",
@@ -46,7 +46,7 @@ class TestCreateKnowledgeDocument:
             tenant=tenant,
         )
         assert result is not None
-        assert result["source_type"] == "upload"
+        assert result["source_type"] == "file"
         assert result["filename"] == "design.pdf"
         assert result["status"] == "uploading"
         assert result["included"] is True
@@ -73,7 +73,7 @@ class TestCreateKnowledgeDocument:
         mock_col.insert_one.side_effect = PyMongoError("fail")
         result = create_knowledge_document(
             project_id="proj1",
-            source_type="upload",
+            source_type="file",
             filename="test.txt",
             created_by="user1",
             tenant=tenant,

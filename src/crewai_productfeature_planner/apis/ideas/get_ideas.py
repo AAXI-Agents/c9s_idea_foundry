@@ -125,10 +125,24 @@ async def list_ideas(
     ).skip(skip).limit(page_size)
     docs = await cursor.to_list(length=page_size)
 
+    # Defensive dedup by run_id (the unique key for workingIdeas).
+    # Guards against edge cases where the unique index didn't exist
+    # when duplicates were inserted.
+    seen_ids: set[str] = set()
+    unique_docs: list[dict] = []
+    for d in docs:
+        rid = d.get("run_id", "")
+        if rid and rid in seen_ids:
+            logger.warning("[Ideas] Duplicate run_id=%s in list — skipping", rid)
+            continue
+        if rid:
+            seen_ids.add(rid)
+        unique_docs.append(d)
+
     total_pages = max(1, ceil(total / page_size))
 
     result = IdeaListResponse(
-        items=[IdeaItem(**idea_fields(d)) for d in docs],
+        items=[IdeaItem(**idea_fields(d)) for d in unique_docs],
         total=total,
         page=page,
         page_size=page_size,

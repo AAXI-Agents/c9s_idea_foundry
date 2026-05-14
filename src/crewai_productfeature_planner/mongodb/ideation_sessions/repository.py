@@ -87,10 +87,17 @@ def create_session(
         "status": "active",
         "current_step": "a",
         "steps_data": {
-            step: {"input": None, "output": None, "approved": False, "completed_at": None}
+            step: {
+                "input": None,
+                "output": None,
+                "approved": False,
+                "completed_at": None,
+                "iteration": 0,
+            }
             for step in STEP_ORDER
         },
         "messages": [],
+        "knowledge_context": "",
         "created_at": now,
         "updated_at": now,
         "completed_at": None,
@@ -115,6 +122,32 @@ def create_session(
             exc_info=True,
         )
         return None
+
+
+def update_session_knowledge_context(
+    *,
+    session_id: str,
+    knowledge_context: str,
+    tenant: TenantContext | None = None,
+) -> None:
+    """Store the project knowledge context on the session document."""
+    try:
+        _col().update_one(
+            {"session_id": session_id, **tenant_filter(tenant)},
+            {"$set": {"knowledge_context": knowledge_context, "updated_at": _now_iso()}},
+        )
+        logger.info(
+            "[IdeationSession] Stored knowledge_context session=%s (%d chars)",
+            session_id,
+            len(knowledge_context),
+        )
+    except PyMongoError as exc:
+        logger.error(
+            "[IdeationSession] Failed to store knowledge_context session=%s: %s",
+            session_id,
+            exc,
+            exc_info=True,
+        )
 
 
 def append_message(
@@ -181,6 +214,54 @@ def append_message(
             exc_info=True,
         )
         return None
+
+
+def increment_step_iteration(
+    *,
+    session_id: str,
+    step: str,
+    tenant: TenantContext | None = None,
+) -> int:
+    """Atomically increment the iteration counter for a step.
+
+    Returns:
+        The new iteration count, or ``0`` on failure.
+    """
+    try:
+        result = _col().find_one_and_update(
+            {"session_id": session_id, **tenant_filter(tenant)},
+            {
+                "$inc": {f"steps_data.{step}.iteration": 1},
+                "$set": {"updated_at": _now_iso()},
+            },
+            return_document=True,
+            projection={f"steps_data.{step}.iteration": 1},
+        )
+        if result is None:
+            logger.warning(
+                "[IdeationSession] No session found to increment iteration: "
+                "session=%s step=%s",
+                session_id,
+                step,
+            )
+            return 0
+        new_val = result.get("steps_data", {}).get(step, {}).get("iteration", 1)
+        logger.info(
+            "[IdeationSession] Incremented iteration session=%s step=%s "
+            "iteration=%d",
+            session_id,
+            step,
+            new_val,
+        )
+        return new_val
+    except PyMongoError as exc:
+        logger.error(
+            "[IdeationSession] Failed to increment iteration session=%s: %s",
+            session_id,
+            exc,
+            exc_info=True,
+        )
+        return 0
 
 
 def save_step_data(

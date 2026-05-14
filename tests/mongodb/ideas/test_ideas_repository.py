@@ -332,6 +332,59 @@ class TestListIdeas:
         query = col.find.call_args[0][0]
         assert query["status"] == "completed"
 
+    def test_deduplicates_by_idea_id(self):
+        """Defensive dedup: if DB returns duplicates, only first is kept."""
+        docs = [
+            {"idea_id": "dup-1", "title": "First"},
+            {"idea_id": "dup-1", "title": "Second (dup)"},
+            {"idea_id": "unique-2", "title": "Unique"},
+        ]
+        mock_db, col = _make_mock_db()
+        col.find.return_value.sort.return_value.skip.return_value.limit.return_value = docs
+        with patch.object(ideas_repo, "get_db", return_value=mock_db):
+            result = ideas_repo.list_ideas(
+                project_id="proj-1",
+                tenant=_tenant(),
+            )
+        assert len(result) == 2
+        assert result[0]["idea_id"] == "dup-1"
+        assert result[0]["title"] == "First"
+        assert result[1]["idea_id"] == "unique-2"
+
+
+# ── find_idea_by_session ─────────────────────────────────────
+
+
+class TestFindIdeaBySession:
+    def test_returns_existing_idea(self):
+        expected = {"idea_id": "id-1", "ideation_session_id": "ses-1"}
+        mock_db, col = _make_mock_db(find_one_return=expected)
+        with patch.object(ideas_repo, "get_db", return_value=mock_db):
+            doc = ideas_repo.find_idea_by_session(
+                session_id="ses-1", tenant=_tenant()
+            )
+        assert doc == expected
+        query = col.find_one.call_args[0][0]
+        assert query["ideation_session_id"] == "ses-1"
+
+    def test_returns_none_when_not_found(self):
+        mock_db, col = _make_mock_db(find_one_return=None)
+        with patch.object(ideas_repo, "get_db", return_value=mock_db):
+            doc = ideas_repo.find_idea_by_session(
+                session_id="missing", tenant=_tenant()
+            )
+        assert doc is None
+
+    def test_returns_none_on_pymongo_error(self):
+        mock_db, col = _make_mock_db()
+        from pymongo.errors import PyMongoError
+        col.find_one.side_effect = PyMongoError("query failed")
+        with patch.object(ideas_repo, "get_db", return_value=mock_db):
+            doc = ideas_repo.find_idea_by_session(
+                session_id="ses-1", tenant=_tenant()
+            )
+        assert doc is None
+
 
 # ── count_ideas ──────────────────────────────────────────────
 
