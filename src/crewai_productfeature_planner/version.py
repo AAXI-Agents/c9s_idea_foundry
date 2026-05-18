@@ -4152,6 +4152,24 @@ _CODEX: list[CodexEntry] = [
             "12 new tests. 2668 tests pass."
         ),
     ),
+    CodexEntry(
+        version="0.93.1",
+        date=date(2026, 5, 19),
+        summary=(
+            "Cross-repo hardening — audit item #20 (extended log "
+            "redaction). scripts/logging_config.py previously only "
+            "redacted ``?token=`` from log messages. The _TokenRedactFilter "
+            "now applies a broader pattern set covering access_token=, "
+            "refresh_token=, ticket=, api_key=, secret=, signature=, "
+            "code=, client_secret=, Authorization: Bearer ..., X-Api-Key, "
+            "X-Auth-Token and X-Hub-Signature[-256]. The same filter is "
+            "now installed on uvicorn, uvicorn.access *and* uvicorn.error "
+            "(was access-only) and the existing dictConfig in "
+            "get_uvicorn_log_config() automatically picks up the broader "
+            "patterns. A global @app.exception_handler(Exception) was "
+            "already in place (audit item #8 — no change needed)."
+        ),
+    ),
 ]
 
 # ---------------------------------------------------------------------------

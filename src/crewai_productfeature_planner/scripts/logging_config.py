@@ -28,12 +28,35 @@ _LOG_FMT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
 _configured = False
 
-# Regex to redact sensitive tokens from log messages (e.g. WebSocket ?token=...).
-_TOKEN_REDACT_RE = re.compile(r"([\?&]token=)[^\s&\"']+")
+# Regex patterns to redact sensitive tokens / secrets / signed headers from log
+# messages (e.g. WebSocket ?token=..., OAuth callback ?code=..., webhook
+# Authorization: Bearer ..., X-Hub-Signature-256 in payload dumps, etc.).
+_SENSITIVE_PATTERNS = (
+    re.compile(r"([\?&]token=)[^\s&\"']+", re.IGNORECASE),
+    re.compile(r"([\?&]access_token=)[^\s&\"']+", re.IGNORECASE),
+    re.compile(r"([\?&]refresh_token=)[^\s&\"']+", re.IGNORECASE),
+    re.compile(r"([\?&]ticket=)[^\s&\"']+", re.IGNORECASE),
+    re.compile(r"([\?&]api[-_]?key=)[^\s&\"']+", re.IGNORECASE),
+    re.compile(r"([\?&](?:secret|signature)=)[^\s&\"']+", re.IGNORECASE),
+    re.compile(r"(Authorization:\s*Bearer\s+)[^\s\"']+", re.IGNORECASE),
+    re.compile(r"(X-(?:Api-Key|Auth-Token|Hub-Signature(?:-256)?)\s*[:=]\s*)[^\s,\"']+", re.IGNORECASE),
+    re.compile(r"([\?&]code=)[^\s&\"']+", re.IGNORECASE),
+    re.compile(r"([\?&]client_secret=)[^\s&\"']+", re.IGNORECASE),
+)
+
+# Kept for backwards-compat; some callers / tests import this symbol directly.
+_TOKEN_REDACT_RE = _SENSITIVE_PATTERNS[0]
+
+
+def _redact(text: str) -> str:
+    """Apply every sensitive-data pattern to ``text``."""
+    for pattern in _SENSITIVE_PATTERNS:
+        text = pattern.sub(r"\1[REDACTED]", text)
+    return text
 
 
 class _TokenRedactFilter(logging.Filter):
-    """Redact JWT/auth tokens from log messages to prevent credential leakage.
+    """Redact JWT/auth tokens and other secrets from log messages.
 
     Handles two formats:
     - Standard log records: token in ``record.msg`` or ``%(s)`` args.
@@ -46,19 +69,17 @@ class _TokenRedactFilter(logging.Filter):
         # ── Redact inside uvicorn-style tuple args ────────────
         if isinstance(record.args, tuple):
             record.args = tuple(
-                _TOKEN_REDACT_RE.sub(r"\1[REDACTED]", str(a))
-                if isinstance(a, str) else a
+                _redact(str(a)) if isinstance(a, str) else a
                 for a in record.args
             )
         elif isinstance(record.args, dict):
             record.args = {
-                k: _TOKEN_REDACT_RE.sub(r"\1[REDACTED]", str(v))
-                if isinstance(v, str) else v
+                k: _redact(str(v)) if isinstance(v, str) else v
                 for k, v in record.args.items()
             }
 
         # ── Redact the message itself ─────────────────────────
-        record.msg = _TOKEN_REDACT_RE.sub(r"\1[REDACTED]", str(record.msg))
+        record.msg = _redact(str(record.msg))
         return True
 
 # Mapping from Python log levels to GCP Cloud Logging severity names.
@@ -126,10 +147,11 @@ def setup_logging() -> logging.Logger:
     logger.propagate = False
     logger.addFilter(redact_filter)
 
-    # ── Apply redaction to Uvicorn's access logger ────────────
-    # Uvicorn logs full WebSocket URLs including ?token= query params.
-    uvicorn_access = logging.getLogger("uvicorn.access")
-    uvicorn_access.addFilter(redact_filter)
+    # ── Apply redaction to Uvicorn loggers ──────────────────
+    # Uvicorn logs full WebSocket URLs including ?token= query params and may
+    # surface webhook payload errors with secrets via uvicorn.error.
+    for uvi_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        logging.getLogger(uvi_name).addFilter(redact_filter)
 
     formatter = logging.Formatter(_LOG_FMT, datefmt=_DATE_FMT)
 
