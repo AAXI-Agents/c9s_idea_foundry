@@ -225,6 +225,76 @@ class TestGetMessages:
             resp = client.get("/flow/ideation/sessions/nope/messages")
         assert resp.status_code == 404
 
+    def test_get_messages_repairs_raw_json_content(self, client):
+        """Legacy messages with raw JSON content are repaired on read."""
+        import json
+
+        rec = {"label": "A", "pro": "p", "con": "c", "complexity": "Low"}
+        raw_json = json.dumps({
+            "acknowledgment": "Great insight!",
+            "questions": [
+                {"id": i, "question": f"Q{i}?", "context": f"C{i}",
+                 "recommendations": [rec, rec, rec]}
+                for i in range(1, 4)
+            ],
+            "agent_insight": "Interesting.",
+            "summary_draft": None,
+        })
+        # Simulate a legacy message: raw JSON as content, no metadata
+        msgs = [_make_message(
+            content=raw_json,
+            role="agent",
+            metadata=None,
+            content_type="markdown",
+        )]
+        with (
+            patch(f"{_SERVICE}.get_session") as mock_get_session,
+            patch(f"{_SERVICE}.get_messages") as mock_msgs,
+        ):
+            mock_get_session.return_value = _make_session_doc()
+            mock_msgs.return_value = msgs
+            resp = client.get("/flow/ideation/sessions/abc123/messages")
+        assert resp.status_code == 200
+        body = resp.json()
+        msg = body["messages"][0]
+        # Content should be the acknowledgment, not raw JSON
+        assert msg["content"] == "Great insight!"
+        assert msg["content_type"] == "cards"
+        assert msg["metadata"]["render_type"] == "structured_questions"
+        assert msg["metadata"]["structured"]["acknowledgment"] == "Great insight!"
+
+    def test_get_messages_leaves_normal_text_alone(self, client):
+        """Non-JSON content is not modified by the repair logic."""
+        msgs = [_make_message(content="Just a normal message", role="agent")]
+        with (
+            patch(f"{_SERVICE}.get_session") as mock_get_session,
+            patch(f"{_SERVICE}.get_messages") as mock_msgs,
+        ):
+            mock_get_session.return_value = _make_session_doc()
+            mock_msgs.return_value = msgs
+            resp = client.get("/flow/ideation/sessions/abc123/messages")
+        assert resp.status_code == 200
+        msg = resp.json()["messages"][0]
+        assert msg["content"] == "Just a normal message"
+
+    def test_get_messages_skips_repair_for_already_structured(self, client):
+        """Messages with existing structured metadata are not re-parsed."""
+        msgs = [_make_message(
+            content="Already fine",
+            role="agent",
+            metadata={"structured": {"acknowledgment": "Already fine"}, "render_type": "structured_questions"},
+        )]
+        with (
+            patch(f"{_SERVICE}.get_session") as mock_get_session,
+            patch(f"{_SERVICE}.get_messages") as mock_msgs,
+        ):
+            mock_get_session.return_value = _make_session_doc()
+            mock_msgs.return_value = msgs
+            resp = client.get("/flow/ideation/sessions/abc123/messages")
+        assert resp.status_code == 200
+        msg = resp.json()["messages"][0]
+        assert msg["content"] == "Already fine"
+
 
 # ── POST /flow/ideation/sessions/{id}/respond ─────────────────
 
@@ -395,6 +465,37 @@ class TestAdvance:
             mock_get.return_value = _make_session_doc(status="abandoned")
             resp = client.post("/flow/ideation/sessions/abc123/advance")
         assert resp.status_code == 409
+
+    def test_advance_completed_session_returns_idempotent_success(self, client):
+        """Advancing an already-completed session should return existing prd_run_id."""
+        with patch(f"{_SERVICE}.get_session") as mock_get:
+            mock_get.return_value = _make_session_doc(
+                status="completed",
+                current_step="e",
+                prd_run_id="existing-run-456",
+            )
+            resp = client.post("/flow/ideation/sessions/abc123/advance")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "completed"
+        assert body["prd_run_id"] == "existing-run-456"
+        assert body["prd_status"] == "initializing"
+        assert body["current_step"] is None
+        assert "already completed" in body["message"]
+
+    def test_advance_completed_session_without_prd_run_id(self, client):
+        """Completed session without prd_run_id still returns 200."""
+        with patch(f"{_SERVICE}.get_session") as mock_get:
+            mock_get.return_value = _make_session_doc(
+                status="completed",
+                current_step="e",
+            )
+            resp = client.post("/flow/ideation/sessions/abc123/advance")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "completed"
+        assert body["prd_run_id"] is None
+        assert body["prd_status"] is None
 
 
 # ── POST /flow/ideation/sessions/{id}/rollback ────────────────

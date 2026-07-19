@@ -493,6 +493,7 @@ async def handle_advance(
     # If the user submitted Q&A answers with the advance request,
     # persist them as a final user message so the next step's agent
     # has full context of the user's last round of feedback.
+    advance_msg_id: str | None = None
     if approved_output:
         user_summary = approved_output.get("user_summary")
         answers_raw = approved_output.get("answers")
@@ -504,7 +505,7 @@ async def handle_advance(
             }
             if answers_raw:
                 msg_metadata["answers"] = answers_raw
-            append_message(
+            advance_msg_id = append_message(
                 session_id=session_id,
                 role="user",
                 content=user_summary or "",
@@ -513,6 +514,16 @@ async def handle_advance(
                 metadata=msg_metadata,
                 tenant=tenant,
             )
+            # Emit WebSocket event so the message appears immediately
+            # for all connected clients (before the step_advanced event).
+            if advance_msg_id:
+                _broadcast_user_message(
+                    session_id,
+                    advance_msg_id,
+                    user_summary or "",
+                    current_step,
+                    msg_metadata,
+                )
             logger.info(
                 "[IdeationService] Persisted advance answers session=%s step=%s "
                 "answers_count=%d",
@@ -544,6 +555,7 @@ async def handle_advance(
             "new_step": None,
             "completed": True,
             "prd_run_id": prd_run_id,
+            "user_message_id": advance_msg_id,
         }
         if idea_doc:
             result["idea_id"] = idea_doc["idea_id"]
@@ -571,6 +583,10 @@ async def handle_advance(
                 session_id,
                 new_step,
             )
+            # Increment iteration so first generation is 1-based (not 0)
+            new_iteration = increment_step_iteration(
+                session_id=session_id, step=new_step, tenant=tenant,
+            )
             await _run_agent_for_step(
                 session_id=session_id,
                 step=new_step,
@@ -580,7 +596,7 @@ async def handle_advance(
                 ),
                 session_context=updated_session,
                 tenant=tenant,
-                iteration_count=0,
+                iteration_count=new_iteration,
                 max_iterations=max_iterations,
             )
             logger.info(
@@ -630,6 +646,7 @@ async def handle_advance(
         "previous_step": current_step,
         "new_step": new_step,
         "completed": False,
+        "user_message_id": advance_msg_id,
     }
 
 
@@ -874,9 +891,21 @@ async def _run_agent_for_step(
         }
         output_data = agent_output.model_dump()
     else:
+        # Fallback: raw text.  Attempt a last-ditch re-parse in case
+        # the normalizer was updated after the agent ran (or a new
+        # drift pattern appeared that the earlier parse missed).
         content_text = str(agent_output)
         msg_metadata = None
         output_data = content_text
+
+        salvaged = _try_salvage_raw_output(content_text, iteration_count, max_iterations)
+        if salvaged is not None:
+            content_text, msg_metadata, output_data = salvaged
+            is_structured = True  # upgrade so content_type becomes "cards"
+            logger.info(
+                "[IdeationService] Salvaged raw output as structured session=%s step=%s",
+                session_id, step,
+            )
 
     content_type = "cards" if is_structured else "markdown"
     agent_name = STEP_AGENTS.get(step, "ideation_agent")
@@ -942,6 +971,44 @@ async def _run_agent_for_step(
         "step": step,
         "metadata": msg_metadata,
     }
+
+
+def _try_salvage_raw_output(
+    raw_text: str,
+    iteration_count: int,
+    max_iterations: int,
+) -> tuple[str, dict[str, Any], dict[str, Any]] | None:
+    """Try to re-parse raw fallback text into structured output.
+
+    Used as a last-ditch write-time defence: if the agent returned a
+    string (parser failed on the first attempt), we try once more here
+    with the full normalizer.  This catches cases where the normalizer
+    was updated after the initial parse ran.
+
+    Returns ``(content_text, msg_metadata, output_data)`` or ``None``.
+    """
+    from crewai_productfeature_planner.agents.ideation.agent import (
+        _parse_structured_from_text,
+    )
+
+    if not raw_text.lstrip().startswith("{"):
+        return None
+
+    parsed = _parse_structured_from_text(raw_text)
+    if parsed is None:
+        return None
+
+    structured = parsed.model_dump()
+    can_iterate = iteration_count < max_iterations
+    metadata = {
+        "render_type": "structured_questions",
+        "can_iterate": can_iterate,
+        "can_advance": True,
+        "iteration_count": iteration_count,
+        "max_iterations": max_iterations,
+        "structured": structured,
+    }
+    return parsed.acknowledgment, metadata, structured
 
 
 def _build_step_context(session: dict[str, Any], current_step: str) -> dict[str, Any]:
@@ -1202,6 +1269,44 @@ def _broadcast_message(
     except Exception as exc:
         logger.warning(
             "[IdeationService] Failed to broadcast message session=%s: %s",
+            session_id, exc,
+        )
+
+
+def _broadcast_user_message(
+    session_id: str,
+    msg_id: str,
+    content: str,
+    step: str,
+    metadata: dict | None = None,
+) -> None:
+    """Broadcast a user message via WebSocket (fire-and-forget).
+
+    Used when a user message is persisted outside of the normal respond
+    flow (e.g. advance with answers) and needs to appear immediately
+    for all connected clients.
+    """
+    try:
+        from crewai_productfeature_planner.apis.ideation._route_websocket import (
+            broadcast_sync,
+        )
+        from datetime import datetime, timezone
+
+        broadcast_sync(session_id, {
+            "event": "new_message",
+            "data": {
+                "id": msg_id,
+                "role": "user",
+                "content": content,
+                "content_type": "selection",
+                "metadata": metadata,
+                "flow_step": step_to_name(step),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        })
+    except Exception as exc:
+        logger.warning(
+            "[IdeationService] Failed to broadcast user message session=%s: %s",
             session_id, exc,
         )
 

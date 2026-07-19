@@ -158,16 +158,66 @@ def _serialize_session_detail(doc: dict[str, Any]) -> IdeationSessionResponse:
 
 
 def _serialize_message(msg: dict[str, Any]) -> IdeationMessageItem:
-    """Convert a stored message to the frontend message shape."""
+    """Convert a stored message to the frontend message shape.
+
+    Includes read-time repair: if an agent message has raw JSON as
+    ``content`` but no structured metadata (caused by pre-fix parser
+    failures), re-parse and attach the structured data so the frontend
+    renders cards instead of a JSON blob.
+    """
+    content = msg.get("content", "")
+    metadata = msg.get("metadata")
+    content_type = msg.get("content_type", "text")
+
+    # Read-time repair for malformed legacy messages
+    if (
+        msg.get("role") == "agent"
+        and not (isinstance(metadata, dict) and metadata.get("structured"))
+        and isinstance(content, str)
+        and content.lstrip().startswith("{")
+    ):
+        repaired = _try_repair_raw_content(content)
+        if repaired is not None:
+            content, metadata, content_type = repaired
+
     return IdeationMessageItem(
         id=msg.get("id", ""),
         role=msg.get("role", "system"),
         agent_name=msg.get("agent_name"),
-        content=msg.get("content", ""),
-        content_type=msg.get("content_type", "text"),
-        metadata=msg.get("metadata"),
+        content=content,
+        content_type=content_type,
+        metadata=metadata,
         flow_step=step_to_name(msg.get("step", "a")),
         created_at=msg.get("timestamp", msg.get("created_at", "")),
+    )
+
+
+def _try_repair_raw_content(
+    content: str,
+) -> tuple[str, dict[str, Any], str] | None:
+    """Attempt to re-parse raw JSON content into structured metadata.
+
+    Returns (content_text, metadata_dict, content_type) on success,
+    or None if the content is not a parseable ideation response.
+    """
+    from crewai_productfeature_planner.agents.ideation.agent import (
+        _parse_structured_from_text,
+    )
+
+    parsed = _parse_structured_from_text(content)
+    if parsed is None:
+        return None
+
+    structured = parsed.model_dump()
+    return (
+        parsed.acknowledgment,
+        {
+            "render_type": "structured_questions",
+            "can_iterate": True,
+            "can_advance": True,
+            "structured": structured,
+        },
+        "cards",
     )
 
 
@@ -317,6 +367,11 @@ async def get_ideation_messages(
     session_id: str,
     step: str | None = Query(default=None, description="Filter by step name"),
     after: str | None = Query(default=None, description="Messages after this timestamp"),
+    since_message_id: str | None = Query(
+        default=None,
+        description="Return only messages after this message ID (exclusive). "
+        "Useful for incremental fetches to avoid duplicates.",
+    ),
     limit: int = Query(default=100, ge=1, le=500, description="Max messages"),
     user: dict = Depends(require_sso_user),
 ):
@@ -332,6 +387,16 @@ async def get_ideation_messages(
     internal_step = name_to_step(step) if step else None
 
     messages = get_messages(session_id=session_id, step=internal_step, tenant=tenant)
+
+    # Filter by since_message_id — drop messages up to and including the marker
+    if since_message_id:
+        found_idx = -1
+        for i, m in enumerate(messages):
+            if m.get("id") == since_message_id:
+                found_idx = i
+                break
+        if found_idx >= 0:
+            messages = messages[found_idx + 1:]
 
     # Filter by 'after' timestamp if provided
     if after:
@@ -512,6 +577,17 @@ async def advance_ideation(
     session = get_session(session_id=session_id, tenant=tenant)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
+    if session["status"] == "completed":
+        # Idempotent: session already completed — return existing result
+        prd_run_id = session.get("prd_run_id")
+        return IdeationAdvanceResponse(
+            status="completed",
+            previous_step=step_to_name(session.get("current_step") or "e"),
+            current_step=None,
+            message="Session already completed. PRD generation was previously triggered.",
+            prd_run_id=prd_run_id,
+            prd_status="initializing" if prd_run_id else None,
+        )
     if session["status"] != "active":
         raise HTTPException(
             status_code=409,
@@ -542,6 +618,7 @@ async def advance_ideation(
             message="All steps complete. PRD generation triggered.",
             prd_run_id=result.get("prd_run_id"),
             prd_status="initializing" if result.get("prd_run_id") else None,
+            user_message_id=result.get("user_message_id"),
         )
 
     new_step = step_to_name(result["new_step"])
@@ -550,6 +627,7 @@ async def advance_ideation(
         previous_step=previous_step,
         current_step=new_step,
         message=f"Advanced to {new_step} step.",
+        user_message_id=result.get("user_message_id"),
     )
 
 

@@ -259,12 +259,107 @@ def _decode_jwt_locally(token: str) -> dict[str, Any] | None:
 _sso_http_client: httpx.AsyncClient | None = None
 
 
+def _sso_introspect_timeout() -> float:
+    """HTTP timeout (seconds) for SSO introspection calls."""
+    raw = os.environ.get("SSO_INTROSPECT_TIMEOUT", "2.0").strip()
+    try:
+        return max(0.5, float(raw))
+    except ValueError:
+        return 2.0
+
+
+def _sso_introspect_cache_ttl() -> float:
+    """TTL (seconds) for the introspection-result cache.
+
+    A small TTL eliminates the per-request SSO round trip (which
+    otherwise dominates request latency) while keeping revocation
+    propagation bounded.  Set to 0 to disable caching.
+    """
+    raw = os.environ.get("SSO_INTROSPECT_CACHE_TTL", "60").strip()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 60.0
+
+
 def _get_sso_http_client() -> httpx.AsyncClient:
     """Return or lazily create a long-lived httpx client for SSO calls."""
     global _sso_http_client  # noqa: PLW0603
     if _sso_http_client is None or _sso_http_client.is_closed:
-        _sso_http_client = httpx.AsyncClient(timeout=5.0)
+        _sso_http_client = httpx.AsyncClient(timeout=_sso_introspect_timeout())
     return _sso_http_client
+
+
+# In-memory cache of successful introspection results.
+# Key: sha256(token) hex digest. Value: (claims_dict, expires_at_monotonic).
+# Bounded by ``_INTROSPECT_CACHE_MAX`` to prevent unbounded growth in
+# long-running processes.
+_INTROSPECT_CACHE_MAX = 1024
+_introspect_cache: dict[str, tuple[dict[str, Any], float]] = {}
+_introspect_cache_lock = threading.Lock()
+
+
+def _token_cache_key(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _introspect_cache_get(token: str) -> dict[str, Any] | None:
+    """Return cached claims if present and not yet expired (TTL or token exp)."""
+    ttl = _sso_introspect_cache_ttl()
+    if ttl <= 0:
+        return None
+    import time
+
+    key = _token_cache_key(token)
+    with _introspect_cache_lock:
+        entry = _introspect_cache.get(key)
+        if entry is None:
+            return None
+        claims, expires_at = entry
+        if time.monotonic() >= expires_at:
+            _introspect_cache.pop(key, None)
+            return None
+    # Honour the token's own exp claim if it is set (defence in depth).
+    exp = claims.get("exp")
+    if isinstance(exp, (int, float)) and exp <= time.time():
+        with _introspect_cache_lock:
+            _introspect_cache.pop(key, None)
+        return None
+    return claims
+
+
+def _introspect_cache_set(token: str, claims: dict[str, Any]) -> None:
+    """Store successful introspection claims with TTL."""
+    ttl = _sso_introspect_cache_ttl()
+    if ttl <= 0:
+        return
+    import time
+
+    expires_at = time.monotonic() + ttl
+    # If the token's own exp is sooner than TTL, clamp to that.
+    exp = claims.get("exp")
+    if isinstance(exp, (int, float)):
+        token_lifetime = exp - time.time()
+        if token_lifetime > 0:
+            expires_at = min(expires_at, time.monotonic() + token_lifetime)
+        else:
+            return  # already expired — don't cache
+    key = _token_cache_key(token)
+    with _introspect_cache_lock:
+        # Evict oldest if at capacity (simple FIFO; cache is small + short-lived).
+        if len(_introspect_cache) >= _INTROSPECT_CACHE_MAX and key not in _introspect_cache:
+            try:
+                oldest = next(iter(_introspect_cache))
+                _introspect_cache.pop(oldest, None)
+            except StopIteration:
+                pass
+        _introspect_cache[key] = (claims, expires_at)
+
+
+def _introspect_cache_clear() -> None:
+    """Test/admin helper to drop all cached introspection results."""
+    with _introspect_cache_lock:
+        _introspect_cache.clear()
 
 
 async def _introspect_remotely(token: str) -> dict[str, Any] | None:
@@ -274,7 +369,16 @@ async def _introspect_remotely(token: str) -> dict[str, Any] | None:
     None on failure.  Authenticates using client credentials
     (``client_id`` + ``client_secret``) in the JSON body, per the
     SSO server's IntrospectRequest schema.
+
+    Successful results are cached in-memory for ``SSO_INTROSPECT_CACHE_TTL``
+    seconds (default 60s) keyed by sha256(token) to avoid a per-request
+    network round trip — historically the dominant source of API latency
+    on protected endpoints.
     """
+    cached = _introspect_cache_get(token)
+    if cached is not None:
+        return cached
+
     base_url = _sso_base_url()
     client_id = os.environ.get("SSO_CLIENT_ID", "").strip()
     client_secret = os.environ.get("SSO_CLIENT_SECRET", "").strip()
@@ -294,6 +398,7 @@ async def _introspect_remotely(token: str) -> dict[str, Any] | None:
         if resp.status_code == 200:
             body = resp.json()
             if body.get("active"):
+                _introspect_cache_set(token, body)
                 return body
             logger.debug(
                 "[SSO Auth] Remote introspection returned active=False",

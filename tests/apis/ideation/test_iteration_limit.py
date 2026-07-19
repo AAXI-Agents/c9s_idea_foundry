@@ -640,3 +640,109 @@ class TestBackwardCompatibility:
 
         step_data = session["steps_data"]["a"]
         assert step_data.get("iteration", 0) == 0
+
+
+# ── Auto-trigger uses 1-based iteration ──────────────────────
+
+
+class TestAutoTrigger1BasedIteration:
+    @pytest.mark.asyncio
+    async def test_advance_auto_trigger_increments_before_agent(self):
+        """When advancing, the auto-trigger should call increment_step_iteration
+        so the first agent run on a new step gets iteration_count=1 (not 0)."""
+        import asyncio
+
+        session = _make_session_doc()
+        session["steps_data"]["a"]["output"] = "some output"
+
+        with (
+            patch(f"{_SERVICE}.get_session", return_value=session),
+            patch(f"{_SERVICE}.append_message", return_value="m1"),
+            patch(f"{_SERVICE}.advance_step", return_value="b"),
+            patch(f"{_SERVICE}.STEP_PROMPTS", {"a": "A", "b": "B"}),
+            patch(f"{_SERVICE}._get_max_iterations", return_value=2),
+            patch(
+                f"{_SERVICE}.increment_step_iteration", return_value=1,
+            ) as mock_inc,
+            patch(
+                f"{_SERVICE}._run_agent_for_step", new_callable=AsyncMock,
+            ) as mock_run,
+            patch(f"{_SERVICE}._broadcast_user_message"),
+        ):
+            from crewai_productfeature_planner.apis.ideation.service import (
+                handle_advance,
+            )
+
+            result = await handle_advance(session_id="sess1")
+
+            # Let the background task run
+            await asyncio.sleep(0)
+
+        assert result["new_step"] == "b"
+
+        # increment_step_iteration was called for the new step "b"
+        inc_calls = [
+            c for c in mock_inc.call_args_list
+            if c.kwargs.get("step") == "b"
+        ]
+        assert len(inc_calls) == 1
+
+        # _run_agent_for_step was called with iteration_count=1 (not 0)
+        run_calls = [
+            c for c in mock_run.call_args_list
+            if c.kwargs.get("step") == "b"
+        ]
+        assert len(run_calls) == 1
+        assert run_calls[0].kwargs["iteration_count"] == 1
+
+
+# ── Messages endpoint: since_message_id filter ────────────────
+
+
+class TestSinceMessageId:
+    def test_since_message_id_filters_older_messages(self, client):
+        """Messages before and including since_message_id should be excluded."""
+        session = _make_session_doc()
+        messages = [
+            {"id": "m1", "role": "agent", "content": "Hello", "step": "a",
+             "timestamp": "2026-05-14T10:00:00Z"},
+            {"id": "m2", "role": "user", "content": "Hi", "step": "a",
+             "timestamp": "2026-05-14T10:01:00Z"},
+            {"id": "m3", "role": "agent", "content": "Questions", "step": "a",
+             "timestamp": "2026-05-14T10:02:00Z"},
+        ]
+
+        with (
+            patch(f"{_ROUTER}.get_session", return_value=session),
+            patch(f"{_ROUTER}.get_messages", return_value=messages),
+        ):
+            resp = client.get(
+                "/flow/ideation/sessions/sess1/messages?since_message_id=m1",
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        ids = [m["id"] for m in body["messages"]]
+        assert "m1" not in ids
+        assert "m2" in ids
+        assert "m3" in ids
+
+    def test_since_message_id_unknown_returns_all(self, client):
+        """If the marker ID is not found, all messages are returned."""
+        session = _make_session_doc()
+        messages = [
+            {"id": "m1", "role": "agent", "content": "Hello", "step": "a",
+             "timestamp": "2026-05-14T10:00:00Z"},
+        ]
+
+        with (
+            patch(f"{_ROUTER}.get_session", return_value=session),
+            patch(f"{_ROUTER}.get_messages", return_value=messages),
+        ):
+            resp = client.get(
+                "/flow/ideation/sessions/sess1/messages?since_message_id=nonexistent",
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["messages"]) == 1

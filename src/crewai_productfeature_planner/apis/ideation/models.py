@@ -306,6 +306,7 @@ class IdeationAdvanceResponse(BaseModel):
     message: str
     prd_run_id: str | None = None
     prd_status: str | None = None
+    user_message_id: str | None = None
 
 
 class IdeationRollbackResponse(BaseModel):
