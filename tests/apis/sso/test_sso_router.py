@@ -38,6 +38,18 @@ def _set_dummy_keys(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
 
 
+@pytest.fixture(autouse=True)
+def _clear_introspect_cache():
+    """Ensure each test sees a clean introspection-result cache."""
+    from crewai_productfeature_planner.apis.sso_auth import (
+        _introspect_cache_clear,
+    )
+
+    _introspect_cache_clear()
+    yield
+    _introspect_cache_clear()
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _mock_crew_jobs():
     with (
@@ -1019,3 +1031,125 @@ class TestKeyRefreshScheduler:
                 assert start_key_refresh_scheduler() is False
             finally:
                 stop_key_refresh_scheduler()
+
+
+# ── Introspection result cache ───────────────────────────────
+
+
+class TestIntrospectCache:
+    """Verify the in-memory cache on _introspect_remotely.
+
+    The cache eliminates the per-request SSO round trip — historically
+    the dominant source of latency on protected endpoints (e.g. GET
+    /projects/{id}/ideas/).
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_call_uses_cache(self, monkeypatch):
+        """Two calls with the same token should result in a single POST."""
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _introspect_cache_clear,
+            _introspect_remotely,
+        )
+
+        _introspect_cache_clear()
+        monkeypatch.setenv("SSO_INTROSPECT_CACHE_TTL", "60")
+        monkeypatch.setenv("SSO_BASE_URL", "http://sso")
+
+        call_count = 0
+
+        async def _fake_post(url, *, json=None, headers=None):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"active": True, "sub": "u1"}
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=_fake_post)
+        mock_client.is_closed = False
+
+        with patch(
+            "crewai_productfeature_planner.apis.sso_auth._get_sso_http_client",
+            return_value=mock_client,
+        ):
+            r1 = await _introspect_remotely("tok-cache")
+            r2 = await _introspect_remotely("tok-cache")
+
+        assert r1 == r2 == {"active": True, "sub": "u1"}
+        assert call_count == 1  # second call served from cache
+
+    @pytest.mark.asyncio
+    async def test_cache_disabled_when_ttl_zero(self, monkeypatch):
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _introspect_cache_clear,
+            _introspect_remotely,
+        )
+
+        _introspect_cache_clear()
+        monkeypatch.setenv("SSO_INTROSPECT_CACHE_TTL", "0")
+
+        call_count = 0
+
+        async def _fake_post(url, *, json=None, headers=None):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"active": True, "sub": "u1"}
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=_fake_post)
+        mock_client.is_closed = False
+
+        with patch(
+            "crewai_productfeature_planner.apis.sso_auth._get_sso_http_client",
+            return_value=mock_client,
+        ):
+            await _introspect_remotely("tok-nocache")
+            await _introspect_remotely("tok-nocache")
+
+        assert call_count == 2  # cache disabled
+
+    @pytest.mark.asyncio
+    async def test_expired_token_not_cached(self, monkeypatch):
+        """Tokens whose ``exp`` is already past must never be cached."""
+        import time
+
+        from crewai_productfeature_planner.apis.sso_auth import (
+            _introspect_cache_clear,
+            _introspect_remotely,
+        )
+
+        _introspect_cache_clear()
+        monkeypatch.setenv("SSO_INTROSPECT_CACHE_TTL", "60")
+
+        call_count = 0
+
+        async def _fake_post(url, *, json=None, headers=None):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "active": True,
+                "sub": "u1",
+                "exp": int(time.time()) - 1,  # already expired
+            }
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=_fake_post)
+        mock_client.is_closed = False
+
+        with patch(
+            "crewai_productfeature_planner.apis.sso_auth._get_sso_http_client",
+            return_value=mock_client,
+        ):
+            await _introspect_remotely("tok-expired")
+            await _introspect_remotely("tok-expired")
+
+        # Expired tokens are never cached → both calls hit the network.
+        assert call_count == 2

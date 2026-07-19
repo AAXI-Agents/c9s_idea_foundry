@@ -332,3 +332,233 @@ class TestNormalizeResponseFields:
         result = _normalize_response_fields(data)
         assert result["questions"][0]["recommendations"][0]["pro"] == ""
         assert result["questions"][0]["recommendations"][0]["con"] == ""
+
+    def test_summary_draft_list_serialized_to_json(self):
+        """summary_draft as a list of persona dicts is serialized to JSON string."""
+        personas = [
+            {"name": "Alice", "role": "Buyer", "pain-point": "Cost", "goal": "Save"},
+            {"name": "Bob", "role": "Seller", "pain-point": "Reach", "goal": "Grow"},
+        ]
+        data = {"acknowledgment": "Hi", "questions": [], "summary_draft": personas}
+        result = _normalize_response_fields(data)
+        assert isinstance(result["summary_draft"], str)
+        import json
+        parsed_back = json.loads(result["summary_draft"])
+        assert parsed_back == personas
+
+    def test_summary_draft_dict_serialized_to_json(self):
+        """summary_draft as a dict is also serialized to JSON string."""
+        draft = {"overview": "test", "personas": []}
+        data = {"acknowledgment": "Hi", "questions": [], "summary_draft": draft}
+        result = _normalize_response_fields(data)
+        assert isinstance(result["summary_draft"], str)
+        import json
+        assert json.loads(result["summary_draft"]) == draft
+
+    def test_summary_draft_string_unchanged(self):
+        """summary_draft as a string is left as-is."""
+        data = {"acknowledgment": "Hi", "questions": [], "summary_draft": "plain text"}
+        result = _normalize_response_fields(data)
+        assert result["summary_draft"] == "plain text"
+
+    def test_summary_draft_null_unchanged(self):
+        """summary_draft as None is left as-is."""
+        data = {"acknowledgment": "Hi", "questions": [], "summary_draft": None}
+        result = _normalize_response_fields(data)
+        assert result["summary_draft"] is None
+
+    # ── agent_insight normalization ──
+
+    def test_agent_insight_dict_serialized(self):
+        """agent_insight as dict is serialized to JSON string."""
+        data = {"acknowledgment": "Hi", "questions": [],
+                "agent_insight": {"risk": "high", "opportunity": "big"}}
+        result = _normalize_response_fields(data)
+        assert isinstance(result["agent_insight"], str)
+        import json
+        assert json.loads(result["agent_insight"]) == {"risk": "high", "opportunity": "big"}
+
+    def test_agent_insight_list_serialized(self):
+        """agent_insight as list is serialized to JSON string."""
+        data = {"acknowledgment": "Hi", "questions": [],
+                "agent_insight": ["risk A", "risk B"]}
+        result = _normalize_response_fields(data)
+        assert isinstance(result["agent_insight"], str)
+        import json
+        assert json.loads(result["agent_insight"]) == ["risk A", "risk B"]
+
+    def test_agent_insight_missing_defaults_to_empty(self):
+        """agent_insight missing defaults to empty string."""
+        data = {"acknowledgment": "Hi", "questions": []}
+        result = _normalize_response_fields(data)
+        assert result["agent_insight"] == ""
+
+    # ── questions list padding/trimming ──
+
+    def test_questions_padded_to_minimum_3(self):
+        """Questions list with fewer than 3 items is padded."""
+        rec = {"label": "X", "pro": "p", "con": "c", "complexity": "Low"}
+        data = {"acknowledgment": "Hi", "questions": [
+            {"id": 1, "question": "Q1?", "context": "C1",
+             "recommendations": [rec, rec, rec]},
+        ]}
+        result = _normalize_response_fields(data)
+        assert len(result["questions"]) == 3
+        # Padded questions should have placeholder text
+        assert "question" in result["questions"][1]
+        assert "question" in result["questions"][2]
+
+    def test_questions_trimmed_to_maximum_5(self):
+        """Questions list with more than 5 items is trimmed."""
+        rec = {"label": "X", "pro": "p", "con": "c", "complexity": "Low"}
+        q = {"id": 1, "question": "Q?", "context": "C", "recommendations": [rec, rec, rec]}
+        data = {"acknowledgment": "Hi", "questions": [q.copy() for _ in range(7)]}
+        result = _normalize_response_fields(data)
+        assert len(result["questions"]) == 5
+
+    def test_questions_non_dict_entries_filtered(self):
+        """Non-dict entries in questions list are filtered out."""
+        rec = {"label": "X", "pro": "p", "con": "c", "complexity": "Low"}
+        q = {"id": 1, "question": "Q?", "context": "C", "recommendations": [rec, rec, rec]}
+        data = {"acknowledgment": "Hi", "questions": [q, "bad", None, q.copy(), q.copy()]}
+        result = _normalize_response_fields(data)
+        assert len(result["questions"]) == 3
+        assert all(isinstance(q, dict) for q in result["questions"])
+
+    # ── recommendations padding/trimming ──
+
+    def test_recommendations_padded_to_3(self):
+        """Recommendations list with fewer than 3 items is padded."""
+        rec = {"label": "X", "pro": "p", "con": "c", "complexity": "Low"}
+        data = {"acknowledgment": "Hi", "questions": [
+            {"id": 1, "question": "Q?", "context": "C", "recommendations": [rec, rec]},
+            {"id": 2, "question": "Q2?", "context": "C2", "recommendations": [rec, rec, rec]},
+            {"id": 3, "question": "Q3?", "context": "C3", "recommendations": [rec, rec, rec]},
+        ]}
+        result = _normalize_response_fields(data)
+        assert len(result["questions"][0]["recommendations"]) == 3
+
+    def test_recommendations_trimmed_to_3(self):
+        """Recommendations list with more than 3 items is trimmed to 3."""
+        rec = {"label": "X", "pro": "p", "con": "c", "complexity": "Low"}
+        data = {"acknowledgment": "Hi", "questions": [
+            {"id": 1, "question": "Q?", "context": "C",
+             "recommendations": [rec, rec, rec, rec, rec]},
+            {"id": 2, "question": "Q2?", "context": "C2", "recommendations": [rec, rec, rec]},
+            {"id": 3, "question": "Q3?", "context": "C3", "recommendations": [rec, rec, rec]},
+        ]}
+        result = _normalize_response_fields(data)
+        assert len(result["questions"][0]["recommendations"]) == 3
+
+    def test_recommendations_missing_becomes_padded_list(self):
+        """Missing recommendations key gets a padded list of 3."""
+        data = {"acknowledgment": "Hi", "questions": [
+            {"id": 1, "question": "Q?", "context": "C"},
+            {"id": 2, "question": "Q2?", "context": "C2", "recommendations": []},
+            {"id": 3, "question": "Q3?", "context": "C3"},
+        ]}
+        result = _normalize_response_fields(data)
+        for q in result["questions"]:
+            assert len(q["recommendations"]) == 3
+
+
+# ── End-to-end parse pipeline tests ──────────────────────────
+
+
+class TestParseStructuredEndToEnd:
+    """Verify _parse_structured_from_text produces valid StructuredIdeationResponse
+    for every known LLM drift pattern — the FULL pipeline, not just normalization."""
+
+    def _make_raw(self, **overrides) -> str:
+        """Build a raw JSON string with optional field overrides."""
+        rec = {"label": "Option", "pro": "good", "con": "bad", "complexity": "Medium"}
+        base = {
+            "acknowledgment": "Got it.",
+            "questions": [
+                {"id": i, "question": f"Q{i}?", "context": f"C{i}",
+                 "recommendations": [rec.copy(), rec.copy(), rec.copy()],
+                 "recommended_index": 0, "recommended_reason": "Best."}
+                for i in range(1, 4)
+            ],
+            "agent_insight": "Insight.",
+            "summary_draft": None,
+        }
+        base.update(overrides)
+        return json.dumps(base)
+
+    def test_clean_output_parses(self):
+        result = _parse_structured_from_text(self._make_raw())
+        assert result is not None
+        assert len(result.questions) == 3
+
+    def test_summary_draft_as_persona_list(self):
+        """Persona step returning summary_draft as list of dicts."""
+        personas = [
+            {"name": "Alice", "role": "Buyer", "pain-point": "Cost",
+             "goal": "Save", "tech_proficiency": "High"},
+        ]
+        result = _parse_structured_from_text(self._make_raw(summary_draft=personas))
+        assert result is not None
+        assert isinstance(result.summary_draft, str)
+        assert json.loads(result.summary_draft) == personas
+
+    def test_agent_insight_as_dict(self):
+        result = _parse_structured_from_text(
+            self._make_raw(agent_insight={"risk": "high"})
+        )
+        assert result is not None
+        assert isinstance(result.agent_insight, str)
+
+    def test_two_questions_padded(self):
+        rec = {"label": "X", "pro": "p", "con": "c", "complexity": "Low"}
+        raw = json.dumps({
+            "acknowledgment": "Hi",
+            "questions": [
+                {"id": 1, "question": "Q?", "context": "C",
+                 "recommendations": [rec, rec, rec]},
+                {"id": 2, "question": "Q2?", "context": "C2",
+                 "recommendations": [rec, rec, rec]},
+            ],
+            "agent_insight": "Note.",
+            "summary_draft": None,
+        })
+        result = _parse_structured_from_text(raw)
+        assert result is not None
+        assert len(result.questions) == 3
+
+    def test_four_recommendations_trimmed(self):
+        rec = {"label": "X", "pro": "p", "con": "c", "complexity": "Low"}
+        raw = json.dumps({
+            "acknowledgment": "Hi",
+            "questions": [
+                {"id": i, "question": f"Q{i}?", "context": f"C{i}",
+                 "recommendations": [rec, rec, rec, rec]}
+                for i in range(1, 4)
+            ],
+            "agent_insight": "Note.",
+            "summary_draft": None,
+        })
+        result = _parse_structured_from_text(raw)
+        assert result is not None
+        for q in result.questions:
+            assert len(q.recommendations) == 3
+
+    def test_british_spelling_plus_direction_alias(self):
+        """Multiple drift patterns combined: acknowledgement + direction alias."""
+        raw = json.dumps({
+            "acknowledgement": "Noted.",
+            "questions": [
+                {"id": i, "question": f"Q{i}?", "context": f"C{i}",
+                 "recommendations": [
+                     {"direction": f"D{j}", "pro": "p", "con": "c",
+                      "complexity": "medium"}
+                     for j in range(3)
+                 ]}
+                for i in range(1, 4)
+            ],
+            "agent_insight": "Combined drift test.",
+        })
+        result = _parse_structured_from_text(raw)
+        assert result is not None
+        assert result.acknowledgment == "Noted."
+        assert result.questions[0].recommendations[0].label == "D0"

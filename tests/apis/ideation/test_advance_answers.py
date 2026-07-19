@@ -221,3 +221,57 @@ class TestAdvanceWithAnswers:
         assert "[Feedback before advancing]" in user_calls[0].kwargs["content"]
         # Second is the answers
         assert user_calls[1].kwargs["metadata"]["is_advance_submission"] is True
+
+    @pytest.mark.asyncio
+    async def test_advance_emits_ws_new_message_for_user_answers(self):
+        """When advance persists a user message, a WS new_message is emitted."""
+        from crewai_productfeature_planner.apis.ideation.service import handle_advance
+
+        approved_output = {
+            "user_summary": "1. Q1 → A",
+            "answers": [{"question_id": 1, "selected_option": 0}],
+        }
+
+        with (
+            patch(f"{_SVC}.get_session") as mock_get,
+            patch(f"{_SVC}.append_message", return_value="msg-abc") as mock_append,
+            patch(f"{_SVC}.advance_step", return_value="b"),
+            patch(f"{_SVC}.STEP_PROMPTS", {"a": "A", "b": "B"}),
+            patch(f"{_SVC}._run_agent_for_step", new_callable=AsyncMock),
+            patch(f"{_SVC}._get_max_iterations", return_value=2),
+            patch(f"{_SVC}._broadcast_user_message") as mock_broadcast,
+        ):
+            mock_get.return_value = _session_doc()
+            result = await handle_advance(
+                session_id="sess-1",
+                approved_output=approved_output,
+            )
+
+        # WS broadcast was called with the persisted message
+        mock_broadcast.assert_called_once()
+        call_args = mock_broadcast.call_args
+        assert call_args[0][0] == "sess-1"
+        assert call_args[0][1] == "msg-abc"
+        assert call_args[0][2] == "1. Q1 → A"
+        assert call_args[0][3] == "a"  # current step at time of call
+
+        # Result includes user_message_id
+        assert result["user_message_id"] == "msg-abc"
+
+    @pytest.mark.asyncio
+    async def test_advance_returns_user_message_id_none_when_no_answers(self):
+        """When no answers are submitted, user_message_id is None."""
+        from crewai_productfeature_planner.apis.ideation.service import handle_advance
+
+        with (
+            patch(f"{_SVC}.get_session") as mock_get,
+            patch(f"{_SVC}.append_message", return_value="agent-msg"),
+            patch(f"{_SVC}.advance_step", return_value="b"),
+            patch(f"{_SVC}.STEP_PROMPTS", {"a": "A", "b": "B"}),
+            patch(f"{_SVC}._run_agent_for_step", new_callable=AsyncMock),
+            patch(f"{_SVC}._get_max_iterations", return_value=2),
+        ):
+            mock_get.return_value = _session_doc()
+            result = await handle_advance(session_id="sess-1", approved_output=None)
+
+        assert result["user_message_id"] is None

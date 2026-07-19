@@ -367,14 +367,15 @@ def _normalize_response_fields(data: Any) -> Any:
 
     Top-level:
     - acknowledgement/ack/greeting/intro → acknowledgment
-    - Ensures 'questions' is a list
-    - Ensures 'agent_insight' exists (defaults to empty string)
+    - Ensures 'questions' is a list with 3-5 items (pads or trims)
+    - Ensures 'agent_insight' exists as str (serializes dict/list)
+    - Coerces 'summary_draft' list/dict to JSON string
 
     Per question:
     - Auto-assigns 'id' (1-based) if missing
     - Normalizes 'context' from aliases or derives from recommended_reason
     - Normalizes 'question' field from aliases
-    - Ensures 'recommendations' exists and has exactly 3 entries
+    - Ensures 'recommendations' has exactly 3 entries (pads or trims)
     - Coerces 'recommended_index' to int or None
 
     Per recommendation:
@@ -395,17 +396,41 @@ def _normalize_response_fields(data: Any) -> Any:
             # Last resort: use first string value that looks like an ack
             data.setdefault("acknowledgment", "")
 
-    # Ensure agent_insight exists
-    data.setdefault("agent_insight", "")
+    # Ensure agent_insight exists and is a string
+    ai = data.get("agent_insight")
+    if isinstance(ai, (list, dict)):
+        data["agent_insight"] = json.dumps(ai, ensure_ascii=False)
+    elif ai is None:
+        data["agent_insight"] = ""
+
+    # ── summary_draft normalization ──
+    # The LLM sometimes returns summary_draft as a list of persona
+    # dicts or a dict instead of a string.  Serialize to JSON so the
+    # Pydantic ``str | None`` field accepts it.
+    sd = data.get("summary_draft")
+    if isinstance(sd, (list, dict)):
+        data["summary_draft"] = json.dumps(sd, ensure_ascii=False)
 
     # ── Questions normalization ──
     questions = data.get("questions")
     if not isinstance(questions, list):
         return data
 
+    # Filter out non-dict entries
+    questions = [q for q in questions if isinstance(q, dict)]
+
+    # Ensure 3-5 questions: trim excess, pad if too few
+    if len(questions) > 5:
+        questions = questions[:5]
+    while len(questions) < 3:
+        questions.append({
+            "question": "What additional context would help refine this further?",
+            "context": "Auto-generated placeholder to meet minimum question count.",
+            "recommendations": [],
+        })
+    data["questions"] = questions
+
     for idx, q in enumerate(questions):
-        if not isinstance(q, dict):
-            continue
 
         # Auto-assign 'id' if missing (1-based)
         if "id" not in q:
@@ -443,11 +468,23 @@ def _normalize_response_fields(data: Any) -> Any:
 
         # Normalize recommendations
         recs = q.get("recommendations")
-        if isinstance(recs, list):
-            for rec in recs:
-                if not isinstance(rec, dict):
-                    continue
-                _normalize_recommendation(rec)
+        if not isinstance(recs, list):
+            recs = []
+        # Normalize each rec
+        recs = [r for r in recs if isinstance(r, dict)]
+        for rec in recs:
+            _normalize_recommendation(rec)
+        # Ensure exactly 3 recommendations: trim excess, pad if too few
+        if len(recs) > 3:
+            recs = recs[:3]
+        while len(recs) < 3:
+            recs.append({
+                "label": "Alternative option",
+                "pro": "Provides an additional perspective.",
+                "con": "Needs further analysis.",
+                "complexity": "Medium",
+            })
+        q["recommendations"] = recs
 
     return data
 

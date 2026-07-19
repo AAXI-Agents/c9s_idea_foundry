@@ -4252,7 +4252,7 @@ _CODEX: list[CodexEntry] = [
     ),
     CodexEntry(
         version="0.98.1",
-        date=date(2026, 5, 14),
+        date=date(2026, 7, 20),
         summary=(
             "Fix duplicate idea_id in project ideas list response. "
             "Added defensive dedup by idea_id in ideas.list_ideas() repository function. "
@@ -4300,6 +4300,29 @@ _CODEX: list[CodexEntry] = [
             "'upload'→'file' and status 'reviewed'→'ready' to align with frontend. "
             "Broadcasts integrated into knowledge router and aggregator service. "
             "15 new WS tests. 2840 pass."
+        ),
+    ),
+    CodexEntry(
+        version="0.99.1",
+        date=date(2026, 5, 14),
+        summary=(
+            "Idempotent advance endpoint — POST /flow/ideation/sessions/{id}/advance "
+            "returns 200 with existing prd_run_id when session is already completed "
+            "instead of 409 error. Fixes race condition on double-click or WebSocket "
+            "event arriving before HTTP response. 2 new tests."
+        ),
+    ),
+    CodexEntry(
+        version="0.99.2",
+        date=date(2026, 7, 20),
+        summary=(
+            "SSO introspection caching — eliminate 5-second per-request SSO "
+            "round trip on every protected endpoint. GET /projects/{id}/ideas/ "
+            "and similar fast endpoints went from 6s+ to <1s when SSO server "
+            "is slow. New short-TTL in-memory cache keyed by sha256(token), "
+            "honours token exp claim, configurable via SSO_INTROSPECT_CACHE_TTL "
+            "(default 60s). Reduced introspection HTTP timeout default 5s → 2s "
+            "(SSO_INTROSPECT_TIMEOUT). 3 new cache tests. 2872 pass."
         ),
     ),
 ]

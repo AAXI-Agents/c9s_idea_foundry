@@ -14,6 +14,8 @@ tags:
 | `CORS_ALLOWED_ORIGINS` | Allowed CORS origins for web app (default: `http://localhost:3000`). Comma-separated for multiple origins |
 | `SSO_ENABLED` | Enable SSO auth enforcement (`true`/`false`, default `false`). Set `false` for local dev (anonymous bypass) |
 | `SSO_BASE_URL` | SSO service base URL for remote token introspection (default `http://localhost:8100`) |
+| `SSO_INTROSPECT_TIMEOUT` | HTTP timeout (seconds) for SSO introspection calls (default `2.0`, min `0.5`). Was effectively 5s before v0.99.2 |
+| `SSO_INTROSPECT_CACHE_TTL` | TTL (seconds) for the in-memory introspection-result cache (default `60`, set `0` to disable). Eliminates per-request SSO round trip — primary fix for slow protected endpoints in v0.99.2 |
 | `SSO_CLIENT_ID` | OAuth client ID registered for Idea Foundry (required for `/auth/sso/*` login/register endpoints) |
 | `SSO_CLIENT_SECRET` | OAuth client secret (required for OAuth2 authorization code exchange) |
 | `SSO_JWT_PUBLIC_KEY_PATH` | Path to RS256 public key PEM (for fast local JWT verification) |
