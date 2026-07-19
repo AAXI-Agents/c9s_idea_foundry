@@ -11,10 +11,14 @@
             "id": "335ad2fe72970858",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "obsidian/User Feedback Archive/QUESTIONS-idea-workflow-backend.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "New tab"
+              "title": "QUESTIONS-idea-workflow-backend"
             }
           }
         ]
@@ -178,21 +182,22 @@
   },
   "active": "335ad2fe72970858",
   "lastOpenFiles": [
+    "obsidian/User Feedback Archive/GAP-ideation-structured-qa.md",
+    "obsidian/Changelog/2026-05-18.md",
+    "logs/crewai.log.2026-05-19",
+    "logs/crewai.log.2026-05-18",
+    "logs/crewai.log.2026-05-17",
+    "logs/crewai.log.2026-05-16",
+    "logs/crewai.log.2026-05-15",
+    "logs/crewai.log.2026-05-14",
     "tests/apis/__pycache__/test_knowledge_ws.cpython-312-pytest-9.0.2.pyc",
     "src/crewai_productfeature_planner/apis/__pycache__/_ws_auth.cpython-312.pyc",
     "src/crewai_productfeature_planner/apis/knowledge/__pycache__/_ws_knowledge.cpython-312.pyc",
     "tests/apis/test_knowledge_ws.py",
-    "src/crewai_productfeature_planner/apis/knowledge/_ws_knowledge.py",
-    "src/crewai_productfeature_planner/apis/_ws_auth.py",
-    "tests/apis/ideation/__pycache__/test_advance_answers.cpython-312-pytest-9.0.2.pyc",
-    "tests/apis/ideation/test_advance_answers.py",
     "obsidian/User Feedback/GAP-ideation-iteration-limit-enforcement.md",
     "obsidian/User Feedback/QUESTIONS-iteration-limit.md",
     "obsidian/User Feedback Archive/QUESTIONS-iteration-limit.md",
     "obsidian/User Feedback Archive/GAP-ideation-iteration-limit-enforcement.md",
-    "tests/apis/ideation/__pycache__/test_iteration_limit.cpython-312-pytest-9.0.2.pyc",
-    "tests/apis/ideation/test_iteration_limit.py",
-    "logs/crewai.log.2026-05-13",
     "obsidian/User Feedback/PLAN-ideation-knowledge-injection.md",
     "obsidian/User Feedback Archive/PLAN-ideation-knowledge-injection.md",
     "obsidian/Changelog/2026-05-12.md",
@@ -212,7 +217,6 @@
     "obsidian/User Feedback Archive/QUESTIONS-api-middleware.md",
     "obsidian/User Feedback/GAP-code-repos-post-resolution-issues.md",
     "obsidian/User Feedback Archive/GAP-code-repos-post-resolution-issues.md",
-    "obsidian/User Feedback Archive/frontend-multitenancy-integration.md",
-    "obsidian/User Feedback Archive/frontend-ideation-trigger-recovery.md"
+    "obsidian/User Feedback Archive/frontend-multitenancy-integration.md"
   ]
 }
